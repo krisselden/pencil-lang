@@ -1,4 +1,5 @@
 {
+  "beats": [],
   "bindings": [
     {
       "expr": [
@@ -149,8 +150,10 @@
   ],
   "doc": "unroll",
   "duration": 13.0,
+  "handles": [],
   "marks": [
     {
+      "beat": null,
       "form": {
         "kind": "region",
         "parts": [
@@ -180,9 +183,13 @@
           }
         ]
       },
-      "id": "wedge"
+      "id": "wedge",
+      "tags": [
+        "region"
+      ]
     },
     {
+      "beat": null,
       "form": {
         "kind": "region",
         "parts": [
@@ -200,9 +207,13 @@
           ]
         ]
       },
-      "id": "triangle"
+      "id": "triangle",
+      "tags": [
+        "region"
+      ]
     },
     {
+      "beat": null,
       "form": {
         "field": [
           "Subtract",
@@ -288,9 +299,13 @@
           "y"
         ]
       },
-      "id": "circle"
+      "id": "circle",
+      "tags": [
+        "curve"
+      ]
     },
     {
+      "beat": null,
       "form": {
         "closed": false,
         "kind": "polyline",
@@ -305,9 +320,13 @@
           ]
         ]
       },
-      "id": "radius"
+      "id": "radius",
+      "tags": [
+        "segment"
+      ]
     },
     {
+      "beat": null,
       "form": {
         "closed": false,
         "kind": "polyline",
@@ -322,9 +341,13 @@
           ]
         ]
       },
-      "id": "reach"
+      "id": "reach",
+      "tags": [
+        "segment"
+      ]
     },
     {
+      "beat": null,
       "form": {
         "arc": {
           "point": [
@@ -376,9 +399,13 @@
         },
         "kind": "parametric"
       },
-      "id": "path"
+      "id": "path",
+      "tags": [
+        "curve"
+      ]
     },
     {
+      "beat": null,
       "form": {
         "arc": {
           "point": [
@@ -402,9 +429,13 @@
         },
         "kind": "parametric"
       },
-      "id": "wound"
+      "id": "wound",
+      "tags": [
+        "curve"
+      ]
     },
     {
+      "beat": null,
       "form": {
         "closed": false,
         "kind": "polyline",
@@ -419,9 +450,13 @@
           ]
         ]
       },
-      "id": "string"
+      "id": "string",
+      "tags": [
+        "segment"
+      ]
     },
     {
+      "beat": null,
       "form": {
         "closed": false,
         "kind": "polyline",
@@ -818,9 +853,13 @@
           ]
         ]
       },
-      "id": "corner"
+      "id": "corner",
+      "tags": [
+        "decoration"
+      ]
     },
     {
+      "beat": null,
       "form": {
         "at": [
           "O.x",
@@ -828,9 +867,13 @@
         ],
         "kind": "dot"
       },
-      "id": "O"
+      "id": "O",
+      "tags": [
+        "dot"
+      ]
     },
     {
+      "beat": null,
       "form": {
         "at": [
           "P.x",
@@ -838,9 +881,13 @@
         ],
         "kind": "dot"
       },
-      "id": "P"
+      "id": "P",
+      "tags": [
+        "dot"
+      ]
     },
     {
+      "beat": null,
       "form": {
         "at": [
           "Q.x",
@@ -848,9 +895,13 @@
         ],
         "kind": "dot"
       },
-      "id": "Q"
+      "id": "Q",
+      "tags": [
+        "dot"
+      ]
     },
     {
+      "beat": null,
       "form": {
         "at": [
           "O.x",
@@ -1082,9 +1133,13 @@
         ],
         "text": "O"
       },
-      "id": "name_o"
+      "id": "name_o",
+      "tags": [
+        "label"
+      ]
     },
     {
+      "beat": null,
       "form": {
         "at": [
           "P.x",
@@ -1178,9 +1233,13 @@
         ],
         "text": "P"
       },
-      "id": "name_p"
+      "id": "name_p",
+      "tags": [
+        "label"
+      ]
     },
     {
+      "beat": null,
       "form": {
         "at": [
           "Q.x",
@@ -1274,9 +1333,13 @@
         ],
         "text": "Q"
       },
-      "id": "name_q"
+      "id": "name_q",
+      "tags": [
+        "label"
+      ]
     },
     {
+      "beat": null,
       "form": {
         "at": [
           [
@@ -1354,9 +1417,13 @@
         ],
         "text": "1"
       },
-      "id": "one"
+      "id": "one",
+      "tags": [
+        "label"
+      ]
     },
     {
+      "beat": null,
       "form": {
         "at": [
           [
@@ -1442,7 +1509,10 @@
         ],
         "text": "a"
       },
-      "id": "length_a"
+      "id": "length_a",
+      "tags": [
+        "label"
+      ]
     }
   ],
   "params": [
@@ -1455,6 +1525,9 @@
     }
   ],
   "viewport": {
+    "fit": 0,
+    "height": null,
+    "pad": 0.1,
     "width": 640.0,
     "x": [
       -3.8,

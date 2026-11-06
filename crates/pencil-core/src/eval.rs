@@ -102,6 +102,26 @@ pub fn eval(e: &Expr, env: &Env) -> Result<Value, Error> {
             ("Sin", [a]) => Real(real(a)?.sin()),
             ("Cos", [a]) => Real(real(a)?.cos()),
             ("Tan", [a]) => Real(real(a)?.tan()),
+            ("Arccos", [a]) => Real(real(a)?.acos()),
+            ("Floor", [a]) => Real(real(a)?.floor()),
+            ("IfNonnegative", [x, a, b]) => {
+                if real(x)? >= 0.0 {
+                    Real(real(a)?)
+                } else {
+                    Real(real(b)?)
+                }
+            }
+            // A beat's strength: nothing before it, `now` during it, `later` after it.
+            ("Reveal", [age, now, later]) => {
+                let age = real(age)?;
+                Real(if age < -0.5 {
+                    0.0
+                } else if age < 0.5 {
+                    real(now)?
+                } else {
+                    real(later)?
+                })
+            }
             ("Exp", [a]) => Real(real(a)?.exp()),
             ("Ln", [a]) => Real(real(a)?.ln()),
             ("Abs", [a]) => Real(real(a)?.abs()),
@@ -240,7 +260,7 @@ impl<'a> Frame<'a> {
 
     /// The linear color at a pixel center, shaded in mark order over the paper.
     pub fn shade(&self, px: f64, py: f64) -> Result<[f64; 3], Error> {
-        let view = &self.figure.scene.viewport;
+        let view = &self.prepared.view;
         let (w, h) = (self.width as f64, self.height as f64);
         let (sx, sy) = (view.x[1] - view.x[0], view.y[1] - view.y[0]);
         let x = view.x[0] + px / w * sx;
@@ -311,7 +331,11 @@ impl<'a> Frame<'a> {
             };
             if let Some((dist_px, n)) = measured {
                 env.set(SELF_DIST, dist_px * pixel);
-                out = self.fill(out, style, &env, dist_px, n, opacity)?;
+                let fill_opacity = match &style.fill_opacity {
+                    Some(o) => real(o, &env)?.clamp(0.0, 1.0),
+                    None => 1.0,
+                };
+                out = self.fill(out, style, &env, dist_px, n, opacity * fill_opacity)?;
             }
             let Some(stroke_color) = &style.stroke else {
                 continue;

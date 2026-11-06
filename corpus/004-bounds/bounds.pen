@@ -1,0 +1,141 @@
+// The two boundary cases of the Doyle spiral, built with ruler and compass around one
+// circle at 1. A point P at angle θ on the unit circle sets everything, and the circle at
+// 1 has radius sin(θ/2), so k = sin(θ/2). Names follow the GeoGebra construction, except
+// where one would clash: the param q keeps its name, so the circle q is q_1.
+doc bounds
+duration 30
+
+viewport {
+  fit: c d t c_1 d_1 t_m e_1 g_1 e p r q_1 s p_m r_m p_1 near_zero,
+  pad: 0.04, width: 560, height: 400
+}
+
+fn dir(t) = (cos(t), sin(t))
+// θ where the flower closes: a ring of q for p = 0, or neighbors at 360°/q for q = 2p.
+fn closing(q, ring) = mix(2·acos((sqrt(5 + 4·cos(tau / q)) - 1) / 2), tau / q, ring)
+
+param q = 6 in 4..12
+param ring = 1 in 0..1
+// The sliders set θ through its binding, and dragging P takes it over. It's the same
+// mechanism as time and a slider in Unroll.
+param theta in 0.2..1.85
+bind theta = closing(q, ring)
+
+let near_zero = (-0.2, 0)
+
+beat "Start with the unit circle and a point P on it, at angle θ." tag ink {
+  let O = (0, 0)
+  dot O
+  let A = (1, 0)
+  dot A tag named
+  label one = "1" at A offset (12, -12)
+  let f = line(O, A)
+  curve c = circle(O, A) tag aux
+  let P = dir(theta)
+}
+
+beat "Halfway from 1 to P is B. The circle at 1 through B has radius sin(θ/2): that is k." tag red {
+  let B = midpoint(P, A)
+  dot B
+  curve d = circle(A, B)
+}
+
+beat "p = 0: a circle the same size, at P, touches it. Copies keep going around the unit circle, and the ring closes when θ = 360°/q." tag blue {
+  curve t = circle(P, B)
+}
+
+beat "Its other two neighbors sit on the ray halfway to P, one inside the unit circle and one outside." tag blue {
+  curve g = ray(O, B)
+  let C = intersect(c, g)
+  dot C
+  let R = midpoint(C, A)
+  curve a = ray(O, R)
+  let S = intersect(d, a, 0)
+  dot S
+  let T = intersect(d, a, 1)
+  dot T
+  curve b = ray(A, S)
+  curve f_1 = ray(A, T)
+  let U = intersect(g, b)
+  dot U
+  let V = intersect(g, f_1)
+  dot V
+  curve c_1 = circle(U, S)
+  curve d_1 = circle(V, T)
+}
+
+beat "Mirror them across the real axis: six circles around one, and every circle the same ratio k to its distance from 0." tag blue {
+  curve t_m = mirror(t, f)
+  curve e_1 = mirror(c_1, f)
+  curve g_1 = mirror(d_1, f)
+}
+
+beat "q = 2p: the circle about −½ through cos(θ/2) crosses the unit circle at F. The next neighbors lie in that direction." tag pink {
+  curve h = perpendicular(C, f)
+  let D = intersect(f, h)
+  dot D
+  let A_m = mirror(A, O)
+  let E = midpoint(A_m, O)
+  dot E
+  curve e = circle(E, D) tag aux
+  let F = intersect(c, e, 1)
+  dot F
+  curve i = ray(O, F)
+}
+
+beat "Two neighbors on that ray, touching the circle at 1 where the ray halfway to F crosses it." tag pink {
+  let G = midpoint(F, A)
+  curve j = ray(O, G)
+  let H = intersect(d, j, 0)
+  dot H
+  let I = intersect(d, j, 1)
+  dot I
+  curve k = ray(A, H)
+  curve l = ray(A, I)
+  let J = intersect(i, k)
+  dot J
+  let M = intersect(i, l)
+  dot M
+  curve p = circle(J, H)
+  curve r = circle(M, I)
+}
+
+beat "And two on the real axis, the direction that is a pure zoom. Each touches its neighbor where that same ray crosses it again." tag pink {
+  let K = intersect(p, j, 0)
+  dot K
+  let N = intersect(r, j, 1)
+  dot N
+  curve m = ray(J, K)
+  curve n = ray(M, N)
+  let L = intersect(f, m)
+  dot L
+  let Q = intersect(f, n)
+  dot Q
+  curve q_1 = circle(L, K)
+  curve s = circle(Q, N)
+}
+
+beat "Mirror the pair across the real axis: the q = 2p flower." tag pink {
+  curve p_m = mirror(p, f)
+  curve r_m = mirror(r, f)
+}
+
+beat "Every center in both flowers lies on one curve, the level curve of the circle at 1. One way to draw it: the pedal of the circle on the two real-axis centers, seen from 1." tag accent {
+  let Z = midpoint(L, Q)
+  curve p_1 = circle(Z, Q) tag aux
+  // The pedal: for each tangent of the circle, the foot of the perpendicular from A.
+  curve level = parametric (u): A + dir(u)·dot(Z + p_1.r·dir(u) - A, dir(u)) for u in 0..tau
+}
+
+// Drawn last, so it stays on top. The param's range is the constraint on the drag.
+dot P
+label name_p = "P" at P offset (12, -12)
+handle P sets theta = atan2(max(pointer.y, 0), pointer.x)
+
+// A video steps through the beats. On a page, the reader's buttons take this param over.
+bind beat = min(floor(time / 3), 9)
+
+// For the readout: what this P closes for.
+let ratio = sin(theta / 2)
+let ring_count = tau / theta
+let zoom_count = pi / atan2(F.y, F.x)

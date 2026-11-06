@@ -68,10 +68,29 @@ pub enum Item {
         offset: Option<Expr>,
         line: usize,
     },
+    /// Opens a beat: a discrete step of a construction, with what it shows inside.
+    Beat {
+        caption: String,
+        tags: Vec<String>,
+    },
+    EndBeat,
+    /// Tags the marks the statement before it made.
+    Tag(Vec<String>),
+    /// Dragging a mark sets a param. The expression is the explicit inverse from the
+    /// pointer to the param, and the param's range is the constraint.
+    Handle {
+        mark: String,
+        param: String,
+        inverse: Expr,
+        line: usize,
+    },
     Viewport {
-        x: [Expr; 2],
-        y: [Expr; 2],
+        x: Option<[Expr; 2]>,
+        y: Option<[Expr; 2]>,
         width: Option<Expr>,
+        height: Option<Expr>,
+        fit: Vec<String>,
+        pad: Option<Expr>,
     },
     Style(StyleRule),
 }
@@ -93,6 +112,8 @@ pub enum CurveSyntax {
         point: Expr,
         range: [Expr; 2],
     },
+    /// A construction's value, such as `circle(O, A)` or `ray(O, B)`.
+    Value(Expr),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -114,7 +135,9 @@ pub struct StyleRule {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Selector {
+    /// A mark's name or type. Empty for a selector of tags alone.
     pub target: String,
+    pub tags: Vec<String>,
     pub facet: Option<String>,
 }
 
@@ -282,16 +305,19 @@ struct Parser {
 }
 
 /// Builtin names in source, and their MathJSON heads. Anything else is left under
-/// its own name for `compile` to resolve as a user function.
-const FUNCTIONS: [(&str, &str); 21] = [
+/// its own name for `compile` to resolve as a user function. `docs/language.md` must
+/// describe every one, and a test holds it to that.
+pub const FUNCTIONS: [(&str, &str); 31] = [
     ("sqrt", "Sqrt"),
     ("sin", "Sin"),
     ("cos", "Cos"),
     ("tan", "Tan"),
+    ("acos", "Arccos"),
     ("exp", "Exp"),
     ("ln", "Ln"),
     ("abs", "Abs"),
     ("sign", "Sign"),
+    ("floor", "Floor"),
     ("atan2", "Arctan2"),
     ("oklch", "Oklch"),
     ("rgb", "Rgb"),
@@ -302,9 +328,17 @@ const FUNCTIONS: [(&str, &str); 21] = [
     ("clamp", "Clamp"),
     ("mod", "Mod"),
     ("smoothstep", "Smoothstep"),
+    ("reveal", "Reveal"),
     ("length", "Length"),
     ("dist", "Distance"),
     ("dot", "Dot"),
+    ("midpoint", "Midpoint"),
+    ("circle", "Circle"),
+    ("line", "Line"),
+    ("ray", "Ray"),
+    ("perpendicular", "Perpendicular"),
+    ("intersect", "Intersect"),
+    ("mirror", "Mirror"),
 ];
 
 impl Parser {
@@ -369,77 +403,134 @@ impl Parser {
         let mut name = None;
         let mut items = Vec::new();
         while *self.peek() != Tok::Eof {
-            let line = self.line();
-            let word = self.ident("a statement")?;
-            match word.as_str() {
-                "doc" => {
-                    let mut full = self.ident("a document name")?;
-                    while self.eat("-") {
-                        full.push('-');
-                        full.push_str(&self.ident("a document name")?);
-                    }
-                    name = Some(full);
-                }
-                "let" => {
-                    let name = self.ident("a name")?;
-                    self.expect("=")?;
-                    let expr = self.expr()?;
-                    items.push(Item::Let { name, expr, line });
-                }
-                "fn" => items.push(self.function(line)?),
-                "param" => items.push(self.param(line)?),
-                "bind" => {
-                    let name = self.ident("a param")?;
-                    self.expect("=")?;
-                    let expr = self.expr()?;
-                    items.push(Item::Bind { name, expr, line });
-                }
-                "duration" => items.push(Item::Duration(self.expr()?)),
-                "curve" => items.push(self.curve(line)?),
-                "segment" | "path" | "polygon" => {
-                    let name = self.ident("a name")?;
-                    self.expect("=")?;
-                    let points = self.expr_list()?;
-                    let closed = word == "polygon";
-                    items.push(Item::Segment {
-                        name,
-                        points,
-                        closed,
-                        line,
-                    });
-                }
-                "rightangle" => {
-                    let name = self.ident("a name")?;
-                    self.expect("=")?;
-                    let points = self.expr_list()?;
-                    self.keyword("size")?;
-                    let size = self.expr()?;
-                    let [a, b, c] = <[Expr; 3]>::try_from(points)
-                        .map_err(|_| Error::at(line, 1, "`rightangle` takes three points"))?;
-                    items.push(Item::RightAngle {
-                        name,
-                        points: [a, b, c],
-                        size,
-                        line,
-                    });
-                }
-                "region" => items.push(self.region(line)?),
-                "dot" => {
-                    let mut names = vec![self.ident("a point")?];
-                    while self.eat(",") {
-                        names.push(self.ident("a point")?);
-                    }
-                    items.push(Item::Dots { names, line });
-                }
-                "label" => items.push(self.label(line)?),
-                "viewport" => items.push(self.viewport()?),
-                "style" => items.push(Item::Style(self.style(line)?)),
-                other => {
-                    return Err(Error::at(line, 1, format!("unknown statement `{other}`")));
-                }
-            }
+            self.statement(&mut name, &mut items)?;
         }
         Ok(Document { name, items })
+    }
+
+    fn statement(&mut self, name: &mut Option<String>, items: &mut Vec<Item>) -> Result<(), Error> {
+        let line = self.line();
+        let word = self.ident("a statement")?;
+        match word.as_str() {
+            "doc" => {
+                let mut full = self.ident("a document name")?;
+                while self.eat("-") {
+                    full.push('-');
+                    full.push_str(&self.ident("a document name")?);
+                }
+                *name = Some(full);
+            }
+            "let" => {
+                let name = self.ident("a name")?;
+                self.expect("=")?;
+                let expr = self.expr()?;
+                items.push(Item::Let { name, expr, line });
+            }
+            "fn" => items.push(self.function(line)?),
+            "param" => items.push(self.param(line)?),
+            "bind" => {
+                let name = self.ident("a param")?;
+                self.expect("=")?;
+                let expr = self.expr()?;
+                items.push(Item::Bind { name, expr, line });
+            }
+            "duration" => items.push(Item::Duration(self.expr()?)),
+            "curve" => items.push(self.curve(line)?),
+            "segment" | "path" | "polygon" => {
+                let name = self.ident("a name")?;
+                self.expect("=")?;
+                let points = self.expr_list()?;
+                let closed = word == "polygon";
+                items.push(Item::Segment {
+                    name,
+                    points,
+                    closed,
+                    line,
+                });
+            }
+            "rightangle" => {
+                let name = self.ident("a name")?;
+                self.expect("=")?;
+                let points = self.expr_list()?;
+                self.keyword("size")?;
+                let size = self.expr()?;
+                let [a, b, c] = <[Expr; 3]>::try_from(points)
+                    .map_err(|_| Error::at(line, 1, "`rightangle` takes three points"))?;
+                items.push(Item::RightAngle {
+                    name,
+                    points: [a, b, c],
+                    size,
+                    line,
+                });
+            }
+            "region" => items.push(self.region(line)?),
+            "dot" => {
+                let mut names = vec![self.ident("a point")?];
+                while self.eat(",") {
+                    names.push(self.ident("a point")?);
+                }
+                items.push(Item::Dots { names, line });
+            }
+            "label" => items.push(self.label(line)?),
+            "handle" => {
+                let mark = self.ident("a mark")?;
+                self.keyword("sets")?;
+                let param = self.ident("a param")?;
+                self.expect("=")?;
+                let inverse = self.expr()?;
+                items.push(Item::Handle {
+                    mark,
+                    param,
+                    inverse,
+                    line,
+                });
+            }
+            "beat" => {
+                let caption = match self.bump() {
+                    Tok::Str(text) => text,
+                    other => {
+                        return Err(Error::at(
+                            line,
+                            1,
+                            format!("expected a caption, found {other:?}"),
+                        ));
+                    }
+                };
+                let tags = self.tags()?;
+                self.expect("{")?;
+                items.push(Item::Beat { caption, tags });
+                while !self.eat("}") {
+                    if *self.peek() == Tok::Eof {
+                        return Err(self.error("this `beat` isn't closed"));
+                    }
+                    self.statement(name, items)?;
+                }
+                items.push(Item::EndBeat);
+            }
+            "viewport" => items.push(self.viewport()?),
+            "style" => items.push(Item::Style(self.style(line)?)),
+            other => {
+                return Err(Error::at(line, 1, format!("unknown statement `{other}`")));
+            }
+        }
+        let tags = self.tags()?;
+        if !tags.is_empty() {
+            items.push(Item::Tag(tags));
+        }
+        Ok(())
+    }
+
+    /// An optional `tag a, b`.
+    fn tags(&mut self) -> Result<Vec<String>, Error> {
+        if !matches!(self.peek(), Tok::Ident(w) if w == "tag") {
+            return Ok(Vec::new());
+        }
+        self.bump();
+        let mut tags = vec![self.ident("a tag")?];
+        while self.eat(",") {
+            tags.push(self.ident("a tag")?);
+        }
+        Ok(tags)
     }
 
     fn expr_list(&mut self) -> Result<Vec<Expr>, Error> {
@@ -504,6 +595,7 @@ impl Parser {
     fn curve(&mut self, line: usize) -> Result<Item, Error> {
         let name = self.ident("a curve name")?;
         self.expect("=")?;
+        let before = self.pos;
         let kind = self.ident("a curve form")?;
         let form = match kind.as_str() {
             "implicit" => {
@@ -535,8 +627,10 @@ impl Parser {
                     range: self.range()?,
                 }
             }
-            other => {
-                return Err(Error::at(line, 1, format!("unknown curve form `{other}`")));
+            _ => {
+                // Anything else is an expression: a construction's value.
+                self.pos = before;
+                CurveSyntax::Value(self.expr()?)
             }
         };
         Ok(Item::Curve { name, form, line })
@@ -602,45 +696,66 @@ impl Parser {
             self.bump();
         }
         self.expect("{")?;
-        let (mut x, mut y, mut width) = (None, None, None);
+        let (mut x, mut y, mut width, mut height, mut pad) = (None, None, None, None, None);
+        let mut fit = Vec::new();
         while !self.eat("}") {
-            let axis = self.ident("`x` or `y`")?;
+            let prop = self.ident("a viewport property")?;
             self.expect(":")?;
-            if axis == "width" {
-                width = Some(self.expr()?);
-                if !self.eat(",") {
-                    self.eat(";");
+            match prop.as_str() {
+                "x" => x = Some(self.range()?),
+                "y" => y = Some(self.range()?),
+                "width" => width = Some(self.expr()?),
+                "height" => height = Some(self.expr()?),
+                "pad" => pad = Some(self.expr()?),
+                "fit" => {
+                    while matches!(self.peek(), Tok::Ident(_)) {
+                        fit.push(self.ident("a mark")?);
+                    }
                 }
-                continue;
-            }
-            let lo = self.expr()?;
-            self.expect("..")?;
-            let hi = self.expr()?;
-            match axis.as_str() {
-                "x" => x = Some([lo, hi]),
-                "y" => y = Some([lo, hi]),
-                other => return Err(self.error(format!("unknown viewport axis `{other}`"))),
+                other => return Err(self.error(format!("unknown viewport property `{other}`"))),
             }
             if !self.eat(",") {
                 self.eat(";");
             }
         }
-        match (x, y) {
-            (Some(x), Some(y)) => Ok(Item::Viewport { x, y, width }),
-            _ => Err(self.error("a viewport needs both `x` and `y`")),
+        if fit.is_empty() && (x.is_none() || y.is_none()) {
+            return Err(self.error("a viewport needs both `x` and `y`, or `fit`"));
         }
+        Ok(Item::Viewport {
+            x,
+            y,
+            width,
+            height,
+            fit,
+            pad,
+        })
     }
 
     fn style(&mut self, line: usize) -> Result<StyleRule, Error> {
         let mut selectors = Vec::new();
         loop {
-            let target = self.ident("a selector")?;
+            let target = if matches!(self.peek(), Tok::Ident(_)) {
+                self.ident("a selector")?
+            } else {
+                String::new()
+            };
+            let mut tags = Vec::new();
+            while self.eat(".") {
+                tags.push(self.ident("a tag")?);
+            }
+            if target.is_empty() && tags.is_empty() {
+                return Err(self.error("expected a selector"));
+            }
             let facet = if self.eat("::") {
                 Some(self.ident("a facet")?)
             } else {
                 None
             };
-            selectors.push(Selector { target, facet });
+            selectors.push(Selector {
+                target,
+                tags,
+                facet,
+            });
             if !self.eat(",") {
                 break;
             }
@@ -810,9 +925,12 @@ mod tests {
         assert_eq!(
             doc.items[0],
             Item::Viewport {
-                x: [Expr::Num(-2.0), Expr::Num(2.0)],
-                y: [Expr::Num(-1.5), Expr::Num(1.5)],
+                x: Some([Expr::Num(-2.0), Expr::Num(2.0)]),
+                y: Some([Expr::Num(-1.5), Expr::Num(1.5)]),
                 width: None,
+                height: None,
+                fit: Vec::new(),
+                pad: None,
             }
         );
     }
@@ -849,6 +967,32 @@ mod tests {
         )
         .unwrap();
         assert_eq!(doc.items.len(), 10);
+    }
+
+    #[test]
+    fn beats_tags_and_handles_parse() {
+        let doc = parse(
+            "viewport { fit: a b, pad: 0.1, width: 560, height: 400 }
+             beat \"Start\" tag blue {
+               let O = (0, 0)
+               curve c = circle(O, (1, 0)) tag aux, thin
+             }
+             handle P sets a = pointer.x
+             style circle.blue::inside, .aux, c { fill: white }",
+        )
+        .unwrap();
+        assert!(matches!(&doc.items[1], Item::Beat { tags, .. } if tags == &["blue"]));
+        assert!(matches!(&doc.items[4], Item::Tag(t) if t.len() == 2));
+        assert!(matches!(doc.items[5], Item::EndBeat));
+        assert!(matches!(&doc.items[6], Item::Handle { mark, .. } if mark == "P"));
+        let Item::Style(rule) = &doc.items[7] else {
+            panic!()
+        };
+        assert_eq!(rule.selectors[0].target, "circle");
+        assert_eq!(rule.selectors[0].tags, ["blue"]);
+        assert_eq!(rule.selectors[0].facet.as_deref(), Some("inside"));
+        assert_eq!(rule.selectors[1].target, "");
+        assert_eq!(rule.selectors[1].tags, ["aux"]);
     }
 
     #[test]

@@ -97,7 +97,10 @@ fn load(args: &Args) -> Result<Figure, Box<dyn Error>> {
 /// video encoders need that.
 fn height_for(figure: &Figure, width: u32) -> u32 {
     let view = &figure.scene.viewport;
-    let aspect = (view.y[1] - view.y[0]) / (view.x[1] - view.x[0]);
+    let aspect = match (view.design_width, view.design_height) {
+        (Some(w), Some(h)) => h / w,
+        _ => (view.y[1] - view.y[0]) / (view.x[1] - view.x[0]),
+    };
     let height = (width as f64 * aspect).round() as u32;
     height + height % 2
 }

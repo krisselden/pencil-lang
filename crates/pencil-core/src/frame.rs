@@ -9,7 +9,7 @@ use crate::stroke;
 use crate::style::{Font, MarkStyle};
 
 /// Sizes of the uniform arrays in `wgsl.rs`.
-pub const VALUE_VEC4S: usize = 32;
+pub const VALUE_VEC4S: usize = 64;
 pub const GEOMETRY_VEC4S: usize = 512;
 
 pub const DEFAULT_LABEL_SIZE: f64 = 17.0;
@@ -59,6 +59,8 @@ pub struct Prepared {
     pub paper: [f64; 3],
     /// Device pixels per style pixel.
     pub dpr: f64,
+    /// This frame's world window, which a `fit` viewport computes.
+    pub view: Viewport,
 }
 
 /// Device pixels per style pixel, for a figure that declares a design width.
@@ -145,6 +147,121 @@ pub fn polygon_distance(geometry: &[f32], region: usize, px: f64, py: f64) -> (f
     (sign * rho, n)
 }
 
+/// The world window for a frame. A `fit` viewport bounds its marks at the values they'd
+/// have with no handle dragged, so dragging a point doesn't rescale the figure under the
+/// pointer, while other params, such as a slider's, still can.
+pub fn view_for(
+    figure: &Figure,
+    inputs: &Inputs,
+    width: u32,
+    height: u32,
+) -> Result<Viewport, Error> {
+    let view = &figure.scene.viewport;
+    if view.fit.is_empty() {
+        return Ok(view.clone());
+    }
+    let handles = &figure.scene.handles;
+    let held = Inputs {
+        time: inputs.time,
+        params: inputs
+            .params
+            .iter()
+            .filter(|(id, _)| !handles.iter().any(|h| h.param == *id))
+            .cloned()
+            .collect(),
+    };
+    let env = eval::frame_env(figure, &held)?;
+    let (mut x0, mut x1, mut y0, mut y1) = (
+        f64::INFINITY,
+        f64::NEG_INFINITY,
+        f64::INFINITY,
+        f64::NEG_INFINITY,
+    );
+    for [x, y, r] in &view.fit {
+        let (x, y, r) = (
+            eval::real(x, &env)?,
+            eval::real(y, &env)?,
+            eval::real(r, &env)?,
+        );
+        x0 = x0.min(x - r);
+        x1 = x1.max(x + r);
+        y0 = y0.min(y - r);
+        y1 = y1.max(y + r);
+    }
+    let aspect = height as f64 / width as f64;
+    let wide = (x1 - x0) * (1.0 + 2.0 * view.pad);
+    let tall = (y1 - y0) * (1.0 + 2.0 * view.pad);
+    let (vw, vh) = if tall / wide.max(1e-12) > aspect {
+        (tall / aspect, tall)
+    } else {
+        (wide, wide * aspect)
+    };
+    let (cx, cy) = ((x0 + x1) / 2.0, (y0 + y1) / 2.0);
+    Ok(Viewport {
+        x: [cx - vw / 2.0, cx + vw / 2.0],
+        y: [cy - vh / 2.0, cy + vh / 2.0],
+        ..view.clone()
+    })
+}
+
+/// The handle whose mark is nearest a device pixel, within `reach` device pixels.
+pub fn handle_at(
+    figure: &Figure,
+    inputs: &Inputs,
+    width: u32,
+    height: u32,
+    px: f64,
+    py: f64,
+    reach: f64,
+) -> Result<Option<usize>, Error> {
+    let env = eval::frame_env(figure, inputs)?;
+    let view = view_for(figure, inputs, width, height)?;
+    let mut best = None;
+    let mut nearest = reach;
+    for (i, handle) in figure.scene.handles.iter().enumerate() {
+        let (x, y) = pair(&handle.at, &env)?;
+        let (dx, dy) = device(x, y, &view, width, height);
+        let d = (dx - px).hypot(dy - py);
+        if d <= nearest {
+            nearest = d;
+            best = Some(i);
+        }
+    }
+    Ok(best)
+}
+
+/// What a drag sets a handle's param to: its explicit inverse at the pointer, kept within
+/// the param's range, which is what constrains the drag.
+pub fn drag_value(
+    figure: &Figure,
+    inputs: &Inputs,
+    handle: usize,
+    width: u32,
+    height: u32,
+    px: f64,
+    py: f64,
+) -> Result<(String, f64), Error> {
+    let handle = &figure.scene.handles[handle];
+    let mut env = eval::frame_env(figure, inputs)?;
+    let view = view_for(figure, inputs, width, height)?;
+    env.set(
+        "pointer.x",
+        view.x[0] + px / width as f64 * (view.x[1] - view.x[0]),
+    );
+    env.set(
+        "pointer.y",
+        view.y[1] - py / height as f64 * (view.y[1] - view.y[0]),
+    );
+    let value = eval::real(&handle.inverse, &env)?;
+    let range = figure
+        .scene
+        .params
+        .iter()
+        .find(|p| p.id == handle.param)
+        .map_or([f64::NEG_INFINITY, f64::INFINITY], |p| p.range);
+    Ok((handle.param.clone(), value.clamp(range[0], range[1])))
+}
+
 /// Computes a frame's CPU side. `dpr` is device pixels per style pixel.
 pub fn prepare(
     figure: &Figure,
@@ -155,7 +272,8 @@ pub fn prepare(
 ) -> Result<Prepared, Error> {
     let env = eval::frame_env(figure, inputs)?;
     let scene = &figure.scene;
-    let view = &scene.viewport;
+    let view_now = view_for(figure, inputs, width, height)?;
+    let view = &view_now;
 
     let values = scene
         .bindings
@@ -210,7 +328,7 @@ pub fn prepare(
         start += vertices.len();
     }
 
-    let strokes = stroke::build(figure, &env, width, height, dpr)?;
+    let strokes = stroke::build(figure, &env, view, width, height, dpr)?;
     let paper = match &figure.styles.paper {
         Some(paper) => eval::color(paper, &env)?,
         None => [1.0; 3],
@@ -256,6 +374,7 @@ pub fn prepare(
         labels,
         paper,
         dpr,
+        view: view_now,
     })
 }
 
@@ -288,6 +407,68 @@ mod tests {
         let p = prepare(&f, &Inputs::at(0.0), 400, 400, scale).unwrap();
         assert_eq!(p.labels[0].size, 20.0);
         assert_eq!(p.dpr, 2.0);
+    }
+
+    const DRAG: &str = "
+        viewport { x: -2..2, y: -2..2 }
+        param a = 1 in 0.2..1.85
+        let P = (cos(a), sin(a))
+        dot P
+        handle P sets a = atan2(max(pointer.y, 0), pointer.x)";
+
+    #[test]
+    fn a_drag_follows_the_inverse_within_the_range() {
+        let f = build(DRAG, &[]).unwrap();
+        let drag =
+            |px: f64, py: f64| drag_value(&f, &Inputs::at(0.0), 0, 400, 400, px, py).unwrap();
+        // At 45°: world (1, 1) is pixel (300, 100).
+        assert_eq!(drag(300.0, 100.0).0, "a");
+        assert!((drag(300.0, 100.0).1 - std::f64::consts::FRAC_PI_4).abs() < 1e-9);
+        // Past either end, the range holds it.
+        assert_eq!(drag(399.0, 199.0).1, 0.2);
+        assert_eq!(drag(1.0, 201.0).1, 1.85);
+    }
+
+    #[test]
+    fn handles_are_found_near_their_mark() {
+        let f = build(DRAG, &[]).unwrap();
+        let (x, y) = device(1f64.cos(), 1f64.sin(), &f.scene.viewport, 400, 400);
+        let at = |px, py| handle_at(&f, &Inputs::at(0.0), 400, 400, px, py, 10.0).unwrap();
+        assert_eq!(at(x + 5.0, y), Some(0));
+        assert_eq!(at(x + 30.0, y), None);
+    }
+
+    const FITTED: &str = "
+        viewport { fit: c, pad: 0 }
+        param a = 1 in 0..3
+        param b = 1 in 0..3
+        let P = (a * b, 0)
+        curve c = circle((0, 0), P)
+        dot P
+        handle P sets a = pointer.x";
+
+    #[test]
+    fn a_fit_view_ignores_dragged_params_but_follows_others() {
+        let f = build(FITTED, &[]).unwrap();
+        let with = |params: &[(&str, f64)]| {
+            let inputs = Inputs {
+                time: 0.0,
+                params: params.iter().map(|(n, v)| (n.to_string(), *v)).collect(),
+            };
+            view_for(&f, &inputs, 100, 100).unwrap().x
+        };
+        assert_eq!(with(&[]), [-1.0, 1.0]);
+        // `a` has a handle, so dragging it holds the view.
+        assert_eq!(with(&[("a", 2.0)]), [-1.0, 1.0]);
+        // `b` is a plain param, so the view fits it.
+        assert_eq!(with(&[("b", 2.0)]), [-2.0, 2.0]);
+    }
+
+    #[test]
+    fn a_fit_view_keeps_the_frames_shape() {
+        let f = build(FITTED, &[]).unwrap();
+        let v = view_for(&f, &Inputs::at(0.0), 200, 100).unwrap();
+        assert_eq!((v.x, v.y), ([-2.0, 2.0], [-1.0, 1.0]));
     }
 
     #[test]

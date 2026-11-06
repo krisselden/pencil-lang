@@ -194,11 +194,11 @@ pub fn lines(
 pub fn build(
     figure: &Figure,
     env: &Env,
+    view: &Viewport,
     width: u32,
     height: u32,
     dpr: f64,
 ) -> Result<Vec<Vec<f32>>, Error> {
-    let view = &figure.scene.viewport;
     let mut layers = Vec::new();
     for (mark, style) in figure.scene.marks.iter().zip(&figure.styles.marks) {
         if !style.stroke_is_line(&mark.form) {

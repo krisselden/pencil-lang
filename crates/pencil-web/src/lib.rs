@@ -18,6 +18,8 @@ pub struct Player {
     figure: Option<(Figure, FigurePipeline)>,
     /// Params a reader has taken over from their time bindings.
     params: Vec<(String, f64)>,
+    /// The handle being dragged.
+    grabbed: Option<usize>,
 }
 
 fn js_error(message: impl std::fmt::Display) -> JsError {
@@ -90,6 +92,7 @@ impl Player {
             backend,
             figure: None,
             params: Vec::new(),
+            grabbed: None,
         })
     }
 
@@ -107,6 +110,7 @@ impl Player {
         let pipeline = FigurePipeline::new(&self.device, &figure, self.config.format);
         self.figure = Some((figure, pipeline));
         self.params.clear();
+        self.grabbed = None;
         Ok(())
     }
 
@@ -121,6 +125,50 @@ impl Player {
         self.params.retain(|(id, _)| id != name);
     }
 
+    /// Starts a drag if a handle is within `reach` of this device pixel. Returns whether
+    /// one was.
+    pub fn grab(&mut self, time: f32, x: f64, y: f64, reach: f64) -> Result<bool, JsError> {
+        let inputs = self.inputs(time);
+        let Some((figure, _)) = &self.figure else {
+            return Ok(false);
+        };
+        self.grabbed = frame::handle_at(
+            figure,
+            &inputs,
+            self.config.width,
+            self.config.height,
+            x,
+            y,
+            reach,
+        )
+        .map_err(js_error)?;
+        Ok(self.grabbed.is_some())
+    }
+
+    /// Moves the grabbed handle to this device pixel, through its inverse.
+    pub fn drag(&mut self, time: f32, x: f64, y: f64) -> Result<(), JsError> {
+        let (Some(handle), Some((figure, _))) = (self.grabbed, &self.figure) else {
+            return Ok(());
+        };
+        let inputs = self.inputs(time);
+        let (param, value) = frame::drag_value(
+            figure,
+            &inputs,
+            handle,
+            self.config.width,
+            self.config.height,
+            x,
+            y,
+        )
+        .map_err(js_error)?;
+        self.set_param(&param, value);
+        Ok(())
+    }
+
+    pub fn release(&mut self) {
+        self.grabbed = None;
+    }
+
     /// The figure's params and duration, as JSON.
     pub fn info(&self) -> String {
         let Some((figure, _)) = &self.figure else {
@@ -132,7 +180,9 @@ impl Player {
                 "x": figure.scene.viewport.x,
                 "y": figure.scene.viewport.y,
                 "width": figure.scene.viewport.design_width,
+                "height": figure.scene.viewport.design_height,
             },
+            "beats": figure.scene.beats,
             "params": figure.scene.params.iter().map(|p| serde_json::json!({
                 "id": p.id, "min": p.range[0], "max": p.range[1],
             })).collect::<Vec<_>>(),

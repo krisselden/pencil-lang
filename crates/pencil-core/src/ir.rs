@@ -108,6 +108,20 @@ pub enum Form {
 pub struct Mark {
     pub id: String,
     pub form: Form,
+    /// Words selectors can match. A mark's type (`circle`, `line`, `dot`…) is one.
+    pub tags: Vec<String>,
+    /// Which beat this mark belongs to, if any.
+    pub beat: Option<usize>,
+}
+
+/// A mark a reader can drag. `inverse` maps `pointer.x`, `pointer.y` to the param, and
+/// the param's range is the constraint: an explicit inverse, in SPEC/16's terms.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Handle {
+    pub mark: String,
+    pub param: String,
+    pub at: [Expr; 2],
+    pub inverse: Expr,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -117,6 +131,11 @@ pub struct Viewport {
     /// The width the figure's `px` sizes were designed at. With one, sizes scale with
     /// the output, as an SVG's do with its viewBox. Without one, a `px` is a CSS pixel.
     pub design_width: Option<f64>,
+    pub design_height: Option<f64>,
+    /// Centers and radii the view fits each frame, ignoring any param a handle has
+    /// taken over, so a drag doesn't refit it. Empty for a fixed view.
+    pub fit: Vec<[Expr; 3]>,
+    pub pad: f64,
 }
 
 impl Default for Viewport {
@@ -125,6 +144,9 @@ impl Default for Viewport {
             x: [-2.0, 2.0],
             y: [-2.0, 2.0],
             design_width: None,
+            design_height: None,
+            fit: Vec::new(),
+            pad: 0.1,
         }
     }
 }
@@ -138,6 +160,8 @@ pub struct Scene {
     pub viewport: Viewport,
     /// How long one pass of the time bindings takes, for looping and video.
     pub duration: Option<f64>,
+    pub beats: Vec<String>,
+    pub handles: Vec<Handle>,
 }
 
 fn pair(p: &[Expr; 2]) -> Value {
@@ -185,11 +209,17 @@ impl Scene {
                     "kind": "label", "text": text, "at": pair(at), "offset": pair(offset),
                 }),
             };
-            json!({ "id": m.id, "form": form })
+            json!({ "id": m.id, "form": form, "tags": m.tags, "beat": m.beat })
         };
         json!({
             "doc": self.name,
             "duration": self.duration,
+            "beats": self.beats,
+            "handles": self.handles.iter().map(|h| json!({
+                "mark": h.mark,
+                "param": h.param,
+                "inverse": h.inverse.to_mathjson(),
+            })).collect::<Vec<_>>(),
             "params": self.params.iter().map(|p| json!({ "id": p.id, "range": p.range })).collect::<Vec<_>>(),
             "bindings": self.bindings.iter().map(|b| json!({
                 "id": b.id,
@@ -200,6 +230,9 @@ impl Scene {
                 "x": self.viewport.x,
                 "y": self.viewport.y,
                 "width": self.viewport.design_width,
+                "height": self.viewport.design_height,
+                "fit": self.viewport.fit.len(),
+                "pad": self.viewport.pad,
             },
         })
     }

@@ -11,6 +11,9 @@ Read in this order, with earlier files winning where they disagree:
    references are superseded as `goals.md` describes.
 3. `docs/design-notes.md`: background, including the overlap with the site.
 
+`docs/language.md` is the reference for the syntax, built-ins and language decisions. Add to it when
+the language changes: a test fails if a built-in, property or statement goes undocumented.
+
 ## Commands
 
 ```bash
@@ -20,7 +23,7 @@ cargo run -p pencil-cli -- check corpus/001-circle/circle.pen --style corpus/001
 cargo run -p pencil-cli -- render corpus/001-circle/circle.pen --style corpus/001-circle/bands.style --t 1.25 --out out/frame.png
 scripts/build-web.sh
 cargo run --release -p pencil-cli -- video corpus/003-unroll/unroll.pen --style corpus/003-unroll/blog.style --size 1280 --out out/unroll.mp4
-python3 -m http.server 8741   # then open /web/, /web/unroll.html or /web/strokes.html (add ?gl for WebGL2)
+python3 -m http.server 8741   # then open /web/, /web/unroll.html, /web/bounds.html, /web/strokes.html or /web/text.html (add ?gl for WebGL2)
 ```
 
 ## Layout
@@ -40,6 +43,9 @@ Two pairs must stay in step, and `pencil check` compares them: `eval::Frame::sha
 
 ## Working rules
 
+- **The math is the authority, not the blog.** The site sets the bar for look and feel, but its posts
+  can be drafts and its construction figures have had issues. When porting one, test the geometry
+  itself, and treat any match with the site as a comparison.
 - **Marks keep their form.** Don't normalize to one representation, because each form has its
   own fast path. Rendering hints go in styles, and can't change what a figure means.
 - **Description, style and rendering stay separate.** A scene says what is in the figure

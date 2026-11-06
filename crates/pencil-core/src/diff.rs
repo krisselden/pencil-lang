@@ -93,7 +93,11 @@ pub fn derivative(e: &Expr, var: &str) -> Result<Expr, Error> {
             }
             ("Ln", [a]) => div(d(a)?, a.clone()),
             ("Abs", [a]) => mul(app("Sign", vec![a.clone()]), d(a)?),
-            ("Sign", [_]) => Num(0.0),
+            ("Sign", [_]) | ("Floor", [_]) => Num(0.0),
+            ("Arccos", [a]) => neg(div(
+                d(a)?,
+                app("Sqrt", vec![sub(Num(1.0), power(a.clone(), 2.0))]),
+            )),
             ("Arctan2", [y, x]) => div(
                 sub(mul(x.clone(), d(y)?), mul(y.clone(), d(x)?)),
                 add(power(x.clone(), 2.0), power(y.clone(), 2.0)),
@@ -138,6 +142,7 @@ mod tests {
             "(x + 2) ^ (x / 2)",
             "2 ^ x",
             "-x^2",
+            "acos(x / 3)",
             "max(x^2, 1 - x)",
             "min(x^2, 1 - x)",
         ];

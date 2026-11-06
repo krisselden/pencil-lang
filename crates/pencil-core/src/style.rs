@@ -6,7 +6,7 @@
 //! negative side is inside. Later declarations win (SPEC/15's layers, without
 //! specificity).
 
-use crate::compile::{CONSTANTS, SIGNALS};
+use crate::compile::{BEAT_PARAM, CONSTANTS, SIGNALS};
 use crate::error::Error;
 use crate::ir::{Expr, Form, Scene};
 use crate::parse::{Document, Item};
@@ -15,6 +15,26 @@ use crate::parse::{Document, Item};
 pub const SELF_DIST: &str = "self.dist";
 /// Arc-length position along a stroke, 0 to 1. Only legal in `width`.
 pub const SELF_T: &str = "self.t";
+/// How many beats ago this mark's beat was: negative before it, 0 during it.
+pub const SELF_AGE: &str = "self.age";
+/// Every property a style can set. `docs/language.md` must describe each one, and a test
+/// holds it to that.
+pub const PROPERTIES: [&str; 14] = [
+    "fill",
+    "fill_opacity",
+    "stroke",
+    "width",
+    "dash",
+    "gap",
+    "cap",
+    "draw",
+    "blend",
+    "opacity",
+    "radius",
+    "size",
+    "halo",
+    "font",
+];
 pub const COLORS: [&str; 2] = ["white", "black"];
 
 /// The space a mark's edges blend in. The default is gamma-encoded sRGB, because
@@ -71,6 +91,8 @@ pub struct MarkStyle {
     pub cap: Cap,
     pub font: Font,
     pub opacity: Option<Expr>,
+    /// Scales only the fill, on top of `opacity`.
+    pub fill_opacity: Option<Expr>,
     /// A dot's radius in style pixels.
     pub radius: Option<Expr>,
     /// A label's text size in style pixels.
@@ -160,20 +182,37 @@ pub fn type_of(e: &Expr, names: &[&str], spatial: bool) -> Result<Ty, String> {
                 ("Oklch" | "Rgb", [Real, Real, Real]) => Ok(Color),
                 ("Hue", [Real]) => Ok(Color),
                 ("Mix", [Color, Color, Real]) => Ok(Color),
-                ("Mix" | "Clamp" | "Smoothstep", [Real, Real, Real]) => Ok(Real),
+                ("Mix" | "Clamp" | "Smoothstep" | "Reveal", [Real, Real, Real]) => Ok(Real),
                 (
                     "Add" | "Subtract" | "Multiply" | "Divide" | "Power" | "Min" | "Max" | "Mod"
                     | "Arctan2",
                     [Real, Real],
                 ) => Ok(Real),
                 (
-                    "Negate" | "Sqrt" | "Sin" | "Cos" | "Tan" | "Exp" | "Ln" | "Abs" | "Sign"
-                    | "Pixels",
+                    "Negate" | "Sqrt" | "Sin" | "Cos" | "Tan" | "Arccos" | "Exp" | "Ln" | "Abs"
+                    | "Sign" | "Floor" | "Pixels",
                     [Real],
                 ) => Ok(Real),
                 _ => Err(format!("`{head}` doesn't take {tys:?}")),
             }
         }
+    }
+}
+
+/// Replaces `self.age` with this mark's own expression: `beat` minus its beat's index.
+/// A mark outside any beat is always current. Done symbolically, so the runtime needs
+/// nothing new.
+fn with_age(e: &Expr, beat: Option<usize>) -> Expr {
+    match e {
+        Expr::Sym(s) if s == SELF_AGE => match beat {
+            Some(k) => Expr::app("Subtract", vec![Expr::sym(BEAT_PARAM), Expr::Num(k as f64)]),
+            None => Expr::Num(0.0),
+        },
+        Expr::App(head, args) => Expr::App(
+            head.clone(),
+            args.iter().map(|a| with_age(a, beat)).collect(),
+        ),
+        other => other.clone(),
     }
 }
 
@@ -201,101 +240,38 @@ pub fn resolve(scene: &Scene, sheets: &[Document]) -> Result<Styled, Error> {
                     }
                     continue;
                 }
-                let Some(index) = scene.marks.iter().position(|m| m.id == selector.target) else {
-                    return Err(at(format!("no mark named `{}`", selector.target)));
-                };
-                let form = &scene.marks[index].form;
-                let spatial_ok =
-                    matches!(form, Form::Field { .. } | Form::Region(_) | Form::Dot(_));
-                let target = &mut styled.marks[index];
-                for (prop, value) in &rule.decls {
-                    if let (None, "draw" | "blend" | "cap" | "font") =
-                        (selector.facet.as_deref(), prop.as_str())
-                    {
-                        let word = match value {
-                            Expr::Sym(word) => word.as_str(),
-                            _ => return Err(at(format!("`{prop}` needs a keyword"))),
-                        };
-                        match (prop.as_str(), word) {
-                            ("draw", "auto") => target.draw = Draw::Auto,
-                            ("draw", "line") => target.draw = Draw::Line,
-                            ("draw", "field") => {
-                                if !matches!(form, Form::Field { .. }) {
-                                    return Err(at(format!(
-                                        "`{}` has no field, so it can't use `draw: field`",
-                                        selector.target
-                                    )));
-                                }
-                                target.draw = Draw::Field;
-                            }
-                            ("blend", "linear") => target.blend = Blend::Linear,
-                            ("blend", "gamma") => target.blend = Blend::Gamma,
-                            ("cap", "butt") => target.cap = Cap::Butt,
-                            ("cap", "round") => target.cap = Cap::Round,
-                            ("font", "sans") => target.font = Font::Sans,
-                            ("font", "math") => target.font = Font::Math,
-                            _ => return Err(at(format!("`{prop}` can't be `{word}`"))),
-                        }
-                        continue;
+                let matches: Vec<usize> = scene
+                    .marks
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, m)| {
+                        (selector.target.is_empty()
+                            || m.id == selector.target
+                            || m.tags.contains(&selector.target))
+                            && selector.tags.iter().all(|t| m.tags.contains(t))
+                    })
+                    .map(|(i, _)| i)
+                    .collect();
+                if matches.is_empty() {
+                    let mut words = selector.target.clone();
+                    for tag in &selector.tags {
+                        words.push('.');
+                        words.push_str(tag);
                     }
-                    let measure = matches!(
-                        prop.as_str(),
-                        "width" | "dash" | "gap" | "opacity" | "radius" | "size" | "halo"
-                    );
-                    let mut scope = names.clone();
-                    if prop == "width" {
-                        scope.push(SELF_T);
-                    }
-                    let ty = type_of(value, &scope, !measure).map_err(&at)?;
-                    let want = if measure { Ty::Real } else { Ty::Color };
-                    if ty != want {
-                        return Err(at(format!("`{prop}` needs a {want:?}, found a {ty:?}")));
-                    }
-                    if !measure && !spatial_ok && uses(value, SELF_DIST) {
-                        return Err(at(format!(
-                            "`{}` has no distance, so it can't use `self.dist`",
-                            selector.target
-                        )));
-                    }
-                    let slot = match (selector.facet.as_deref(), prop.as_str()) {
-                        (Some("inside" | "negative"), "fill") => &mut target.negative,
-                        (Some("outside" | "positive"), "fill") => &mut target.positive,
-                        (None, "stroke") => &mut target.stroke,
-                        (None, "opacity") => &mut target.opacity,
-                        (None, "width" | "dash" | "gap" | "radius" | "size" | "halo") => {
-                            if !has_pixels(value) {
-                                return Err(at(format!("`{prop}` needs a unit, such as `2px`")));
-                            }
-                            match prop.as_str() {
-                                "width" => &mut target.width,
-                                "dash" => &mut target.dash,
-                                "gap" => &mut target.gap,
-                                "radius" => &mut target.radius,
-                                "size" => &mut target.size,
-                                _ => &mut target.halo,
-                            }
-                        }
-                        (None, "fill") => {
-                            if matches!(form, Form::Field { .. }) {
-                                return Err(at(
-                                    "`fill` needs a facet, such as `::inside`, for now".into(),
-                                ));
-                            }
-                            &mut target.negative
-                        }
-                        (Some(facet), _)
-                            if !matches!(facet, "inside" | "outside" | "negative" | "positive") =>
-                        {
-                            return Err(at(format!("unknown facet `::{facet}`")));
-                        }
-                        (Some(facet), prop) => {
-                            return Err(at(format!("`{prop}` doesn't apply to `::{facet}`")));
-                        }
-                        (None, prop) => {
-                            return Err(at(format!("unknown property `{prop}`")));
-                        }
-                    };
-                    *slot = Some(value.clone());
+                    return Err(at(format!("no mark named `{words}`")));
+                }
+                for index in matches {
+                    let mark = &scene.marks[index];
+                    apply(
+                        &mut styled.marks[index],
+                        &mark.form,
+                        mark.beat,
+                        &mark.id,
+                        selector.facet.as_deref(),
+                        &rule.decls,
+                        &names,
+                    )
+                    .map_err(&at)?;
                 }
             }
         }
@@ -309,6 +285,105 @@ pub fn resolve(scene: &Scene, sheets: &[Document]) -> Result<Styled, Error> {
         }
     }
     Ok(styled)
+}
+
+/// Applies a rule's declarations to one mark.
+fn apply(
+    target: &mut MarkStyle,
+    form: &Form,
+    beat: Option<usize>,
+    id: &str,
+    facet: Option<&str>,
+    decls: &[(String, Expr)],
+    names: &[&str],
+) -> Result<(), String> {
+    let spatial_ok = matches!(form, Form::Field { .. } | Form::Region(_) | Form::Dot(_));
+    for (prop, value) in decls {
+        if let (None, "draw" | "blend" | "cap" | "font") = (facet, prop.as_str()) {
+            let word = match value {
+                Expr::Sym(word) => word.as_str(),
+                _ => return Err(format!("`{prop}` needs a keyword")),
+            };
+            match (prop.as_str(), word) {
+                ("draw", "auto") => target.draw = Draw::Auto,
+                ("draw", "line") => target.draw = Draw::Line,
+                ("draw", "field") => {
+                    if !matches!(form, Form::Field { .. }) {
+                        return Err(format!(
+                            "`{id}` has no field, so it can't use `draw: field`"
+                        ));
+                    }
+                    target.draw = Draw::Field;
+                }
+                ("blend", "linear") => target.blend = Blend::Linear,
+                ("blend", "gamma") => target.blend = Blend::Gamma,
+                ("cap", "butt") => target.cap = Cap::Butt,
+                ("cap", "round") => target.cap = Cap::Round,
+                ("font", "sans") => target.font = Font::Sans,
+                ("font", "math") => target.font = Font::Math,
+                _ => return Err(format!("`{prop}` can't be `{word}`")),
+            }
+            continue;
+        }
+        let value = &with_age(value, beat);
+        let measure = matches!(
+            prop.as_str(),
+            "width" | "dash" | "gap" | "opacity" | "fill_opacity" | "radius" | "size" | "halo"
+        );
+        let mut scope = names.to_vec();
+        if prop == "width" {
+            scope.push(SELF_T);
+        }
+        let ty = type_of(value, &scope, !measure)?;
+        let want = if measure { Ty::Real } else { Ty::Color };
+        if ty != want {
+            return Err(format!("`{prop}` needs a {want:?}, found a {ty:?}"));
+        }
+        if !measure && !spatial_ok && uses(value, SELF_DIST) {
+            return Err(format!(
+                "`{id}` has no distance, so it can't use `self.dist`"
+            ));
+        }
+        let slot = match (facet, prop.as_str()) {
+            (Some("inside" | "negative"), "fill") => &mut target.negative,
+            (Some("outside" | "positive"), "fill") => &mut target.positive,
+            (None, "stroke") => &mut target.stroke,
+            (None, "opacity") => &mut target.opacity,
+            (None, "fill_opacity") => &mut target.fill_opacity,
+            (None, "width" | "dash" | "gap" | "radius" | "size" | "halo") => {
+                if !has_pixels(value) {
+                    return Err(format!("`{prop}` needs a unit, such as `2px`"));
+                }
+                match prop.as_str() {
+                    "width" => &mut target.width,
+                    "dash" => &mut target.dash,
+                    "gap" => &mut target.gap,
+                    "radius" => &mut target.radius,
+                    "size" => &mut target.size,
+                    _ => &mut target.halo,
+                }
+            }
+            (None, "fill") => {
+                if matches!(form, Form::Field { .. }) {
+                    return Err("`fill` needs a facet, such as `::inside`, for now".into());
+                }
+                &mut target.negative
+            }
+            (Some(facet), _)
+                if !matches!(facet, "inside" | "outside" | "negative" | "positive") =>
+            {
+                return Err(format!("unknown facet `::{facet}`"));
+            }
+            (Some(facet), prop) => {
+                return Err(format!("`{prop}` doesn't apply to `::{facet}`"));
+            }
+            (None, prop) => {
+                return Err(format!("unknown property `{prop}`"));
+            }
+        };
+        *slot = Some(value.clone());
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -442,6 +517,71 @@ mod tests {
             let err = styled(sheet).expect_err(sheet);
             assert!(err.message.contains(expected), "{sheet}: {err}");
         }
+    }
+
+    const BEATS: &str = "
+        let P = (0, 0)
+        beat \"One\" tag blue {
+          curve a = circle(P, (1, 0))
+          curve b = line(P, (1, 0)) tag aux
+        }
+        beat \"Two\" tag red {
+          curve c = circle(P, (2, 0))
+        }";
+
+    #[test]
+    fn selectors_match_names_types_and_tags() {
+        let f = build(BEATS, &["style circle { stroke: white }"]).unwrap();
+        let has = |i: usize| f.styles.marks[i].stroke.is_some();
+        assert!(has(0) && !has(1) && has(2), "by type");
+
+        let f = build(BEATS, &["style .aux { stroke: white }"]).unwrap();
+        let has = |i: usize| f.styles.marks[i].stroke.is_some();
+        assert!(!has(0) && has(1) && !has(2), "by tag");
+
+        let f = build(BEATS, &["style circle.blue { stroke: white }"]).unwrap();
+        let has = |i: usize| f.styles.marks[i].stroke.is_some();
+        assert!(has(0) && !has(1) && !has(2), "conjunction");
+
+        let f = build(BEATS, &["style c, b { stroke: white }"]).unwrap();
+        let has = |i: usize| f.styles.marks[i].stroke.is_some();
+        assert!(!has(0) && has(1) && has(2), "names");
+
+        let err = build(BEATS, &["style .purple { stroke: white }"]).unwrap_err();
+        assert!(err.message.contains("no mark named `.purple`"), "{err}");
+    }
+
+    /// One rule, a different expression per mark: each mark's own beat is substituted.
+    #[test]
+    fn self_age_becomes_each_marks_own_expression() {
+        let f = build(
+            BEATS,
+            &["style circle { opacity: reveal(self.age, 1, 0.5) }"],
+        )
+        .unwrap();
+        let of = |i: usize| {
+            f.styles.marks[i]
+                .opacity
+                .clone()
+                .unwrap()
+                .to_mathjson()
+                .to_string()
+        };
+        assert!(of(0).contains(r#"["Subtract","beat",0.0]"#), "{}", of(0));
+        assert!(of(2).contains(r#"["Subtract","beat",1.0]"#), "{}", of(2));
+    }
+
+    #[test]
+    fn self_age_is_zero_outside_any_beat() {
+        let doc = "curve c = circle((0, 0), (1, 0))";
+        let f = build(doc, &["style c { opacity: reveal(self.age, 1, 0.5) }"]).unwrap();
+        let o = f.styles.marks[0]
+            .opacity
+            .clone()
+            .unwrap()
+            .to_mathjson()
+            .to_string();
+        assert!(o.starts_with(r#"["Reveal",0.0,"#), "{o}");
     }
 
     #[test]

@@ -40,6 +40,10 @@ fn powi(x: f32, n: f32) -> f32 {
 }
 
 fn fmod(x: f32, y: f32) -> f32 { return x - y * floor(x / y); }
+fn if_nonnegative(x: f32, a: f32, b: f32) -> f32 { return select(b, a, x >= 0.0); }
+fn reveal(age: f32, now: f32, later: f32) -> f32 {
+    return select(select(later, now, age < 0.5), 0.0, age < -0.5);
+}
 fn ease(a: f32, b: f32, t: f32) -> f32 {
     let x = clamp((t - a) / (b - a), 0.0, 1.0);
     return x * x * (3.0 - 2.0 * x);
@@ -249,6 +253,10 @@ pub fn emit_expr(e: &Expr) -> String {
             ("Sin", _) => call("sin", args),
             ("Cos", _) => call("cos", args),
             ("Tan", _) => call("tan", args),
+            ("Arccos", _) => call("acos", args),
+            ("Floor", _) => call("floor", args),
+            ("IfNonnegative", _) => call("if_nonnegative", args),
+            ("Reveal", _) => call("reveal", args),
             ("Exp", _) => call("exp", args),
             ("Ln", _) => call("log", args),
             ("Abs", _) => call("abs", args),
@@ -280,9 +288,8 @@ fn opacity_of(style: &MarkStyle) -> String {
 }
 
 pub fn emit(figure: &Figure) -> String {
-    let view = &figure.scene.viewport;
     let mut out = format!(
-        "struct Uniforms {{ time: f32, width: f32, height: f32, dpr: f32, values: array<vec4<f32>, {VALUE_VEC4S}> }}\n\
+        "struct Uniforms {{ time: f32, width: f32, height: f32, dpr: f32, view: vec4<f32>, values: array<vec4<f32>, {VALUE_VEC4S}> }}\n\
          @group(0) @binding(0) var<uniform> u: Uniforms;\n\
          @group(0) @binding(1) var coverage: texture_2d_array<f32>;\n\
          @group(0) @binding(2) var<uniform> geometry: array<vec4<f32>, {GEOMETRY_VEC4S}>;\n\n\
@@ -297,19 +304,10 @@ pub fn emit(figure: &Figure) -> String {
     out.push_str(
         "@fragment\nfn fs(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f32> {\n",
     );
-    out.push_str(&format!(
-        "    let sx = {};\n    let sy = {};\n",
-        literal(view.x[1] - view.x[0]),
-        literal(view.y[1] - view.y[0]),
-    ));
-    out.push_str(&format!(
-        "    let world_x = {} + position.x / u.width * sx;\n",
-        literal(view.x[0]),
-    ));
-    out.push_str(&format!(
-        "    let world_y = {} - position.y / u.height * sy;\n",
-        literal(view.y[1]),
-    ));
+    // The view arrives as a uniform, since a `fit` viewport changes it per frame.
+    out.push_str("    let sx = u.view.y - u.view.x;\n    let sy = u.view.w - u.view.z;\n");
+    out.push_str("    let world_x = u.view.x + position.x / u.width * sx;\n");
+    out.push_str("    let world_y = u.view.w - position.y / u.height * sy;\n");
     out.push_str("    let pixel = (sx / u.width + sy / u.height) / 2.0;\n");
     for (i, binding) in figure.scene.bindings.iter().enumerate() {
         out.push_str(&format!(
@@ -368,10 +366,8 @@ pub fn emit(figure: &Figure) -> String {
             }
             Form::Dot(at) => {
                 out.push_str(&format!(
-                    "        let center = vec2<f32>(({} - ({})) / sx * u.width, ({} - {}) / sy * u.height);\n",
+                    "        let center = vec2<f32>(({} - u.view.x) / sx * u.width, (u.view.w - {}) / sy * u.height);\n",
                     emit_expr(&at[0]),
-                    literal(view.x[0]),
-                    literal(view.y[1]),
                     emit_expr(&at[1]),
                 ));
                 let radius = match &style.radius {
@@ -390,6 +386,10 @@ pub fn emit(figure: &Figure) -> String {
             _ => measured = false,
         }
         out.push_str(&format!("        let opacity = {};\n", opacity_of(style)));
+        let fill_opacity = match &style.fill_opacity {
+            Some(o) => format!("opacity * clamp({}, 0.0, 1.0)", emit_expr(o)),
+            None => "opacity".to_string(),
+        };
         let gamma = style.blend == Blend::Gamma;
         let into = |e: String| if gamma { format!("encode3({e})") } else { e };
         let back = |e: String| if gamma { format!("decode3({e})") } else { e };
@@ -397,16 +397,18 @@ pub fn emit(figure: &Figure) -> String {
             out.push_str("        let negative = box_coverage(-dist_px, normal);\n");
             out.push_str("        var covered = 0.0;\n        var filled = vec3<f32>(0.0);\n");
             if let Some(fill) = &style.negative {
-                out.push_str("        covered += negative * opacity;\n");
+                out.push_str(&format!("        covered += negative * {fill_opacity};\n"));
                 out.push_str(&format!(
-                    "        filled += {} * negative * opacity;\n",
+                    "        filled += {} * negative * {fill_opacity};\n",
                     into(emit_expr(fill))
                 ));
             }
             if let Some(fill) = &style.positive {
-                out.push_str("        covered += (1.0 - negative) * opacity;\n");
                 out.push_str(&format!(
-                    "        filled += {} * (1.0 - negative) * opacity;\n",
+                    "        covered += (1.0 - negative) * {fill_opacity};\n"
+                ));
+                out.push_str(&format!(
+                    "        filled += {} * (1.0 - negative) * {fill_opacity};\n",
                     into(emit_expr(fill)),
                 ));
             }
@@ -495,7 +497,8 @@ mod tests {
             style c          { stroke: black; width: 2px; draw: field; blend: linear }
             style d::negative { fill: black }
             style d          { stroke: black; width: 1px + 2px * self.t; dash: 4px }
-            style e          { stroke: black; width: 2px; opacity: smoothstep(0, 1, a) }
+            style e          { stroke: black; width: 2px; opacity: smoothstep(0, 1, a); fill_opacity: 0.5 }
+            style e::inside  { fill: white }
             style f, g       { stroke: black; width: 2px }
             style h          { fill: mix(white, black, clamp(self.dist, 0, 1)); stroke: black }
             style P          { fill: black; radius: 4px; stroke: white; width: 1px }";

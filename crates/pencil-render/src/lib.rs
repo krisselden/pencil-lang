@@ -16,13 +16,17 @@ pub struct FrameInputs {
 }
 
 impl FrameInputs {
-    fn bytes(self, values: &[f32]) -> Vec<u8> {
+    fn bytes(self, prepared: &Prepared) -> Vec<u8> {
         let mut bytes = Vec::with_capacity(UNIFORM_BYTES);
         bytes.extend_from_slice(&self.time.to_le_bytes());
         bytes.extend_from_slice(&(self.width as f32).to_le_bytes());
         bytes.extend_from_slice(&(self.height as f32).to_le_bytes());
         bytes.extend_from_slice(&self.dpr.to_le_bytes());
-        for v in values {
+        let view = &prepared.view;
+        for v in [view.x[0], view.x[1], view.y[0], view.y[1]] {
+            bytes.extend_from_slice(&(v as f32).to_le_bytes());
+        }
+        for v in &prepared.values {
             bytes.extend_from_slice(&v.to_le_bytes());
         }
         bytes.resize(UNIFORM_BYTES, 0);
@@ -30,7 +34,7 @@ impl FrameInputs {
     }
 }
 
-const UNIFORM_BYTES: usize = 16 + VALUE_VEC4S * 16;
+const UNIFORM_BYTES: usize = 32 + VALUE_VEC4S * 16;
 const GEOMETRY_BYTES: usize = GEOMETRY_VEC4S * 16;
 
 const COVERAGE_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::R8Unorm;
@@ -275,7 +279,7 @@ impl FigurePipeline {
         inputs: FrameInputs,
         prepared: &Prepared,
     ) {
-        queue.write_buffer(&self.uniforms, 0, &inputs.bytes(&prepared.values));
+        queue.write_buffer(&self.uniforms, 0, &inputs.bytes(prepared));
         let geometry: Vec<u8> = prepared
             .geometry
             .iter()

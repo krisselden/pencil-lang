@@ -67,6 +67,32 @@ The same circle at 1024px on an M1 Pro, CPU per frame in WASM (GPU time not meas
 So tracing costs about 50× what sampling does for the same result. `polar` and function
 graphs aren't forms yet. Both reduce to parametric, so they'd be cheap additions.
 
+**Step 3: `BoundsConstruction` from the site. Done 2026-11-05.** `corpus/004-bounds/bounds.pen` and
+`web/bounds.html`: ten beats, a constrained drag, a `q` slider and a case choice that set θ, and a view
+that refits on those but not during a drag.
+
+- **The param model held.** A beat is a discrete param, `q` sets θ through its binding, and a drag
+  overrides that binding, which is the same mechanism as time and the slider in `Unroll`. The same
+  file also steps through its beats in an MP4, because `beat` is bound to time.
+- **Constructions stay symbolic.** `circle`, `ray`, `intersect`, `mirror` and `perpendicular` lower to
+  named scalars, and circles get exact distance fields. The pedal curve is written in the language.
+- **The blog's figure is a comparison, not the source.** That post is a draft, and Kris reports its
+  radio button between p = 0 and q = 2p has an issue that this version doesn't. At q = 8, q = 2p,
+  step 10 the two agree on the readout, and opacities, widths and dashes come from its computed styles.
+  The authority for this figure is the math, in the tests below.
+- **The geometry is tested, not just the drawing:** neighbors touch the circle at 1 within 1e-9 at six
+  angles, every circle keeps the ratio k to its distance from 0, the closing formula is right for q = 4
+  to 12, and every binding stays finite across θ's whole range.
+- **GPU matches the CPU oracle** within 1/255 at six times.
+- **CPU per frame is about 0.85 ms in WASM** at 1530px, with 239 segments. GPU time wasn't measured, and
+  hidden marks still cost shader time because their opacity is computed per pixel.
+- **No `Option` yet.** An intersection that doesn't exist becomes NaN instead of vanishing. Here the
+  range keeps everything defined, which a test checks, but SPEC's `Option` and branch tracking are needed
+  for figures where points really appear and vanish.
+- **Not done:** moving P with the keyboard, which the blog has, and a touch check on a real phone.
+
+Syntax, built-ins and language decisions now live in `docs/language.md`.
+
 ## Text without a page
 
 Compared on 2026-11-05 in `lab/text`, with results on `web/text.html`. 269 glyphs at 1024×460 on an
@@ -120,8 +146,9 @@ Proposed by Claude and not contested so far. Change them freely.
 
 - `.pen` files are text, written by Kris and Claude. The plan does also want an editor
   eventually.
-- `krisselden_com` is the corpus and the quality bar. Its figures stay untouched until
-  Pencil has proved itself.
+- `krisselden_com` is the corpus and the quality bar for look and feel, but not the authority on
+  whether a figure is right: that's the geometry. Its figures stay untouched until Pencil has
+  proved itself.
 - Pencil isn't being built as a product for now.
 - Third-party embeds and the attribution footer are deferred.
 

@@ -1,4 +1,5 @@
 {
+  "beats": [],
   "bindings": [
     {
       "expr": [
@@ -18,8 +19,10 @@
   ],
   "doc": "circle",
   "duration": null,
+  "handles": [],
   "marks": [
     {
+      "beat": null,
       "form": {
         "field": [
           "Subtract",
@@ -60,11 +63,17 @@
           "y"
         ]
       },
-      "id": "c"
+      "id": "c",
+      "tags": [
+        "curve"
+      ]
     }
   ],
   "params": [],
   "viewport": {
+    "fit": 0,
+    "height": null,
+    "pad": 0.1,
     "width": null,
     "x": [
       -2.0,
