@@ -32,6 +32,8 @@ python3 -m http.server 8741   # then open /web/, /web/unroll.html or /web/stroke
   `video`.
 - `crates/pencil-web`, `web/`: the WASM host and live-reloading playground.
 - `corpus/`: figures and their golden IR, which are the contract.
+- `lab/text`: its own workspace, a test bench for text renderers. `cargo run --release` there writes
+  images and results for `/web/text.html`.
 
 Two pairs must stay in step, and `pencil check` compares them: `eval::Frame::shade` with
 `wgsl::emit`, and `stroke::segment_coverage` with `wgsl::COVERAGE_SHADER`.

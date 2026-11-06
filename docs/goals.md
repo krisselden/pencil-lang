@@ -67,6 +67,34 @@ The same circle at 1024px on an M1 Pro, CPU per frame in WASM (GPU time not meas
 So tracing costs about 50× what sampling does for the same result. `polar` and function
 graphs aren't forms yet. Both reduce to parametric, so they'd be cheap additions.
 
+## Text without a page
+
+Compared on 2026-11-05 in `lab/text`, with results on `web/text.html`. 269 glyphs at 1024×460 on an
+M1 Pro, the same outlines and positions, scored against 16×16 point samples per pixel:
+
+| Renderer | RMS vs exact | Position error | Frame |
+|---|---|---|---|
+| Whole-pixel `fontdue` (the old stopgap) | 0.241 | 0.33 px | 0.33 ms |
+| `ab_glyph`, CPU | 0.022 | 0.003 px | 0.43 ms |
+| Winding integral, CPU | 0.005 | 0.005 px | 16 ms |
+| Winding integral, GPU | 0.009 | 0.005 px | 2.2 ms |
+| Vello, area | 0.079 | 0.002 px | 3.3 ms |
+| Vello, area, outlines flattened first | 0.009 | 0.005 px | 6.6 ms |
+| Vello, MSAA16 | 0.087 | 0.012 px | 3.5 ms |
+
+GPU and Vello frames include reading the image back, and CPU frames don't composite anything.
+
+- **Decided for now: `ab_glyph` for video labels.** It fixes the visible flaw, whole-pixel jumps,
+  and it's the cheapest accurate option. The magnified crops are hard to tell apart.
+- **Vello's error comes from curve flattening.** Flattening first brings it level with the integral.
+- **The winding integral is what to reach for if text needs to scale or animate heavily,** or take
+  per-pixel effects such as outline normals. It's written from windfoil's published formula, in
+  `lab/text`. That version needs storage buffers, so it isn't on WebGL2 as written.
+- **Chrome's crispness comes mostly from positioning.** Snapped to whole baselines and quarter-pixel
+  x, the difference from Chrome's canvas falls from about 0.18 to 0.05–0.07, with `ab_glyph` closest.
+- **Not compared:** Chrome's DOM text directly, since a page can't read its own pixels, as well as
+  shaping, hinting and other fonts. Only Charter Italic and Helvetica were tested.
+
 ## Changes from the plan
 
 | Topic | Plan | Now | Status |
@@ -115,7 +143,10 @@ Proposed by Claude and not contested so far. Change them freely.
   the output, like an SVG's viewBox. The blog keeps its labels a fixed screen size while lines
   scale, which this can't express yet.
 - **How should a `.pen` file name fonts?** `font: math | sans` are roles, and each renderer maps
-  them to whatever it has. Video currently uses system fonts.
+  them to whatever it has. Video currently uses system fonts, which can't be redistributed.
+- **Should still labels snap?** Chrome's crisper text comes mostly from whole-pixel baselines.
+  Video could snap a label whose position can't change, which the IR can tell symbolically, and
+  keep fractions for moving ones. Not built.
 - **Where is `SPEC/18`?** The July 9 chat mentions it, but the plan's list stops at 17.
 
 ## First milestone
@@ -192,8 +223,7 @@ colors, caps and label positions come from the page's computed styles.
   two regions. The drag budget is well under 10 ms. GPU time wasn't measured, and regions test
   every boundary edge for every pixel, which is the most likely cost as figures grow.
 - **Text is two systems.** In the browser, labels are DOM text, so they match the page's quality.
-  In video, they're a CPU-rasterized stopgap without kerning or shaping, using system fonts. This
-  is still the open question for video quality.
+  In video, they're CPU-rasterized from outlines. See the text comparison below.
 - **Traced lines are the least accurate path** at small sizes, at most 26/255 on edges at 256px
   against 7/255 for sampled curves, because of tracing's fixed 6-pixel grid.
 - **Known limits of regions:** coverage assumes one straight edge per pixel, so sharp tips are

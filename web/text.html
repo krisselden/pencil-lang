@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Text comparison</title>
+<style>
+  :root { color-scheme: light dark; --ink: #1c1b19; --paper: #fbfaf7; --muted: #6b675f; --rule: #d9d5cc; }
+  @media (prefers-color-scheme: dark) { :root { --ink: #ece9e2; --paper: #1a1917; --muted: #a29d93; --rule: #3a3833; } }
+  body { margin: 0; padding: 24px 16px; background: var(--paper); color: var(--ink);
+         font: 15px/1.45 ui-sans-serif, system-ui, sans-serif; }
+  main { max-width: 1120px; margin: 0 auto; }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  h2 { font-size: 15px; margin: 24px 0 8px; border-top: 1px solid var(--rule); padding-top: 12px; }
+  p { margin: 4px 0; color: var(--muted); max-width: 72ch; }
+  figure { margin: 0 0 10px; }
+  figcaption { font-size: 13px; font-weight: 600; margin-bottom: 2px; }
+  canvas { display: block; image-rendering: pixelated; max-width: 100%; }
+  .scroll { overflow-x: auto; }
+  table { border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; margin-top: 8px; }
+  th, td { text-align: right; padding: 3px 10px; border-bottom: 1px solid var(--rule); white-space: nowrap; }
+  th:first-child, td:first-child { text-align: left; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Text without a page</h1>
+  <p id="status">Loading…</p>
+  <p>Black on white, gray coverage, the same outlines and positions. Exact is 16×16 point samples per
+     pixel. Chrome draws through a 2D canvas here, which may differ from text on a page.</p>
+  <div class="scroll" id="table"></div>
+  <div id="crops"></div>
+</main>
+<script type="module">
+  const BASE = '../lab/text/out/';
+  const W = 1024, H = 460;
+  const NAMES = ['reference', 'chrome-canvas', 'integral-gpu', 'ab_glyph', 'vello-area', 'vello-area-flat', 'vello-msaa16', 'fontdue'];
+  const results = await (await fetch(BASE + 'results.json', { cache: 'no-store' })).json();
+
+  const pixels = (source) => {
+    const c = new OffscreenCanvas(W, H).getContext('2d', { willReadFrequently: true });
+    c.drawImage(source, 0, 0);
+    return c.getImageData(0, 0, W, H).data;
+  };
+  const load = async (name) => {
+    const blob = await (await fetch(`${BASE}${name}.png`, { cache: 'no-store' })).blob();
+    return pixels(await createImageBitmap(blob, { colorSpaceConversion: 'none', premultiplyAlpha: 'none' }));
+  };
+
+  // Chrome's own text, at the same fractional positions.
+  const chrome = () => {
+    const canvas = new OffscreenCanvas(W, H);
+    const c = canvas.getContext('2d', { willReadFrequently: true });
+    c.fillStyle = 'white';
+    c.fillRect(0, 0, W, H);
+    c.fillStyle = 'black';
+    c.fontKerning = 'normal';
+    c.textRendering = 'geometricPrecision';
+    for (const l of [...results.lines, results.display]) {
+      c.font = `${l.serif ? 'italic ' : ''}${l.size}px ${l.serif ? 'Charter' : 'Helvetica'}`;
+      c.fillText(l.text, l.x, l.y);
+    }
+    return c.getImageData(0, 0, W, H).data;
+  };
+
+  const images = {};
+  for (const name of NAMES) {
+    images[name] = name === 'chrome-canvas' ? chrome() : await load(name);
+  }
+
+  const score = (a, b) => {
+    let squares = 0, count = 0, max = 0, inkA = 0, inkB = 0;
+    for (let i = 0; i < a.length; i += 4) {
+      const x = 1 - a[i] / 255, y = 1 - b[i] / 255;
+      inkA += x; inkB += y;
+      if ((x > 0 && x < 1) || (y > 0 && y < 1)) {
+        const e = Math.abs(x - y);
+        squares += e * e; count += 1;
+        if (e > max) max = e;
+      }
+    }
+    return { rms: Math.sqrt(squares / Math.max(count, 1)), max, ink: inkA / inkB };
+  };
+
+  const rows = {};
+  for (const name of NAMES) {
+    if (name === 'reference') continue;
+    rows[name] = { exact: score(images[name], images.reference), chrome: score(images[name], images['chrome-canvas']) };
+  }
+  window.results = { rows, bench: results.results, setup: results.setup_ms, glyphs: results.glyphs };
+
+  const f = (x, d = 3) => (x === undefined ? '' : x.toFixed(d));
+  document.getElementById('table').innerHTML =
+    `<table><thead><tr><th>Renderer</th><th>RMS vs exact</th><th>Ink vs exact</th><th>RMS vs Chrome</th><th>Glyph position error</th><th>Frame</th></tr></thead><tbody>` +
+    Object.entries(rows).map(([name, r]) => {
+      const b = results.results[name];
+      return `<tr><td>${name}</td><td>${f(r.exact.rms, 4)}</td><td>${f(r.exact.ink)}</td><td>${name === 'chrome-canvas' ? '' : f(r.chrome.rms, 4)}</td><td>${b ? f(b.motion_rms_px) + ' px' : ''}</td><td>${b ? f(b.frame_ms, 2) + ' ms' : ''}</td></tr>`;
+    }).join('') + '</tbody></table>';
+
+  const CROPS = [
+    { title: 'Math labels, 34px', x: 20, y: 18, w: 190, h: 42, zoom: 4 },
+    { title: 'Sans, 17px', x: 20, y: 154, w: 190, h: 24, zoom: 4 },
+    { title: 'Sans, 13px', x: 20, y: 184, w: 190, h: 20, zoom: 4 },
+    { title: 'Serif italic, 17px', x: 20, y: 210, w: 190, h: 24, zoom: 4 },
+    { title: 'Display, 150px', x: 20, y: 280, w: 190, h: 140, zoom: 4 },
+  ];
+  const host = document.getElementById('crops');
+  for (const crop of CROPS) {
+    const heading = document.createElement('h2');
+    heading.textContent = crop.title;
+    host.append(heading);
+    for (const name of NAMES) {
+      const figure = document.createElement('figure');
+      const caption = document.createElement('figcaption');
+      caption.textContent = name;
+      const canvas = document.createElement('canvas');
+      canvas.width = crop.w;
+      canvas.height = crop.h;
+      canvas.style.width = `${crop.w * crop.zoom}px`;
+      const c = canvas.getContext('2d');
+      const out = c.createImageData(crop.w, crop.h);
+      for (let y = 0; y < crop.h; y++) {
+        const from = ((y + crop.y) * W + crop.x) * 4;
+        out.data.set(images[name].subarray(from, from + crop.w * 4), y * crop.w * 4);
+      }
+      c.putImageData(out, 0, 0);
+      figure.append(caption, canvas);
+      host.append(figure);
+    }
+  }
+  document.getElementById('status').textContent = `${results.glyphs} glyphs on ${results.gpu}.`;
+</script>
+</body>
+</html>

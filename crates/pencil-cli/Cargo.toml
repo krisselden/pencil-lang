@@ -9,7 +9,7 @@ name = "pencil"
 path = "src/main.rs"
 
 [dependencies]
-fontdue = "0.9"
+ab_glyph = "0.2"
 pencil-core.workspace = true
 pencil-render.workspace = true
 png = "0.18"

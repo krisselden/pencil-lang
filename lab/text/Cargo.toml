@@ -1,0 +1,17 @@
+# A test bench for choosing how video text is rendered. It's its own workspace so
+# its heavy dependencies stay out of Pencil's build.
+[package]
+name = "text-lab"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[dependencies]
+ab_glyph = "0.2"
+fontdue = "0.9"
+png = "0.18"
+pollster = "0.4"
+serde_json = "1"
+vello = "0.11"

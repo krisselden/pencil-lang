@@ -2,3 +2,6 @@
 /web/pkg
 /out
 .DS_Store
+
+/lab/text/target
+/lab/text/out
