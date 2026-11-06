@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Unroll</title>
+<style>
+  :root { color-scheme: light dark; --ink: #1c1b19; --paper: #fbfaf7; --muted: #6b675f; --bad: #b5443c; }
+  @media (prefers-color-scheme: dark) { :root { --ink: #ece9e2; --paper: #1a1917; --muted: #a29d93; --bad: #e58a80; } }
+  body { margin: 0; padding: 24px 16px; background: var(--paper); color: var(--ink);
+         font: 15px/1.45 ui-sans-serif, system-ui, sans-serif; }
+  main { max-width: 765px; margin: 0 auto; }
+  h1 { font-size: 16px; font-weight: 600; margin: 0 0 12px; }
+  .stage { position: relative; cursor: pointer; overflow: hidden; }
+  canvas { display: block; width: 100%; }
+  .label { position: absolute; left: 0; top: 0; pointer-events: none; white-space: nowrap;
+           font-family: system-ui, -apple-system, sans-serif; line-height: 1;
+           paint-order: stroke; -webkit-text-stroke-color: transparent; will-change: transform; }
+  .label.math { font-family: Charter, 'Bitstream Charter', 'Sitka Text', Cambria, serif; font-style: italic; }
+  .controls { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin: 12px 0; }
+  .controls input[type=range] { flex: 1; min-width: 140px; }
+  output { font-variant-numeric: tabular-nums; min-width: 4ch; text-align: right; }
+  button, select { font: inherit; }
+  p { margin: 4px 0; color: var(--muted); }
+  #readout { font-variant-numeric: tabular-nums; }
+  #error { color: var(--bad); white-space: pre-wrap; font-family: ui-monospace, monospace; font-size: 13px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Unroll: unwinding a string from a circle</h1>
+  <div class="stage" id="stage"><canvas id="figure"></canvas></div>
+  <div class="controls">
+    <button id="play" type="button">Pause</button>
+    <label for="a">a</label>
+    <input id="a" type="range" step="0.001" value="0">
+    <output id="a-value" for="a">0°</output>
+    <label>style
+      <select id="style">
+        <option value="blog.style">blog.style</option>
+        <option value="night.style">night.style</option>
+      </select>
+    </label>
+  </div>
+  <p id="readout"></p>
+  <p id="status">Starting…</p>
+  <p id="error" role="alert"></p>
+</main>
+<script type="module">
+  import init, { Player } from './pkg/pencil_web.js';
+
+  const BASE = '../corpus/003-unroll/';
+  const canvas = document.getElementById('figure');
+  const stage = document.getElementById('stage');
+  const slider = document.getElementById('a');
+  const value = document.getElementById('a-value');
+  const play = document.getElementById('play');
+  const styleSelect = document.getElementById('style');
+  const readout = document.getElementById('readout');
+  const status = document.getElementById('status');
+  const error = document.getElementById('error');
+
+  const read = async (name) => {
+    const response = await fetch(BASE + name, { cache: 'no-store' });
+    if (!response.ok) throw new Error(`${name}: ${response.status}`);
+    return response.text();
+  };
+
+  // The viewport sets the canvas's shape, so the figure draws at its own aspect.
+  const firstDoc = await read('unroll.pen');
+  const box = /viewport\s*\{\s*x:\s*(-?[\d.]+)\.\.(-?[\d.]+),\s*y:\s*(-?[\d.]+)\.\.(-?[\d.]+)/.exec(firstDoc);
+  const aspect = (box[4] - box[3]) / (box[2] - box[1]);
+  const dpr = window.devicePixelRatio || 1;
+  canvas.style.aspectRatio = String(1 / aspect);
+  canvas.width = Math.round(canvas.clientWidth * dpr);
+  canvas.height = Math.round(canvas.clientWidth * aspect * dpr);
+
+  // Style sizes scale with the figure when it declares a design width.
+  const designWidth = Number(/width:\s*([\d.]+)/.exec(firstDoc)?.[1]) || null;
+  const scale = designWidth ? canvas.width / designWidth : dpr;
+
+  await init();
+  const player = await Player.create(canvas, new URLSearchParams(location.search).has('gl'));
+
+  // Reloads when either file changes. A bad edit shows its error and keeps the figure.
+  let loaded = '';
+  let compiles = 0;
+  const reload = async () => {
+    const styleName = styleSelect.value;
+    let doc, style;
+    try {
+      [doc, style] = await Promise.all([read('unroll.pen'), read(styleName)]);
+    } catch (e) {
+      error.textContent = String(e);
+      return;
+    }
+    const key = `${doc}\0${styleName}\0${style}`;
+    if (key === loaded) return;
+    loaded = key;
+    const held = slider.dataset.held === 'true' ? Number(slider.value) : null;
+    try {
+      player.load(doc, [style]);
+      if (held !== null) player.set_param('a', held);
+      const info = JSON.parse(player.info());
+      slider.min = info.params[0].min;
+      slider.max = info.params[0].max;
+      duration = info.duration;
+      error.textContent = '';
+      compiles += 1;
+      status.textContent = `${player.backend}, ${canvas.width}×${canvas.height}, compiled ${compiles} time${compiles === 1 ? '' : 's'}`;
+    } catch (e) {
+      error.textContent = `${styleName} or unroll.pen: ${e.message}`;
+    }
+  };
+
+  let duration = 13;
+  let playing = !matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let time = playing ? 0 : 5;
+  let last = performance.now();
+
+  const setPlaying = (on) => {
+    playing = on;
+    play.textContent = on ? 'Pause' : 'Play';
+    if (on && slider.dataset.held === 'true') {
+      // Carry on from where the reader left the param: its binding takes back over.
+      time = player.time_for('a', Number(slider.value));
+      player.release_param('a');
+      slider.dataset.held = 'false';
+    }
+    last = performance.now();
+  };
+  play.addEventListener('click', () => setPlaying(!playing));
+  stage.addEventListener('click', () => setPlaying(!playing));
+  // Moving the slider takes `a` over from time: same param, a different binding.
+  slider.addEventListener('input', () => {
+    setPlaying(false);
+    slider.dataset.held = 'true';
+    player.set_param('a', Number(slider.value));
+  });
+  styleSelect.addEventListener('change', reload);
+
+  const spans = new Map();
+  const drawLabels = (labels) => {
+    for (const label of labels) {
+      let span = spans.get(label.id);
+      if (!span) {
+        span = document.createElement('span');
+        span.className = 'label';
+        stage.append(span);
+        spans.set(label.id, span);
+      }
+      if (span.textContent !== label.text) span.textContent = label.text;
+      span.classList.toggle('math', label.math);
+      span.style.fontSize = `${label.size / dpr}px`;
+      span.style.color = label.color;
+      span.style.webkitTextStrokeColor = label.haloColor;
+      // Like SVG's stroke-width, `halo` is the full width, centered on the outline.
+      span.style.webkitTextStrokeWidth = `${label.halo / dpr}px`;
+      span.style.opacity = label.opacity;
+      span.style.transform = `translate(${label.x / dpr}px, ${label.y / dpr}px) translate(-50%, -50%)`;
+    }
+  };
+
+  const draw = (t) => {
+    const labels = JSON.parse(player.draw(t, scale));
+    drawLabels(labels);
+    const a = player.value('a', t);
+    if (slider.dataset.held !== 'true') slider.value = a;
+    value.textContent = `${Math.round(a * 180 / Math.PI)}°`;
+    const triangle = player.value('triangle_area', t);
+    const wedge = player.value('wedge_area', t);
+    readout.textContent = `triangle ${triangle.toFixed(3)} + wedge ${wedge.toFixed(3)} = ${(triangle + wedge).toFixed(3)}`;
+  };
+
+  const frame = (now) => {
+    if (playing) {
+      time = (time + Math.min(now - last, 100) / 1000) % duration;
+    }
+    last = now;
+    try {
+      draw(time);
+    } catch (e) {
+      error.textContent = e.message;
+    }
+    requestAnimationFrame(frame);
+  };
+
+  await reload();
+  setPlaying(playing);
+  setInterval(reload, 500);
+  requestAnimationFrame(frame);
+
+  window.pencil = { player, dpr, scale, draw, seek(t) { setPlaying(false); time = t; } };
+</script>
+</body>
+</html>

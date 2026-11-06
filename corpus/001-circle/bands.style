@@ -1,0 +1,5 @@
+// A restyle of the same document: distance bands on both sides, and a hue that
+// moves with time. Style values are expressions, so this needs no new mechanism.
+style c::inside  { fill: mix(hue(0.08 + 0.05·sin(time)), white, 0.4 + 0.3·cos(24·self.dist)) }
+style c::outside { fill: mix(oklch(0.45, 0.10, 250), white, 0.4 + 0.3·cos(24·self.dist)) }
+style c          { stroke: white; width: 2.5px }

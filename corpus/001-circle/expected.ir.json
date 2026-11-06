@@ -1,0 +1,78 @@
+{
+  "bindings": [
+    {
+      "expr": [
+        "Add",
+        1.0,
+        [
+          "Multiply",
+          0.25,
+          [
+            "Sin",
+            "time"
+          ]
+        ]
+      ],
+      "id": "r"
+    }
+  ],
+  "doc": "circle",
+  "duration": null,
+  "marks": [
+    {
+      "form": {
+        "field": [
+          "Subtract",
+          [
+            "Add",
+            [
+              "Power",
+              "x",
+              2.0
+            ],
+            [
+              "Power",
+              "y",
+              2.0
+            ]
+          ],
+          [
+            "Power",
+            "r",
+            2.0
+          ]
+        ],
+        "grad": [
+          [
+            "Multiply",
+            2.0,
+            "x"
+          ],
+          [
+            "Multiply",
+            2.0,
+            "y"
+          ]
+        ],
+        "kind": "implicit",
+        "vars": [
+          "x",
+          "y"
+        ]
+      },
+      "id": "c"
+    }
+  ],
+  "params": [],
+  "viewport": {
+    "width": null,
+    "x": [
+      -2.0,
+      2.0
+    ],
+    "y": [
+      -2.0,
+      2.0
+    ]
+  }
+}

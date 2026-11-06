@@ -1,0 +1,8 @@
+// A breathing circle: the smallest figure that exercises the whole path.
+doc circle
+
+viewport { x: -2..2, y: -2..2 }
+
+let r = 1 + 0.25·sin(time)
+
+curve c = implicit (x, y): x² + y² = r²

@@ -1,0 +1,1 @@
+style c { stroke: black; width: 2px; dash: 10px; gap: 6px }

@@ -1,0 +1,11 @@
+[package]
+name = "pencil-core"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+serde_json.workspace = true
+
+[dev-dependencies]
+naga = { version = "30", features = ["wgsl-in"] }

@@ -1,0 +1,43 @@
+// The circle's area handed to a triangle by unwinding a string. After turning by a,
+// the string touches at P and its end Q has traced the involute. Triangle O, P, Q has
+// legs 1 and a, so its area is a/2: the sector already swept.
+doc unroll
+duration 13
+
+viewport { x: -3.8..6.9, y: -5.3..2.1, width: 640 }
+
+fn on_circle(t) = (-sin(t), cos(t))
+fn string_end(p, t) = p + t·(p.y, -p.x)
+fn involute(t) = string_end(on_circle(t), t)
+fn cycle(t) = smoothstep(1, 7, t) - smoothstep(8.5, 12.5, t)
+// Pushes a label away along v, in screen pixels (y down).
+fn away(v, r) = r·(v.x, -v.y) / (length(v) + 0.000001)
+
+// Time and a reader both drive this one param.
+param a in 0..tau
+bind a = tau·cycle(mod(time, 13))
+
+let O = (0, 0)
+let P = on_circle(a)
+let Q = involute(a)
+let side = (-P.y, P.x)
+let triangle_area = abs(P.x·Q.y - P.y·Q.x) / 2
+let wedge_area = (tau - a) / 2
+
+// Each mark keeps the form it's written in.
+region wedge = O, on_circle(t) for t in a..tau
+region triangle = O, P, Q
+curve circle = sdf (x, y): sqrt(x² + y²) - 1
+segment radius = O, P
+segment reach = O, Q
+curve path = parametric (t): involute(t) for t in 0..a
+curve wound = parametric (t): on_circle(t) for t in a..tau
+segment string = P, Q
+rightangle corner = O, P, P + (P.y, -P.x) size 0.22
+dot O, P, Q
+
+label name_o = "O" at O offset away(-1·P - Q / length(Q), 14)
+label name_p = "P" at P offset away(P + side, 16)
+label name_q = "Q" at Q offset away(Q - P, 16)
+label one = "1" at P / 2 offset away(side, 12)
+label length_a = "a" at (P + Q) / 2 offset away(P, 14)

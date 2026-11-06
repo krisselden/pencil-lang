@@ -1,0 +1,2 @@
+// The width is an expression of arc length, which SVG's stroke can't do.
+style c { stroke: black; width: 0.5px + 11.5px·self.t }

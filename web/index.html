@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pencil playground</title>
+<style>
+  :root { color-scheme: light dark; --ink: #1c1b19; --paper: #fbfaf7; --muted: #6b675f; --bad: #b5443c; }
+  @media (prefers-color-scheme: dark) { :root { --ink: #ece9e2; --paper: #1a1917; --muted: #a29d93; --bad: #e58a80; } }
+  body { margin: 0; padding: 24px 16px; background: var(--paper); color: var(--ink);
+         font: 15px/1.45 ui-sans-serif, system-ui, sans-serif; }
+  main { max-width: 512px; margin: 0 auto; }
+  h1 { font-size: 16px; font-weight: 600; margin: 0 0 12px; }
+  canvas { display: block; width: 100%; aspect-ratio: 1; border-radius: 4px; }
+  .controls { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin: 12px 0; }
+  .controls input[type=range] { flex: 1; min-width: 120px; }
+  output { font-variant-numeric: tabular-nums; min-width: 5ch; }
+  button, select { font: inherit; }
+  p { margin: 4px 0; color: var(--muted); }
+  #error { color: var(--bad); white-space: pre-wrap; font-family: ui-monospace, monospace; font-size: 13px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Pencil playground: <span id="doc-name"></span></h1>
+  <canvas id="figure"></canvas>
+  <div class="controls">
+    <button id="play" type="button">Pause</button>
+    <label for="time">time</label>
+    <input id="time" type="range" min="0" max="12.566" step="0.001" value="0">
+    <output id="time-value" for="time">0.00</output>
+    <label>style
+      <select id="style">
+        <option value="circle.style">circle.style</option>
+        <option value="bands.style">bands.style</option>
+      </select>
+    </label>
+  </div>
+  <p id="status">Starting…</p>
+  <p id="error" role="alert"></p>
+</main>
+<script type="module">
+  import init, { Player } from './pkg/pencil_web.js';
+
+  const BASE = '../corpus/001-circle/';
+  const DOC = 'circle.pen';
+  const canvas = document.getElementById('figure');
+  const status = document.getElementById('status');
+  const error = document.getElementById('error');
+  const timeInput = document.getElementById('time');
+  const timeValue = document.getElementById('time-value');
+  const play = document.getElementById('play');
+  const styleSelect = document.getElementById('style');
+  document.getElementById('doc-name').textContent = DOC;
+
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = canvas.height = Math.round(canvas.clientWidth * dpr);
+
+  await init();
+  // Add ?gl to the URL to test the WebGL2 path.
+  const player = await Player.create(canvas, new URLSearchParams(location.search).has('gl'));
+
+  const read = async (name) => {
+    const response = await fetch(BASE + name, { cache: 'no-store' });
+    if (!response.ok) throw new Error(`${name}: ${response.status}`);
+    return response.text();
+  };
+
+  // Edit either file and the figure reloads. A bad edit shows its error and leaves
+  // the last good figure on screen.
+  let loaded = '';
+  let reloads = 0;
+  const reload = async () => {
+    const styleName = styleSelect.value;
+    let doc, style;
+    try {
+      [doc, style] = await Promise.all([read(DOC), read(styleName)]);
+    } catch (e) {
+      error.textContent = String(e);
+      return;
+    }
+    const key = doc + '\0' + styleName + '\0' + style;
+    if (key === loaded) return;
+    loaded = key;
+    try {
+      player.load(doc, [style]);
+      error.textContent = '';
+      reloads += 1;
+      status.textContent = `${player.backend}, ${canvas.width}px, compiled ${reloads} time${reloads === 1 ? '' : 's'}`;
+    } catch (e) {
+      error.textContent = `${styleName} or ${DOC}: ${e.message}`;
+    }
+  };
+
+  let playing = !matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let time = 0;
+  let last = performance.now();
+  play.textContent = playing ? 'Pause' : 'Play';
+  play.addEventListener('click', () => {
+    playing = !playing;
+    play.textContent = playing ? 'Pause' : 'Play';
+  });
+  // The slider and the clock bind the same parameter: moving it pauses the clock.
+  timeInput.addEventListener('input', () => {
+    playing = false;
+    play.textContent = 'Play';
+    time = Number(timeInput.value);
+  });
+  styleSelect.addEventListener('change', reload);
+
+  const frame = (now) => {
+    if (playing) {
+      time = (time + (now - last) / 1000) % Number(timeInput.max);
+      timeInput.value = time;
+    }
+    last = now;
+    timeValue.textContent = time.toFixed(2);
+    try {
+      player.draw(time, dpr);
+    } catch (e) {
+      error.textContent = e.message;
+    }
+    requestAnimationFrame(frame);
+  };
+
+  await reload();
+  setInterval(reload, 500);
+  requestAnimationFrame(frame);
+
+  // For checks from the console: seek and draw one frame.
+  window.pencil = {
+    player,
+    seek(t) {
+      playing = false;
+      play.textContent = 'Play';
+      time = t;
+      timeInput.value = t;
+    },
+  };
+</script>
+</body>
+</html>
