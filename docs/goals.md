@@ -160,9 +160,58 @@ each one changes the language or the frame's order, so they come before more fig
      for the same overlap, and a label's spot no longer depends on placement order. A page runs the same spring over its own clock, which a real drag on `web/tangents.html` confirms: as the
      distance sweeps, a spot leaps up to 41 px in a frame and its label moves at most 2.5 px. Not tried yet: a Doyle
      figure, phones, and an in-between spot in a video that holds still while its label is still gliding.
+   - **Expressions (placement chosen 2026-11-05, in `lab/expressions`):** `SquareZ` on the blog draws 13 pieces of
+     text and matches them by hand. Manim's rule is the aim: what matches moves, and only what doesn't fades. Manim
+     finds matches by diffing, and here they're declared: a term's identity is how it's written, `z.1` is a copy of
+     `z`, and an expression is a list of states. Kris on the placement: "beautiful". Now in core (`terms.rs`), with
+     `corpus/006-square` and `web/square.html` as the figure. Its test checks the math itself: F.O. + I.L. is z², and
+     its triangle is the first one scaled by |z| and turned. GPU matches the oracle within 1/255 at six times.
+     Not built: statements like `zbi = zb · i` that would drive an arrow and its label from one line.
+   - **What these transitions are for:** making the math feel physical, at a middle school level. `SquareZ` is F.O.I.L.
+     on z²: F.O. is z·a and I.L. is z·bi, which build a right triangle similar to the one of a and bi, scaled by |z|
+     and turned. Numbers have length, negative turns 180°, and i turns 90°, which gives lateral space, any direction,
+     and so right triangles and trig. So a term should keep its color through the steps: blue stays the a side and
+     green the bi side, and the color is what ties the big triangle to the small one.
+   - **Moves are punchy:** a move gets near its destination fast, then eases in, leaving time to take it in, with
+     little in between. Kris chose `1 − (1 − x)⁵`, since anything punchier goes by too fast to see `za` join `+zbi`. The
+     blog's `snap` is a power of 4. The power is a language default for now, though a theme is where it belongs.
+     The balance, from Kris: a reader needs a sense of where a thing came from, so it doesn't seem to come out of
+     nowhere, but shouldn't have to wait for it, especially when watching a few times to learn. A reader's eye may
+     also be on the last thing to move, so what started earlier has to stay readable as it arrives.
    - **Views (not built):** the site moves between a step's views along the van Wijk and Nuij path
      (`src/lib/zoom.ts`, used by `NewtonDoyle`). The `beat` param can carry this: a fraction between two beats
      is a point on the path between their two `fit` views, so a page tweens the param, and a video binds it.
+
+## Collections and panels
+
+`corpus/007-lattice`, on `web/lattice.html`: one lattice through the maps that make a Doyle spiral, in four panels
+from one file. `docs/language.md` has the rules.
+
+- **The geometry is tested:** every circle touches its six neighbors within 1e-9 of its size, at 169 grid points, and
+  the period lands on 2πi in log space and on 1 in the spiral. That checks the site's solved constants.
+- **GPU matches the CPU oracle** within 1/255 in each panel, cropped from the shared canvas, so where panels sit is
+  tested too. It runs on WebGPU and WebGL2.
+- **Speed:** tuned by profiling on 2026-11-06, and nothing had to be undone. A frame of this figure went from 20 ms to under 8 ms
+  natively. Most of the gain came from two things. A circle much bigger than the frame only samples the arc that can be
+  on it, which saved about 6 ms and is also more accurate. And curves and collections run through `fast.rs`, which resolves
+  names and functions up front, instead of looking them up for every evaluation. `eval` stays the definition, and a test
+  requires the two to agree to the bit on every expression in the corpus. In WASM at 1720×1745 that's about 8.6 ms a frame,
+  from 19 ms, and about 10 ms when q or p changes. The worst case tried, q = 12, p = 7, is about 12 ms. Most of what's left
+  is the bindings, and the settling and strokes of a large spiral.
+- **`solve` gives it real q and p.** The skew comes from two equations in the file, using exact derivatives. Every circle
+  touches its neighbors for all 70 of the q and p the blog's sliders allow, and at q = 7, p = 2 it agrees with the site's
+  own solver within 1e-9. Solving doesn't remember, so seeking stays pure, and no solution is absent.
+- **It's `LatticeMapping` now,** as far as I can compare it: edges with arrowheads, step dots that shrink with their circles,
+  signed counts on the flat panels and plain ones on the spiral's, the wrapped copies in log space, and the marker box. In
+  the flat panels the name of 0 goes outside the triangle, since every edge leaves it on the inside.
+- **A thing is the same thing in every panel.** Kris's point: 0 and 1 in the spiral aren't two things but one point, and only
+  the name is the space's. So `start` and `end_point` have those names in every panel, and a label keeps its identity across
+  them while its text changes, which a test holds it to. This is a connection to keep and build on, such as pointing at
+  something in one panel and seeing it in the others.
+- **Log space's copies are there for the crossings:** Kris's point is to show the cylinder wrapping, so the crossings there
+  connect to the same ones in the spiral, with 0 and 2πi becoming 1. How light they are is one rule in the style.
+- **Not like the site:** the panels have no frames, since a panel's border is the page's business, and the title's bold isn't
+  there, since a font names only a role for now.
 
 ## Text without a page
 

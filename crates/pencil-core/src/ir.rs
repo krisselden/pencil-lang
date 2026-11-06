@@ -99,10 +99,36 @@ pub enum Form {
     },
     Region(Vec<Part>),
     Dot([Expr; 2]),
-    Label {
+    /// A shaft and a head, as one line. The head's size is in pixels, so it's a style's.
+    Arrow {
+        from: [Expr; 2],
+        to: [Expr; 2],
+    },
+    /// One mark drawn many times, as one line stroke, however many that is this frame.
+    /// A variable counts in whole numbers, and includes both ends of its range.
+    Many {
+        vars: Vec<(String, [Expr; 2])>,
+        /// Named once per instance, in order, so a value used many times is worked out once.
+        lets: Vec<(String, Expr)>,
+        shape: Shape,
+    },
+    /// One part of an expression, as a mark so styles can target it. `terms.rs` says where.
+    Term {
+        expression: usize,
+        key: String,
         text: String,
+    },
+    Label {
+        /// With a `{}` wherever a value goes.
+        text: String,
+        values: Vec<Expr>,
         at: [Expr; 2],
         offset: [Expr; 2],
+    },
+    /// The rectangle another panel is looking at. Compiling all the panels fills in its view.
+    Outline {
+        panel: String,
+        view: Option<Box<Viewport>>,
     },
 }
 
@@ -115,6 +141,59 @@ pub struct Mark {
     pub tags: Vec<String>,
     /// Which beat this mark belongs to, if any.
     pub beat: Option<usize>,
+}
+
+/// Unknowns defined by equations, each a binding `["Solved", system, k]`. Newton's method runs
+/// on these from `start`, with `jacobian` holding each equation's derivative by each unknown.
+#[derive(Clone, Debug, PartialEq)]
+pub struct System {
+    pub unknowns: Vec<String>,
+    pub start: Vec<Expr>,
+    pub equations: Vec<Expr>,
+    pub jacobian: Vec<Expr>,
+    /// Every other name it reads. The answer depends on these and nothing else.
+    pub depends: Vec<String>,
+}
+
+/// What a collection draws, for each combination of its variables.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Shape {
+    Dots([Expr; 2]),
+    Circles { center: [Expr; 2], r: Expr },
+}
+
+/// Which end of an expression sits at its place.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub enum Hang {
+    #[default]
+    Start,
+    Middle,
+    End,
+}
+
+/// Where an expression can sit: a moving point, and an offset from it in `px`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Spot {
+    pub id: String,
+    pub at: [Expr; 2],
+    pub offset: [Expr; 2],
+    pub hang: Hang,
+}
+
+/// One written expression in a state.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Piece {
+    pub spot: usize,
+    pub keys: Vec<String>,
+}
+
+/// A list of states, driven by a binding: at 3.4 it's 40% of the way from state 3 to state 4
+/// by time, before easing. State 0 is the empty one before the first that's written.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Expression {
+    pub id: String,
+    pub by: Expr,
+    pub states: Vec<Vec<Piece>>,
 }
 
 /// A mark a reader can drag. `inverse` maps `pointer.x`, `pointer.y` to the param, and
@@ -138,6 +217,8 @@ pub struct Viewport {
     /// Centers and radii the view fits each frame, ignoring any param a handle has
     /// taken over, so a drag doesn't refit it. Empty for a fixed view.
     pub fit: Vec<[Expr; 3]>,
+    /// Curves the view fits, by sampling them.
+    pub fit_curves: Vec<Arc>,
     pub pad: f64,
 }
 
@@ -149,6 +230,7 @@ impl Default for Viewport {
             design_width: None,
             design_height: None,
             fit: Vec::new(),
+            fit_curves: Vec::new(),
             pad: 0.1,
         }
     }
@@ -165,6 +247,9 @@ pub struct Scene {
     pub duration: Option<f64>,
     pub beats: Vec<String>,
     pub handles: Vec<Handle>,
+    pub spots: Vec<Spot>,
+    pub expressions: Vec<Expression>,
+    pub systems: Vec<System>,
 }
 
 fn pair(p: &[Expr; 2]) -> Value {
@@ -210,9 +295,47 @@ impl Scene {
                     }).collect::<Vec<_>>(),
                 }),
                 Form::Dot(p) => json!({ "kind": "dot", "at": pair(p) }),
-                Form::Label { text, at, offset } => json!({
-                    "kind": "label", "text": text, "at": pair(at), "offset": pair(offset),
+                Form::Arrow { from, to } => json!({
+                    "kind": "arrow", "from": pair(from), "to": pair(to),
                 }),
+                Form::Many { vars, lets, shape } => json!({
+                    "kind": "many",
+                    "with": lets.iter().map(|(name, e)| json!({
+                        "id": name,
+                        "expr": e.to_mathjson(),
+                    })).collect::<Vec<_>>(),
+                    "vars": vars.iter().map(|(name, range)| json!({
+                        "var": name,
+                        "range": pair(range),
+                    })).collect::<Vec<_>>(),
+                    "shape": match shape {
+                        Shape::Dots(at) => json!({ "dots": pair(at) }),
+                        Shape::Circles { center, r } => json!({
+                            "circles": pair(center),
+                            "r": r.to_mathjson(),
+                        }),
+                    },
+                }),
+                Form::Term {
+                    expression,
+                    key,
+                    text,
+                } => json!({
+                    "kind": "term", "expression": expression, "key": key, "text": text,
+                }),
+                Form::Label {
+                    text,
+                    values,
+                    at,
+                    offset,
+                } => json!({
+                    "kind": "label",
+                    "text": text,
+                    "values": values.iter().map(Expr::to_mathjson).collect::<Vec<_>>(),
+                    "at": pair(at),
+                    "offset": pair(offset),
+                }),
+                Form::Outline { panel, .. } => json!({ "kind": "outline", "panel": panel }),
             };
             json!({ "id": m.id, "form": form, "tags": m.tags, "beat": m.beat })
         };
@@ -220,6 +343,26 @@ impl Scene {
             "doc": self.name,
             "duration": self.duration,
             "beats": self.beats,
+            "systems": self.systems.iter().map(|s| json!({
+                "unknowns": s.unknowns,
+                "start": s.start.iter().map(Expr::to_mathjson).collect::<Vec<_>>(),
+                "equations": s.equations.iter().map(Expr::to_mathjson).collect::<Vec<_>>(),
+                "jacobian": s.jacobian.iter().map(Expr::to_mathjson).collect::<Vec<_>>(),
+            })).collect::<Vec<_>>(),
+            "places": self.spots.iter().map(|s| json!({
+                "id": s.id,
+                "at": pair(&s.at),
+                "offset": pair(&s.offset),
+                "hang": format!("{:?}", s.hang).to_lowercase(),
+            })).collect::<Vec<_>>(),
+            "expressions": self.expressions.iter().map(|e| json!({
+                "id": e.id,
+                "by": e.by.to_mathjson(),
+                "states": e.states.iter().map(|state| state.iter().map(|p| json!({
+                    "place": self.spots[p.spot].id,
+                    "terms": p.keys,
+                })).collect::<Vec<_>>()).collect::<Vec<_>>(),
+            })).collect::<Vec<_>>(),
             "handles": self.handles.iter().map(|h| json!({
                 "mark": h.mark,
                 "param": h.param,
@@ -236,7 +379,7 @@ impl Scene {
                 "y": self.viewport.y,
                 "width": self.viewport.design_width,
                 "height": self.viewport.design_height,
-                "fit": self.viewport.fit.len(),
+                "fit": self.viewport.fit.len() + self.viewport.fit_curves.len(),
                 "pad": self.viewport.pad,
             },
         })

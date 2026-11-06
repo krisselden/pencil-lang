@@ -1,6 +1,7 @@
 //! Draws a figure's emitted WGSL with wgpu. The pipeline is shared by the native
 //! offscreen path and the browser, so both run the same shader.
 
+use pencil_core::eval::srgb_encode;
 use pencil_core::frame::{GEOMETRY_VEC4S, Prepared, VALUE_VEC4S};
 use pencil_core::{Figure, stroke, wgsl};
 use wgpu::util::DeviceExt;
@@ -13,6 +14,8 @@ pub struct FrameInputs {
     pub height: u32,
     /// Device pixels per style pixel, so `width: 3px` looks the same on any screen.
     pub dpr: f32,
+    /// Where this panel's corner is on the canvas. `width` and `height` are the panel's.
+    pub origin: [u32; 2],
 }
 
 impl FrameInputs {
@@ -26,6 +29,10 @@ impl FrameInputs {
         for v in [view.x[0], view.x[1], view.y[0], view.y[1]] {
             bytes.extend_from_slice(&(v as f32).to_le_bytes());
         }
+        // A vec2, then padding, since the array after it starts on a vec4.
+        for v in [self.origin[0] as f32, self.origin[1] as f32, 0.0, 0.0] {
+            bytes.extend_from_slice(&v.to_le_bytes());
+        }
         for v in &prepared.values {
             bytes.extend_from_slice(&v.to_le_bytes());
         }
@@ -34,7 +41,7 @@ impl FrameInputs {
     }
 }
 
-const UNIFORM_BYTES: usize = 32 + VALUE_VEC4S * 16;
+const UNIFORM_BYTES: usize = 48 + VALUE_VEC4S * 16;
 const GEOMETRY_BYTES: usize = GEOMETRY_VEC4S * 16;
 
 const COVERAGE_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::R8Unorm;
@@ -269,7 +276,9 @@ impl FigurePipeline {
         });
     }
 
-    /// Draws a frame from its CPU side, which comes from `frame::prepare`.
+    /// Draws a frame from its CPU side, which comes from `frame::prepare`. It goes in its
+    /// panel's part of `target`. `clear` starts the canvas, for the first panel of a frame.
+    #[allow(clippy::too_many_arguments)]
     pub fn draw(
         &mut self,
         device: &wgpu::Device,
@@ -278,6 +287,7 @@ impl FigurePipeline {
         target: &wgpu::TextureView,
         inputs: FrameInputs,
         prepared: &Prepared,
+        clear: Option<[f64; 3]>,
     ) {
         queue.write_buffer(&self.uniforms, 0, &inputs.bytes(prepared));
         let geometry: Vec<u8> = prepared
@@ -336,7 +346,16 @@ impl FigurePipeline {
                 depth_slice: None,
                 resolve_target: None,
                 ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(wgpu::Color::WHITE),
+                    load: match clear {
+                        // The target isn't sRGB, and the shader encodes, so this has to as well.
+                        Some(c) => wgpu::LoadOp::Clear(wgpu::Color {
+                            r: srgb_encode(c[0]),
+                            g: srgb_encode(c[1]),
+                            b: srgb_encode(c[2]),
+                            a: 1.0,
+                        }),
+                        None => wgpu::LoadOp::Load,
+                    },
                     store: wgpu::StoreOp::Store,
                 },
             })],
@@ -345,6 +364,16 @@ impl FigurePipeline {
             occlusion_query_set: None,
             multiview_mask: None,
         });
+        let [x, y] = inputs.origin;
+        pass.set_viewport(
+            x as f32,
+            y as f32,
+            inputs.width as f32,
+            inputs.height as f32,
+            0.0,
+            1.0,
+        );
+        pass.set_scissor_rect(x, y, inputs.width, inputs.height);
         pass.set_pipeline(&self.pipeline);
         pass.set_bind_group(0, &coverage.bind_group, &[]);
         pass.draw(0..3, 0..1);
@@ -405,11 +434,30 @@ mod native {
             }
         }
 
-        /// Renders one frame to tightly packed RGBA8.
+        /// Renders one panel on its own to tightly packed RGBA8.
         pub fn render(
             &self,
             pipeline: &mut FigurePipeline,
             prepared: &Prepared,
+            time: f32,
+            width: u32,
+            height: u32,
+        ) -> Result<Vec<u8>, RenderError> {
+            self.render_panels(
+                std::slice::from_mut(pipeline),
+                &[(prepared, [0, 0], width, height)],
+                time,
+                width,
+                height,
+            )
+        }
+
+        /// Renders panels to one canvas, as tightly packed RGBA8. Each is `prepared`, its
+        /// corner, and its size.
+        pub fn render_panels(
+            &self,
+            pipelines: &mut [FigurePipeline],
+            panels: &[(&Prepared, [u32; 2], u32, u32)],
             time: f32,
             width: u32,
             height: u32,
@@ -439,20 +487,26 @@ mod native {
 
             let mut encoder = self.device.create_command_encoder(&Default::default());
             let view = texture.create_view(&Default::default());
-            let inputs = FrameInputs {
-                time,
-                width,
-                height,
-                dpr: prepared.dpr as f32,
-            };
-            pipeline.draw(
-                &self.device,
-                &self.queue,
-                &mut encoder,
-                &view,
-                inputs,
-                prepared,
-            );
+            for (i, (pipeline, (prepared, origin, w, h))) in
+                pipelines.iter_mut().zip(panels).enumerate()
+            {
+                let inputs = FrameInputs {
+                    time,
+                    width: *w,
+                    height: *h,
+                    dpr: prepared.dpr as f32,
+                    origin: *origin,
+                };
+                pipeline.draw(
+                    &self.device,
+                    &self.queue,
+                    &mut encoder,
+                    &view,
+                    inputs,
+                    prepared,
+                    (i == 0).then_some(prepared.paper),
+                );
+            }
             encoder.copy_texture_to_buffer(
                 texture.as_image_copy(),
                 wgpu::TexelCopyBufferInfo {

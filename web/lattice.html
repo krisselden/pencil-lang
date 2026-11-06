@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lattice to Spiral</title>
+<style>
+  :root { color-scheme: light; --ink: rgb(18, 17, 15); --paper: rgb(242, 240, 235); --muted: rgb(110, 106, 99); --bad: #b5443c; --blue: rgb(0, 104, 181); --red: rgb(171, 58, 51); --green: rgb(22, 123, 38); --accent: rgb(96, 66, 166); }
+  body { margin: 0; padding: 24px 16px; background: var(--paper); color: var(--ink); font: 15px/1.45 ui-sans-serif, system-ui, sans-serif; }
+  main { max-width: 860px; margin: 0 auto; }
+  h1 { font-size: 16px; font-weight: 600; margin: 0 0 12px; }
+  .stage { position: relative; overflow: hidden; }
+  canvas { display: block; width: 100%; }
+  .label { position: absolute; left: 0; top: 0; white-space: nowrap; font-family: system-ui, -apple-system, sans-serif; line-height: 1; will-change: transform; }
+  .label.math { font-family: Charter, 'Bitstream Charter', 'Sitka Text', Cambria, serif; font-style: italic; }
+  .controls { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; margin: 12px 0; }
+  .controls input[type=range] { flex: 1; min-width: 10rem; }
+  output { font-variant-numeric: tabular-nums; }
+  .legend { display: flex; flex-wrap: wrap; gap: 4px 18px; list-style: none; margin: 8px 0; padding: 0; color: var(--muted); font-size: 13px; }
+  .legend li::before { content: ''; display: inline-block; width: 14px; height: 3px; margin-right: 6px; vertical-align: middle; background: var(--c); }
+  #readout { color: var(--ink); font: italic 16px Charter, serif; font-variant-numeric: tabular-nums; }
+  button { font: inherit; }
+  p { margin: 4px 0; color: var(--muted); }
+  #error { color: var(--bad); white-space: pre-wrap; font-family: ui-monospace, monospace; font-size: 13px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>One lattice, through the maps that make a Doyle spiral</h1>
+  <div class="stage" id="stage"><canvas id="figure" aria-label="Four linked panels of a lattice triangle: the lattice itself, after the map to log space, after exp as a spiral of circles, and a close-up of the spiral near 1."></canvas></div>
+  <div class="controls">
+    <label><i>q</i> <input id="q" type="range" min="3" max="12" step="1" value="7"></label><output id="q-value" for="q"></output>
+    <label><i>p</i> <input id="p" type="range" min="0" max="7" step="1" value="2"></label><output id="p-value" for="p"></output>
+  </div>
+  <ul class="legend">
+    <li style="--c: var(--blue)">(−q)·1</li>
+    <li style="--c: var(--green)">(+(q − p))·(1 + ω), to A</li>
+    <li style="--c: var(--red)">(+q)·ω</li>
+    <li style="--c: var(--accent)">(−p)·(1 + ω), to A</li>
+  </ul>
+  <p id="readout" aria-live="polite"></p>
+  <p id="status">Starting…</p>
+  <p id="error" role="alert"></p>
+</main>
+<script type="module">
+  import init, { Player, figure_size } from './pkg/pencil_web.js';
+  import { LabelLayer } from './labels.js';
+
+  const $ = (id) => document.getElementById(id);
+  const get = async (path) => {
+    const response = await fetch(path, { cache: 'no-store' });
+    if (!response.ok) throw new Error(`${path}: ${response.status}`);
+    return response.text();
+  };
+  const canvas = $('figure');
+  const doc = await get('../corpus/007-lattice/lattice.pen');
+  const sheets = await Promise.all([get('../corpus/theme.style'), get('../corpus/007-lattice/plain.style')]);
+  await init();
+  const [width, height] = JSON.parse(figure_size(doc, sheets));
+  const dpr = window.devicePixelRatio || 1;
+  canvas.style.aspectRatio = `${width} / ${height}`;
+  canvas.width = Math.round(canvas.clientWidth * dpr);
+  canvas.height = Math.round((canvas.clientWidth * height / width) * dpr);
+
+  const player = await Player.create(canvas, new URLSearchParams(location.search).has('gl'));
+  const layer = new LabelLayer($('stage'), dpr);
+  player.set_measure(layer.measure);
+  let dirty = true;
+  const set = (name) => {
+    player.set_param(name, Number($(name).value));
+    $(`${name}-value`).textContent = $(name).value;
+    dirty = true;
+  };
+  const inputs = ['q', 'p'];
+  try {
+    player.load(doc, sheets);
+    inputs.forEach(set);
+    $('status').textContent = `${player.backend}, ${canvas.width}×${canvas.height}`;
+  } catch (e) {
+    $('error').textContent = e.message;
+  }
+  for (const name of inputs) {
+    $(name).addEventListener('input', () => {
+      // p steps along the edge of q, so it can't be past it.
+      if (Number($('p').value) > Number($('q').value)) {
+        $('p').value = $('q').value;
+        set('p');
+      }
+      set(name);
+    });
+  }
+  const signed = (n, sign) => (n === 0 ? '0' : `${sign}${n}`);
+  const readout = () => {
+    const [q, p] = [Number($('q').value), Number($('p').value)];
+    const route = (text, color) => `<span style="color: var(--${color})">${text}</span>`;
+    $('readout').innerHTML = `${route(`(${signed(q, '−')})·1`, 'blue')} + ${route(`(${signed(q - p, '+')})·(1 + ω)`, 'green')} = ${route(`(${signed(q, '+')})·ω`, 'red')} + ${route(`(${signed(p, '−')})·(1 + ω)`, 'accent')} = A = ${p ? `−${p}` : '0'} + ${q - p}ω`;
+  };
+  const frame = (now) => {
+    if (dirty) {
+      dirty = false;
+      try { layer.update(JSON.parse(player.draw(0, dpr))); readout(); } catch (e) { $('error').textContent = e.message; }
+    }
+    layer.tick(now);
+    requestAnimationFrame(frame);
+  };
+  requestAnimationFrame(frame);
+  window.pencil = { player, layer, set, redraw() { dirty = true; } };
+</script>
+</body>
+</html>

@@ -1,0 +1,383 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Declared Expressions</title>
+<style>
+  :root { color-scheme: light dark; --ink: #1c1b19; --paper: #fbfaf7; --muted: #6b675f; --line: #a29d93; --blue: #2e62a8; --green: #3c8a4e; }
+  @media (prefers-color-scheme: dark) { :root { --ink: #ece9e2; --paper: #1a1917; --muted: #a29d93; --line: #6b675f; --blue: #8ab2e6; --green: #7fc48f; } }
+  body { margin: 0; padding: 24px 16px; background: var(--paper); color: var(--ink); font: 15px/1.45 ui-sans-serif, system-ui, sans-serif; }
+  main { max-width: 1040px; margin: 0 auto; }
+  h1 { font-size: 16px; font-weight: 600; margin: 0 0 4px; }
+  h2 { font-size: 14px; font-weight: 600; margin: 0 0 4px; }
+  p, li { color: var(--muted); }
+  p { margin: 2px 0 10px; }
+  ul { margin: 4px 0 12px; padding-left: 20px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 400px), 1fr)); gap: 14px; }
+  svg { display: block; width: 100%; height: auto; border: 1px solid color-mix(in srgb, var(--line) 35%, transparent); }
+  svg text { font-family: Charter, 'Bitstream Charter', Cambria, serif; font-style: italic; }
+  svg text.halo { fill: none; stroke: var(--paper); stroke-width: 2.5px; }
+  .controls { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; margin: 12px 0; }
+  .controls input[type=range] { flex: 1; min-width: 12rem; }
+  output, td { font-variant-numeric: tabular-nums; }
+  button { font: inherit; }
+  pre { margin: 6px 0 12px; padding: 10px 12px; overflow-x: auto; font: 13px/1.55 ui-monospace, Menlo, monospace; background: color-mix(in srgb, var(--line) 12%, transparent); }
+  .table { overflow-x: auto; margin: 14px 0; }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { padding: 4px 10px 4px 0; text-align: right; border-bottom: 1px solid color-mix(in srgb, var(--line) 35%, transparent); white-space: nowrap; }
+  th:first-child, td:first-child { text-align: left; }
+  th { font-weight: 600; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Matching parts of expressions, declared rather than diffed</h1>
+  <p>Squaring z = a + bi, on one clock with the same arrows. Only the labels differ. The left panel is the blog's code, and the right panel is only the list of states below.</p>
+  <div class="controls">
+    <button id="play" type="button">Pause</button>
+    <label>speed <select id="speed"><option value="1" selected>1×</option><option value="0.5">½×</option><option value="0.25">¼×</option></select></label>
+    <label>right panel's ease <select id="ease"><option value="4">quartic, as on the blog</option><option value="5" selected>quintic</option><option value="6">sextic</option><option value="8">power of 8</option></select></label>
+    <input id="time" type="range" min="0" max="19" step="0.01" value="0" aria-label="Time">
+    <output id="clock" for="time"></output>
+  </div>
+  <div class="grid">
+    <section><h2>As on the blog</h2><svg id="blog" viewBox="0 0 340 235" role="img" aria-label="The blog's squaring animation"></svg></section>
+    <section><h2>From declared states</h2><svg id="declared" viewBox="0 0 340 235" role="img" aria-label="The same animation with labels from declared states"></svg></section>
+  </div>
+  <div class="table"><table id="metrics"></table></div>
+  <h2>All that's declared for the right panel's labels</h2>
+  <pre id="source"></pre>
+  <h2>The rules, with nothing searched for</h2>
+  <ul>
+    <li>A term's identity is how it's written. The same term in the next state moves to its new spot.</li>
+    <li>A new term fades in, and a term that's gone fades out, in both cases riding along with its neighbors.</li>
+    <li>A copy is written <code>z.1</code>. It prints as z, and when it's new it starts on z and moves out from there.</li>
+    <li>When a copy goes, it moves into a term of the same name at the same place: factoring.</li>
+  </ul>
+</main>
+<script>
+  const SOURCE = `
+   0.4  1.2  | a @mid_a
+   1.5  2.2  | a @mid_a  ;  + b i @mid_b
+   2.5  3.2  | a + b i @z
+   3.5  4.1  | z = a + b i @z
+   5.0  5.5  | z @z
+   7.8  8.9  | z @z  ;  z.1 a @tip_a
+   9.2 10.2  | z @z  ;  z.1 a @tip_a  ;  z.2 b @tip_b
+  10.5 11.5  | z @z  ;  z.1 a @tip_a  ;  z.2 b i @tip_b
+  11.8 12.6  | z @z  ;  z.1 a @tip_a  ;  + z.2 b i @side_b
+  13.0 13.7  | z @z  ;  z.1 a + z.2 b i @sum
+  14.4 14.8  | z @z  ;  z.1 ( a + b i ) @sum
+  15.4 15.8  | z @z  ;  z.1 ² @sum
+  18.2 18.8  |`.replace(/^\n/, '');
+
+  const CYCLE = 19, NAME = 15, NOTE = 13;
+  const FONT = (size) => `italic ${size}px Charter, 'Bitstream Charter', Cambria, serif`;
+  const ctx = document.createElement('canvas').getContext('2d');
+  const widths = new Map();
+  const measure = (text, size = NAME) => {
+    const key = `${size}\n${text}`;
+    if (!widths.has(key)) { ctx.font = FONT(size); widths.set(key, ctx.measureText(text).width); }
+    return widths.get(key);
+  };
+
+  // lib/animate.ts and lib/vec.ts, from the site.
+  const phase = (t, a, b) => { const x = Math.min(1, Math.max(0, (t - a) / (b - a))); return x * x * (3 - 2 * x); };
+  // The blog's `snap` is a power of 4. The right panel can try others: it gets to its spot
+  // sooner, and spends the rest of the window settling in, so there's time to take it in.
+  let power = 4;
+  const snap = (t, a, b) => { const x = Math.min(1, Math.max(0, (t - a) / (b - a))); return 1 - (1 - x) ** power; };
+  const lerp = (a, b, s) => [a[0] + (b[0] - a[0]) * s, a[1] + (b[1] - a[1]) * s];
+  const add = (a, b) => [a[0] + b[0], a[1] + b[1]];
+  const scale = (a, k) => [a[0] * k, a[1] * k];
+  const turn = ([x, y], t) => [x * Math.cos(t) - y * Math.sin(t), x * Math.sin(t) + y * Math.cos(t)];
+  const px = ([x, y]) => [(x + 0.7) * 100, (2.0 - y) * 100];
+
+  const A = 1.5, B = 0.55, Z = [A, B], TH = Math.atan2(B, A);
+  const AZ = scale(Z, A), BZ = scale(Z, B), BIZ = turn(BZ, Math.PI / 2), Z2 = add(AZ, BIZ);
+
+  /** The second copy of z: scaled by b, turned by i, then slid to the first's tip. */
+  const second = (u) => {
+    const v = turn(lerp(Z, BZ, snap(u, 9.5, 10.2)), (snap(u, 10.5, 11.5) * Math.PI) / 2);
+    return { from: lerp([0, 0], AZ, snap(u, 11.8, 12.6)), v };
+  };
+
+  const fmt = (v) => v.toFixed(2);
+  const color = (c) => `var(--${c})`;
+
+  /** The arrows, the same in both panels, with the blog's timing. */
+  function arrows(u) {
+    let out = `<line x1="0" y1="${px([0, 0])[1]}" x2="340" y2="${px([0, 0])[1]}" stroke="var(--line)"/><line x1="${px([0, 0])[0]}" y1="0" x2="${px([0, 0])[0]}" y2="235" stroke="var(--line)"/>`;
+    const vector = (from, v, c, width, opacity) => {
+      const [x1, y1] = px(from), [x2, y2] = px(add(from, v));
+      const len = Math.hypot(x2 - x1, y2 - y1);
+      if (len < 1e-3 || opacity < 0.01) return;
+      const [ux, uy] = [(x2 - x1) / len, (y2 - y1) / len], head = Math.min(14, len / 2);
+      const [bx, by] = [x2 - ux * head, y2 - uy * head], [nx, ny] = [-uy * head * 0.45, ux * head * 0.45];
+      out += `<g opacity="${fmt(opacity)}"><line x1="${fmt(x1)}" y1="${fmt(y1)}" x2="${fmt(x2 - ux * head * 0.8)}" y2="${fmt(y2 - uy * head * 0.8)}" stroke="${color(c)}" stroke-width="${width}"/><path d="M${fmt(x2)} ${fmt(y2)}L${fmt(bx + nx)} ${fmt(by + ny)}L${fmt(bx - nx)} ${fmt(by - ny)}Z" fill="${color(c)}"/></g>`;
+    };
+    const fade = 1 - phase(u, 18.2, 18.8), back = 1 - 0.7 * phase(u, 7.8, 8.4);
+    const sa = snap(u, 0.4, 1.2), sb = snap(u, 1.5, 2.2), eqIn = snap(u, 3.5, 4.1);
+    if (sa > 0) vector([0, 0], [A * sa, 0], 'blue', 3, fade * back);
+    if (sb > 0) vector([A, 0], [0, B * sb], 'green', 3, fade * back);
+    if (eqIn > 0) vector([0, 0], Z, 'ink', 2.5, fade * eqIn);
+    const azIn = phase(u, 7.8, 8.1);
+    if (azIn > 0) vector([0, 0], lerp(Z, AZ, snap(u, 8.1, 8.9)), 'blue', 3, fade * azIn);
+    const bzIn = phase(u, 9.2, 9.5);
+    if (bzIn > 0) { const { from, v } = second(u); vector(from, v, 'green', 3, fade * bzIn); }
+    const ssum = snap(u, 13.0, 13.7);
+    if (ssum > 0) vector([0, 0], Z2, 'ink', 3, fade * ssum);
+    return out;
+  }
+
+  /** The labels neither version changes: the length and the angles. */
+  function extras(u) {
+    const fade = 1 - phase(u, 18.2, 18.8), out = [];
+    const polar = phase(u, 5.7, 6.2) * (1 - phase(u, 7.0, 7.5)), done = phase(u, 15.9, 16.5) * fade;
+    const angle = (r, a0, a1, opacity) => {
+      if (opacity < 0.01) return;
+      const m = (a0 + a1) / 2, [x, y] = px([(r + 0.08) * Math.cos(m), (r + 0.08) * Math.sin(m)]);
+      out.push({ text: 'arg z', x, y: y - 6, size: NOTE, c: 'ink', opacity });
+    };
+    if (polar > 0.01) {
+      const [x, y] = px(scale(Z, 0.5));
+      out.push({ text: '|z|', x: x - 4, y: y - 12, size: NOTE, c: 'ink', opacity: polar, anchor: 'end' });
+      angle(0.42, 0, TH, polar);
+    }
+    if (done > 0.01) {
+      angle(0.42, 0, TH, done);
+      angle(0.62, TH, 2 * TH, done);
+      const [x, y] = px(scale(Z2, 0.55));
+      out.push({ text: '|z|²', x: x - 6, y: y - 10, size: NOTE, c: 'ink', opacity: done, anchor: 'end' });
+    }
+    return out;
+  }
+
+  /** The blog's label code, from SquareZ.astro, drawing to a list instead of a Painter. */
+  function blogLabels(u) {
+    const out = [];
+    const text = (at, t, { offset = [0, 0], anchor, size = NAME, c = 'ink', opacity = 1 }) => {
+      const [x, y] = px(at);
+      out.push({ text: t, x: x + offset[0], y: y + offset[1], anchor, size, c, opacity });
+    };
+    const word = (at, offset, pieces, start = 0) => {
+      let x = offset[0] - pieces.slice(0, start).reduce((sum, p) => sum + measure(p.text), 0);
+      for (const p of pieces) {
+        if (p.opacity > 0.01) text(at, p.text, { offset: [x, offset[1]], c: p.c ?? 'ink', opacity: p.opacity });
+        x += measure(p.text);
+      }
+    };
+    const morph = (at, offset, from, to, s, fade) => {
+      if ((1 - s) * fade > 0.01) text(at, from, { offset, anchor: 'end', opacity: (1 - s) * fade });
+      if (s * fade > 0.01) text(at, to, { offset, anchor: 'end', opacity: s * fade });
+    };
+    const fade = 1 - phase(u, 18.2, 18.8);
+    const sa = snap(u, 0.4, 1.2), sb = snap(u, 1.5, 2.2), join = snap(u, 2.5, 3.2);
+    const eqIn = snap(u, 3.5, 4.1), eqOut = phase(u, 5.0, 5.5);
+    if (u < 3.4) {
+      if (sa > 0.5) text(lerp([A / 2, 0], Z, join), 'a', { offset: lerp([0, 22], [10, -10], join), anchor: 'middle', size: NOTE, c: 'blue', opacity: 1 - join });
+      if (sb > 0.5) text(lerp([A, B / 2], Z, join), '+bi', { offset: lerp([8, 6], [10, -10], join), size: NOTE, c: 'green', opacity: 1 - join });
+    }
+    if (join > 0) {
+      const eq = 10 + measure('z =') - measure('=');
+      const rest = 10 + measure('z = a') - measure('a');
+      text(Z, 'a + bi', { offset: [10 + (rest - 10) * eqIn, -10], opacity: fade * join * (1 - eqOut) });
+      if (eqIn > 0) {
+        text(Z, 'z', { offset: [10, -10], opacity: fade * eqIn });
+        text(Z, '=', { offset: [eq, -10], opacity: fade * eqIn * (1 - eqOut) });
+      }
+    }
+    const azIn = phase(u, 7.8, 8.1), saz = snap(u, 8.1, 8.9);
+    if (azIn > 0 && u < 13) word(lerp(Z, AZ, saz), [8, 18], [{ text: 'z', opacity: azIn }, { text: 'a', opacity: phase(u, 8.1, 8.4), c: 'blue' }]);
+    const bzIn = phase(u, 9.2, 9.5), sslide = snap(u, 11.8, 12.6);
+    if (bzIn > 0 && u < 13) {
+      const { from, v } = second(u);
+      const at = sslide > 0 ? add(from, scale(v, 0.5)) : add(from, v);
+      const offset = sslide > 0 ? [10, 6] : [-28, -12];
+      word(at, offset, [
+        { text: '+', opacity: sslide, c: 'green' },
+        { text: 'z', opacity: bzIn },
+        { text: 'b', opacity: phase(u, 9.5, 9.8), c: 'green' },
+        { text: 'i', opacity: phase(u, 10.5, 10.8), c: 'green' },
+      ], 1);
+    }
+    const ssum = snap(u, 13.0, 13.7);
+    if (ssum > 0) {
+      if (ssum < 1) {
+        text(lerp(AZ, Z2, ssum), 'za', { offset: lerp([8, 18], [-8, -12], ssum), opacity: 1 - ssum });
+        text(lerp(add(AZ, scale(BIZ, 0.5)), Z2, ssum), '+zbi', { offset: lerp([10, 6], [-8, -12], ssum), opacity: 1 - ssum });
+      }
+      const s1 = snap(u, 14.4, 14.8), s2 = snap(u, 15.4, 15.8);
+      if (s1 < 1) morph(Z2, [-8, -12], 'za + zbi', 'z(a + bi)', s1, fade * ssum);
+      else morph(Z2, [-8, -12], 'z(a + bi)', 'z²', s2, fade);
+    }
+    return out;
+  }
+
+  /* --- The declared version: this is the whole mechanism. --- */
+
+  /** Where an expression sits: a moving point, an offset from it, and which end it hangs from. */
+  const PLACES = {
+    mid_a: { at: () => [A / 2, 0], offset: [0, 22], hang: 'middle' },
+    mid_b: { at: () => [A, B / 2], offset: [6, 6], hang: 'start' },
+    z: { at: () => Z, offset: [10, -10], hang: 'start' },
+    tip_a: { at: (u) => lerp(Z, AZ, snap(u, 8.1, 8.9)), offset: [8, 18], hang: 'start' },
+    tip_b: { at: (u) => { const { from, v } = second(u); return add(from, v); }, offset: [-28, -12], hang: 'start' },
+    side_b: { at: (u) => { const { from, v } = second(u); return add(from, scale(v, 0.5)); }, offset: [4, 6], hang: 'start' },
+    sum: { at: () => Z2, offset: [-8, -12], hang: 'end' },
+  };
+  /** Which color a term is, by name, as a style rule would say. */
+  const COLORS = { a: 'blue', b: 'green', i: 'green' };
+  const OPERATORS = new Set(['+', '=']);
+  const base = (key) => key.split('.')[0];
+
+  const STATES = (() => {
+    const states = [{ start: -1, end: -1, pieces: [] }];
+    for (const line of SOURCE.split('\n')) {
+      const [times, body] = line.split('|');
+      const [start, end] = times.trim().split(/\s+/).map(Number);
+      const pieces = body.split(';').map((p) => p.trim()).filter(Boolean).map((p) => {
+        const parts = p.split(/\s+/);
+        return { place: parts.pop().slice(1), keys: parts };
+      });
+      states.push({ start, end, pieces });
+    }
+    return states;
+  })();
+
+  /** Where each term of a state sits right now. A renderer does this, with its own font. */
+  function layout(state, u) {
+    const terms = new Map();
+    for (const { place, keys } of state.pieces) {
+      const p = PLACES[place];
+      const advance = keys.map((key) => measure(base(key)) + (OPERATORS.has(key) ? 7 : 0));
+      const total = advance.reduce((a, b) => a + b, 0);
+      const [ax, ay] = px(p.at(u));
+      let x = ax + p.offset[0] - (p.hang === 'end' ? total : p.hang === 'middle' ? total / 2 : 0);
+      keys.forEach((key, n) => {
+        const pad = OPERATORS.has(key) ? 3.5 : 0;
+        terms.set(key, { x: x + pad, y: ay + p.offset[1], place, keys, n });
+        x += advance[n];
+      });
+    }
+    return terms;
+  }
+
+  function declaredLabels(u) {
+    let k = 0;
+    while (k + 1 < STATES.length && STATES[k + 1].start <= u) k++;
+    if (k === 0) return [];
+    const s = snap(u, STATES[k].start, STATES[k].end);
+    const was = layout(STATES[k - 1], u), now = layout(STATES[k], u), out = [];
+    const term = (key, x, y, opacity) => out.push({ text: base(key), x, y, size: NAME, c: COLORS[base(key)] ?? 'ink', opacity });
+    const sourceOf = (key) => was.get(key) ?? (key.includes('.') ? was.get(base(key)) : undefined);
+    const targetOf = (key, from) => now.get(key) ?? (key.includes('.')
+      ? [...now].find(([k2, t]) => base(k2) === base(key) && t.place === from.place)?.[1]
+      : undefined);
+    /** How far a term's nearest neighbor that's travelling has moved, from its spot in `self`. */
+    const ride = (self, travel) => {
+      const { keys, n } = self;
+      for (let d = 1; d < keys.length; d++) {
+        for (const other of [keys[n - d], keys[n + d]]) {
+          const moved = other && travel(other);
+          if (moved) return moved;
+        }
+      }
+      return [0, 0];
+    };
+    for (const [key, to] of now) {
+      const from = sourceOf(key);
+      if (from) { term(key, from.x + (to.x - from.x) * s, from.y + (to.y - from.y) * s, 1); continue; }
+      // New: it fades in with the expression it's part of, not ahead of it.
+      const [dx, dy] = ride(to, (other) => {
+        const o = sourceOf(other), t = now.get(other);
+        return o && [(o.x - t.x) * (1 - s), (o.y - t.y) * (1 - s)];
+      });
+      term(key, to.x + dx, to.y + dy, s);
+    }
+    for (const [key, from] of was) {
+      if (now.has(key)) continue;
+      const into = targetOf(key, from);
+      if (into) { term(key, from.x + (into.x - from.x) * s, from.y + (into.y - from.y) * s, 1); continue; }
+      // Gone: it fades out with the expression it was part of, not behind it.
+      const [dx, dy] = ride(from, (other) => {
+        const f = was.get(other), t = f && targetOf(other, f);
+        return t && [(t.x - f.x) * s, (t.y - f.y) * s];
+      });
+      term(key, from.x + dx, from.y + dy, 1 - s);
+    }
+    return out;
+  }
+
+  /* --- Drawing and measuring. --- */
+
+  const textOf = (l, extra) => l.opacity < 0.01 ? '' : `<text x="${fmt(l.x)}" y="${fmt(l.y)}" font-size="${l.size}" opacity="${fmt(l.opacity)}"${l.anchor ? ` text-anchor="${l.anchor}"` : ''} ${extra}>${l.text.replace('&', '&amp;')}</text>`;
+  /** Every halo first, so that one term's halo can't eat into its neighbor. */
+  const textSvg = (list) => list.map((l) => textOf(l, 'class="halo"')).join('') + list.map((l) => textOf(l, `fill="${color(l.c)}"`)).join('');
+  const $ = (id) => document.getElementById(id);
+  function draw(u) {
+    const more = textSvg(extras(u));
+    power = 4;
+    $('blog').innerHTML = arrows(u) + more + textSvg(blogLabels(u));
+    power = Number($('ease').value);
+    $('declared').innerHTML = arrows(u) + more + textSvg(declaredLabels(u));
+    $('time').value = u;
+    $('clock').textContent = `${u.toFixed(2)} s`;
+  }
+
+  /** The biggest move of one piece of text in one frame, following text by what it says. */
+  function jumps(labels) {
+    const steps = 19 * 60;
+    let biggest = 0, when = 0, what = '';
+    const texts = new Set();
+    let last = [];
+    for (let f = 0; f < steps; f++) {
+      const u = f / 60;
+      const now = labels(u).filter((l) => l.opacity > 0.05);
+      for (const l of now) {
+        texts.add(l.text);
+        const same = last.filter((p) => p.text === l.text);
+        if (!same.length) continue;
+        const d = Math.min(...same.map((p) => Math.hypot(p.x - l.x, p.y - l.y)));
+        if (d > biggest) { biggest = d; when = u; what = l.text; }
+      }
+      last = now;
+    }
+    return { biggest, when, what, texts: texts.size };
+  }
+  const ninety = (n) => 1 - 0.1 ** (1 / n);
+  const report = () => {
+    const chosen = Number($('ease').value);
+    power = 4;
+    const blog = jumps(blogLabels);
+    power = chosen;
+    const declared = jumps(declaredLabels);
+    return { blog, declared, chosen };
+  };
+  const WINDOWS = (blogLabels.toString().match(/\b(phase|snap)\(/g) ?? []).length;
+  const showMetrics = () => {
+    const { blog, declared, chosen } = report();
+    $('metrics').innerHTML = `<thead><tr><th>Over one 19 s loop</th><th>Pieces of text</th><th>Biggest move in one frame</th><th>When</th><th>Hand-timed windows</th><th>90% there, of its window</th></tr></thead><tbody>
+    <tr><td>As on the blog</td><td>${blog.texts}</td><td>${blog.biggest.toFixed(0)} px (“${blog.what}”)</td><td>${blog.when.toFixed(2)} s</td><td>${WINDOWS}</td><td>${(100 * ninety(4)).toFixed(0)}%</td></tr>
+    <tr><td>From declared states</td><td>${declared.texts}</td><td>${declared.biggest.toFixed(0)} px (“${declared.what}”)</td><td>${declared.when.toFixed(2)} s</td><td>${STATES.length - 1}</td><td>${(100 * ninety(chosen)).toFixed(0)}%</td></tr></tbody>`;
+  };
+  showMetrics();
+  $('source').textContent = `// start  end  | what's written @ where it sits\n${SOURCE}\n\n// As a style would say it: a is blue, b and i are green.`;
+
+  let u = 0, playing = !matchMedia('(prefers-reduced-motion: reduce)').matches, last = 0;
+  $('play').textContent = playing ? 'Pause' : 'Play';
+  $('play').addEventListener('click', () => { playing = !playing; $('play').textContent = playing ? 'Pause' : 'Play'; });
+  $('time').addEventListener('input', () => { u = Number($('time').value); draw(u); });
+  $('ease').addEventListener('change', () => { showMetrics(); draw(u); });
+  const tick = (now) => {
+    if (playing) { u = (u + ((now - last) / 1000) * Number($('speed').value)) % CYCLE; draw(u); }
+    last = now;
+    requestAnimationFrame(tick);
+  };
+  draw(u);
+  requestAnimationFrame((now) => { last = now; tick(now); });
+  window.lab = { draw, report, stop() { playing = false; $('play').textContent = 'Play'; }, blogLabels, declaredLabels };
+</script>
+</body>
+</html>

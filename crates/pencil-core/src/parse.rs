@@ -4,6 +4,13 @@
 use crate::error::Error;
 use crate::ir::Expr;
 
+/// What a collection draws at each combination of its variables.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum ManyKind {
+    Dots,
+    Circles,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Document {
     pub name: Option<String>,
@@ -66,6 +73,75 @@ pub enum Item {
         text: String,
         at: Expr,
         offset: Option<Expr>,
+        line: usize,
+    },
+    /// Unknowns defined by equations, found by Newton's method each frame.
+    Solve {
+        unknowns: Vec<String>,
+        start: Vec<Expr>,
+        equations: Vec<(Expr, Expr)>,
+        line: usize,
+    },
+    /// One mark drawn many times, once for each combination of its variables.
+    Many {
+        name: String,
+        kind: ManyKind,
+        value: Expr,
+        vars: Vec<(String, [Expr; 2])>,
+        lets: Vec<(String, Expr)>,
+        line: usize,
+    },
+    /// How panels are laid out, in design pixels.
+    Panels {
+        columns: Expr,
+        gap: Option<Expr>,
+        title: Option<Expr>,
+    },
+    /// Its own view of the figure, with its own marks. What's outside any panel is shared.
+    Panel {
+        name: String,
+        title: Option<String>,
+        formula: Option<String>,
+        items: Vec<Item>,
+    },
+    /// Marks to draw in more than one place. Parameters can be functions.
+    Group {
+        name: String,
+        params: Vec<String>,
+        items: Vec<Item>,
+    },
+    Use {
+        name: String,
+        args: Vec<Expr>,
+        /// A prefix for what the group declares, so it can be drawn more than once.
+        alias: Option<String>,
+        line: usize,
+    },
+    /// The rectangle another panel is looking at.
+    Outline {
+        name: String,
+        panel: String,
+        line: usize,
+    },
+    /// Where an expression can sit: a moving point, an offset from it, and which end it hangs from.
+    Place {
+        name: String,
+        at: Expr,
+        offset: Option<Expr>,
+        hang: Option<String>,
+        line: usize,
+    },
+    /// A list of states, each a list of written expressions and where they sit.
+    Expression {
+        name: String,
+        by: Expr,
+        states: Vec<Vec<(String, String)>>,
+        line: usize,
+    },
+    Arrow {
+        name: String,
+        from: Expr,
+        to: Expr,
         line: usize,
     },
     /// Opens a beat: a discrete step of a construction, with what it shows inside.
@@ -307,7 +383,7 @@ struct Parser {
 /// Builtin names in source, and their MathJSON heads. Anything else is left under
 /// its own name for `compile` to resolve as a user function. `docs/language.md` must
 /// describe every one, and a test holds it to that.
-pub const FUNCTIONS: [(&str, &str); 33] = [
+pub const FUNCTIONS: [(&str, &str); 35] = [
     ("sqrt", "Sqrt"),
     ("sin", "Sin"),
     ("cos", "Cos"),
@@ -341,6 +417,8 @@ pub const FUNCTIONS: [(&str, &str); 33] = [
     ("mirror", "Mirror"),
     ("exists", "Exists"),
     ("otherwise", "Otherwise"),
+    ("snap", "Snap"),
+    ("timeline", "Timeline"),
 ];
 
 impl Parser {
@@ -363,6 +441,10 @@ impl Parser {
             self.pos += 1;
         }
         t
+    }
+
+    fn at_word(&self, word: &str) -> bool {
+        matches!(self.peek(), Tok::Ident(w) if w == word)
     }
 
     fn eat(&mut self, p: &str) -> bool {
@@ -474,6 +556,201 @@ impl Parser {
                 items.push(Item::Dots { names, line });
             }
             "label" => items.push(self.label(line)?),
+            "solve" => {
+                let mut unknowns = Vec::new();
+                if self.eat("(") {
+                    while !self.eat(")") {
+                        unknowns.push(self.ident("an unknown")?);
+                        self.eat(",");
+                    }
+                } else {
+                    unknowns.push(self.ident("an unknown")?);
+                }
+                self.keyword("from")?;
+                let mut start = vec![self.expr()?];
+                while self.eat(",") {
+                    start.push(self.expr()?);
+                }
+                self.expect(":")?;
+                let mut equations = Vec::new();
+                loop {
+                    let lhs = self.expr()?;
+                    self.expect("=")?;
+                    equations.push((lhs, self.expr()?));
+                    if !self.eat(",") {
+                        break;
+                    }
+                }
+                items.push(Item::Solve {
+                    unknowns,
+                    start,
+                    equations,
+                    line,
+                });
+            }
+            "outline" => {
+                let outline = self.ident("an outline's name")?;
+                self.expect("=")?;
+                let panel = self.ident("a panel")?;
+                items.push(Item::Outline {
+                    name: outline,
+                    panel,
+                    line,
+                });
+            }
+            "dots" => items.push(self.many(ManyKind::Dots, line)?),
+            "circles" => items.push(self.many(ManyKind::Circles, line)?),
+            "panels" => {
+                self.expect("{")?;
+                let (mut columns, mut gap, mut title) = (None, None, None);
+                while !self.eat("}") {
+                    let key = self.ident("`columns`, `gap` or `title`")?;
+                    self.expect(":")?;
+                    let value = self.expr()?;
+                    match key.as_str() {
+                        "columns" => columns = Some(value),
+                        "gap" => gap = Some(value),
+                        "title" => title = Some(value),
+                        other => {
+                            return Err(self.error(format!(
+                                "`panels` takes `columns`, `gap` and `title`, not `{other}`"
+                            )));
+                        }
+                    }
+                    self.eat(",");
+                }
+                let Some(columns) = columns else {
+                    return Err(self.error("`panels` needs `columns`"));
+                };
+                items.push(Item::Panels {
+                    columns,
+                    gap,
+                    title,
+                });
+            }
+            "panel" => {
+                let panel = self.ident("a panel's name")?;
+                let title = self.optional_string();
+                let formula = self.optional_string();
+                let inner = self.block(name, "panel")?;
+                items.push(Item::Panel {
+                    name: panel,
+                    title,
+                    formula,
+                    items: inner,
+                });
+            }
+            "group" => {
+                let group = self.ident("a group's name")?;
+                self.expect("(")?;
+                let mut params = Vec::new();
+                while !self.eat(")") {
+                    params.push(self.ident("a parameter")?);
+                    self.eat(",");
+                }
+                let inner = self.block(name, "group")?;
+                items.push(Item::Group {
+                    name: group,
+                    params,
+                    items: inner,
+                });
+            }
+            "use" => {
+                let group = self.ident("a group")?;
+                self.expect("(")?;
+                let mut args = Vec::new();
+                while !self.eat(")") {
+                    args.push(self.expr()?);
+                    self.eat(",");
+                }
+                let alias = if self.at_word("as") {
+                    self.bump();
+                    Some(self.ident("a prefix")?)
+                } else {
+                    None
+                };
+                items.push(Item::Use {
+                    name: group,
+                    args,
+                    alias,
+                    line,
+                });
+            }
+            "place" => {
+                let name = self.ident("a place")?;
+                self.expect("=")?;
+                let at = self.expr()?;
+                let mut offset = None;
+                let mut hang = None;
+                loop {
+                    if self.at_word("offset") {
+                        self.bump();
+                        offset = Some(self.expr()?);
+                    } else if self.at_word("hang") {
+                        self.bump();
+                        hang = Some(self.ident("`start`, `middle` or `end`")?);
+                    } else {
+                        break;
+                    }
+                }
+                items.push(Item::Place {
+                    name,
+                    at,
+                    offset,
+                    hang,
+                    line,
+                });
+            }
+            "expression" => {
+                let name = self.ident("an expression's name")?;
+                self.keyword("by")?;
+                let by = self.expr()?;
+                self.expect("{")?;
+                let mut states = Vec::new();
+                while !self.eat("}") {
+                    if self.at_word("empty") {
+                        self.bump();
+                        states.push(Vec::new());
+                        continue;
+                    }
+                    let mut pieces = Vec::new();
+                    loop {
+                        let text = match self.bump() {
+                            Tok::Str(text) => text,
+                            other => {
+                                return Err(self.error(format!(
+                                    "expected a written expression in quotes, found {other:?}"
+                                )));
+                            }
+                        };
+                        self.keyword("at")?;
+                        pieces.push((text, self.ident("a place")?));
+                        if !self.eat(",") {
+                            break;
+                        }
+                    }
+                    states.push(pieces);
+                }
+                items.push(Item::Expression {
+                    name,
+                    by,
+                    states,
+                    line,
+                });
+            }
+            "arrow" => {
+                let name = self.ident("an arrow's name")?;
+                self.expect("=")?;
+                let from = self.expr()?;
+                self.expect(",")?;
+                let to = self.expr()?;
+                items.push(Item::Arrow {
+                    name,
+                    from,
+                    to,
+                    line,
+                });
+            }
             "handle" => {
                 let mark = self.ident("a mark")?;
                 self.keyword("sets")?;
@@ -541,6 +818,66 @@ impl Parser {
             out.push(self.expr()?);
         }
         Ok(out)
+    }
+
+    fn optional_string(&mut self) -> Option<String> {
+        match self.peek() {
+            Tok::Str(_) => match self.bump() {
+                Tok::Str(text) => Some(text),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
+    /// `{ statements }`, as their own list.
+    fn block(&mut self, name: &mut Option<String>, what: &str) -> Result<Vec<Item>, Error> {
+        self.expect("{")?;
+        let mut inner = Vec::new();
+        while !self.eat("}") {
+            if *self.peek() == Tok::Eof {
+                return Err(self.error(format!("this `{what}` isn't closed")));
+            }
+            self.statement(name, &mut inner)?;
+        }
+        Ok(inner)
+    }
+
+    /// `name = value for a in lo..hi, b in lo..hi`.
+    fn many(&mut self, kind: ManyKind, line: usize) -> Result<Item, Error> {
+        let name = self.ident("a collection's name")?;
+        self.expect("=")?;
+        let value = self.expr()?;
+        self.keyword("for")?;
+        let mut vars = Vec::new();
+        loop {
+            let var = self.ident("a variable")?;
+            self.keyword("in")?;
+            vars.push((var, self.range()?));
+            if !self.eat(",") {
+                break;
+            }
+        }
+        let mut lets = Vec::new();
+        if self.at_word("with") {
+            self.bump();
+            loop {
+                let local = self.ident("a name")?;
+                self.expect("=")?;
+                lets.push((local, self.expr()?));
+                if !self.eat(",") {
+                    break;
+                }
+            }
+        }
+        Ok(Item::Many {
+            name,
+            kind,
+            value,
+            vars,
+            lets,
+            line,
+        })
     }
 
     fn range(&mut self) -> Result<[Expr; 2], Error> {
@@ -877,6 +1214,15 @@ impl Parser {
             other => Err(self.error(format!("expected an expression, found {other:?}"))),
         }
     }
+}
+
+/// One expression, as written inside a label's text.
+pub fn parse_expression(src: &str) -> Result<Expr, Error> {
+    Parser {
+        toks: lex(src)?,
+        pos: 0,
+    }
+    .expr()
 }
 
 pub fn parse(src: &str) -> Result<Document, Error> {

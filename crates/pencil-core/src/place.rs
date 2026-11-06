@@ -30,9 +30,9 @@ const STEP: f64 = 0.22;
 /// Clear space around a label's text, in style pixels.
 const MARGIN: f64 = 3.0;
 const WALL: f64 = 2.0;
-/// A text width that doesn't depend on any font, so a page and a video place labels alike.
-/// Being soft, the bumps don't need better.
-const EM_PER_CHAR: f64 = 0.55;
+/// Being soft, the bumps don't need a font's real widths, so a page and a video place labels
+/// alike.
+use crate::terms::EM_PER_CHAR;
 const LINE_PER_EM: f64 = 1.25;
 
 /// The second spring's rate, per second, as in `lab/labels`.
@@ -91,7 +91,12 @@ fn obstacles(
         let this_layer = layer;
         layer += usize::from(is_line);
         if !prepared.shown[i]
-            || matches!(mark.form, Form::Label { .. })
+            // A collection is a backdrop, as lattice points and a spiral's circles are, and
+            // pushing against thousands of pieces of it would be slow and look unsettled.
+            || matches!(
+                mark.form,
+                Form::Label { .. } | Form::Term { .. } | Form::Many { .. } | Form::Outline { .. }
+            )
             || opacity_of(style, env)? < 0.01
         {
             continue;
@@ -338,7 +343,7 @@ pub fn spring(
                 time: *index as f64 / SPRING_SAMPLES_PER_SECOND,
                 params: inputs.params.clone(),
             };
-            let settled = frame::prepare_settled(figure, &past, width, height, prepared.dpr)?;
+            let settled = frame::prepare(figure, &past, width, height, prepared.dpr)?;
             slot.insert(
                 settled
                     .labels

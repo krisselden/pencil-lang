@@ -4,11 +4,13 @@
 use crate::Figure;
 use crate::error::Error;
 use crate::eval::{self, Env};
+use crate::fast;
 use crate::ir::{Expr, Form, Part, Viewport};
 use crate::place;
 use crate::presence;
 use crate::stroke;
 use crate::style::{Font, MarkStyle, Place};
+use crate::terms;
 
 /// Sizes of the uniform arrays in `wgsl.rs`.
 pub const VALUE_VEC4S: usize = 64;
@@ -17,6 +19,8 @@ pub const GEOMETRY_VEC4S: usize = 512;
 pub const DEFAULT_LABEL_SIZE: f64 = 17.0;
 pub const DEFAULT_DOT_RADIUS: f64 = 3.0;
 pub const DEFAULT_STROKE_WIDTH: f64 = 1.0;
+/// How many pieces a curve is cut into to fit a view around it.
+const FIT_SAMPLES: usize = 40;
 /// How wide the view is in world units, which `show` can read: the zoom level.
 pub const VIEW_WIDTH: &str = "view.width";
 
@@ -167,7 +171,7 @@ pub fn view_for(
     height: u32,
 ) -> Result<Viewport, Error> {
     let view = &figure.scene.viewport;
-    if view.fit.is_empty() {
+    if view.fit.is_empty() && view.fit_curves.is_empty() {
         return Ok(view.clone());
     }
     let handles = &figure.scene.handles;
@@ -181,6 +185,11 @@ pub fn view_for(
             .collect(),
     };
     let env = eval::frame_env(figure, &held)?;
+    fit_window(view, &env, height as f64 / width as f64)
+}
+
+/// The window a `fit` viewport finds, with these bindings, at this shape.
+pub fn fit_window(view: &Viewport, env: &Env, aspect: f64) -> Result<Viewport, Error> {
     let (mut x0, mut x1, mut y0, mut y1) = (
         f64::INFINITY,
         f64::NEG_INFINITY,
@@ -191,9 +200,9 @@ pub fn view_for(
         // What doesn't exist has no bounds.
         let bounds = (|| {
             Ok::<_, Error>((
-                eval::real(x, &env)?,
-                eval::real(y, &env)?,
-                eval::real(r, &env)?,
+                eval::real(x, env)?,
+                eval::real(y, env)?,
+                eval::real(r, env)?,
             ))
         })();
         let (x, y, r) = match bounds {
@@ -206,11 +215,35 @@ pub fn view_for(
         y0 = y0.min(y - r);
         y1 = y1.max(y + r);
     }
+    for arc in &view.fit_curves {
+        let (Ok(lo), Ok(hi)) = (
+            eval::real(&arc.range[0], env),
+            eval::real(&arc.range[1], env),
+        ) else {
+            continue;
+        };
+        let mut slots = fast::Slots::new();
+        let var = slots.variable(&arc.var);
+        let x = fast::compile(&arc.point[0], &mut slots, env);
+        let y = fast::compile(&arc.point[1], &mut slots, env);
+        let (Some(nx), Some(ny)) = (x, y) else {
+            continue;
+        };
+        for i in 0..=FIT_SAMPLES {
+            slots.set(var, lo + (hi - lo) * i as f64 / FIT_SAMPLES as f64);
+            // What doesn't exist has no bounds.
+            if let (Ok(x), Ok(y)) = (fast::run(&nx, &slots), fast::run(&ny, &slots)) {
+                x0 = x0.min(x);
+                x1 = x1.max(x);
+                y0 = y0.min(y);
+                y1 = y1.max(y);
+            }
+        }
+    }
     // With nothing to fit, the declared window stands.
     if x0 > x1 {
         return Ok(view.clone());
     }
-    let aspect = height as f64 / width as f64;
     let wide = (x1 - x0) * (1.0 + 2.0 * view.pad);
     let tall = (y1 - y0) * (1.0 + 2.0 * view.pad);
     let (vw, vh) = if tall / wide.max(1e-12) > aspect {
@@ -297,6 +330,24 @@ pub fn drag_value(
     Ok((handle.param.clone(), value.clamp(range[0], range[1])))
 }
 
+/// A label's text, with its values in it. A whole number prints as one.
+fn filled(text: &str, values: &[Expr], env: &Env) -> Result<String, Error> {
+    let mut out = String::new();
+    let mut pieces = text.split("{}");
+    out.push_str(pieces.next().unwrap_or(""));
+    for (value, piece) in values.iter().zip(pieces) {
+        let v = eval::real(value, env)?;
+        let printed = if (v - v.round()).abs() < 1e-9 {
+            format!("{}", v.round() as i64)
+        } else {
+            format!("{v:.2}")
+        };
+        out.push_str(&printed.replace('-', "−"));
+        out.push_str(piece);
+    }
+    Ok(out)
+}
+
 /// Computes a frame's CPU side, with labels where they settle. For motion that doesn't
 /// jump, a caller then applies a spring: `place::spring`, or a page's own over its clock.
 /// `dpr` is device pixels per style pixel.
@@ -307,15 +358,17 @@ pub fn prepare(
     height: u32,
     dpr: f64,
 ) -> Result<Prepared, Error> {
-    prepare_settled(figure, inputs, width, height, dpr)
+    prepare_with(figure, inputs, width, height, dpr, &terms::Estimate)
 }
 
-pub(crate) fn prepare_settled(
+/// `prepare`, with a renderer's own text widths, for laying out expressions.
+pub fn prepare_with(
     figure: &Figure,
     inputs: &Inputs,
     width: u32,
     height: u32,
     dpr: f64,
+    widths: &dyn terms::TextWidths,
 ) -> Result<Prepared, Error> {
     let env = eval::frame_env(figure, inputs)?;
     let scene = &figure.scene;
@@ -411,7 +464,13 @@ pub(crate) fn prepare_settled(
 
     let mut labels = Vec::new();
     for (i, (mark, style)) in scene.marks.iter().zip(&figure.styles.marks).enumerate() {
-        let Form::Label { text, at, offset } = &mark.form else {
+        let Form::Label {
+            text,
+            values,
+            at,
+            offset,
+        } = &mark.form
+        else {
             continue;
         };
         if !shown[i] {
@@ -422,7 +481,7 @@ pub(crate) fn prepare_settled(
         let (ox, oy) = pair(offset, &env)?;
         labels.push(Label {
             id: mark.id.clone(),
-            text: text.clone(),
+            text: filled(text, values, &env)?,
             x: dx + ox * dpr,
             y: dy + oy * dpr,
             size: match &style.size {
@@ -446,6 +505,10 @@ pub(crate) fn prepare_settled(
             place: style.place,
         });
     }
+
+    labels.extend(terms::labels(
+        figure, &env, view, width, height, dpr, &shown, widths,
+    )?);
 
     let mut prepared = Prepared {
         values,

@@ -11,18 +11,20 @@ use std::collections::HashMap;
 use crate::compile::{BEAT_PARAM, CONSTANTS, SIGNALS};
 use crate::error::Error;
 use crate::frame::VIEW_WIDTH;
-use crate::ir::{Expr, Form, Scene};
+use crate::ir::{Expr, Form, Scene, Shape};
 use crate::parse::{Document, Item};
 
 /// The distance to a mark, per pixel. Only legal in spatial properties.
 pub const SELF_DIST: &str = "self.dist";
 /// Arc-length position along a stroke, 0 to 1. Only legal in `width`.
 pub const SELF_T: &str = "self.t";
+/// Style pixels per world unit, in a collection's sizes.
+pub const SELF_SCALE: &str = "self.scale";
 /// How many beats ago this mark's beat was: negative before it, 0 during it.
 pub const SELF_AGE: &str = "self.age";
 /// Every property a style can set. `docs/language.md` must describe each one, and a test
 /// holds it to that.
-pub const PROPERTIES: [&str; 16] = [
+pub const PROPERTIES: [&str; 18] = [
     "fill",
     "fill_opacity",
     "stroke",
@@ -39,10 +41,12 @@ pub const PROPERTIES: [&str; 16] = [
     "font",
     "place",
     "show",
+    "head",
+    "head_span",
 ];
 pub const COLORS: [&str; 2] = ["white", "black"];
 /// The tags that say what kind of mark something is.
-const MARK_TYPES: [&str; 9] = [
+const MARK_TYPES: [&str; 14] = [
     "circle",
     "line",
     "ray",
@@ -52,6 +56,11 @@ const MARK_TYPES: [&str; 9] = [
     "region",
     "dot",
     "label",
+    "arrow",
+    "term",
+    "dots",
+    "circles",
+    "outline",
 ];
 
 /// The space a mark's edges blend in. The default is gamma-encoded sRGB, because
@@ -129,6 +138,10 @@ pub struct MarkStyle {
     pub place: Place,
     /// Draws the mark only while this is above 0, decided once per frame.
     pub show: Option<Expr>,
+    /// An arrow's head length in style pixels. A curve with one ends in an arrowhead.
+    pub head: Option<Expr>,
+    /// How much of a curve's parameter its head may cover, at most: 60% of that length.
+    pub head_span: Option<Expr>,
 }
 
 impl MarkStyle {
@@ -143,8 +156,13 @@ impl MarkStyle {
                 Draw::Field => false,
                 Draw::Auto => !exact || self.needs_arc_length(),
             },
-            Form::Parametric(_) | Form::Polyline { .. } | Form::Region(_) => true,
-            Form::Dot(_) | Form::Label { .. } => false,
+            Form::Parametric(_)
+            | Form::Polyline { .. }
+            | Form::Region(_)
+            | Form::Arrow { .. }
+            | Form::Outline { .. }
+            | Form::Many { .. } => true,
+            Form::Dot(_) | Form::Label { .. } | Form::Term { .. } => false,
         }
     }
 
@@ -163,6 +181,8 @@ impl MarkStyle {
             &self.size,
             &self.halo,
             &self.show,
+            &self.head,
+            &self.head_span,
         ]
         .into_iter()
         .flatten()
@@ -181,6 +201,10 @@ pub struct Styled {
     /// One entry per `scene.marks`, in the same order.
     pub marks: Vec<MarkStyle>,
     pub paper: Option<Expr>,
+    /// A panel title's color and size, and the color of the formula beside it.
+    pub title_fill: Option<Expr>,
+    pub title_size: Option<Expr>,
+    pub formula_fill: Option<Expr>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -233,6 +257,7 @@ pub fn type_of(e: &Expr, names: &[&str], spatial: bool) -> Result<Ty, String> {
                 ("Hue", [Real]) => Ok(Color),
                 ("Mix", [Color, Color, Real]) => Ok(Color),
                 ("Mix" | "Clamp" | "Smoothstep" | "Reveal", [Real, Real, Real]) => Ok(Real),
+                ("Snap", [Real] | [Real, Real]) => Ok(Real),
                 (
                     "Add" | "Subtract" | "Multiply" | "Divide" | "Power" | "Min" | "Max" | "Mod"
                     | "Arctan2",
@@ -280,9 +305,24 @@ fn with_age(e: &Expr, beat: Option<usize>) -> Expr {
 }
 
 pub fn resolve(scene: &Scene, sheets: &[Document]) -> Result<Styled, Error> {
+    let mut unmatched = Vec::new();
+    let styled = resolve_keeping(scene, sheets, &mut unmatched)?;
+    match unmatched.into_iter().next() {
+        Some(error) => Err(error),
+        None => Ok(styled),
+    }
+}
+
+/// `resolve`, with the rules that name a mark this scene doesn't have set aside, since with
+/// panels a name only has to be in one of them.
+pub fn resolve_keeping(
+    scene: &Scene,
+    sheets: &[Document],
+    unmatched: &mut Vec<Error>,
+) -> Result<Styled, Error> {
     let mut styled = Styled {
         marks: vec![MarkStyle::default(); scene.marks.len()],
-        paper: None,
+        ..Styled::default()
     };
     let names: Vec<&str> = scene.bindings.iter().map(|b| b.id.as_str()).collect();
     // A sheet's `let`s name values for the sheets from there on. The document comes last,
@@ -304,6 +344,36 @@ pub fn resolve(scene: &Scene, sheets: &[Document]) -> Result<Styled, Error> {
                 .map(|(prop, value)| (prop.clone(), with_names(value, &sheet_names)))
                 .collect();
             for selector in &rule.selectors {
+                if selector.target == "formula" && selector.tags.is_empty() {
+                    for (prop, value) in &decls {
+                        if prop != "fill"
+                            || type_of(value, &names, false).map_err(&at)? != Ty::Color
+                        {
+                            return Err(at(format!("`formula` only takes a `fill`, not `{prop}`")));
+                        }
+                        styled.formula_fill = Some(value.clone());
+                    }
+                    continue;
+                }
+                if selector.target == "title" && selector.tags.is_empty() {
+                    for (prop, value) in &decls {
+                        match prop.as_str() {
+                            "fill" => {
+                                if type_of(value, &names, false).map_err(&at)? != Ty::Color {
+                                    return Err(at("`fill` needs a Color".into()));
+                                }
+                                styled.title_fill = Some(value.clone());
+                            }
+                            "size" => styled.title_size = Some(value.clone()),
+                            other => {
+                                return Err(at(format!(
+                                    "`title` takes `fill` and `size`, not `{other}`"
+                                )));
+                            }
+                        }
+                    }
+                    continue;
+                }
                 if selector.target == "paper" {
                     for (prop, value) in &decls {
                         if prop != "fill" || selector.facet.is_some() {
@@ -339,7 +409,7 @@ pub fn resolve(scene: &Scene, sheets: &[Document]) -> Result<Styled, Error> {
                         words.push('.');
                         words.push_str(tag);
                     }
-                    return Err(at(format!("no mark named `{words}`")));
+                    unmatched.push(at(format!("no mark named `{words}`")));
                 }
                 for index in matches {
                     let mark = &scene.marks[index];
@@ -355,6 +425,16 @@ pub fn resolve(scene: &Scene, sheets: &[Document]) -> Result<Styled, Error> {
                     .map_err(&at)?;
                 }
             }
+        }
+    }
+    // A dot in a collection is drawn by its stroke, in the color a dot is filled with.
+    for (mark, style) in scene.marks.iter().zip(&mut styled.marks) {
+        if let Form::Many {
+            shape: Shape::Dots(_),
+            ..
+        } = &mark.form
+        {
+            style.stroke = style.negative.take().or(style.stroke.take());
         }
     }
     for (mark, style) in scene.marks.iter().zip(&styled.marks) {
@@ -425,6 +505,8 @@ fn apply(
                 | "size"
                 | "halo"
                 | "show"
+                | "head"
+                | "head_span"
         );
         let mut scope = names.to_vec();
         if prop == "width" {
@@ -432,6 +514,13 @@ fn apply(
         }
         if prop == "show" {
             scope.push(VIEW_WIDTH);
+        }
+        // A collection's sizes are worked out per instance, so they can use its variables,
+        // and how big a world unit is, to size something in the figure's own terms.
+        if let (Form::Many { vars, lets, .. }, "radius" | "width") = (form, prop.as_str()) {
+            scope.extend(vars.iter().map(|(name, _)| name.as_str()));
+            scope.extend(lets.iter().map(|(name, _)| name.as_str()));
+            scope.push(SELF_SCALE);
         }
         let ty = type_of(value, &scope, !measure)?;
         let want = if measure { Ty::Real } else { Ty::Color };
@@ -450,7 +539,8 @@ fn apply(
             (None, "opacity") => &mut target.opacity,
             (None, "fill_opacity") => &mut target.fill_opacity,
             (None, "show") => &mut target.show,
-            (None, "width" | "dash" | "gap" | "radius" | "size" | "halo") => {
+            (None, "head_span") => &mut target.head_span,
+            (None, "width" | "dash" | "gap" | "radius" | "size" | "halo" | "head") => {
                 if !has_pixels(value) {
                     return Err(format!("`{prop}` needs a unit, such as `2px`"));
                 }
@@ -460,6 +550,7 @@ fn apply(
                     "gap" => &mut target.gap,
                     "radius" => &mut target.radius,
                     "size" => &mut target.size,
+                    "head" => &mut target.head,
                     _ => &mut target.halo,
                 }
             }

@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Squaring z</title>
+<style>
+  :root { color-scheme: light dark; --ink: #1c1b19; --paper: #fbfaf7; --muted: #6b675f; --bad: #b5443c; }
+  @media (prefers-color-scheme: dark) { :root { --ink: #ece9e2; --paper: #1a1917; --muted: #a29d93; --bad: #e58a80; } }
+  body { margin: 0; padding: 24px 16px; background: var(--paper); color: var(--ink); font: 15px/1.45 ui-sans-serif, system-ui, sans-serif; }
+  main { max-width: 620px; margin: 0 auto; }
+  h1 { font-size: 16px; font-weight: 600; margin: 0 0 12px; }
+  .stage { position: relative; overflow: hidden; }
+  canvas { display: block; width: 100%; }
+  .label { position: absolute; left: 0; top: 0; white-space: nowrap; font-family: system-ui, -apple-system, sans-serif; line-height: 1; will-change: transform; }
+  .label.math { font-family: Charter, 'Bitstream Charter', 'Sitka Text', Cambria, serif; font-style: italic; }
+  .controls { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; margin: 12px 0; }
+  .controls input[type=range] { flex: 1; min-width: 10rem; }
+  output { font-variant-numeric: tabular-nums; }
+  button { font: inherit; }
+  p { margin: 4px 0; color: var(--muted); }
+  #error { color: var(--bad); white-space: pre-wrap; font-family: ui-monospace, monospace; font-size: 13px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Squaring z = a + bi: F.O.I.L., with arrows</h1>
+  <div class="stage" id="stage"><canvas id="figure" aria-label="z = a + bi is built from a and bi. A copy of z is scaled by a, and another by b and turned 90 degrees by i. Tip to tail they make z squared, at twice the angle and the length squared."></canvas></div>
+  <div class="controls">
+    <button id="play" type="button">Pause</button>
+    <input id="time" type="range" min="0" max="19" step="0.01" value="0" aria-label="Time">
+    <output id="clock" for="time"></output>
+  </div>
+  <p id="status">Starting…</p>
+  <p id="error" role="alert"></p>
+</main>
+<script type="module">
+  import init, { Player } from './pkg/pencil_web.js';
+  import { LabelLayer } from './labels.js';
+
+  const $ = (id) => document.getElementById(id);
+  const get = async (path) => {
+    const response = await fetch(path, { cache: 'no-store' });
+    if (!response.ok) throw new Error(`${path}: ${response.status}`);
+    return response.text();
+  };
+  const canvas = $('figure');
+  const doc = await get('../corpus/006-square/square.pen');
+  const sheets = await Promise.all([get('../corpus/theme.style'), get('../corpus/006-square/plain.style')]);
+  const design = { width: 340, height: 235 };
+  const dpr = window.devicePixelRatio || 1;
+  canvas.style.aspectRatio = `${design.width} / ${design.height}`;
+  canvas.width = Math.round(canvas.clientWidth * dpr);
+  canvas.height = Math.round((canvas.clientWidth * design.height / design.width) * dpr);
+  const scale = canvas.width / design.width;
+
+  await init();
+  const player = await Player.create(canvas, new URLSearchParams(location.search).has('gl'));
+  const layer = new LabelLayer($('stage'), dpr);
+  player.set_measure(layer.measure);
+  try {
+    player.load(doc, sheets);
+    $('status').textContent = `${player.backend}, ${canvas.width}×${canvas.height}`;
+  } catch (e) {
+    $('error').textContent = e.message;
+  }
+
+  const duration = JSON.parse(player.info()).duration;
+  let time = 0, playing = !matchMedia('(prefers-reduced-motion: reduce)').matches, last = 0;
+  $('play').textContent = playing ? 'Pause' : 'Play';
+  const draw = (t) => {
+    layer.update(JSON.parse(player.draw(t, scale)));
+    $('time').value = t;
+    $('clock').textContent = `${t.toFixed(2)} s`;
+  };
+  $('play').addEventListener('click', () => { playing = !playing; $('play').textContent = playing ? 'Pause' : 'Play'; });
+  $('time').addEventListener('input', () => { time = Number($('time').value); draw(time); });
+  const frame = (now) => {
+    if (playing) {
+      time = (time + (now - last) / 1000) % duration;
+      try { draw(time); } catch (e) { $('error').textContent = e.message; playing = false; }
+    }
+    last = now;
+    layer.tick(now);
+    requestAnimationFrame(frame);
+  };
+  draw(time);
+  requestAnimationFrame((now) => { last = now; frame(now); });
+  window.pencil = { player, layer, draw, stop() { playing = false; $('play').textContent = 'Play'; } };
+</script>
+</body>
+</html>

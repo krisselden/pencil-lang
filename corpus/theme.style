@@ -1,14 +1,26 @@
 // What every figure shares, as in the site's design system. A document picks a role by tag,
 // and never a number. `name` is any label without another role.
-let ink = rgb(28, 27, 25)
-let paper_color = rgb(251, 250, 247)
-let muted = rgb(107, 103, 95)
-let blue = rgb(46, 98, 168)
-let red = rgb(181, 68, 60)
+let ink = rgb(18, 17, 15)
+let paper_color = rgb(242, 240, 235)
+let muted = rgb(110, 106, 99)
+let accent = rgb(96, 66, 166)
+let blue = rgb(0, 104, 181)
+let red = rgb(171, 58, 51)
+let green = rgb(22, 123, 38)
+// Lighter shades, for what's secondary.
+let accent_light = rgb(157, 144, 200)
+let blue_light = rgb(124, 166, 208)
+let red_light = rgb(209, 142, 131)
+let green_light = rgb(130, 176, 127)
 
 style paper { fill: paper_color }
+
+style title { fill: ink; size: 14px }
 
 style label { size: 17px; font: math; halo: 3px; fill: ink; place: settle }
 style label.note { size: 15px; font: math }
 style label.tick { size: 12px; font: sans; fill: muted }
 style label.display { size: 64px; font: math; place: fixed }
+
+// The parts of an expression: a name's size, and they move by `snap`, not by settling.
+style term { size: 17px; font: math; halo: 3px; fill: ink }

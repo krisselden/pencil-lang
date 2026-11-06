@@ -1,0 +1,94 @@
+// F.O.I.L. on z², physically. z = a + bi is a right triangle. Multiplying by z is F.O., a
+// copy of z scaled by a, plus I.L., a copy of z scaled by b and turned 90° by i, tip to tail.
+// Those are the legs of a right triangle similar to the first, scaled by |z| and turned.
+// Numbers have length, negative turns 180°, and i turns 90°, which is where right triangles
+// and trig come from.
+doc square
+duration 19
+
+viewport { x: -0.7..2.7, y: -0.35..2.0, width: 340, height: 235 }
+
+fn turned(p, t) = (p.x·cos(t) - p.y·sin(t), p.x·sin(t) + p.y·cos(t))
+fn between(p, q, s) = p + (q - p)·s
+
+// One step per state of the expression. A reader or a clock can drive it.
+param step in 0..13
+bind step = timeline(time,
+  0.4, 1.2,   1.5, 2.2,   2.5, 3.2,   3.5, 4.1,   5.0, 5.5,   // build z
+  7.8, 8.9,   9.2, 10.2,  10.5, 11.5, 11.8, 12.6,             // scale, scale, turn, slide
+  13.0, 13.7, 14.4, 14.8, 15.4, 15.8,                         // add, factor, square
+  18.2, 18.8)
+
+let a = 1.5
+let b = 0.55
+let O = (0, 0)
+let Z = (a, b)
+let AZ = Z·a
+let BZ = Z·b
+let BIZ = turned(BZ, pi / 2)
+let Z2 = AZ + BIZ
+let angle = atan2(b, a)
+
+// How far along each state's move is.
+let built_a = snap(step - 0)
+let built_b = snap(step - 1)
+let named = snap(step - 3)
+let scaled_a = snap(step - 5)
+let scaled_b = snap(step - 6)
+let rotated = snap(step - 7)
+let slid = snap(step - 8)
+let added = snap(step - 9)
+let gone = snap(step - 12)
+
+let tip_a = between(Z, AZ, scaled_a)
+let along = turned(between(Z, BZ, scaled_b), rotated·pi / 2)
+let from = between(O, AZ, slid)
+let tip_b = from + along
+
+// Once z is built, its parts step back so the multiply reads.
+let parts = (1 - gone)·(1 - 0.7·smoothstep(7.8, 8.4, time))
+let fade = 1 - gone
+let length_shown = smoothstep(5.7, 6.2, time)·(1 - smoothstep(7.0, 7.5, time))
+let result_shown = smoothstep(15.9, 16.5, time)·fade
+
+segment axis_x = (-0.7, 0), (2.7, 0)
+segment axis_y = (0, -0.35), (0, 2.0)
+
+arrow leg_a = O, (a·built_a, 0)
+arrow leg_b = (a, 0), (a, b·built_b)
+arrow hypotenuse = O, Z
+arrow fo = O, tip_a
+curve turning = parametric (t): (cos(t)·length(BZ), sin(t)·length(BZ)) for t in angle..angle + rotated·pi / 2
+arrow il = from, tip_b
+arrow square = O, Z2
+
+curve first_angle = parametric (t): (0.42·cos(t), 0.42·sin(t)) for t in 0..angle
+curve second_angle = parametric (t): (0.62·cos(t), 0.62·sin(t)) for t in angle..2·angle
+label arg_first = "arg z" at (0.5·cos(angle / 2), 0.5·sin(angle / 2)) offset (0, -6) tag note
+label arg_second = "arg z" at (0.7·cos(1.5·angle), 0.7·sin(1.5·angle)) offset (0, -6) tag note
+label length_z = "|z|" at Z·0.5 offset (-14, -12) tag note
+label length_z2 = "|z|²" at Z2·0.55 offset (-18, -10) tag note
+
+place at_a = (a / 2, 0) offset (0, 22) hang middle
+place at_b = (a, b / 2) offset (6, 6)
+place at_z = Z offset (10, -10)
+place at_tip_a = tip_a offset (8, 18)
+place at_tip_b = tip_b offset (-28, -12)
+place beside_b = from + along·0.5 offset (4, 6)
+place at_sum = Z2 offset (-8, -12) hang end
+
+expression work by step {
+  "a" at at_a
+  "a" at at_a, "+ b i" at at_b
+  "a + b i" at at_z
+  "z = a + b i" at at_z
+  "z" at at_z
+  "z" at at_z, "z.1 a" at at_tip_a
+  "z" at at_z, "z.1 a" at at_tip_a, "z.2 b" at at_tip_b
+  "z" at at_z, "z.1 a" at at_tip_a, "z.2 b i" at at_tip_b
+  "z" at at_z, "z.1 a" at at_tip_a, "+ z.2 b i" at beside_b
+  "z" at at_z, "z.1 a + z.2 b i" at at_sum
+  "z" at at_z, "z.1 ( a + b i )" at at_sum
+  "z" at at_z, "z.1 ²" at at_sum
+  empty
+}

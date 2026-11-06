@@ -3,13 +3,24 @@
 //! shading as `Frame::shade`, and `pencil check` compares the two.
 
 use std::collections::HashMap;
+use std::sync::Mutex;
 
 use crate::Figure;
 use crate::error::Error;
 use crate::frame::{self, Inputs, Prepared};
-use crate::ir::{Expr, Form};
+use crate::ir::{Expr, Form, Scene, System};
 use crate::stroke::{self, box_coverage};
 use crate::style::{Blend, MarkStyle, SELF_DIST};
+
+/// How punchy a move is: it gets near its destination fast, then eases in, leaving time to
+/// take it in. 5 is Kris's choice in `lab/expressions`. Above it, `za` joining `+zbi` on their
+/// way to `za + zbi` goes by too quickly to see. The blog's is 4.
+pub const SNAP_POWER: f64 = 5.0;
+
+/// 0 at or before 0, 1 at or after 1, getting there fast and easing in.
+pub fn snap(x: f64, power: Option<f64>) -> f64 {
+    1.0 - (1.0 - x.clamp(0.0, 1.0)).powf(power.unwrap_or(SNAP_POWER))
+}
 
 /// Below this gradient length the field's distance estimate is meaningless.
 pub const MIN_GRADIENT: f64 = 1e-6;
@@ -34,7 +45,12 @@ impl Env {
     }
 
     pub fn set(&mut self, name: &str, value: f64) {
-        self.vars.insert(name.to_string(), Some(value));
+        // Collections and curves set their variables a lot, so don't allocate for a known name.
+        if let Some(slot) = self.vars.get_mut(name) {
+            *slot = Some(value);
+        } else {
+            self.vars.insert(name.to_string(), Some(value));
+        }
     }
 
     pub fn set_absent(&mut self, name: &str) {
@@ -175,6 +191,26 @@ pub fn eval(e: &Expr, env: &Env) -> Result<Value, Error> {
                 let x = ((t - a) / (b - a)).clamp(0.0, 1.0);
                 Real(x * x * (3.0 - 2.0 * x))
             }
+            ("Snap", [x]) => Real(snap(real(x)?, None)),
+            ("Snap", [x, power]) => Real(snap(real(x)?, Some(real(power)?))),
+            // Which step of a list of moves a time is in: `start end` for each. A whole number
+            // while holding, and between two while moving, linearly, since easing is `snap`'s.
+            ("Timeline", [time, moves @ ..]) if !moves.is_empty() && moves.len() % 2 == 0 => {
+                let time = real(time)?;
+                let mut step = 0.0;
+                for window in moves.chunks(2) {
+                    let (start, end) = (real(&window[0])?, real(&window[1])?);
+                    if time >= end {
+                        step += 1.0;
+                    } else {
+                        if time > start {
+                            step += (time - start) / (end - start);
+                        }
+                        break;
+                    }
+                }
+                Real(step)
+            }
             ("Pixels", [a]) => Real(real(a)?),
             ("Oklch", [l, c, h]) => Color(oklch(real(l)?, real(c)?, real(h)?)),
             ("Rgb", [r, g, b]) => Color([
@@ -198,6 +234,105 @@ pub fn eval(e: &Expr, env: &Env) -> Result<Value, Error> {
     })
 }
 
+/// How many steps Newton's method gets. It's quick or it's not going to work.
+const SOLVE_STEPS: usize = 50;
+/// How close to zero an equation has to come to count as solved.
+const SOLVE_RESIDUAL: f64 = 1e-9;
+/// How small a step means it's arrived, relative to the size of the unknowns.
+const SOLVE_STEP: f64 = 1e-14;
+
+/// Newton's method, from the start every time: a pure function of the frame, with no memory
+/// of the last answer. A system that doesn't settle on a solution is absent, as an
+/// intersection that doesn't exist is.
+pub fn solve(system: &System, env: &Env) -> Result<Vec<f64>, Error> {
+    let System {
+        unknowns: names,
+        start,
+        equations,
+        jacobian,
+        ..
+    } = system;
+    let n = names.len();
+    let mut at = start
+        .iter()
+        .map(|e| real(e, env))
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut local = env.clone();
+    for _ in 0..SOLVE_STEPS {
+        for (name, value) in names.iter().zip(&at) {
+            local.set(name, *value);
+        }
+        let f = equations
+            .iter()
+            .map(|e| real(e, &local))
+            .collect::<Result<Vec<_>, _>>()?;
+        let j = jacobian
+            .iter()
+            .map(|e| real(e, &local))
+            .collect::<Result<Vec<_>, _>>()?;
+        let Some(step) = gaussian(j, f.clone(), n) else {
+            return Err(Error::absent());
+        };
+        let size = at.iter().fold(1.0f64, |m, v| m.max(v.abs()));
+        let moved = step.iter().fold(0.0f64, |m, v| m.max(v.abs()));
+        for (value, change) in at.iter_mut().zip(&step) {
+            *value -= change;
+        }
+        if at.iter().any(|v| !v.is_finite()) {
+            return Err(Error::absent());
+        }
+        if moved <= SOLVE_STEP * size {
+            break;
+        }
+    }
+    // It has to have really got there, wherever it stopped.
+    for (name, value) in names.iter().zip(&at) {
+        local.set(name, *value);
+    }
+    for equation in equations {
+        let left = real(equation, &local)?.abs();
+        if left.is_nan() || left > SOLVE_RESIDUAL {
+            return Err(Error::absent());
+        }
+    }
+    Ok(at)
+}
+
+/// Solves `a x = b` for an `n` by `n` system, with partial pivoting. Nothing if it's singular.
+fn gaussian(mut a: Vec<f64>, mut b: Vec<f64>, n: usize) -> Option<Vec<f64>> {
+    for col in 0..n {
+        let pivot = (col..n).max_by(|i, j| {
+            a[i * n + col]
+                .abs()
+                .partial_cmp(&a[j * n + col].abs())
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })?;
+        let size = a[pivot * n + col].abs();
+        if size.is_nan() || size <= 1e-300 {
+            return None;
+        }
+        if pivot != col {
+            for k in 0..n {
+                a.swap(pivot * n + k, col * n + k);
+            }
+            b.swap(pivot, col);
+        }
+        for row in col + 1..n {
+            let factor = a[row * n + col] / a[col * n + col];
+            for k in col..n {
+                a[row * n + k] -= factor * a[col * n + k];
+            }
+            b[row] -= factor * b[col];
+        }
+    }
+    let mut x = vec![0.0; n];
+    for row in (0..n).rev() {
+        let done: f64 = (row + 1..n).map(|k| a[row * n + k] * x[k]).sum();
+        x[row] = (b[row] - done) / a[row * n + row];
+    }
+    Some(x)
+}
+
 pub fn real(e: &Expr, env: &Env) -> Result<f64, Error> {
     match eval(e, env)? {
         Value::Real(v) => Ok(v),
@@ -212,13 +347,72 @@ pub fn color(e: &Expr, env: &Env) -> Result<[f64; 3], Error> {
     }
 }
 
+/// One figure's last answer to each of its systems, and what it was the answer to. A system
+/// is expensive and a frame asks several times, so this saves repeating it. The key is
+/// everything the answer depends on, so it can't change what a frame shows.
+#[derive(Debug, Default)]
+pub struct Solved(Mutex<Vec<Option<SolvedEntry>>>);
+
+type SolvedEntry = (Vec<u64>, Result<Vec<f64>, Error>);
+
+fn solved(
+    system: &System,
+    index: usize,
+    env: &Env,
+    memo: Option<&Solved>,
+) -> Result<Vec<f64>, Error> {
+    let Some(memo) = memo else {
+        return solve(system, env);
+    };
+    let key: Vec<u64> = system
+        .depends
+        .iter()
+        .map(|name| env.get(name).map_or(u64::MAX, f64::to_bits))
+        .collect();
+    let mut entries = memo.0.lock().unwrap_or_else(|e| e.into_inner());
+    if entries.len() <= index {
+        entries.resize_with(index + 1, || None);
+    }
+    if let Some((known, answer)) = &entries[index]
+        && *known == key
+    {
+        return answer.clone();
+    }
+    let answer = solve(system, env);
+    entries[index] = Some((key, answer.clone()));
+    answer
+}
+
 /// The values of a frame's bindings and signals. An input overrides a param.
 pub fn frame_env(figure: &Figure, inputs: &Inputs) -> Result<Env, Error> {
+    scene_env(&figure.scene, inputs, Some(&figure.solved))
+}
+
+pub fn scene_env(scene: &Scene, inputs: &Inputs, memo: Option<&Solved>) -> Result<Env, Error> {
     let mut env = Env::new(inputs.time);
-    for binding in &figure.scene.bindings {
-        let value = match inputs.params.iter().find(|(id, _)| *id == binding.id) {
-            Some((_, value)) => Ok(*value),
-            None => real(&binding.expr, &env),
+    // A system's unknowns are bindings in a row, and one solve answers them all.
+    let mut answer: Option<Result<Vec<f64>, Error>> = None;
+    for binding in &scene.bindings {
+        let value = match (
+            inputs.params.iter().find(|(id, _)| *id == binding.id),
+            &binding.expr,
+        ) {
+            (Some((_, value)), _) => Ok(*value),
+            (None, Expr::App(head, args)) if head == "Solved" => {
+                let [Expr::Num(system), Expr::Num(k)] = args.as_slice() else {
+                    return Err(Error::new("a malformed `solve`"));
+                };
+                if *k == 0.0 {
+                    let index = *system as usize;
+                    answer = Some(solved(&scene.systems[index], index, &env, memo));
+                }
+                match answer.as_ref() {
+                    Some(Ok(values)) => Ok(values[*k as usize]),
+                    Some(Err(e)) => Err(e.clone()),
+                    None => Err(Error::new("a malformed `solve`")),
+                }
+            }
+            (None, _) => real(&binding.expr, &env),
         };
         match value {
             Ok(value) => env.set(&binding.id, value),
@@ -365,8 +559,12 @@ impl<'a> Frame<'a> {
                     };
                     Some((rho - radius, n))
                 }
-                Form::Label { .. } => continue,
-                Form::Parametric(_) | Form::Polyline { .. } => None,
+                Form::Label { .. } | Form::Term { .. } => continue,
+                Form::Outline { .. } => None,
+                Form::Parametric(_)
+                | Form::Polyline { .. }
+                | Form::Arrow { .. }
+                | Form::Many { .. } => None,
             };
             let opacity = match &style.opacity {
                 Some(o) => real(o, &env)?.clamp(0.0, 1.0),

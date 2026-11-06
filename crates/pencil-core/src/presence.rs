@@ -9,7 +9,7 @@ use std::collections::HashSet;
 
 use crate::error::Error;
 use crate::eval::{self, Env};
-use crate::ir::{Expr, Form, Mark, Part, Scene};
+use crate::ir::{Expr, Form, Mark, Part, Scene, Shape};
 use crate::style::{MarkStyle, Styled};
 
 /// Whether an expression could be absent, given the names that could be. It errs toward
@@ -18,7 +18,8 @@ fn may_vanish(e: &Expr, vanishing: &HashSet<String>) -> bool {
     match e {
         Expr::Num(_) => false,
         Expr::Sym(s) => vanishing.contains(s),
-        Expr::App(head, _) if head == "Where" => true,
+        // A system might not settle on a solution.
+        Expr::App(head, _) if head == "Where" || head == "Solved" => true,
         Expr::App(head, _) if head == "Exists" => false,
         Expr::App(_, args) => args.iter().any(|a| may_vanish(a, vanishing)),
     }
@@ -48,9 +49,30 @@ fn form_exprs(form: &Form) -> Vec<&Expr> {
             }
         }
         Form::Dot(at) => out.extend(at),
-        Form::Label { at, offset, .. } => {
+        Form::Arrow { from, to } => {
+            out.extend(from);
+            out.extend(to);
+        }
+        Form::Many { vars, lets, shape } => {
+            out.extend(vars.iter().flat_map(|(_, range)| range));
+            out.extend(lets.iter().map(|(_, e)| e));
+            match shape {
+                Shape::Dots(at) => out.extend(at),
+                Shape::Circles { center, r } => {
+                    out.extend(center);
+                    out.push(r);
+                }
+            }
+        }
+        // Where it sits is the expression's business, per state.
+        Form::Term { .. } => {}
+        Form::Outline { .. } => {}
+        Form::Label {
+            at, offset, values, ..
+        } => {
             out.extend(at);
             out.extend(offset);
+            out.extend(values);
         }
     }
     out
@@ -138,7 +160,13 @@ pub fn present(mark: &Mark, style: &MarkStyle, env: &Env) -> Result<bool, Error>
             Ok(true)
         }
         Form::Dot(at) => all_evaluate(at.iter(), env),
-        Form::Label { at, offset, .. } => all_evaluate(at.iter().chain(offset), env),
+        Form::Arrow { from, to } => all_evaluate(from.iter().chain(to), env),
+        // These find out as they go, per instance and per state.
+        Form::Many { .. } | Form::Term { .. } => Ok(true),
+        Form::Outline { .. } => Ok(true),
+        Form::Label {
+            at, offset, values, ..
+        } => all_evaluate(at.iter().chain(offset).chain(values), env),
     }
 }
 

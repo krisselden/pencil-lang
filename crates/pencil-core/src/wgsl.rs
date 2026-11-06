@@ -5,7 +5,7 @@
 //! see the same values and a shader only computes what varies per pixel.
 
 use crate::Figure;
-use crate::eval::MIN_GRADIENT;
+use crate::eval::{MIN_GRADIENT, SNAP_POWER};
 use crate::frame::{DEFAULT_DOT_RADIUS, DEFAULT_STROKE_WIDTH, GEOMETRY_VEC4S, VALUE_VEC4S};
 use crate::ir::{Expr, Form};
 use crate::style::{Blend, MarkStyle};
@@ -43,6 +43,7 @@ fn fmod(x: f32, y: f32) -> f32 { return x - y * floor(x / y); }
 fn reveal(age: f32, now: f32, later: f32) -> f32 {
     return select(select(later, now, age < 0.5), 0.0, age < -0.5);
 }
+fn snap(x: f32, power: f32) -> f32 { return 1.0 - pow(1.0 - clamp(x, 0.0, 1.0), power); }
 fn ease(a: f32, b: f32, t: f32) -> f32 {
     let x = clamp((t - a) / (b - a), 0.0, 1.0);
     return x * x * (3.0 - 2.0 * x);
@@ -269,6 +270,8 @@ pub fn emit_expr(e: &Expr) -> String {
             ("Rgb", _) => call("rgb", args),
             ("Hue", _) => call("hue", args),
             ("Mix", _) => call("mix", args),
+            ("Snap", [x]) => format!("snap({}, {})", emit_expr(x), literal(SNAP_POWER)),
+            ("Snap", [x, power]) => format!("snap({}, {})", emit_expr(x), emit_expr(power)),
             ("Pixels", [a]) => emit_expr(a),
             _ => panic!(
                 "the type checker admitted `{head}` with {} arguments",
@@ -287,7 +290,7 @@ fn opacity_of(style: &MarkStyle) -> String {
 
 pub fn emit(figure: &Figure) -> String {
     let mut out = format!(
-        "struct Uniforms {{ time: f32, width: f32, height: f32, dpr: f32, view: vec4<f32>, values: array<vec4<f32>, {VALUE_VEC4S}> }}\n\
+        "struct Uniforms {{ time: f32, width: f32, height: f32, dpr: f32, view: vec4<f32>, origin: vec2<f32>, values: array<vec4<f32>, {VALUE_VEC4S}> }}\n\
          @group(0) @binding(0) var<uniform> u: Uniforms;\n\
          @group(0) @binding(1) var coverage: texture_2d_array<f32>;\n\
          @group(0) @binding(2) var<uniform> geometry: array<vec4<f32>, {GEOMETRY_VEC4S}>;\n\n\
@@ -304,8 +307,10 @@ pub fn emit(figure: &Figure) -> String {
     );
     // The view arrives as a uniform, since a `fit` viewport changes it per frame.
     out.push_str("    let sx = u.view.y - u.view.x;\n    let sy = u.view.w - u.view.z;\n");
-    out.push_str("    let world_x = u.view.x + position.x / u.width * sx;\n");
-    out.push_str("    let world_y = u.view.w - position.y / u.height * sy;\n");
+    // A panel's pixels start at its corner of the canvas.
+    out.push_str("    let local = position.xy - u.origin;\n");
+    out.push_str("    let world_x = u.view.x + local.x / u.width * sx;\n");
+    out.push_str("    let world_y = u.view.w - local.y / u.height * sy;\n");
     out.push_str("    let pixel = (sx / u.width + sy / u.height) / 2.0;\n");
     for (i, binding) in figure.scene.bindings.iter().enumerate() {
         out.push_str(&format!(
@@ -332,7 +337,7 @@ pub fn emit(figure: &Figure) -> String {
         .zip(&figure.styles.marks)
         .enumerate()
     {
-        if matches!(mark.form, Form::Label { .. }) {
+        if matches!(mark.form, Form::Label { .. } | Form::Term { .. }) {
             continue;
         }
         // A mark that can vanish skips all its work when it has. Absent bindings arrive as
@@ -372,7 +377,7 @@ pub fn emit(figure: &Figure) -> String {
             }
             Form::Region(_) => {
                 out.push_str(&format!(
-                    "        let measured = polygon({region}, position.xy);\n"
+                    "        let measured = polygon({region}, local);\n"
                 ));
                 region += 1;
                 out.push_str("        let dist_px = measured.x;\n");
@@ -390,7 +395,7 @@ pub fn emit(figure: &Figure) -> String {
                     None => literal(DEFAULT_DOT_RADIUS),
                 };
                 out.push_str(&format!("        let radius = {radius} * u.dpr;\n"));
-                out.push_str("        let offset = position.xy - center;\n");
+                out.push_str("        let offset = local - center;\n");
                 out.push_str("        let rho = length(offset);\n");
                 out.push_str(
                     "        let normal = select(vec2<f32>(1.0, 0.0), offset / rho, rho > 1e-6);\n",
@@ -438,7 +443,7 @@ pub fn emit(figure: &Figure) -> String {
         if let Some(stroke) = &style.stroke {
             if style.stroke_is_line(&mark.form) {
                 out.push_str(&format!(
-                    "        let stroke_coverage = textureLoad(coverage, vec2<i32>(position.xy), {layer}, 0).r;\n",
+                    "        let stroke_coverage = textureLoad(coverage, vec2<i32>(local), {layer}, 0).r;\n",
                 ));
                 layer += 1;
             } else if measured {

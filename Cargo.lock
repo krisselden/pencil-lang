@@ -690,6 +690,7 @@ name = "pencil-web"
 version = "0.0.0"
 dependencies = [
  "console_error_panic_hook",
+ "js-sys",
  "pencil-core",
  "pencil-render",
  "serde_json",

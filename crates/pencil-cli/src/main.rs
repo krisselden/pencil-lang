@@ -9,8 +9,10 @@ use std::process::{Command, Stdio};
 mod text;
 
 use pencil_core::frame::{self, Inputs};
-use pencil_core::{Figure, build, eval::Frame, place, wgsl};
-use pencil_render::Offscreen;
+use pencil_core::ir::Form;
+use pencil_core::terms::{Estimate, TextWidths};
+use pencil_core::{Composition, PanelFrame, compose, eval::Frame, place, wgsl};
+use pencil_render::{FigurePipeline, Offscreen};
 
 const USAGE: &str = "\
 usage:
@@ -81,7 +83,7 @@ fn parse_args(args: &[String]) -> Result<Args, Box<dyn Error>> {
     Ok(parsed)
 }
 
-fn load(args: &Args) -> Result<Figure, Box<dyn Error>> {
+fn load(args: &Args) -> Result<Composition, Box<dyn Error>> {
     let read = |p: &Path| fs::read_to_string(p).map_err(|e| format!("{}: {e}", p.display()));
     let doc = read(&args.doc)?;
     let sheets = args
@@ -90,19 +92,67 @@ fn load(args: &Args) -> Result<Figure, Box<dyn Error>> {
         .map(|p| read(p))
         .collect::<Result<Vec<_>, _>>()?;
     let refs: Vec<&str> = sheets.iter().map(String::as_str).collect();
-    build(&doc, &refs).map_err(|e| format!("{}:{e}", args.doc.display()).into())
+    compose(&doc, &refs).map_err(|e| format!("{}:{e}", args.doc.display()).into())
 }
 
-/// The frame's height for a width, following the viewport's shape. Even, because
-/// video encoders need that.
-fn height_for(figure: &Figure, width: u32) -> u32 {
-    let view = &figure.scene.viewport;
-    let aspect = match (view.design_width, view.design_height) {
-        (Some(w), Some(h)) => h / w,
-        _ => (view.y[1] - view.y[0]) / (view.x[1] - view.x[0]),
-    };
-    let height = (width as f64 * aspect).round() as u32;
+/// The frame's height for a width, following the figure's shape. Even, because video
+/// encoders need that.
+fn height_for(composition: &Composition, width: u32) -> u32 {
+    let height = (width as f64 * composition.size[1] / composition.size[0]).round() as u32;
     height + height % 2
+}
+
+/// Whether anything in it needs a font.
+fn has_text(composition: &Composition) -> bool {
+    composition.panels.iter().any(|panel| {
+        panel
+            .figure
+            .scene
+            .marks
+            .iter()
+            .any(|m| matches!(m.form, Form::Label { .. } | Form::Term { .. }))
+            || panel.title.is_some()
+            || panel.formula.is_some()
+    })
+}
+
+/// A frame's panels, in the shape the GPU takes them.
+fn on_canvas(frames: &[PanelFrame]) -> Vec<(&frame::Prepared, [u32; 2], u32, u32)> {
+    frames
+        .iter()
+        .map(|f| (&f.prepared, f.origin, f.width, f.height))
+        .collect()
+}
+
+/// Puts the second spring on settling labels, for what's not on a page.
+fn spring_all(
+    composition: &Composition,
+    frames: &mut [PanelFrame],
+    inputs: &Inputs,
+    caches: &mut [place::SpringCache],
+) -> Result<(), Box<dyn Error>> {
+    for ((panel, frame), cache) in composition.panels.iter().zip(frames).zip(caches) {
+        place::spring(
+            &panel.figure,
+            inputs,
+            frame.width,
+            frame.height,
+            &mut frame.prepared,
+            cache,
+        )?;
+    }
+    Ok(())
+}
+
+fn pipelines(
+    gpu: &Offscreen,
+    composition: &Composition,
+) -> Result<Vec<FigurePipeline>, Box<dyn Error>> {
+    composition
+        .panels
+        .iter()
+        .map(|panel| Ok(gpu.pipeline(&panel.figure)?))
+        .collect()
 }
 
 fn write_png(path: &Path, rgba: &[u8], width: u32, height: u32) -> Result<(), Box<dyn Error>> {
@@ -118,41 +168,54 @@ fn write_png(path: &Path, rgba: &[u8], width: u32, height: u32) -> Result<(), Bo
 }
 
 fn render(args: &Args) -> Result<(), Box<dyn Error>> {
-    let figure = load(args)?;
+    let composition = load(args)?;
     let time = args.times.first().copied().unwrap_or(0.0);
     let out = args.out.as_ref().ok_or("render needs --out")?;
-    let (width, height) = (args.size, height_for(&figure, args.size));
+    let (width, height) = (args.size, height_for(&composition, args.size));
     let inputs = Inputs {
         time,
         params: args.params.clone(),
     };
-    let dpr = frame::design_scale(&figure, width).unwrap_or(1.0);
-    let mut prepared = frame::prepare(&figure, &inputs, width, height, dpr)?;
-    place::spring(
-        &figure,
-        &inputs,
-        width,
-        height,
-        &mut prepared,
-        &mut place::SpringCache::new(),
-    )?;
+    // A figure with no text shouldn't need the machine to have these fonts.
+    let fonts = has_text(&composition)
+        .then(|| text::Fonts::load(args.font.as_deref()))
+        .transpose()?;
+    let widths: &dyn TextWidths = match &fonts {
+        Some(fonts) => fonts,
+        None => &Estimate,
+    };
+    let mut frames = composition.prepare(&inputs, width, height, 1.0, widths)?;
+    let mut caches: Vec<_> = composition
+        .panels
+        .iter()
+        .map(|_| Default::default())
+        .collect();
+    spring_all(&composition, &mut frames, &inputs, &mut caches)?;
     let mut rgba = if args.cpu {
-        Frame::new(&figure, &inputs, width, height)?.rgba()?
+        if composition.panels.len() > 1 {
+            return Err("--cpu draws one figure, and this has panels".into());
+        }
+        Frame::new(&composition.panels[0].figure, &inputs, width, height)?.rgba()?
     } else {
         let gpu = Offscreen::new()?;
         println!("gpu: {}", gpu.adapter_name);
-        let mut pipeline = gpu.pipeline(&figure)?;
-        gpu.render(&mut pipeline, &prepared, time as f32, width, height)?
+        let mut pipelines = pipelines(&gpu, &composition)?;
+        gpu.render_panels(
+            &mut pipelines,
+            &on_canvas(&frames),
+            time as f32,
+            width,
+            height,
+        )?
     };
-    if !prepared.labels.is_empty() {
-        let fonts = text::Fonts::load(args.font.as_deref())?;
+    if let Some(fonts) = &fonts {
         text::draw_labels(
             &mut rgba,
             width,
             height,
-            &prepared.labels,
-            prepared.paper,
-            &fonts,
+            &composition.labels(&frames, &inputs, fonts)?,
+            frames[0].prepared.paper,
+            fonts,
         );
     }
     write_png(out, &rgba, width, height)?;
@@ -161,25 +224,24 @@ fn render(args: &Args) -> Result<(), Box<dyn Error>> {
 }
 
 fn video(args: &Args) -> Result<(), Box<dyn Error>> {
-    let figure = load(args)?;
+    let composition = load(args)?;
     let out = args.out.as_ref().ok_or("video needs --out")?;
     if let Some(parent) = out.parent() {
         fs::create_dir_all(parent)?;
     }
     let seconds = args
         .seconds
-        .or(figure.scene.duration)
+        .or(composition.panels[0].figure.scene.duration)
         .ok_or("video needs --seconds, or a `duration` in the document")?;
-    let (width, height) = (args.size, height_for(&figure, args.size));
+    let (width, height) = (args.size, height_for(&composition, args.size));
     let frames = (seconds * args.fps as f64).round() as u32;
-    let dpr = frame::design_scale(&figure, width).unwrap_or(1.0);
 
     let gpu = Offscreen::new()?;
     println!(
         "gpu: {}, {frames} frames at {width}x{height}",
         gpu.adapter_name
     );
-    let mut pipeline = gpu.pipeline(&figure)?;
+    let mut pipelines = pipelines(&gpu, &composition)?;
     let fonts = text::Fonts::load(args.font.as_deref())?;
 
     let mut encoder = Command::new("ffmpeg")
@@ -212,20 +274,30 @@ fn video(args: &Args) -> Result<(), Box<dyn Error>> {
 
     let start = std::time::Instant::now();
     // Only a shortcut: what's in it depends only on the time, so it can't change a frame.
-    let mut springs = place::SpringCache::new();
+    let mut springs: Vec<_> = composition
+        .panels
+        .iter()
+        .map(|_| Default::default())
+        .collect();
     for n in 0..frames {
         // Every frame is computed from its own time alone, so frames could be rendered
         // in any order. Nothing carries over from the frame before.
         let inputs = Inputs::at(n as f64 / args.fps as f64);
-        let mut prepared = frame::prepare(&figure, &inputs, width, height, dpr)?;
-        place::spring(&figure, &inputs, width, height, &mut prepared, &mut springs)?;
-        let mut rgba = gpu.render(&mut pipeline, &prepared, inputs.time as f32, width, height)?;
+        let mut panels = composition.prepare(&inputs, width, height, 1.0, &fonts)?;
+        spring_all(&composition, &mut panels, &inputs, &mut springs)?;
+        let mut rgba = gpu.render_panels(
+            &mut pipelines,
+            &on_canvas(&panels),
+            inputs.time as f32,
+            width,
+            height,
+        )?;
         text::draw_labels(
             &mut rgba,
             width,
             height,
-            &prepared.labels,
-            prepared.paper,
+            &composition.labels(&panels, &inputs, &fonts)?,
+            panels[0].prepared.paper,
             &fonts,
         );
         pipe.write_all(&rgba)?;
@@ -285,12 +357,25 @@ fn compare(a: &[u8], b: &[u8], width: u32) -> Diff {
 
 /// Compares the GPU with the CPU oracle. Labels are text, drawn by neither shader, so
 /// they aren't part of this.
+/// One panel's part of a canvas's RGBA8.
+fn crop(image: &[u8], canvas_width: u32, frame: &PanelFrame) -> Vec<u8> {
+    let row = canvas_width as usize * 4;
+    let (x, y) = (frame.origin[0] as usize * 4, frame.origin[1] as usize);
+    let wide = frame.width as usize * 4;
+    let mut out = Vec::with_capacity(wide * frame.height as usize);
+    for line in image.chunks(row).skip(y).take(frame.height as usize) {
+        out.extend_from_slice(&line[x..x + wide]);
+    }
+    out
+}
+
+/// The GPU's canvas against the oracle, a panel at a time, so where panels sit is tested too.
 fn check(args: &Args) -> Result<(), Box<dyn Error>> {
-    let figure = load(args)?;
+    let composition = load(args)?;
     let gpu = Offscreen::new()?;
     println!("gpu: {}", gpu.adapter_name);
-    let mut pipeline = gpu.pipeline(&figure)?;
-    let (width, height) = (args.size, height_for(&figure, args.size));
+    let mut pipelines = pipelines(&gpu, &composition)?;
+    let (width, height) = (args.size, height_for(&composition, args.size));
     let times = if args.times.is_empty() {
         vec![0.0, 0.5, 1.25, 2.5]
     } else {
@@ -302,25 +387,39 @@ fn check(args: &Args) -> Result<(), Box<dyn Error>> {
             time,
             params: args.params.clone(),
         };
-        let cpu = Frame::new(&figure, &inputs, width, height)?.rgba()?;
-        let dpr = frame::design_scale(&figure, width).unwrap_or(1.0);
-        let prepared = frame::prepare(&figure, &inputs, width, height, dpr)?;
-        let image = gpu.render(&mut pipeline, &prepared, time as f32, width, height)?;
-        let diff = compare(&cpu, &image, width);
-        let ok = diff.max <= MAX_CHANNEL_DIFF && diff.mean <= MAX_MEAN_DIFF;
-        println!(
-            "t={time:<6} max {:>3}/255 at {:?}, mean {:.4}, {} px over {}: {}",
-            diff.max,
-            diff.worst,
-            diff.mean,
-            diff.over,
-            MAX_CHANNEL_DIFF,
-            if ok { "ok" } else { "FAIL" },
-        );
-        failed |= !ok;
-        if let Some(dir) = &args.out {
-            write_png(&dir.join(format!("t{time}.gpu.png")), &image, width, height)?;
-            write_png(&dir.join(format!("t{time}.cpu.png")), &cpu, width, height)?;
+        let frames = composition.prepare(&inputs, width, height, 1.0, &Estimate)?;
+        let canvas = gpu.render_panels(
+            &mut pipelines,
+            &on_canvas(&frames),
+            time as f32,
+            width,
+            height,
+        )?;
+        for (panel, frame) in composition.panels.iter().zip(&frames) {
+            let cpu = Frame::new(&panel.figure, &inputs, frame.width, frame.height)?.rgba()?;
+            let image = crop(&canvas, width, frame);
+            let diff = compare(&cpu, &image, frame.width);
+            let ok = diff.max <= MAX_CHANNEL_DIFF && diff.mean <= MAX_MEAN_DIFF;
+            let name = if panel.id.is_empty() {
+                String::new()
+            } else {
+                format!("{} ", panel.id)
+            };
+            println!(
+                "{name}t={time:<6} max {:>3}/255 at {:?}, mean {:.4}, {} px over {}: {}",
+                diff.max,
+                diff.worst,
+                diff.mean,
+                diff.over,
+                MAX_CHANNEL_DIFF,
+                if ok { "ok" } else { "FAIL" },
+            );
+            failed |= !ok;
+            if let Some(dir) = &args.out {
+                let (w, h) = (frame.width, frame.height);
+                write_png(&dir.join(format!("{name}t{time}.gpu.png")), &image, w, h)?;
+                write_png(&dir.join(format!("{name}t{time}.cpu.png")), &cpu, w, h)?;
+            }
         }
     }
     if failed {
@@ -339,9 +438,21 @@ fn run() -> Result<(), Box<dyn Error>> {
     match command.as_str() {
         "ir" => println!(
             "{}",
-            serde_json::to_string_pretty(&load(&parsed)?.scene.to_json())?
+            serde_json::to_string_pretty(&{
+                let composition = load(&parsed)?;
+                match composition.panels.as_slice() {
+                    [only] => only.figure.scene.to_json(),
+                    panels => serde_json::Value::Array(
+                        panels.iter().map(|p| p.figure.scene.to_json()).collect(),
+                    ),
+                }
+            })?
         ),
-        "wgsl" => print!("{}", wgsl::emit(&load(&parsed)?)),
+        "wgsl" => {
+            for panel in load(&parsed)?.panels {
+                print!("{}", wgsl::emit(&panel.figure));
+            }
+        }
         "render" => render(&parsed)?,
         "check" => check(&parsed)?,
         "video" => video(&parsed)?,

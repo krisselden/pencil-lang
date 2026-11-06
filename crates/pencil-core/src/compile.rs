@@ -7,8 +7,11 @@ use std::collections::{HashMap, HashSet};
 use crate::diff::derivative;
 use crate::error::Error;
 use crate::eval::{self, Env};
-use crate::ir::{Arc, Binding, Expr, Form, Handle, Mark, Param, Part, Scene, Viewport};
-use crate::parse::{CurveSyntax, Document, Item, PartSyntax};
+use crate::ir::{
+    Arc, Binding, Expr, Expression, Form, Handle, Hang, Mark, Param, Part, Piece, Scene, Spot,
+    System, Viewport,
+};
+use crate::parse::{CurveSyntax, Document, Item, ManyKind, PartSyntax};
 
 /// Names every expression can use without declaring them.
 pub const SIGNALS: [&str; 1] = ["time"];
@@ -17,7 +20,7 @@ pub const CONSTANTS: [&str; 3] = ["pi", "π", "tau"];
 pub const BEAT_PARAM: &str = "beat";
 
 /// Builtin heads that take and return scalars.
-const SCALAR_HEADS: [&str; 18] = [
+const SCALAR_HEADS: [&str; 20] = [
     "Mix",
     "Sqrt",
     "Sin",
@@ -36,6 +39,8 @@ const SCALAR_HEADS: [&str; 18] = [
     "Mod",
     "Smoothstep",
     "Power",
+    "Snap",
+    "Timeline",
 ];
 const MAX_INLINE_DEPTH: usize = 32;
 /// How far a line or ray runs, in world units. A constant, so its dashes hold still.
@@ -739,10 +744,391 @@ fn line_form(a: [Expr; 2], b: [Expr; 2], ray: bool) -> Form {
     }
 }
 
+/// One view of a document, as its own scene.
+pub struct PanelScene {
+    pub id: String,
+    pub title: Option<String>,
+    pub formula: Option<String>,
+    pub scene: Scene,
+}
+
+/// A name, with a prefix if a group declared it.
+fn rename_name(name: &str, names: &HashMap<String, String>) -> String {
+    names.get(name).cloned().unwrap_or_else(|| name.to_string())
+}
+
+/// An expression, with the names a group declared given its prefix. `p.x` follows `p`.
+fn rename(e: &Expr, names: &HashMap<String, String>) -> Expr {
+    match e {
+        Expr::Num(_) => e.clone(),
+        Expr::Sym(s) => match s.split_once('.') {
+            Some((base, field)) if names.contains_key(base) => {
+                Expr::sym(format!("{}.{field}", names[base]))
+            }
+            _ => Expr::sym(rename_name(s, names)),
+        },
+        Expr::App(head, args) => Expr::App(
+            rename_name(head, names),
+            args.iter().map(|a| rename(a, names)).collect(),
+        ),
+    }
+}
+
+/// `use g(…) as up`: what the group declares becomes `up_name`, and each mark is tagged with
+/// its plain name and `up`, so a style can reach all the copies of something, or one set.
+fn prefixed(items: &[Item], prefix: &str, out: &mut Vec<Item>, line: usize) -> Result<(), Error> {
+    let mut names = HashMap::new();
+    for item in items {
+        let declared: Vec<&String> = match item {
+            Item::Let { name, .. }
+            | Item::Fn { name, .. }
+            | Item::Curve { name, .. }
+            | Item::Segment { name, .. }
+            | Item::Arrow { name, .. }
+            | Item::Label { name, .. }
+            | Item::Many { name, .. } => vec![name],
+            Item::Solve { unknowns, .. } => unknowns.iter().collect(),
+            _ => Vec::new(),
+        };
+        for name in declared {
+            names.insert(name.clone(), format!("{prefix}_{name}"));
+        }
+    }
+    renamed_items(items, &names, Some(prefix), out, line)
+}
+
+/// Statements, with these names changed throughout.
+fn renamed_items(
+    items: &[Item],
+    names: &HashMap<String, String>,
+    prefix: Option<&str>,
+    out: &mut Vec<Item>,
+    line: usize,
+) -> Result<(), Error> {
+    let without = |vars: &[&String]| {
+        let mut local = names.clone();
+        for var in vars {
+            local.remove(*var);
+        }
+        local
+    };
+    for item in items {
+        let renamed = |name: &String| rename_name(name, names);
+        let (next, mark) = match item.clone() {
+            Item::Dots { names: dots, line } => (
+                Item::Dots {
+                    names: dots.iter().map(renamed).collect(),
+                    line,
+                },
+                None,
+            ),
+            Item::Let { name, expr, line } => (
+                Item::Let {
+                    name: renamed(&name),
+                    expr: rename(&expr, names),
+                    line,
+                },
+                None,
+            ),
+            Item::Fn {
+                name,
+                params,
+                body,
+                line,
+            } => {
+                let local = without(&params.iter().collect::<Vec<_>>());
+                (
+                    Item::Fn {
+                        name: renamed(&name),
+                        params,
+                        body: rename(&body, &local),
+                        line,
+                    },
+                    None,
+                )
+            }
+            Item::Curve { name, form, line } => {
+                let form = match form {
+                    CurveSyntax::Parametric { var, point, range } => {
+                        let local = without(&[&var]);
+                        CurveSyntax::Parametric {
+                            point: rename(&point, &local),
+                            range: [rename(&range[0], names), rename(&range[1], names)],
+                            var,
+                        }
+                    }
+                    CurveSyntax::Value(e) => CurveSyntax::Value(rename(&e, names)),
+                    _ => {
+                        return Err(Error::at(
+                            line,
+                            1,
+                            "a group that takes arguments, or `use … as`, can hold parametric curves and constructions for now",
+                        ));
+                    }
+                };
+                let tag = name.clone();
+                (
+                    Item::Curve {
+                        name: renamed(&name),
+                        form,
+                        line,
+                    },
+                    Some(tag),
+                )
+            }
+            Item::Segment {
+                name,
+                points,
+                closed,
+                line,
+            } => {
+                let tag = name.clone();
+                (
+                    Item::Segment {
+                        name: renamed(&name),
+                        points: points.iter().map(|p| rename(p, names)).collect(),
+                        closed,
+                        line,
+                    },
+                    Some(tag),
+                )
+            }
+            Item::Arrow {
+                name,
+                from,
+                to,
+                line,
+            } => {
+                let tag = name.clone();
+                (
+                    Item::Arrow {
+                        name: renamed(&name),
+                        from: rename(&from, names),
+                        to: rename(&to, names),
+                        line,
+                    },
+                    Some(tag),
+                )
+            }
+            Item::Label {
+                name,
+                text,
+                at,
+                offset,
+                line,
+            } => {
+                let tag = name.clone();
+                (
+                    Item::Label {
+                        name: renamed(&name),
+                        text,
+                        at: rename(&at, names),
+                        offset: offset.as_ref().map(|o| rename(o, names)),
+                        line,
+                    },
+                    Some(tag),
+                )
+            }
+            Item::Many {
+                name,
+                kind,
+                value,
+                vars,
+                lets,
+                line,
+            } => {
+                let mut bound: Vec<&String> = vars.iter().map(|(v, _)| v).collect();
+                bound.extend(lets.iter().map(|(v, _)| v));
+                let local = without(&bound);
+                let tag = name.clone();
+                (
+                    Item::Many {
+                        name: renamed(&name),
+                        kind,
+                        value: rename(&value, &local),
+                        vars: vars
+                            .iter()
+                            .map(|(v, r)| {
+                                (v.clone(), [rename(&r[0], &local), rename(&r[1], &local)])
+                            })
+                            .collect(),
+                        lets: lets
+                            .iter()
+                            .map(|(v, e)| (v.clone(), rename(e, &local)))
+                            .collect(),
+                        line,
+                    },
+                    Some(tag),
+                )
+            }
+            tags @ Item::Tag(_) => (tags, None),
+            _ => {
+                return Err(Error::at(
+                    line,
+                    1,
+                    "a group that takes arguments, or `use … as`, can hold lets, functions, curves, dots, segments, arrows, labels and collections for now",
+                ));
+            }
+        };
+        out.push(next);
+        if let (Some(tag), Some(prefix)) = (mark, prefix) {
+            out.push(Item::Tag(vec![tag, prefix.to_string()]));
+        }
+    }
+    Ok(())
+}
+
+/// Replaces each `use` with its group's statements, and passes a group's parameters by
+/// defining them first: a function's name as a function, and anything else as a value.
+fn expanded(items: &[Item], doc: &Document, out: &mut Vec<Item>) -> Result<(), Error> {
+    let function_params = |name: &str| {
+        doc.items.iter().find_map(|item| match item {
+            Item::Fn {
+                name: n, params, ..
+            } if n == name => Some(params.clone()),
+            _ => None,
+        })
+    };
+    for item in items {
+        match item {
+            Item::Panels { .. } | Item::Panel { .. } | Item::Group { .. } => {}
+            Item::Use {
+                name,
+                args,
+                alias,
+                line,
+            } => {
+                let Some((params, inner)) = doc.items.iter().find_map(|i| match i {
+                    Item::Group {
+                        name: n,
+                        params,
+                        items,
+                    } if n == name => Some((params, items)),
+                    _ => None,
+                }) else {
+                    return Err(Error::at(*line, 1, format!("no group named `{name}`")));
+                };
+                if params.len() != args.len() {
+                    return Err(Error::at(
+                        *line,
+                        1,
+                        format!(
+                            "`{name}` takes {} arguments, found {}",
+                            params.len(),
+                            args.len()
+                        ),
+                    ));
+                }
+                // A group's parameters are its own, so two groups can both have a `map`. The
+                // `#` keeps these from ever meeting a name someone wrote.
+                let mut body = Vec::new();
+                let mut scoped = HashMap::new();
+                for (param, arg) in params.iter().zip(args) {
+                    let own = format!("{param}#{}", out.len());
+                    scoped.insert(param.clone(), own.clone());
+                    let target = match arg {
+                        Expr::Sym(f) => function_params(f).map(|p| (f, p)),
+                        _ => None,
+                    };
+                    body.push(match target {
+                        Some((f, inner_params)) => Item::Fn {
+                            name: own,
+                            body: Expr::app(
+                                f,
+                                inner_params.iter().map(|p| Expr::sym(p.clone())).collect(),
+                            ),
+                            params: inner_params,
+                            line: *line,
+                        },
+                        None => Item::Let {
+                            name: own,
+                            expr: arg.clone(),
+                            line: *line,
+                        },
+                    });
+                }
+                let mut statements = Vec::new();
+                expanded(inner, doc, &mut statements)?;
+                if scoped.is_empty() {
+                    body.append(&mut statements);
+                } else {
+                    renamed_items(&statements, &scoped, None, &mut body, *line)?;
+                }
+                match alias {
+                    Some(prefix) => prefixed(&body, prefix, out, *line)?,
+                    None => out.append(&mut body),
+                }
+            }
+            other => out.push(other.clone()),
+        }
+    }
+    Ok(())
+}
+
+/// A document with no panels: one scene.
 pub fn compile(doc: &Document) -> Result<Scene, Error> {
+    if doc.items.iter().any(|i| matches!(i, Item::Panel { .. })) {
+        return Err(Error::new("this document has panels, so it's many scenes"));
+    }
+    let mut items = Vec::new();
+    expanded(&doc.items, doc, &mut items)?;
+    compile_flat(doc.name.clone(), &items)
+}
+
+/// A document with panels: a scene for each, from what's shared and what's its own.
+/// Each has its own shader and its own view, and all of them see the same bindings.
+pub fn compile_panels(doc: &Document) -> Result<Vec<PanelScene>, Error> {
+    let mut scenes = Vec::new();
+    for item in &doc.items {
+        let Item::Panel {
+            name,
+            title,
+            formula,
+            items,
+        } = item
+        else {
+            continue;
+        };
+        let mut flat = Vec::new();
+        expanded(&doc.items, doc, &mut flat)?;
+        expanded(items, doc, &mut flat)?;
+        let mut scene = compile_flat(doc.name.clone(), &flat)?;
+        for mark in &mut scene.marks {
+            mark.tags.push(name.clone());
+        }
+        scenes.push(PanelScene {
+            id: name.clone(),
+            title: title.clone(),
+            formula: formula.clone(),
+            scene,
+        });
+    }
+    // An outline shows another panel's view, so it can only be filled in once they all exist.
+    let views: Vec<(String, Viewport)> = scenes
+        .iter()
+        .map(|p| (p.id.clone(), p.scene.viewport.clone()))
+        .collect();
+    for panel in &mut scenes {
+        for mark in &mut panel.scene.marks {
+            if let Form::Outline {
+                panel: target,
+                view,
+            } = &mut mark.form
+            {
+                let Some((_, found)) = views.iter().find(|(id, _)| id == target) else {
+                    return Err(Error::new(format!("no panel named `{target}` to outline")));
+                };
+                *view = Some(Box::new(found.clone()));
+            }
+        }
+    }
+    Ok(scenes)
+}
+
+fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
     let mut lowerer = Lowerer::default();
     let mut scene = Scene {
-        name: doc.name.clone(),
+        name,
         params: Vec::new(),
         bindings: Vec::new(),
         marks: Vec::new(),
@@ -750,6 +1136,9 @@ pub fn compile(doc: &Document) -> Result<Scene, Error> {
         duration: None,
         beats: Vec::new(),
         handles: Vec::new(),
+        spots: Vec::new(),
+        expressions: Vec::new(),
+        systems: Vec::new(),
     };
     let none = Locals::new();
     let mut ids: HashSet<String> = HashSet::new();
@@ -780,7 +1169,7 @@ pub fn compile(doc: &Document) -> Result<Scene, Error> {
         }};
     }
 
-    for item in &doc.items {
+    for item in items {
         let marks_before = scene.marks.len();
         match item {
             Item::Tag(tags) => {
@@ -1021,15 +1410,279 @@ pub fn compile(doc: &Document) -> Result<Scene, Error> {
                     Some(e) => lowerer.point(e, &none).map_err(&fail)?,
                     None => [num(0.0), num(0.0)],
                 };
+                // `{expr}` in the text is a value, worked out each frame.
+                let mut written = String::new();
+                let mut values = Vec::new();
+                let mut rest = text.as_str();
+                while let Some((before, after)) = rest.split_once('{') {
+                    let Some((inner, tail)) = after.split_once('}') else {
+                        return Err(fail(Error::new("a `{` in a label's text isn't closed")));
+                    };
+                    let value = crate::parse::parse_expression(inner).map_err(&fail)?;
+                    values.push(lowerer.scalar(&value, &none).map_err(&fail)?);
+                    written.push_str(before);
+                    written.push_str("{}");
+                    rest = tail;
+                }
+                written.push_str(rest);
                 mark!(
                     name.clone(),
                     Form::Label {
-                        text: text.clone(),
+                        text: written,
+                        values,
                         at,
                         offset,
                     },
                     "label"
                 );
+            }
+            Item::Panels { .. } | Item::Panel { .. } | Item::Group { .. } | Item::Use { .. } => {
+                unreachable!("`expanded` took these out")
+            }
+            Item::Outline { name, panel, line } => {
+                claim(name, *line)?;
+                mark!(
+                    name.clone(),
+                    Form::Outline {
+                        panel: panel.clone(),
+                        view: None,
+                    },
+                    "outline"
+                );
+            }
+            Item::Solve {
+                unknowns,
+                start,
+                equations,
+                line,
+            } => {
+                let fail = at_line(*line);
+                if unknowns.len() != equations.len() || unknowns.len() != start.len() {
+                    return Err(fail(Error::new(format!(
+                        "`solve` needs a start and an equation for each unknown, and has {} unknowns, {} starts and {} equations",
+                        unknowns.len(),
+                        start.len(),
+                        equations.len()
+                    ))));
+                }
+                let starts = start
+                    .iter()
+                    .map(|e| lowerer.scalar(e, &none))
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(&fail)?;
+                let mut locals = Locals::new();
+                for unknown in unknowns {
+                    claim(unknown, *line)?;
+                    locals.insert(unknown.clone(), Val::Scalar(Expr::sym(unknown)));
+                }
+                let lowered = equations
+                    .iter()
+                    .map(|(lhs, rhs)| {
+                        Ok(sub(
+                            lowerer.scalar(lhs, &locals)?,
+                            lowerer.scalar(rhs, &locals)?,
+                        ))
+                    })
+                    .collect::<Result<Vec<_>, Error>>()
+                    .map_err(&fail)?;
+                // The IR is symbolic, so Newton's method gets exact derivatives.
+                let mut jacobian = Vec::with_capacity(unknowns.len() * unknowns.len());
+                for equation in &lowered {
+                    for unknown in unknowns {
+                        jacobian.push(derivative(equation, unknown).map_err(&fail)?);
+                    }
+                }
+                let mut depends = Vec::new();
+                for e in starts.iter().chain(&lowered) {
+                    e.visit_syms(&mut |name| {
+                        if !unknowns.iter().any(|u| u == name)
+                            && !depends.iter().any(|d: &String| d == name)
+                        {
+                            depends.push(name.to_string());
+                        }
+                    });
+                }
+                let index = scene.systems.len();
+                scene.systems.push(System {
+                    unknowns: unknowns.clone(),
+                    start: starts,
+                    equations: lowered,
+                    jacobian,
+                    depends,
+                });
+                for (k, unknown) in unknowns.iter().enumerate() {
+                    scene.bindings.push(Binding {
+                        id: unknown.clone(),
+                        expr: Expr::app("Solved", vec![num(index as f64), num(k as f64)]),
+                    });
+                    lowerer.scalars.insert(unknown.clone());
+                }
+            }
+            Item::Many {
+                name,
+                kind,
+                value,
+                vars,
+                lets,
+                line,
+            } => {
+                claim(name, *line)?;
+                let fail = at_line(*line);
+                // A later variable's range can use an earlier one.
+                let mut locals = Locals::new();
+                let mut lowered = Vec::with_capacity(vars.len());
+                for (var, range) in vars {
+                    lowered.push((
+                        var.clone(),
+                        [
+                            lowerer.scalar(&range[0], &locals).map_err(&fail)?,
+                            lowerer.scalar(&range[1], &locals).map_err(&fail)?,
+                        ],
+                    ));
+                    locals.insert(var.clone(), Val::Scalar(Expr::sym(var)));
+                }
+                let mut named = Vec::with_capacity(lets.len());
+                for (local, e) in lets {
+                    match lowerer.lower(e, &locals, 0).map_err(&fail)? {
+                        Val::Scalar(e) => {
+                            named.push((local.clone(), e));
+                            locals.insert(local.clone(), Val::Scalar(Expr::sym(local)));
+                        }
+                        Val::Point(x, y) => {
+                            let (fx, fy) = (format!("{local}.x"), format!("{local}.y"));
+                            named.push((fx.clone(), x));
+                            named.push((fy.clone(), y));
+                            locals.insert(local.clone(), Val::Point(Expr::sym(fx), Expr::sym(fy)));
+                        }
+                        other => {
+                            return Err(fail(Error::new(format!(
+                                "`with` names a number or a point, and `{local}` is {}",
+                                other.kind()
+                            ))));
+                        }
+                    }
+                }
+                let (shape, tag) = match (kind, lowerer.lower(value, &locals, 0).map_err(&fail)?) {
+                    (ManyKind::Dots, Val::Point(x, y)) => (crate::ir::Shape::Dots([x, y]), "dots"),
+                    (ManyKind::Circles, Val::Circle { x, y, r }) => {
+                        (crate::ir::Shape::Circles { center: [x, y], r }, "circles")
+                    }
+                    (ManyKind::Dots, other) => {
+                        return Err(fail(Error::new(format!(
+                            "`dots` needs a point, found {}",
+                            other.kind()
+                        ))));
+                    }
+                    (ManyKind::Circles, other) => {
+                        return Err(fail(Error::new(format!(
+                            "`circles` needs a circle, found {}",
+                            other.kind()
+                        ))));
+                    }
+                };
+                mark!(
+                    name.clone(),
+                    Form::Many {
+                        vars: lowered,
+                        lets: named,
+                        shape,
+                    },
+                    tag
+                );
+            }
+            Item::Place {
+                name,
+                at,
+                offset,
+                hang,
+                line,
+            } => {
+                claim(name, *line)?;
+                let fail = at_line(*line);
+                let at = lowerer.point(at, &none).map_err(&fail)?;
+                let offset = match offset {
+                    Some(e) => lowerer.point(e, &none).map_err(&fail)?,
+                    None => [num(0.0), num(0.0)],
+                };
+                let hang = match hang.as_deref() {
+                    None | Some("start") => Hang::Start,
+                    Some("middle") => Hang::Middle,
+                    Some("end") => Hang::End,
+                    Some(other) => {
+                        return Err(fail(Error::new(format!(
+                            "`hang` is `start`, `middle` or `end`, not `{other}`"
+                        ))));
+                    }
+                };
+                scene.spots.push(Spot {
+                    id: name.clone(),
+                    at,
+                    offset,
+                    hang,
+                });
+            }
+            Item::Expression {
+                name,
+                by,
+                states,
+                line,
+            } => {
+                claim(name, *line)?;
+                let fail = at_line(*line);
+                let by = lowerer.scalar(by, &none).map_err(&fail)?;
+                let index = scene.expressions.len();
+                let mut written = Vec::with_capacity(states.len());
+                let mut seen: Vec<String> = Vec::new();
+                for state in states {
+                    let mut pieces = Vec::with_capacity(state.len());
+                    for (text, place) in state {
+                        let Some(spot) = scene.spots.iter().position(|s| s.id == *place) else {
+                            return Err(fail(Error::new(format!(
+                                "no place named `{place}`. Places come first"
+                            ))));
+                        };
+                        let keys: Vec<String> = text.split_whitespace().map(String::from).collect();
+                        for key in &keys {
+                            if !seen.contains(key) {
+                                seen.push(key.clone());
+                            }
+                        }
+                        pieces.push(Piece { spot, keys });
+                    }
+                    written.push(pieces);
+                }
+                scene.expressions.push(Expression {
+                    id: name.clone(),
+                    by,
+                    states: written,
+                });
+                for key in seen {
+                    let text = crate::terms::base(&key).to_string();
+                    let mut tags = vec!["term".to_string(), name.clone(), text.clone()];
+                    tags.extend(beat_tags.iter().cloned());
+                    scene.marks.push(Mark {
+                        id: format!("{name}.{key}"),
+                        form: Form::Term {
+                            expression: index,
+                            key,
+                            text,
+                        },
+                        tags,
+                        beat,
+                    });
+                }
+            }
+            Item::Arrow {
+                name,
+                from,
+                to,
+                line,
+            } => {
+                claim(name, *line)?;
+                let fail = at_line(*line);
+                let from = lowerer.point(from, &none).map_err(&fail)?;
+                let to = lowerer.point(to, &none).map_err(&fail)?;
+                mark!(name.clone(), Form::Arrow { from, to }, "arrow");
             }
             Item::Handle {
                 mark,
@@ -1079,6 +1732,7 @@ pub fn compile(doc: &Document) -> Result<Scene, Error> {
                     design_width: optional(width, "a viewport's width")?,
                     design_height: optional(height, "a viewport's height")?,
                     fit: Vec::new(),
+                    fit_curves: Vec::new(),
                     pad: optional(pad, "a viewport's pad")?.unwrap_or(0.1),
                 };
                 fit_names = fit.clone();
@@ -1093,12 +1747,20 @@ pub fn compile(doc: &Document) -> Result<Scene, Error> {
     }
 
     for name in fit_names {
+        let curve = scene.marks.iter().find_map(|m| match &m.form {
+            Form::Parametric(arc) if m.id == name => Some(arc.clone()),
+            _ => None,
+        });
+        if let Some(arc) = curve {
+            scene.viewport.fit_curves.push(arc);
+            continue;
+        }
         let entry = match lowerer.named(&name) {
             Some(Val::Circle { x, y, r }) => [x, y, r],
             Some(Val::Point(x, y)) => [x, y, num(0.0)],
             _ => {
                 return Err(Error::new(format!(
-                    "`fit: {name}` needs a point or circle named `{name}`"
+                    "`fit: {name}` needs a point, circle or parametric curve named `{name}`"
                 )));
             }
         };
@@ -1162,15 +1824,7 @@ mod tests {
 
     /// Evaluates a scene's bindings at a time.
     fn env_of(s: &Scene, time: f64) -> Env {
-        let mut env = Env::new(time);
-        for b in &s.bindings {
-            match eval::real(&b.expr, &env) {
-                Ok(v) => env.set(&b.id, v),
-                Err(e) if e.absent => env.set_absent(&b.id),
-                Err(e) => panic!("{e}"),
-            }
-        }
-        env
+        eval::scene_env(s, &crate::frame::Inputs::at(time), None).unwrap()
     }
 
     fn near(a: f64, b: f64) -> bool {
@@ -1286,6 +1940,10 @@ mod tests {
                 Form::Polyline { .. } => "polyline",
                 Form::Region(_) => "region",
                 Form::Dot(_) => "dot",
+                Form::Arrow { .. } => "arrow",
+                Form::Many { .. } => "many",
+                Form::Outline { .. } => "outline",
+                Form::Term { .. } => "term",
                 Form::Label { .. } => "label",
             })
             .collect();
@@ -1573,6 +2231,270 @@ mod tests {
     }
 
     #[test]
+    fn solve_finds_one_unknown() {
+        let s = scene(
+            "solve x from 1: cos(x) = x
+             let twice = 2·x",
+        )
+        .unwrap();
+        let env = env_of(&s, 0.0);
+        let x = env.get("x").unwrap();
+        assert!((x - 0.7390851332151607).abs() < 1e-12, "{x}");
+        assert!((env.get("twice").unwrap() - 2.0 * x).abs() < 1e-15);
+    }
+
+    /// The unknowns are the right point of two: which one is the start's business.
+    #[test]
+    fn solve_finds_several_unknowns_from_a_start() {
+        let doc = |start: &str| {
+            format!(
+                "fn circle_eq(x, y) = x² + y²
+                 solve (a, b) from {start}: circle_eq(a, b) = 4, a = b"
+            )
+        };
+        let env = env_of(&scene(&doc("1, 2")).unwrap(), 0.0);
+        let root = 2f64.sqrt();
+        assert!(near(env.get("a").unwrap(), root) && near(env.get("b").unwrap(), root));
+        let env = env_of(&scene(&doc("-1, -2")).unwrap(), 0.0);
+        assert!(near(env.get("a").unwrap(), -root) && near(env.get("b").unwrap(), -root));
+    }
+
+    #[test]
+    fn solve_follows_a_param() {
+        let s = scene(
+            "param c = 2 in 0..9
+             solve x from 1: x² = c",
+        )
+        .unwrap();
+        for value in [2.0, 9.0, 0.25] {
+            let inputs = crate::frame::Inputs {
+                time: 0.0,
+                params: vec![("c".to_string(), value)],
+            };
+            let x = eval::scene_env(&s, &inputs, None)
+                .unwrap()
+                .get("x")
+                .unwrap();
+            assert!(near(x, value.sqrt()), "{value}: {x}");
+        }
+    }
+
+    /// No answer isn't a number: what depends on it just isn't there.
+    #[test]
+    fn a_system_with_no_solution_is_absent() {
+        let s = scene(
+            "solve x from 1: x² = -1
+             let y = x + 1
+             let there = exists(y)",
+        )
+        .unwrap();
+        let env = env_of(&s, 0.0);
+        assert!(env.is_absent("x") && env.is_absent("y"));
+        assert_eq!(env.get("there"), Some(0.0));
+        // Singular at its start, as x = 0 is for x² = 1, it has nowhere to go.
+        let s = scene("solve x from 0: x² = 1").unwrap();
+        assert!(env_of(&s, 0.0).is_absent("x"));
+    }
+
+    #[test]
+    fn solve_says_what_is_wrong() {
+        let err = scene("solve (a, b) from 1, 2: a = 1").unwrap_err();
+        assert!(err.message.contains("for each unknown"), "{err}");
+        let err = scene("solve a from 1, 2: a = 1").unwrap_err();
+        assert!(err.message.contains("for each unknown"), "{err}");
+        let err = scene("let a = 1\nsolve a from 1: a = 2").unwrap_err();
+        assert!(err.message.contains("already defined"), "{err}");
+        let err = scene("solve a from nope: a = 2").unwrap_err();
+        assert!(err.message.contains("unknown name"), "{err}");
+        let err = scene("solve a from 1: snap(a) = 0.5").unwrap_err();
+        assert!(err.message.contains("can't differentiate `Snap`"), "{err}");
+    }
+
+    #[test]
+    fn collections_are_one_mark_with_their_own_variables() {
+        let s = scene(
+            "param n = 3 in 0..9
+             fn at(i, j) = (i, j)
+             dots d = at(i, j) for i in 1..n, j in 0..i
+             circles c = circle(at(i, 0), at(i, 1)) for i in 0..n",
+        )
+        .unwrap();
+        assert_eq!(s.marks.len(), 2);
+        assert!(s.marks[0].tags.contains(&"dots".to_string()));
+        assert!(s.marks[1].tags.contains(&"circles".to_string()));
+        let Form::Many { vars, .. } = &s.marks[0].form else {
+            panic!();
+        };
+        assert_eq!(vars.len(), 2);
+        let s = scene("dots d = z·2 for i in 0..3 with z = (i, 0)\ncircles c = circle((0, 0), (k, 0)) for i in 0..3 with k = i + 1").unwrap();
+        let Form::Many { lets, .. } = &s.marks[0].form else {
+            panic!();
+        };
+        assert_eq!(
+            lets.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>(),
+            ["z.x", "z.y"]
+        );
+        let err =
+            scene("dots d = (0, 0) for i in 0..1 with c = circle((0, 0), (1, 0))").unwrap_err();
+        assert!(err.message.contains("names a number or a point"), "{err}");
+        // Variables only exist in their own collection.
+        assert!(scene("dots d = (i, 0) for i in 0..1\nlet x = i").is_err());
+        let err = scene("dots d = i for i in 0..1").unwrap_err();
+        assert!(err.message.contains("needs a point"), "{err}");
+        let err = scene("circles c = (i, 0) for i in 0..1").unwrap_err();
+        assert!(err.message.contains("needs a circle"), "{err}");
+    }
+
+    #[test]
+    fn groups_take_functions_and_values() {
+        let s = scene(
+            "fn plain(w) = w
+             fn twice(w) = 2·w
+             group view(map, k) {
+               let P = map((k, 0))
+             }
+             use view(twice, 3)",
+        )
+        .unwrap();
+        assert_eq!(env_of(&s, 0.0).get("P.x"), Some(6.0));
+        let err = scene("use nothing()").unwrap_err();
+        assert!(err.message.contains("no group named"), "{err}");
+        let err = scene("group g(a) { let b = a }\nuse g()").unwrap_err();
+        assert!(err.message.contains("takes 1 arguments"), "{err}");
+    }
+
+    #[test]
+    fn panels_share_what_is_outside_them_and_keep_their_own_marks() {
+        let doc = parse(
+            "param a = 2 in 0..9
+             fn plain(w) = w
+             fn twice(w) = 2·w
+             group view(map) {
+               let P = map((a, 0))
+               dot P
+             }
+             panel one \"First\" {
+               use view(plain)
+               segment extra = (0, 0), (1, 1)
+             }
+             panel two {
+               use view(twice)
+             }",
+        )
+        .unwrap();
+        let panels = compile_panels(&doc).unwrap();
+        assert_eq!(panels.len(), 2);
+        assert_eq!(panels[0].title.as_deref(), Some("First"));
+        assert_eq!(panels[1].title, None);
+        assert_eq!(env_of(&panels[0].scene, 0.0).get("P.x"), Some(2.0));
+        assert_eq!(env_of(&panels[1].scene, 0.0).get("P.x"), Some(4.0));
+        // Each knows only its own marks, and they carry the panel's name to style by.
+        assert_eq!(panels[0].scene.marks.len(), 2);
+        assert_eq!(panels[1].scene.marks.len(), 1);
+        assert!(panels[1].scene.marks[0].tags.contains(&"two".to_string()));
+        assert!(compile(&doc).is_err());
+    }
+
+    #[test]
+    fn a_group_can_be_drawn_more_than_once_under_a_prefix() {
+        let s = scene(
+            "fn plain(w) = w
+             fn up(w) = w + (0, 10)
+             group edge(map) {
+               let P = map((1, 0))
+               curve side = parametric (t): map((t, 0)) for t in 0..1
+               dots steps = z for i in 0..2 with z = map((i, 0))
+               label name = \"n\" at P
+             }
+             use edge(plain)
+             use edge(up) as above",
+        )
+        .unwrap();
+        let env = env_of(&s, 0.0);
+        assert_eq!(env.get("P.y"), Some(0.0));
+        assert_eq!(env.get("above_P.y"), Some(10.0));
+        let ids: Vec<&str> = s.marks.iter().map(|m| m.id.as_str()).collect();
+        assert_eq!(
+            ids,
+            [
+                "side",
+                "steps",
+                "name",
+                "above_side",
+                "above_steps",
+                "above_name"
+            ]
+        );
+        // A style can reach both copies by the plain name, or one set by the prefix.
+        let copy = &s.marks[3];
+        assert!(copy.tags.contains(&"side".to_string()));
+        assert!(copy.tags.contains(&"above".to_string()));
+    }
+
+    #[test]
+    fn a_groups_parameters_are_its_own() {
+        let s = scene(
+            "fn twice(w) = 2·w
+             fn thrice(w) = 3·w
+             group one(map) { let P = map(1) }
+             group two(map) { let Q = map(1) }
+             use one(twice)
+             use two(thrice)",
+        )
+        .unwrap();
+        let env = env_of(&s, 0.0);
+        assert_eq!(env.get("P"), Some(2.0));
+        assert_eq!(env.get("Q"), Some(3.0));
+    }
+
+    #[test]
+    fn a_labels_text_can_hold_values() {
+        let s = scene(
+            "param q = 7 in 0..9
+             label n = \"−{q} and {q - 1}\" at (0, 0)",
+        )
+        .unwrap();
+        let Form::Label { text, values, .. } = &s.marks[0].form else {
+            panic!();
+        };
+        assert_eq!(text, "−{} and {}");
+        assert_eq!(values.len(), 2);
+        let err = scene("label n = \"{q\" at (0, 0)").unwrap_err();
+        assert!(err.message.contains("isn't closed"), "{err}");
+        let err = scene("label n = \"{nope}\" at (0, 0)").unwrap_err();
+        assert!(err.message.contains("unknown name"), "{err}");
+    }
+
+    #[test]
+    fn an_outline_needs_a_panel_that_exists() {
+        let doc = parse(
+            "panel a { viewport { x: 0..1, y: 0..1, width: 10, height: 10 } outline o = b }
+             panel b { viewport { x: 1..2, y: 3..4, width: 10, height: 10 } }",
+        )
+        .unwrap();
+        let panels = compile_panels(&doc).unwrap();
+        let Form::Outline {
+            view: Some(view), ..
+        } = &panels[0].scene.marks[0].form
+        else {
+            panic!();
+        };
+        assert_eq!(view.x, [1.0, 2.0]);
+        let doc = parse("panel a { outline o = b }").unwrap();
+        assert!(compile_panels(&doc).is_err());
+    }
+
+    #[test]
+    fn a_view_can_fit_a_curve() {
+        let s = scene(
+            "viewport { fit: c, pad: 0 }
+             curve c = parametric (t): (t, 0) for t in 0..3",
+        )
+        .unwrap();
+        assert_eq!(s.viewport.fit_curves.len(), 1);
+    }
+
+    #[test]
     fn mirrors_and_perpendiculars() {
         let s = scene(
             "let O = (0, 0)
@@ -1662,6 +2584,6 @@ mod tests {
         assert_eq!(s.viewport.pad, 0.05);
         assert_eq!(s.viewport.design_height, Some(400.0));
         let err = scene("viewport { fit: nope }").unwrap_err();
-        assert!(err.message.contains("needs a point or circle"), "{err}");
+        assert!(err.message.contains("needs a point, circle"), "{err}");
     }
 }

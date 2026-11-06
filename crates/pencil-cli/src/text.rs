@@ -12,6 +12,7 @@ use ab_glyph::{Font, FontVec, GlyphId, ScaleFont, point};
 use pencil_core::eval::srgb_encode;
 use pencil_core::frame::Label;
 use pencil_core::style::Font as FontRole;
+use pencil_core::terms::TextWidths;
 
 /// System fonts close to the blog's labels. Not redistributable, so a real pipeline would
 /// take fonts from the document or style. `(path, index in a font collection)`.
@@ -70,6 +71,22 @@ impl Fonts {
             FontRole::Sans => &self.sans,
             FontRole::Math => &self.math,
         }
+    }
+}
+
+impl TextWidths for Fonts {
+    fn width(&self, text: &str, size: f64, font: FontRole) -> f64 {
+        let font = self.of(font);
+        let scaled = font.as_scaled(em_scale(font, size as f32));
+        let ids: Vec<GlyphId> = text.chars().map(|c| font.glyph_id(c)).collect();
+        let mut advance = 0.0f32;
+        for (i, id) in ids.iter().enumerate() {
+            if i > 0 {
+                advance += scaled.kern(ids[i - 1], *id);
+            }
+            advance += scaled.h_advance(*id);
+        }
+        advance as f64
     }
 }
 
@@ -211,21 +228,25 @@ pub fn draw_labels(
     paper: [f64; 3],
     fonts: &Fonts,
 ) {
-    for label in labels {
-        if label.opacity <= 0.0 {
-            continue;
-        }
-        let bitmap = rasterize(label, fonts.of(label.font));
+    let visible: Vec<&Label> = labels.iter().filter(|l| l.opacity > 0.0).collect();
+    let bitmaps: Vec<_> = visible
+        .iter()
+        .map(|label| rasterize(label, fonts.of(label.font)))
+        .collect();
+    // Every halo first, so one label's can't eat into a neighbor, as in an expression's terms.
+    for (label, bitmap) in visible.iter().zip(&bitmaps) {
         // Like SVG's stroke-width, `halo` is the full width, centered on the outline.
-        let halo = dilate(&bitmap, label.halo / 2.0);
+        let halo = dilate(bitmap, label.halo / 2.0);
         if !halo.is_empty() {
-            blend(frame, width, height, &bitmap, &halo, paper, label.opacity);
+            blend(frame, width, height, bitmap, &halo, paper, label.opacity);
         }
+    }
+    for (label, bitmap) in visible.iter().zip(&bitmaps) {
         blend(
             frame,
             width,
             height,
-            &bitmap,
+            bitmap,
             &bitmap.coverage,
             label.color,
             label.opacity,

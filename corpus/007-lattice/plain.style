@@ -1,0 +1,35 @@
+style formula { fill: muted }
+
+style grid_points { fill: muted; radius: 2.25px; opacity: 0.6 }
+style spiral_circles { stroke: muted; width: 1px; opacity: 0.55 }
+
+style .blue { stroke: blue; fill: blue }
+style .red { stroke: red; fill: red }
+style .green { stroke: green; fill: green }
+style .accent { stroke: accent; fill: accent }
+style curve { width: 2.5px; head: 13px; head_span: 1 }
+style .steps { radius: 3.5px }
+
+// In the spiral, a step's dot shrinks with its circle, so it never hides the detail.
+style .steps.whole, .steps.detail { radius: min(0.3·k·sqrt(z.x² + z.y²)·self.scale·1px, 3px) }
+
+// The turns above and below, on the cylinder. Only lighter so that the triangle stands out.
+style .blue.up, .blue.down { stroke: blue_light; fill: blue_light }
+style .red.up, .red.down { stroke: red_light; fill: red_light }
+style .green.up, .green.down { stroke: green_light; fill: green_light }
+style .accent.up, .accent.down { stroke: accent_light; fill: accent_light }
+
+style .strip { stroke: muted; width: 1px; dash: 5px; gap: 4px }
+
+style period_line { stroke: ink; width: 1.5px; dash: 5px; gap: 4px }
+style zero { fill: paper_color; stroke: ink; width: 2.5px; radius: 5px }
+style end_point { fill: ink; radius: 5px }
+style ring { stroke: ink; width: 1.5px; radius: 6px }
+style close_up { stroke: ink; width: 1.25px; dash: 4px; gap: 4px; radius: 9px }
+
+// An edge with no steps has nothing to count.
+style count_up { show: q - p }
+style count_down { show: p }
+// The whole spiral labels the long arcs, and the close-up the short ones.
+style count_one.whole, count_up.whole { show: 0 }
+style count_omega.detail, count_down.detail { show: 0 }

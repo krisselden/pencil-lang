@@ -4,14 +4,36 @@
 const RATE = 12;
 const REST = 0.01;
 
+const FAMILY = {
+  math: "Charter, 'Bitstream Charter', 'Sitka Text', Cambria, serif",
+  sans: 'system-ui, -apple-system, sans-serif',
+};
+
 export class LabelLayer {
   constructor(stage, dpr) {
     this.stage = stage;
     this.dpr = dpr;
+    // Every halo under every glyph, so one term's can't eat into its neighbor.
+    this.halos = this.makeLayer();
+    this.glyphs = this.makeLayer();
+    this.ruler = document.createElement('canvas').getContext('2d');
     this.items = new Map();
     this.last = 0;
     this.still = matchMedia('(prefers-reduced-motion: reduce)').matches;
   }
+
+  makeLayer() {
+    const layer = document.createElement('div');
+    layer.style.cssText = 'position:absolute;inset:0;pointer-events:none';
+    this.stage.append(layer);
+    return layer;
+  }
+
+  /** For `Player.set_measure`: a width in device pixels, in the same font labels are drawn in. */
+  measure = (text, size, math) => {
+    this.ruler.font = `${math ? 'italic ' : ''}${size / this.dpr}px ${math ? FAMILY.math : FAMILY.sans}`;
+    return this.ruler.measureText(text).width * this.dpr;
+  };
 
   /** Takes a frame's labels. One that isn't listed doesn't exist this frame. */
   update(labels) {
@@ -23,11 +45,13 @@ export class LabelLayer {
       if (!item) {
         const span = document.createElement('span');
         span.className = 'label';
-        this.stage.append(span);
-        item = { span, offset: target.slice(), velocity: [0, 0], shown: false };
+        const halo = span.cloneNode();
+        this.halos.append(halo);
+        this.glyphs.append(span);
+        item = { span, halo, offset: target.slice(), velocity: [0, 0], shown: false };
         this.items.set(label.id, item);
       }
-      const { span } = item;
+      const { span, halo } = item;
       // What comes back starts where it belongs, not gliding in from where it went.
       if (!item.shown) {
         item.offset = target.slice();
@@ -37,18 +61,22 @@ export class LabelLayer {
       item.target = target;
       item.anchor = [label.anchorX, label.anchorY];
       item.settles = label.settles;
-      if (span.textContent !== label.text) span.textContent = label.text;
-      span.hidden = false;
-      span.classList.toggle('math', label.math);
-      span.style.fontSize = `${label.size / this.dpr}px`;
+      for (const part of [span, halo]) {
+        if (part.textContent !== label.text) part.textContent = label.text;
+        part.hidden = false;
+        part.classList.toggle('math', label.math);
+        part.style.fontSize = `${label.size / this.dpr}px`;
+        part.style.opacity = label.opacity;
+      }
       span.style.color = label.color;
-      span.style.webkitTextStrokeColor = label.haloColor;
-      span.style.webkitTextStrokeWidth = `${label.halo / this.dpr}px`;
-      span.style.opacity = label.opacity;
+      halo.style.color = 'transparent';
+      halo.style.webkitTextStrokeColor = label.haloColor;
+      halo.style.webkitTextStrokeWidth = `${label.halo / this.dpr}px`;
     }
     for (const [id, item] of this.items) {
       if (!present.has(id)) {
         item.span.hidden = true;
+        item.halo.hidden = true;
         item.shown = false;
       }
     }
@@ -59,7 +87,9 @@ export class LabelLayer {
     for (const item of this.items.values()) {
       if (!item.shown) continue;
       const [x, y] = [item.anchor[0] + item.offset[0], item.anchor[1] + item.offset[1]];
-      item.span.style.transform = `translate(${x / this.dpr}px, ${y / this.dpr}px) translate(-50%, -50%)`;
+      const transform = `translate(${x / this.dpr}px, ${y / this.dpr}px) translate(-50%, -50%)`;
+      item.span.style.transform = transform;
+      item.halo.style.transform = transform;
     }
   }
 
