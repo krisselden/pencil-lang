@@ -40,6 +40,18 @@ const SCALAR_HEADS: [&str; 18] = [
 const MAX_INLINE_DEPTH: usize = 32;
 /// How far a line or ray runs, in world units. A constant, so its dashes hold still.
 const LINE_REACH: f64 = 100.0;
+/// Below this squared distance, in world units, two points are the same point. It's above
+/// the noise where a construction brings two points together: at a tangency they're about
+/// 1e-8 apart, in a direction that means nothing.
+const COINCIDENT: f64 = 1e-12;
+/// How far short of touching still counts, as a fraction of the terms that cancel. A
+/// tangent by construction must not flicker with rounding.
+const TANGENT: f64 = 1e-12;
+/// Below this squared sine, two lines are parallel.
+const PARALLEL: f64 = 1e-24;
+/// How far behind a ray's start still counts, in lengths of its direction. It lets a ray
+/// begin exactly on what it meets.
+const RAY_START: f64 = 1e-9;
 
 /// What an expression evaluates to, in symbolic scalars.
 #[derive(Clone, Debug)]
@@ -65,6 +77,52 @@ impl Val {
             Val::Point(..) => "a point",
             Val::Circle { .. } => "a circle",
             Val::Line { .. } => "a line",
+        }
+    }
+
+    fn fields(&self) -> Vec<Expr> {
+        match self {
+            Val::Scalar(e) => vec![e.clone()],
+            Val::Point(x, y) => vec![x.clone(), y.clone()],
+            Val::Circle { x, y, r } => vec![x.clone(), y.clone(), r.clone()],
+            Val::Line { a, b, .. } => vec![a[0].clone(), a[1].clone(), b[0].clone(), b[1].clone()],
+        }
+    }
+
+    /// The same kind of value with each field replaced, in `fields` order.
+    fn with_fields(&self, fields: Vec<Expr>) -> Val {
+        let mut f = fields.into_iter();
+        let mut next = || f.next().expect("one field for each of `fields`");
+        match self {
+            Val::Scalar(_) => Val::Scalar(next()),
+            Val::Point(..) => Val::Point(next(), next()),
+            Val::Circle { .. } => Val::Circle {
+                x: next(),
+                y: next(),
+                r: next(),
+            },
+            Val::Line { ray, .. } => Val::Line {
+                a: [next(), next()],
+                b: [next(), next()],
+                ray: *ray,
+            },
+        }
+    }
+
+    /// This value, existing only where `condition` is nonnegative.
+    fn only_where(&self, condition: &Expr) -> Val {
+        self.with_fields(
+            self.fields()
+                .into_iter()
+                .map(|field| Expr::app("Where", vec![condition.clone(), field]))
+                .collect(),
+        )
+    }
+
+    fn same_kind(&self, other: &Val) -> bool {
+        match (self, other) {
+            (Val::Line { ray: a, .. }, Val::Line { ray: b, .. }) => a == b,
+            _ => std::mem::discriminant(self) == std::mem::discriminant(other),
         }
     }
 }
@@ -138,6 +196,12 @@ fn point(p: [Expr; 2]) -> Val {
     let [x, y] = p;
     Val::Point(x, y)
 }
+fn min(a: Expr, b: Expr) -> Expr {
+    Expr::app("Min", vec![a, b])
+}
+fn ahead(t: &Expr) -> Expr {
+    add(t.clone(), num(RAY_START))
+}
 
 /// Reflects a point in the line through `a` and `b`.
 fn reflect_in_line(p: &[Expr; 2], a: &[Expr; 2], b: &[Expr; 2]) -> [Expr; 2] {
@@ -150,8 +214,9 @@ fn reflect_in_line(p: &[Expr; 2], a: &[Expr; 2], b: &[Expr; 2]) -> [Expr; 2] {
     ]
 }
 
-/// The `which`th point where a line or ray meets a circle, in order along its direction.
-/// A ray starting inside the circle meets it only once, so that point is both.
+/// Where a line or ray meets a circle. `which` names a root, in order along the line's
+/// direction, not a place among the points that remain: a ray's start passing into the
+/// circle takes away root 0, and root 1 stays where it is, so neither jumps.
 fn meet_line_circle(
     a: &[Expr; 2],
     b: &[Expr; 2],
@@ -165,40 +230,60 @@ fn meet_line_circle(
     let aa = dot2(&d, &d);
     let bb = mul(num(2.0), dot2(&f, &d));
     let cc = sub(dot2(&f, &f), square(r.clone()));
-    let root = sqrt(sub(square(bb.clone()), mul(mul(num(4.0), aa.clone()), cc)));
-    let t0 = div(
-        sub(Expr::app("Negate", vec![bb.clone()]), root.clone()),
-        mul(num(2.0), aa.clone()),
+    let disc = sub(square(bb.clone()), mul(mul(num(4.0), aa.clone()), cc));
+    // Tangent means the terms of `cc` cancel, so rounding is relative to them, not to `cc`.
+    let cancelling = mul(
+        mul(num(4.0), aa.clone()),
+        add(dot2(&f, &f), square(r.clone())),
     );
-    let t1 = div(add(Expr::app("Negate", vec![bb]), root), mul(num(2.0), aa));
-    let t = match (ray, which) {
-        // Tolerates a start exactly on the circle, as the site's filter does.
-        (true, 0) => Expr::app("IfNonnegative", vec![add(t0.clone(), num(1e-9)), t0, t1]),
-        (false, 0) => t0,
-        _ => t1,
+    let meets = add(
+        disc.clone(),
+        mul(num(TANGENT), add(square(bb.clone()), cancelling)),
+    );
+    let root = sqrt(Expr::app("Max", vec![num(0.0), disc]));
+    let minus_b = Expr::app("Negate", vec![bb]);
+    let t = if which == 0 {
+        div(sub(minus_b, root), mul(num(2.0), aa))
+    } else {
+        div(add(minus_b, root), mul(num(2.0), aa))
     };
-    point(plus_scaled(a, &d, &t))
+    let exists = if ray { min(meets, ahead(&t)) } else { meets };
+    point(plus_scaled(a, &d, &t)).only_where(&exists)
 }
 
-fn meet_lines(a: &[Expr; 2], b: &[Expr; 2], p: &[Expr; 2], q: &[Expr; 2]) -> Val {
+/// Where two lines or rays meet. Parallel lines don't, and a ray only meets what's ahead
+/// of its start.
+fn meet_lines(
+    (a, b, first_ray): (&[Expr; 2], &[Expr; 2], bool),
+    (p, q, second_ray): (&[Expr; 2], &[Expr; 2], bool),
+) -> Val {
     let d = minus(b, a);
     let e = minus(q, p);
     let w = minus(p, a);
-    let den = sub(
-        mul(d[0].clone(), e[1].clone()),
-        mul(d[1].clone(), e[0].clone()),
-    );
-    let t = div(
+    let cross = |u: &[Expr; 2], v: &[Expr; 2]| {
         sub(
-            mul(w[0].clone(), e[1].clone()),
-            mul(w[1].clone(), e[0].clone()),
-        ),
-        den,
+            mul(u[0].clone(), v[1].clone()),
+            mul(u[1].clone(), v[0].clone()),
+        )
+    };
+    let den = cross(&d, &e);
+    let t = div(cross(&w, &e), den.clone());
+    let u = div(cross(&w, &d), den.clone());
+    let mut exists = sub(
+        square(den),
+        mul(num(PARALLEL), mul(dot2(&d, &d), dot2(&e, &e))),
     );
-    point(plus_scaled(a, &d, &t))
+    if first_ray {
+        exists = min(exists, ahead(&t));
+    }
+    if second_ray {
+        exists = min(exists, ahead(&u));
+    }
+    point(plus_scaled(a, &d, &t)).only_where(&exists)
 }
 
-/// Where two circles meet: first the point left of the line between their centers.
+/// Where two circles meet: first the point left of the line between their centers. They
+/// don't if they're apart, if one is inside the other, or if they're the same circle.
 fn meet_circles(c1: &[Expr; 2], r1: &Expr, c2: &[Expr; 2], r2: &Expr, which: usize) -> Val {
     let d = minus(c2, c1);
     let big = length2(&d);
@@ -209,10 +294,12 @@ fn meet_circles(c1: &[Expr; 2], r1: &Expr, c2: &[Expr; 2], r2: &Expr, which: usi
         ),
         mul(num(2.0), big.clone()),
     );
-    let h = sqrt(Expr::app(
-        "Max",
-        vec![num(0.0), sub(square(r1.clone()), square(a.clone()))],
-    ));
+    let h2 = sub(square(r1.clone()), square(a.clone()));
+    let exists = min(
+        sub(dot2(&d, &d), num(COINCIDENT)),
+        add(h2.clone(), mul(num(TANGENT), square(r1.clone()))),
+    );
+    let h = sqrt(Expr::app("Max", vec![num(0.0), h2]));
     let base = plus_scaled(c1, &d, &div(a, big.clone()));
     let n = [Expr::app("Negate", vec![d[1].clone()]), d[0].clone()];
     let along = div(h, big);
@@ -221,7 +308,7 @@ fn meet_circles(c1: &[Expr; 2], r1: &Expr, c2: &[Expr; 2], r2: &Expr, which: usi
     } else {
         Expr::app("Negate", vec![along])
     };
-    point(plus_scaled(&base, &n, &along))
+    point(plus_scaled(&base, &n, &along)).only_where(&exists)
 }
 
 type Locals = HashMap<String, Val>;
@@ -317,7 +404,14 @@ impl Lowerer {
             (Circle { x, y, r }, Line { a, b, ray }) | (Line { a, b, ray }, Circle { x, y, r }) => {
                 meet_line_circle(a, b, *ray, &[x.clone(), y.clone()], r, which)
             }
-            (Line { a, b, .. }, Line { a: p, b: q, .. }) => meet_lines(a, b, p, q),
+            (
+                Line { a, b, ray },
+                Line {
+                    a: p,
+                    b: q,
+                    ray: second_ray,
+                },
+            ) => meet_lines((a, b, *ray), (p, q, *second_ray)),
             (
                 Circle { x, y, r },
                 Circle {
@@ -354,6 +448,25 @@ impl Lowerer {
             }
         };
         Ok(match (head, low.as_slice()) {
+            ("Exists", [v]) => Scalar(Expr::app("Exists", v.fields())),
+            ("Otherwise", [a, b]) => {
+                if !a.same_kind(b) {
+                    return Err(Error::new(format!(
+                        "`otherwise` needs two of one kind, found {} and {}",
+                        a.kind(),
+                        b.kind()
+                    )));
+                }
+                // All of `a` or all of `b`, never a mix of their fields.
+                let has_a = sub(Expr::app("Exists", a.fields()), num(0.5));
+                a.with_fields(
+                    a.fields()
+                        .into_iter()
+                        .zip(b.fields())
+                        .map(|(x, y)| Expr::app("IfNonnegative", vec![has_a.clone(), x, y]))
+                        .collect(),
+                )
+            }
             ("Tuple", [Scalar(x), Scalar(y)]) => Point(x.clone(), y.clone()),
             ("Add" | "Subtract", [Point(ax, ay), Point(bx, by)]) => Point(
                 Expr::app(head, vec![ax.clone(), bx.clone()]),
@@ -390,11 +503,18 @@ impl Lowerer {
                 y: y.clone(),
                 r: length2(&[sub(tx.clone(), x.clone()), sub(ty.clone(), y.clone())]),
             },
-            ("Line" | "Ray", [Point(ax, ay), Point(bx, by)]) => Line {
-                a: [ax.clone(), ay.clone()],
-                b: [bx.clone(), by.clone()],
-                ray: head == "Ray",
-            },
+            // Two points only make a line if they're two points.
+            ("Line" | "Ray", [Point(ax, ay), Point(bx, by)]) => {
+                let a = [ax.clone(), ay.clone()];
+                let b = [bx.clone(), by.clone()];
+                let d = minus(&b, &a);
+                let line = Line {
+                    a,
+                    b,
+                    ray: head == "Ray",
+                };
+                line.only_where(&sub(dot2(&d, &d), num(COINCIDENT)))
+            }
             ("Perpendicular", [Point(x, y), Line { a, b, .. }]) => {
                 let d = minus(b, a);
                 Line {
@@ -532,6 +652,13 @@ fn at_line(line: usize) -> impl Fn(Error) -> Error {
     }
 }
 
+fn is_partial(e: &Expr) -> bool {
+    match e {
+        Expr::App(head, args) => head == "Where" || head == "Exists" || args.iter().any(is_partial),
+        _ => false,
+    }
+}
+
 fn field_form(
     lowerer: &Lowerer,
     vars: &[String; 2],
@@ -543,6 +670,12 @@ fn field_form(
         locals.insert(v.clone(), Val::Scalar(Expr::sym(v)));
     }
     let field = lowerer.scalar(field, &locals)?;
+    // A field is evaluated per pixel, but whether a value exists is decided once per frame.
+    if is_partial(&field) {
+        return Err(Error::new(
+            "a curve's field can't use `intersect`, `line`, `ray`, `exists` or `otherwise` directly. Name the value with `let` first",
+        ));
+    }
     // Bindings can't use coordinates, so they're constant here and the derivative
     // treats them as symbols, which keeps the gradient small.
     let grad = [derivative(&field, &vars[0])?, derivative(&field, &vars[1])?];
@@ -806,10 +939,25 @@ pub fn compile(doc: &Document) -> Result<Scene, Error> {
                 let a = Expr::app("Add", vec![sym("at"), toward("from")]);
                 let c = Expr::app("Add", vec![sym("at"), toward("to")]);
                 let corner = Expr::app("Add", vec![a.clone(), toward("to")]);
+                // With a side of no length there's no angle to mark.
+                let side = |end: &str| -> Result<Expr, Error> {
+                    let length = Expr::app("Distance", vec![sym(end), sym("at")]);
+                    Ok(sub(
+                        square(lowerer.scalar(&length, &locals)?),
+                        num(COINCIDENT),
+                    ))
+                };
+                let exists = min(side("from").map_err(&fail)?, side("to").map_err(&fail)?);
                 let points = [a, corner, c]
                     .iter()
-                    .map(|p| lowerer.point(p, &locals))
-                    .collect::<Result<Vec<_>, _>>()
+                    .map(|p| {
+                        let [x, y] = lowerer.point(p, &locals)?;
+                        Ok([
+                            Expr::app("Where", vec![exists.clone(), x]),
+                            Expr::app("Where", vec![exists.clone(), y]),
+                        ])
+                    })
+                    .collect::<Result<Vec<_>, Error>>()
                     .map_err(&fail)?;
                 mark!(
                     name.clone(),
@@ -1000,8 +1148,11 @@ mod tests {
     fn env_of(s: &Scene, time: f64) -> Env {
         let mut env = Env::new(time);
         for b in &s.bindings {
-            let v = eval::real(&b.expr, &env).unwrap();
-            env.set(&b.id, v);
+            match eval::real(&b.expr, &env) {
+                Ok(v) => env.set(&b.id, v),
+                Err(e) if e.absent => env.set_absent(&b.id),
+                Err(e) => panic!("{e}"),
+            }
         }
         env
     }
@@ -1164,7 +1315,10 @@ mod tests {
         )
     }
 
-    /// Orders and special cases follow the site's `construction.ts`.
+    fn absent(env: &Env, name: &str) -> bool {
+        env.is_absent(&format!("{name}.x")) && env.is_absent(&format!("{name}.y"))
+    }
+
     #[test]
     fn intersections_follow_the_documented_order() {
         let s = scene(
@@ -1175,8 +1329,8 @@ mod tests {
              curve g = ray(O, R)
              let first = intersect(c, a)
              let second = intersect(c, a, 1)
-             let from_inside = intersect(c, g)
-             let also = intersect(c, g, 1)
+             let behind = intersect(c, g, 0)
+             let from_inside = intersect(c, g, 1)
              curve d = circle((1, 0), (1, 1))
              let left = intersect(c, d, 0)
              let right = intersect(c, d, 1)
@@ -1186,13 +1340,220 @@ mod tests {
         let env = env_of(&s, 0.0);
         assert_eq!(point_at(&env, "first"), (-1.0, 0.0));
         assert_eq!(point_at(&env, "second"), (1.0, 0.0));
-        // A ray from inside meets the circle once, so that point is both.
+        // A ray from inside meets the circle once: root 1. Root 0 is behind its start.
+        assert!(absent(&env, "behind"));
         assert_eq!(point_at(&env, "from_inside"), (1.0, 0.0));
-        assert_eq!(point_at(&env, "also"), (1.0, 0.0));
         // Left of the line between the centers (from c's center, facing +x) is up.
         assert!(point_at(&env, "left").1 > 0.0 && point_at(&env, "right").1 < 0.0);
         assert!(near(point_at(&env, "left").0, 0.5));
         assert!(near(point_at(&env, "meet").0, 0.0) && near(point_at(&env, "meet").1, 0.0));
+    }
+
+    #[test]
+    fn a_line_that_misses_a_circle_has_no_points() {
+        let s = scene(
+            "curve c = circle((0, 0), (1, 0))
+             curve l = line((-2, 2), (2, 2))
+             let a = intersect(c, l, 0)
+             let b = intersect(c, l, 1)",
+        )
+        .unwrap();
+        let env = env_of(&s, 0.0);
+        assert!(absent(&env, "a") && absent(&env, "b"));
+    }
+
+    /// Tangent by construction, at many angles, so rounding lands on both sides of zero.
+    #[test]
+    fn a_tangent_line_touches_at_every_angle() {
+        let s = scene(
+            "param a in 0..7
+             let O = (0, 0)
+             let T = (cos(a), sin(a))
+             curve c = circle(O, T)
+             curve r = line(O, T)
+             curve t = perpendicular(T, r)
+             let first = intersect(c, t, 0)
+             let second = intersect(c, t, 1)",
+        )
+        .unwrap();
+        for i in 0..2000 {
+            let mut env = Env::new(0.0);
+            env.set("a", i as f64 * 0.0035);
+            for b in s.bindings.iter().filter(|b| b.id != "a") {
+                env.set(&b.id, eval::real(&b.expr, &env).unwrap());
+            }
+            for name in ["first", "second"] {
+                let (x, y) = point_at(&env, name);
+                let (tx, ty) = point_at(&env, "T");
+                assert!((x - tx).hypot(y - ty) < 1e-6, "{name} at step {i}");
+            }
+        }
+    }
+
+    /// As a ray's start passes into a circle, root 0 goes and root 1 stays put.
+    #[test]
+    fn roots_keep_their_place_as_a_rays_start_moves() {
+        let s = scene(
+            "param a in -3..3
+             curve c = circle((0, 0), (1, 0))
+             curve g = ray((a, 0), (a + 1, 0))
+             let near = intersect(c, g, 0)
+             let far = intersect(c, g, 1)",
+        )
+        .unwrap();
+        let at = |a: f64| {
+            let mut env = Env::new(0.0);
+            env.set("a", a);
+            for b in s.bindings.iter().filter(|b| b.id != "a") {
+                match eval::real(&b.expr, &env) {
+                    Ok(v) => env.set(&b.id, v),
+                    Err(_) => env.set_absent(&b.id),
+                }
+            }
+            env
+        };
+        let outside = at(-2.0);
+        assert_eq!(point_at(&outside, "near"), (-1.0, 0.0));
+        assert_eq!(point_at(&outside, "far"), (1.0, 0.0));
+        let inside = at(0.0);
+        assert!(absent(&inside, "near"));
+        assert_eq!(point_at(&inside, "far"), (1.0, 0.0));
+        let past = at(2.0);
+        assert!(absent(&past, "near") && absent(&past, "far"));
+        // A start exactly on the circle still counts.
+        assert_eq!(point_at(&at(-1.0), "near"), (-1.0, 0.0));
+    }
+
+    #[test]
+    fn rays_only_meet_what_is_ahead_of_them() {
+        let s = scene(
+            "curve up = line((0, -1), (0, 1))
+             curve away = ray((1, 0), (2, 0))
+             curve toward = ray((1, 0), (0.5, 0))
+             let missed = intersect(away, up)
+             let hit = intersect(toward, up)
+             let other_order = intersect(up, away)
+             let as_line = intersect(line((1, 0), (2, 0)), up)",
+        )
+        .unwrap();
+        let env = env_of(&s, 0.0);
+        assert!(absent(&env, "missed") && absent(&env, "other_order"));
+        assert_eq!(point_at(&env, "hit"), (0.0, 0.0));
+        assert_eq!(point_at(&env, "as_line"), (0.0, 0.0));
+    }
+
+    #[test]
+    fn parallel_lines_do_not_meet() {
+        let s = scene(
+            "let a = intersect(line((0, 0), (1, 1)), line((0, 1), (3, 4)))
+             let b = intersect(line((0, 0), (1, 1)), line((0, 1), (3, 4.001)))",
+        )
+        .unwrap();
+        let env = env_of(&s, 0.0);
+        assert!(absent(&env, "a"));
+        assert!(!absent(&env, "b"));
+    }
+
+    #[test]
+    fn circles_meet_only_when_they_cross_or_touch() {
+        let s = scene(
+            "let O = (0, 0)
+             curve c = circle(O, (1, 0))
+             let apart = intersect(c, circle((3, 0), (4, 0)))
+             let nested = intersect(c, circle((0.1, 0), (0.3, 0)))
+             let same = intersect(c, circle(O, (0, 1)))
+             let outer = intersect(c, circle((2, 0), (3, 0)))
+             let inner = intersect(c, circle((0.5, 0), (1, 0)), 1)",
+        )
+        .unwrap();
+        let env = env_of(&s, 0.0);
+        for name in ["apart", "nested", "same"] {
+            assert!(absent(&env, name), "{name}");
+        }
+        assert_eq!(point_at(&env, "outer"), (1.0, 0.0));
+        assert_eq!(point_at(&env, "inner"), (1.0, 0.0));
+    }
+
+    #[test]
+    fn two_points_in_one_place_make_no_line() {
+        let s = scene(
+            "let A = (1, 1)
+             curve l = line(A, A)
+             let across = mirror((0, 0), l)
+             curve square_corner = line((0, 0), (1, 0))
+             rightangle m = A, A, (2, 2) size 0.1",
+        )
+        .unwrap();
+        let env = env_of(&s, 0.0);
+        assert!(env.is_absent("l.ax"));
+        // Whatever is built from something absent is absent.
+        assert!(absent(&env, "across"));
+        assert!(!env.is_absent("square_corner.ax"));
+        match &s.marks[2].form {
+            Form::Polyline { points, .. } => {
+                assert!(eval::real(&points[0][0], &env).unwrap_err().absent);
+            }
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn exists_and_otherwise_see_absence() {
+        let s = scene(
+            "curve c = circle((0, 0), (1, 0))
+             curve l = line((-2, 2), (2, 2))
+             curve h = line((-2, 0), (2, 0))
+             let none = intersect(c, l)
+             let some = intersect(c, h, 1)
+             let a = exists(none)
+             let b = exists(some)
+             let c_x = exists(c)
+             let d = dist(none, some)
+             let e = exists(d)
+             let f = otherwise(none, (7, 8))
+             let g = otherwise(some, (7, 8))
+             let half = otherwise((none.x, 2), (7, 8))
+             let number = otherwise(d, 9)",
+        )
+        .unwrap();
+        let env = env_of(&s, 0.0);
+        assert_eq!(env.get("a"), Some(0.0));
+        assert_eq!(env.get("b"), Some(1.0));
+        assert_eq!(env.get("c_x"), Some(1.0));
+        assert!(env.is_absent("d"));
+        assert_eq!(env.get("e"), Some(0.0));
+        assert_eq!(point_at(&env, "f"), (7.0, 8.0));
+        assert_eq!(point_at(&env, "g"), (1.0, 0.0));
+        // A value is all there or not: no mix of one's x and the other's y.
+        assert_eq!(point_at(&env, "half"), (7.0, 8.0));
+        assert_eq!(env.get("number"), Some(9.0));
+        let err = scene("let a = otherwise((0, 0), 1)").unwrap_err();
+        assert!(err.message.contains("two of one kind"), "{err}");
+    }
+
+    #[test]
+    fn a_field_needs_partial_values_named_first() {
+        let err = scene(
+            "curve c = circle((0, 0), (1, 0))
+             curve l = line((0, 0), (1, 0))
+             curve f = sdf (x, y): x - intersect(c, l).x",
+        );
+        // `.x` on a call isn't syntax, so a function carries it, as a figure would write it.
+        assert!(err.is_err());
+        let err = scene(
+            "fn first(p) = p.x
+             curve c = circle((0, 0), (1, 0))
+             curve f = sdf (x, y): x - first(intersect(c, line((0, 0), (1, 0))))",
+        )
+        .unwrap_err();
+        assert!(err.message.contains("with `let` first"), "{err}");
+        assert_eq!(err.line, 3);
+        let named = scene(
+            "curve c = circle((0, 0), (1, 0))
+             let P = intersect(c, line((0, 0), (1, 0)))
+             curve f = sdf (x, y): x - P.x",
+        );
+        assert!(named.is_ok());
     }
 
     #[test]

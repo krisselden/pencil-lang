@@ -21,6 +21,8 @@ pub const CELL_PX: f64 = 6.0;
 const FLATNESS_PX: f64 = 0.05;
 const INITIAL_INTERVALS: usize = 32;
 const MAX_DEPTH: usize = 8;
+/// How far to chase the point where a curve stops existing: 2⁻²⁴ of a starting interval.
+const EDGE_DEPTH: usize = 24;
 
 /// The fraction of a pixel on the near side of a straight edge: the exact box
 /// filter. `t` is the edge's signed offset from the pixel center along unit normal
@@ -40,6 +42,15 @@ pub fn box_coverage(t: f64, nx: f64, ny: f64) -> f64 {
     if t > 0.0 { 1.0 - tail } else { tail }
 }
 
+/// A parametric curve's samples. Where its point doesn't exist the curve has a gap, so it
+/// can come in pieces.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Sampled {
+    pub pieces: Vec<Vec<[f64; 2]>>,
+    /// Whether the point exists across the whole range, as far as sampling can tell.
+    pub complete: bool,
+}
+
 /// Samples a parametric curve directly, subdividing until chords are flat enough. No
 /// field is involved, which is the point of keeping this form as written.
 pub fn sample_arc(
@@ -48,34 +59,43 @@ pub fn sample_arc(
     view: &Viewport,
     width: u32,
     height: u32,
-) -> Result<Vec<[f64; 2]>, Error> {
+) -> Result<Sampled, Error> {
     let (lo, hi) = (
         eval::real(&arc.range[0], env)?,
         eval::real(&arc.range[1], env)?,
     );
     if hi <= lo {
-        return Ok(Vec::new());
+        return Ok(Sampled {
+            pieces: Vec::new(),
+            complete: true,
+        });
     }
     let mut env = env.clone();
-    let mut at = |t: f64| -> Result<[f64; 2], Error> {
+    let mut at = |t: f64| -> Result<Option<[f64; 2]>, Error> {
         env.set(&arc.var, t);
-        Ok([
-            eval::real(&arc.point[0], &env)?,
-            eval::real(&arc.point[1], &env)?,
-        ])
+        let point =
+            eval::real(&arc.point[0], &env).and_then(|x| Ok([x, eval::real(&arc.point[1], &env)?]));
+        match point {
+            Ok(p) => Ok(Some(p)),
+            Err(e) if e.absent => Ok(None),
+            Err(e) => Err(e),
+        }
     };
     let device = |p: [f64; 2]| frame::device(p[0], p[1], view, width, height);
 
     struct Span {
         t0: f64,
-        p0: [f64; 2],
+        p0: Option<[f64; 2]>,
         t1: f64,
-        p1: [f64; 2],
+        p1: Option<[f64; 2]>,
         depth: usize,
     }
-    let mut out = vec![at(lo)?];
+    let first = at(lo)?;
+    let mut current: Vec<[f64; 2]> = first.into_iter().collect();
+    let mut pieces = Vec::new();
+    let mut complete = first.is_some();
     let mut stack = Vec::new();
-    let mut previous = out[0];
+    let mut previous = first;
     for i in 1..=INITIAL_INTERVALS {
         let t = lo + (hi - lo) * i as f64 / INITIAL_INTERVALS as f64;
         let p = at(t)?;
@@ -90,11 +110,23 @@ pub fn sample_arc(
     }
     stack.reverse();
     while let Some(span) = stack.pop() {
+        if span.p0.is_none() && span.p1.is_none() {
+            complete = false;
+            continue;
+        }
         let tm = (span.t0 + span.t1) / 2.0;
         let pm = at(tm)?;
-        let (a, b, m) = (device(span.p0), device(span.p1), device(pm));
-        let stray = (m.0 - (a.0 + b.0) / 2.0).hypot(m.1 - (a.1 + b.1) / 2.0);
-        if stray > FLATNESS_PX && span.depth < MAX_DEPTH {
+        let divide = match (span.p0, span.p1, pm) {
+            // Both ends exist, so this is the usual flatness test, unless the middle doesn't.
+            (Some(p0), Some(p1), Some(pm)) => {
+                let (a, b, m) = (device(p0), device(p1), device(pm));
+                let stray = (m.0 - (a.0 + b.0) / 2.0).hypot(m.1 - (a.1 + b.1) / 2.0);
+                stray > FLATNESS_PX && span.depth < MAX_DEPTH
+            }
+            // One end doesn't exist: close in on where the curve stops.
+            _ => span.depth < EDGE_DEPTH,
+        };
+        if divide {
             stack.push(Span {
                 t0: tm,
                 p0: pm,
@@ -109,11 +141,24 @@ pub fn sample_arc(
                 p1: pm,
                 depth: span.depth + 1,
             });
-        } else {
-            out.push(span.p1);
+            continue;
+        }
+        match (span.p0, span.p1) {
+            (Some(_), Some(p1)) => current.push(p1),
+            (Some(_), None) => {
+                complete = false;
+                pieces.push(std::mem::take(&mut current));
+            }
+            (None, Some(p1)) => {
+                complete = false;
+                current = vec![p1];
+            }
+            (None, None) => {}
         }
     }
-    Ok(out)
+    pieces.push(current);
+    pieces.retain(|piece| piece.len() >= 2);
+    Ok(Sampled { pieces, complete })
 }
 
 /// Whether an expression can't change between frames: it uses no bindings or signals.
@@ -141,15 +186,18 @@ pub fn lines(
             trace(vars, field, grad, env, view, cols, rows)
         }
         Form::Parametric(arc) => {
-            let points = sample_arc(arc, env, view, width, height)?;
-            if points.len() < 2 {
-                return Ok(Vec::new());
-            }
+            let sampled = sample_arc(arc, env, view, width, height)?;
             // Only a fixed range makes a loop. A moving range whose ends happen to meet is
             // still an open line for that frame, or its dashes would jump as it passes.
-            let fixed = arc.range.iter().all(is_constant);
-            let closed = fixed && close_enough(points[0], points[points.len() - 1]);
-            Ok(vec![Polyline { points, closed }])
+            let fixed = sampled.complete && arc.range.iter().all(is_constant);
+            Ok(sampled
+                .pieces
+                .into_iter()
+                .map(|points| {
+                    let closed = fixed && close_enough(points[0], points[points.len() - 1]);
+                    Polyline { points, closed }
+                })
+                .collect())
         }
         Form::Polyline { points, closed } => {
             let mut world = Vec::with_capacity(points.len() + 1);
@@ -171,7 +219,10 @@ pub fn lines(
                     Part::Point(p) => {
                         world.push([eval::real(&p[0], env)?, eval::real(&p[1], env)?]);
                     }
-                    Part::Arc(arc) => world.extend(sample_arc(arc, env, view, width, height)?),
+                    Part::Arc(arc) => {
+                        let sampled = sample_arc(arc, env, view, width, height)?;
+                        world.extend(sampled.pieces.into_iter().flatten());
+                    }
                 }
             }
             if world.is_empty() {
@@ -198,13 +249,25 @@ pub fn build(
     width: u32,
     height: u32,
     dpr: f64,
+    shown: &[bool],
 ) -> Result<Vec<Vec<f32>>, Error> {
     let mut layers = Vec::new();
-    for (mark, style) in figure.scene.marks.iter().zip(&figure.styles.marks) {
+    for (i, (mark, style)) in figure
+        .scene
+        .marks
+        .iter()
+        .zip(&figure.styles.marks)
+        .enumerate()
+    {
         if !style.stroke_is_line(&mark.form) {
             continue;
         }
         let mut segments = Vec::new();
+        // An absent mark keeps its layer, empty, so the rest stay where the shader expects.
+        if !shown[i] {
+            layers.push(segments);
+            continue;
+        }
         let to_device = |p: [f64; 2]| {
             let (x, y) = frame::device(p[0], p[1], view, width, height);
             [x, y]

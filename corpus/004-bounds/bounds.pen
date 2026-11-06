@@ -46,7 +46,7 @@ beat "p = 0: a circle the same size, at P, touches it. Copies keep going around 
 
 beat "Its other two neighbors sit on the ray halfway to P, one inside the unit circle and one outside." tag blue {
   curve g = ray(O, B)
-  let C = intersect(c, g)
+  let C = intersect(c, g, 1)
   dot C
   let R = midpoint(C, A)
   curve a = ray(O, R)

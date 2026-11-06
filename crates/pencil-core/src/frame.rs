@@ -5,6 +5,7 @@ use crate::Figure;
 use crate::error::Error;
 use crate::eval::{self, Env};
 use crate::ir::{Expr, Form, Part, Viewport};
+use crate::presence;
 use crate::stroke;
 use crate::style::{Font, MarkStyle};
 
@@ -49,8 +50,11 @@ pub struct Label {
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Prepared {
-    /// One per binding, in order.
+    /// One per binding, in order, with an absent one as zero, then one per
+    /// `Figure::presence_slots`: 1 if that mark exists this frame.
     pub values: Vec<f32>,
+    /// One per mark: whether it exists this frame.
+    pub shown: Vec<bool>,
     /// A table of `start count _ _` per region, then their vertices in device pixels.
     pub geometry: Vec<f32>,
     /// One segment list per line stroke, in mark order.
@@ -178,15 +182,27 @@ pub fn view_for(
         f64::NEG_INFINITY,
     );
     for [x, y, r] in &view.fit {
-        let (x, y, r) = (
-            eval::real(x, &env)?,
-            eval::real(y, &env)?,
-            eval::real(r, &env)?,
-        );
+        // What doesn't exist has no bounds.
+        let bounds = (|| {
+            Ok::<_, Error>((
+                eval::real(x, &env)?,
+                eval::real(y, &env)?,
+                eval::real(r, &env)?,
+            ))
+        })();
+        let (x, y, r) = match bounds {
+            Ok(values) => values,
+            Err(e) if e.absent => continue,
+            Err(e) => return Err(e),
+        };
         x0 = x0.min(x - r);
         x1 = x1.max(x + r);
         y0 = y0.min(y - r);
         y1 = y1.max(y + r);
+    }
+    // With nothing to fit, the declared window stands.
+    if x0 > x1 {
+        return Ok(view.clone());
     }
     let aspect = height as f64 / width as f64;
     let wide = (x1 - x0) * (1.0 + 2.0 * view.pad);
@@ -219,7 +235,12 @@ pub fn handle_at(
     let mut best = None;
     let mut nearest = reach;
     for (i, handle) in figure.scene.handles.iter().enumerate() {
-        let (x, y) = pair(&handle.at, &env)?;
+        // A handle whose mark doesn't exist can't be grabbed.
+        let (x, y) = match pair(&handle.at, &env) {
+            Ok(p) => p,
+            Err(e) if e.absent => continue,
+            Err(e) => return Err(e),
+        };
         let (dx, dy) = device(x, y, &view, width, height);
         let d = (dx - px).hypot(dy - py);
         if d <= nearest {
@@ -252,7 +273,15 @@ pub fn drag_value(
         "pointer.y",
         view.y[1] - py / height as f64 * (view.y[1] - view.y[0]),
     );
-    let value = eval::real(&handle.inverse, &env)?;
+    let value = match eval::real(&handle.inverse, &env) {
+        Ok(value) => value,
+        // The pointer is somewhere the inverse has no answer, so the param stays put.
+        Err(e) if e.absent => match env.get(&handle.param) {
+            Some(value) => value,
+            None => return Err(e),
+        },
+        Err(e) => return Err(e),
+    };
     let range = figure
         .scene
         .params
@@ -275,41 +304,66 @@ pub fn prepare(
     let view_now = view_for(figure, inputs, width, height)?;
     let view = &view_now;
 
-    let values = scene
+    let mut shown = Vec::with_capacity(scene.marks.len());
+    for ((mark, style), conditional) in scene
+        .marks
+        .iter()
+        .zip(&figure.styles.marks)
+        .zip(&figure.conditional)
+    {
+        shown.push(!conditional || presence::present(mark, style, &env)?);
+    }
+
+    let mut values = scene
         .bindings
         .iter()
         .map(|b| env.get(&b.id).unwrap_or(0.0) as f32)
         .collect::<Vec<_>>();
+
+    let mut regions: Vec<Vec<[f64; 2]>> = Vec::new();
+    for (i, mark) in scene.marks.iter().enumerate() {
+        if let Form::Region(parts) = &mark.form {
+            let mut vertices = Vec::new();
+            if shown[i] {
+                for part in parts {
+                    match part {
+                        Part::Point(p) => {
+                            let (x, y) = pair(p, &env)?;
+                            let (dx, dy) = device(x, y, view, width, height);
+                            vertices.push([dx, dy]);
+                        }
+                        Part::Arc(arc) => {
+                            let sampled = stroke::sample_arc(arc, &env, view, width, height)?;
+                            // A boundary with a gap in it doesn't enclose anything.
+                            shown[i] &= sampled.complete;
+                            for p in sampled.pieces.into_iter().flatten() {
+                                let (dx, dy) = device(p[0], p[1], view, width, height);
+                                vertices.push([dx, dy]);
+                            }
+                        }
+                    }
+                }
+            }
+            if !shown[i] {
+                vertices.clear();
+            }
+            regions.push(vertices);
+        }
+    }
+    // After the regions, which only find out they have a gap by sampling.
+    values.extend(
+        figure
+            .presence_slots()
+            .map(|(mark, _)| f32::from(u8::from(shown[mark]))),
+    );
     if values.len() > VALUE_VEC4S * 4 {
         return Err(Error::new(format!(
-            "too many bindings: {}, and the limit is {} for now",
+            "too many bindings and vanishing marks: {}, and the limit is {} for now",
             values.len(),
             VALUE_VEC4S * 4
         )));
     }
 
-    let mut regions: Vec<Vec<[f64; 2]>> = Vec::new();
-    for mark in &scene.marks {
-        if let Form::Region(parts) = &mark.form {
-            let mut vertices = Vec::new();
-            for part in parts {
-                match part {
-                    Part::Point(p) => {
-                        let (x, y) = pair(p, &env)?;
-                        let (dx, dy) = device(x, y, view, width, height);
-                        vertices.push([dx, dy]);
-                    }
-                    Part::Arc(arc) => {
-                        for p in stroke::sample_arc(arc, &env, view, width, height)? {
-                            let (dx, dy) = device(p[0], p[1], view, width, height);
-                            vertices.push([dx, dy]);
-                        }
-                    }
-                }
-            }
-            regions.push(vertices);
-        }
-    }
     let total: usize = regions.iter().map(Vec::len).sum::<usize>() + regions.len();
     if total > GEOMETRY_VEC4S {
         return Err(Error::new(format!(
@@ -328,17 +382,20 @@ pub fn prepare(
         start += vertices.len();
     }
 
-    let strokes = stroke::build(figure, &env, view, width, height, dpr)?;
+    let strokes = stroke::build(figure, &env, view, width, height, dpr, &shown)?;
     let paper = match &figure.styles.paper {
         Some(paper) => eval::color(paper, &env)?,
         None => [1.0; 3],
     };
 
     let mut labels = Vec::new();
-    for (mark, style) in scene.marks.iter().zip(&figure.styles.marks) {
+    for (i, (mark, style)) in scene.marks.iter().zip(&figure.styles.marks).enumerate() {
         let Form::Label { text, at, offset } = &mark.form else {
             continue;
         };
+        if !shown[i] {
+            continue;
+        }
         let (x, y) = pair(at, &env)?;
         let (dx, dy) = device(x, y, view, width, height);
         let (ox, oy) = pair(offset, &env)?;
@@ -369,6 +426,7 @@ pub fn prepare(
 
     Ok(Prepared {
         values,
+        shown,
         geometry,
         strokes,
         labels,

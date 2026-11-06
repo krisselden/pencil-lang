@@ -179,7 +179,9 @@
 
   const spans = new Map();
   const drawLabels = (labels) => {
+    const present = new Set();
     for (const label of labels) {
+      present.add(label.id);
       let span = spans.get(label.id);
       if (!span) {
         span = document.createElement('span');
@@ -188,6 +190,7 @@
         spans.set(label.id, span);
       }
       if (span.textContent !== label.text) span.textContent = label.text;
+      span.hidden = false;
       span.classList.toggle('math', label.math);
       span.style.fontSize = `${label.size / dpr}px`;
       span.style.color = label.color;
@@ -196,6 +199,8 @@
       span.style.opacity = label.opacity;
       span.style.transform = `translate(${label.x / dpr}px, ${label.y / dpr}px) translate(-50%, -50%)`;
     }
+    // A label that isn't listed doesn't exist this frame.
+    for (const [id, span] of spans) span.hidden = !present.has(id);
   };
 
   const draw = () => {

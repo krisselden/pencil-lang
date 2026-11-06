@@ -118,6 +118,25 @@ impl MarkStyle {
         }
     }
 
+    /// Every expression this style evaluates.
+    pub fn exprs(&self) -> impl Iterator<Item = &Expr> {
+        [
+            &self.negative,
+            &self.positive,
+            &self.stroke,
+            &self.width,
+            &self.dash,
+            &self.gap,
+            &self.opacity,
+            &self.fill_opacity,
+            &self.radius,
+            &self.size,
+            &self.halo,
+        ]
+        .into_iter()
+        .flatten()
+    }
+
     /// Dashes and tapers depend on position along the curve, which a field can't give.
     pub fn needs_arc_length(&self) -> bool {
         self.dash.is_some()

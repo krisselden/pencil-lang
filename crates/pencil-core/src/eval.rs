@@ -22,22 +22,32 @@ pub enum Value {
 
 #[derive(Clone, Debug)]
 pub struct Env {
-    vars: HashMap<String, f64>,
+    /// `None` is a binding that doesn't exist this frame.
+    vars: HashMap<String, Option<f64>>,
 }
 
 impl Env {
     pub fn new(time: f64) -> Self {
         let mut vars = HashMap::new();
-        vars.insert("time".to_string(), time);
+        vars.insert("time".to_string(), Some(time));
         Self { vars }
     }
 
     pub fn set(&mut self, name: &str, value: f64) {
-        self.vars.insert(name.to_string(), value);
+        self.vars.insert(name.to_string(), Some(value));
     }
 
+    pub fn set_absent(&mut self, name: &str) {
+        self.vars.insert(name.to_string(), None);
+    }
+
+    /// A value, or nothing if it's unknown or doesn't exist this frame.
     pub fn get(&self, name: &str) -> Option<f64> {
-        self.vars.get(name).copied()
+        self.vars.get(name).copied().flatten()
+    }
+
+    pub fn is_absent(&self, name: &str) -> bool {
+        matches!(self.vars.get(name), Some(None))
     }
 }
 
@@ -87,7 +97,8 @@ pub fn eval(e: &Expr, env: &Env) -> Result<Value, Error> {
             "white" => Color([1.0; 3]),
             "black" => Color([0.0; 3]),
             _ => match env.vars.get(s) {
-                Some(v) => Real(*v),
+                Some(Some(v)) => Real(*v),
+                Some(None) => return Err(Error::absent()),
                 None => return Err(Error::new(format!("no value for `{s}`"))),
             },
         },
@@ -110,6 +121,27 @@ pub fn eval(e: &Expr, env: &Env) -> Result<Value, Error> {
                 } else {
                     Real(real(b)?)
                 }
+            }
+            // A partial value: it exists where the condition holds. A condition that isn't
+            // a number, from dividing by zero, doesn't hold.
+            ("Where", [condition, value]) => {
+                if real(condition)? >= 0.0 {
+                    eval(value, env)?
+                } else {
+                    return Err(Error::absent());
+                }
+            }
+            // Whether every field of a value exists: the one test that sees absence.
+            ("Exists", fields) => {
+                let mut all = 1.0;
+                for field in fields {
+                    match real(field) {
+                        Ok(_) => {}
+                        Err(e) if e.absent => all = 0.0,
+                        Err(e) => return Err(e),
+                    }
+                }
+                Real(all)
             }
             // A beat's strength: nothing before it, `now` during it, `later` after it.
             ("Reveal", [age, now, later]) => {
@@ -185,10 +217,14 @@ pub fn frame_env(figure: &Figure, inputs: &Inputs) -> Result<Env, Error> {
     let mut env = Env::new(inputs.time);
     for binding in &figure.scene.bindings {
         let value = match inputs.params.iter().find(|(id, _)| *id == binding.id) {
-            Some((_, value)) => *value,
-            None => real(&binding.expr, &env)?,
+            Some((_, value)) => Ok(*value),
+            None => real(&binding.expr, &env),
         };
-        env.set(&binding.id, value);
+        match value {
+            Ok(value) => env.set(&binding.id, value),
+            Err(e) if e.absent => env.set_absent(&binding.id),
+            Err(e) => return Err(e),
+        }
     }
     Ok(env)
 }
@@ -273,13 +309,20 @@ impl<'a> Frame<'a> {
         };
         let mut layer = 0;
         let mut region = 0;
-        for (mark, style) in self
+        for (i, (mark, style)) in self
             .figure
             .scene
             .marks
             .iter()
             .zip(&self.figure.styles.marks)
+            .enumerate()
         {
+            // An absent mark draws nothing, but keeps its places in the shared tables.
+            if !self.prepared.shown[i] {
+                layer += usize::from(style.stroke_is_line(&mark.form));
+                region += usize::from(matches!(mark.form, Form::Region(_)));
+                continue;
+            }
             let mut env = self.env.clone();
             // Distance in device pixels and its direction, where the form has them.
             let measured = match &mark.form {

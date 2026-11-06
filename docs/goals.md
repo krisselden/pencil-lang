@@ -84,14 +84,34 @@ that refits on those but not during a drag.
   angles, every circle keeps the ratio k to its distance from 0, the closing formula is right for q = 4
   to 12, and every binding stays finite across θ's whole range.
 - **GPU matches the CPU oracle** within 1/255 at six times.
-- **CPU per frame is about 0.85 ms in WASM** at 1530px, with 239 segments. GPU time wasn't measured, and
+- **CPU per frame is about 1.1 ms in WASM** at 1530px, with 237 segments, up from about 0.85 ms before values
+  could be absent. The two weren't measured at the same state. GPU time wasn't measured, and
   hidden marks still cost shader time because their opacity is computed per pixel.
-- **No `Option` yet.** An intersection that doesn't exist becomes NaN instead of vanishing. Here the
-  range keeps everything defined, which a test checks, but SPEC's `Option` and branch tracking are needed
-  for figures where points really appear and vanish.
+- **Absent values came next**, with `corpus/005-tangents` as the test figure (below). This figure's numbers
+  didn't change, to 12 places across θ's whole range, and it's still defined throughout.
 - **Not done:** moving P with the keyboard, which the blog has, and a touch check on a real phone.
 
 Syntax, built-ins and language decisions now live in `docs/language.md`.
+
+## Values that may not exist
+
+`corpus/005-tangents`, on `web/tangents.html`: a point has two tangents to a circle from outside, and
+a chord through it from inside. Drag it across the circle and each construction takes over from the other.
+
+- **What's built:** SPEC's `Option`, as an explicit condition on each value, with `exists` and `otherwise`.
+  `docs/language.md` has the rules.
+- **The geometry is tested:** tangent points and chord ends exist on the correct side of the circle at 300
+  distances, sit on the circle, have a radius square to the tangent, and have length √|d² − 1| within 1e-9.
+  At d = 1 all four land on P. Tangents by construction stay defined at 2000 angles, which caught a
+  wrong tolerance in the first version.
+- **GPU matches the CPU oracle** within 1/255 on both sides of the circle, at d = 1 and within 1e-4 of it.
+- **No teleports:** PLAN's M3 test passes on this figure at dense steps, without a tracker. Each root is one
+  formula, and existence depends only on the frame's inputs, so seeking stays pure.
+- **Not built: branch labels and a tracker.** A root is stable while the line's direction is, but it swaps if
+  the construction reverses that direction, such as `line(A, B)` as A passes through B. No figure needs that
+  yet. SPEC's `:appearing`, `:vanishing` and `on appear: fade` also wait, so marks pop in and out.
+- **A `fit` view can jump** when something it fits vanishes, as a slider moves. It's correct, and it may want
+  easing or a rule of its own once a figure hits it.
 
 ## Text without a page
 

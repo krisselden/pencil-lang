@@ -1,0 +1,55 @@
+// A point and a circle. Outside the circle, the point has two tangents, found with the
+// circle on OP as diameter: an angle in a semicircle is a right angle (Thales). Inside, it
+// has none, but the line through it at right angles to OP now crosses the circle in a chord.
+// At the circle, both constructions come down to the point itself.
+doc tangents
+duration 12
+
+viewport { x: -1.6..3.4, y: -1.5625..1.5625, width: 640, height: 400 }
+
+fn dir(t) = (cos(t), sin(t))
+
+param d in 0.15..3.2
+bind d = 1.6 + 1.4·cos(tau·time / 12)
+
+let heading = 0.35
+let O = (0, 0)
+let A = dir(0)
+let P = d·dir(heading)
+let axis = line(O, P)
+curve c = circle(O, A)
+
+// Outside: these exist for d ≥ 1.
+let M = midpoint(O, P)
+curve thales = circle(M, O) tag aux
+let T = intersect(c, thales, 0)
+let U = intersect(c, thales, 1)
+curve tangent_t = line(P, T) tag tangent
+curve tangent_u = line(P, U) tag tangent
+segment radius_t = O, T tag radius
+segment radius_u = O, U tag radius
+rightangle square_t = O, T, P size 0.11
+rightangle square_u = O, U, P size 0.11
+dot T, U
+label name_t = "T" at T offset (-4, -16)
+label name_u = "U" at U offset (-4, 16)
+
+// Inside: these exist for d ≤ 1.
+let across = perpendicular(P, axis)
+let E = intersect(c, across, 0)
+let F = intersect(c, across, 1)
+segment chord = E, F
+dot E, F
+label name_e = "E" at E offset (12, 12)
+label name_f = "F" at F offset (-12, -12)
+
+dot O
+label name_o = "O" at O offset (-14, 12)
+dot P
+label name_p = "P" at P offset (14, -14)
+handle P sets d = pointer.x·cos(heading) + pointer.y·sin(heading)
+
+// A style can answer whether something exists, and a readout can fall back.
+let outside = exists(T)
+let tangent_length = otherwise(dist(P, T), 0)
+let half_chord = otherwise(dist(P, E), 0)

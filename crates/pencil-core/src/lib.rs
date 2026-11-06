@@ -12,6 +12,7 @@ pub mod eval;
 pub mod frame;
 pub mod ir;
 pub mod parse;
+pub mod presence;
 pub mod stroke;
 pub mod style;
 pub mod trace;
@@ -24,6 +25,23 @@ pub use error::Error;
 pub struct Figure {
     pub scene: ir::Scene,
     pub styles: style::Styled,
+    /// For each mark, whether it can stop existing. Most can't, and those cost nothing.
+    pub conditional: Vec<bool>,
+}
+
+impl Figure {
+    /// Where the shader finds each conditional mark's presence: mark index, then index
+    /// in `Prepared::values`, after the bindings. Labels are drawn off the GPU.
+    pub fn presence_slots(&self) -> impl Iterator<Item = (usize, usize)> + '_ {
+        self.conditional
+            .iter()
+            .enumerate()
+            .filter(|(i, conditional)| {
+                **conditional && !matches!(self.scene.marks[*i].form, ir::Form::Label { .. })
+            })
+            .enumerate()
+            .map(|(slot, (i, _))| (i, self.scene.bindings.len() + slot))
+    }
 }
 
 /// Compile a document and apply stylesheets, later sheets overriding earlier ones.
@@ -37,5 +55,10 @@ pub fn build(doc: &str, sheets: &[&str]) -> Result<Figure, Error> {
     }
     parsed.push(document);
     let styles = style::resolve(&scene, &parsed)?;
-    Ok(Figure { scene, styles })
+    let conditional = presence::conditional_marks(&scene, &styles)?;
+    Ok(Figure {
+        scene,
+        styles,
+        conditional,
+    })
 }

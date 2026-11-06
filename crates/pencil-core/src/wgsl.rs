@@ -40,7 +40,6 @@ fn powi(x: f32, n: f32) -> f32 {
 }
 
 fn fmod(x: f32, y: f32) -> f32 { return x - y * floor(x / y); }
-fn if_nonnegative(x: f32, a: f32, b: f32) -> f32 { return select(b, a, x >= 0.0); }
 fn reveal(age: f32, now: f32, later: f32) -> f32 {
     return select(select(later, now, age < 0.5), 0.0, age < -0.5);
 }
@@ -255,7 +254,6 @@ pub fn emit_expr(e: &Expr) -> String {
             ("Tan", _) => call("tan", args),
             ("Arccos", _) => call("acos", args),
             ("Floor", _) => call("floor", args),
-            ("IfNonnegative", _) => call("if_nonnegative", args),
             ("Reveal", _) => call("reveal", args),
             ("Exp", _) => call("exp", args),
             ("Ln", _) => call("log", args),
@@ -324,13 +322,30 @@ pub fn emit(figure: &Figure) -> String {
         )),
         None => out.push_str("    var color = vec3<f32>(1.0);\n"),
     }
+    let slots: std::collections::HashMap<usize, usize> = figure.presence_slots().collect();
     let mut layer = 0;
     let mut region = 0;
-    for (mark, style) in figure.scene.marks.iter().zip(&figure.styles.marks) {
+    for (i, (mark, style)) in figure
+        .scene
+        .marks
+        .iter()
+        .zip(&figure.styles.marks)
+        .enumerate()
+    {
         if matches!(mark.form, Form::Label { .. }) {
             continue;
         }
-        out.push_str(&format!("    {{ // {}\n", mark.id));
+        // A mark that can vanish skips all its work when it has. Absent bindings arrive as
+        // zero, and nothing that could read one runs.
+        match slots.get(&i) {
+            Some(slot) => out.push_str(&format!(
+                "    if u.values[{}][{}] > 0.5 {{ // {}\n",
+                slot / 4,
+                slot % 4,
+                mark.id
+            )),
+            None => out.push_str(&format!("    {{ // {}\n", mark.id)),
+        }
         let mut measured = true;
         match &mark.form {
             Form::Field {

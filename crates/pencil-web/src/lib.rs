@@ -197,12 +197,16 @@ impl Player {
         }
     }
 
-    /// A binding's value this frame.
+    /// A binding's value this frame, or NaN if it doesn't exist this frame.
     pub fn value(&self, name: &str, time: f32) -> Result<f64, JsError> {
         let Some((figure, _)) = &self.figure else {
             return Err(js_error("no figure"));
         };
         let env = eval::frame_env(figure, &self.inputs(time)).map_err(js_error)?;
+        // A binding that doesn't exist this frame reads as NaN.
+        if env.is_absent(name) {
+            return Ok(f64::NAN);
+        }
         env.get(name)
             .ok_or_else(|| js_error(format!("no binding named `{name}`")))
     }

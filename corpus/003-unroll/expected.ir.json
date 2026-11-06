@@ -463,89 +463,85 @@
         "points": [
           [
             [
-              "Add",
-              "P.x",
+              "Where",
               [
-                "Multiply",
-                0.22,
+                "Min",
                 [
-                  "Divide",
+                  "Subtract",
                   [
-                    "Subtract",
-                    "O.x",
-                    "P.x"
-                  ],
-                  [
-                    "Sqrt",
+                    "Power",
                     [
-                      "Add",
+                      "Sqrt",
                       [
-                        "Power",
+                        "Add",
                         [
-                          "Subtract",
-                          "O.x",
-                          "P.x"
+                          "Power",
+                          [
+                            "Subtract",
+                            "P.x",
+                            "O.x"
+                          ],
+                          2.0
                         ],
-                        2.0
-                      ],
-                      [
-                        "Power",
                         [
-                          "Subtract",
-                          "O.y",
-                          "P.y"
-                        ],
-                        2.0
+                          "Power",
+                          [
+                            "Subtract",
+                            "P.y",
+                            "O.y"
+                          ],
+                          2.0
+                        ]
                       ]
-                    ]
-                  ]
-                ]
-              ]
-            ],
-            [
-              "Add",
-              "P.y",
-              [
-                "Multiply",
-                0.22,
+                    ],
+                    2.0
+                  ],
+                  1e-12
+                ],
                 [
-                  "Divide",
+                  "Subtract",
                   [
-                    "Subtract",
-                    "O.y",
-                    "P.y"
-                  ],
-                  [
-                    "Sqrt",
+                    "Power",
                     [
-                      "Add",
+                      "Sqrt",
                       [
-                        "Power",
+                        "Add",
                         [
-                          "Subtract",
-                          "O.x",
-                          "P.x"
+                          "Power",
+                          [
+                            "Subtract",
+                            "P.x",
+                            [
+                              "Add",
+                              "P.x",
+                              "P.y"
+                            ]
+                          ],
+                          2.0
                         ],
-                        2.0
-                      ],
-                      [
-                        "Power",
                         [
-                          "Subtract",
-                          "O.y",
-                          "P.y"
-                        ],
-                        2.0
+                          "Power",
+                          [
+                            "Subtract",
+                            "P.y",
+                            [
+                              "Add",
+                              "P.y",
+                              [
+                                "Negate",
+                                "P.x"
+                              ]
+                            ]
+                          ],
+                          2.0
+                        ]
                       ]
-                    ]
-                  ]
+                    ],
+                    2.0
+                  ],
+                  1e-12
                 ]
-              ]
-            ]
-          ],
-          [
-            [
-              "Add",
+              ],
               [
                 "Add",
                 "P.x",
@@ -585,61 +581,88 @@
                     ]
                   ]
                 ]
-              ],
-              [
-                "Multiply",
-                0.22,
-                [
-                  "Divide",
-                  [
-                    "Subtract",
-                    [
-                      "Add",
-                      "P.x",
-                      "P.y"
-                    ],
-                    "P.x"
-                  ],
-                  [
-                    "Sqrt",
-                    [
-                      "Add",
-                      [
-                        "Power",
-                        [
-                          "Subtract",
-                          [
-                            "Add",
-                            "P.x",
-                            "P.y"
-                          ],
-                          "P.x"
-                        ],
-                        2.0
-                      ],
-                      [
-                        "Power",
-                        [
-                          "Subtract",
-                          [
-                            "Add",
-                            "P.y",
-                            [
-                              "Negate",
-                              "P.x"
-                            ]
-                          ],
-                          "P.y"
-                        ],
-                        2.0
-                      ]
-                    ]
-                  ]
-                ]
               ]
             ],
             [
-              "Add",
+              "Where",
+              [
+                "Min",
+                [
+                  "Subtract",
+                  [
+                    "Power",
+                    [
+                      "Sqrt",
+                      [
+                        "Add",
+                        [
+                          "Power",
+                          [
+                            "Subtract",
+                            "P.x",
+                            "O.x"
+                          ],
+                          2.0
+                        ],
+                        [
+                          "Power",
+                          [
+                            "Subtract",
+                            "P.y",
+                            "O.y"
+                          ],
+                          2.0
+                        ]
+                      ]
+                    ],
+                    2.0
+                  ],
+                  1e-12
+                ],
+                [
+                  "Subtract",
+                  [
+                    "Power",
+                    [
+                      "Sqrt",
+                      [
+                        "Add",
+                        [
+                          "Power",
+                          [
+                            "Subtract",
+                            "P.x",
+                            [
+                              "Add",
+                              "P.x",
+                              "P.y"
+                            ]
+                          ],
+                          2.0
+                        ],
+                        [
+                          "Power",
+                          [
+                            "Subtract",
+                            "P.y",
+                            [
+                              "Add",
+                              "P.y",
+                              [
+                                "Negate",
+                                "P.x"
+                              ]
+                            ]
+                          ],
+                          2.0
+                        ]
+                      ]
+                    ],
+                    2.0
+                  ],
+                  1e-12
+                ]
+              ],
               [
                 "Add",
                 "P.y",
@@ -679,56 +702,357 @@
                     ]
                   ]
                 ]
-              ],
+              ]
+            ]
+          ],
+          [
+            [
+              "Where",
               [
-                "Multiply",
-                0.22,
+                "Min",
                 [
-                  "Divide",
+                  "Subtract",
                   [
-                    "Subtract",
+                    "Power",
                     [
-                      "Add",
-                      "P.y",
+                      "Sqrt",
                       [
-                        "Negate",
-                        "P.x"
+                        "Add",
+                        [
+                          "Power",
+                          [
+                            "Subtract",
+                            "P.x",
+                            "O.x"
+                          ],
+                          2.0
+                        ],
+                        [
+                          "Power",
+                          [
+                            "Subtract",
+                            "P.y",
+                            "O.y"
+                          ],
+                          2.0
+                        ]
                       ]
                     ],
-                    "P.y"
+                    2.0
                   ],
+                  1e-12
+                ],
+                [
+                  "Subtract",
                   [
-                    "Sqrt",
+                    "Power",
                     [
-                      "Add",
+                      "Sqrt",
                       [
-                        "Power",
+                        "Add",
                         [
-                          "Subtract",
+                          "Power",
                           [
-                            "Add",
+                            "Subtract",
                             "P.x",
-                            "P.y"
-                          ],
-                          "P.x"
-                        ],
-                        2.0
-                      ],
-                      [
-                        "Power",
-                        [
-                          "Subtract",
-                          [
-                            "Add",
-                            "P.y",
                             [
-                              "Negate",
-                              "P.x"
+                              "Add",
+                              "P.x",
+                              "P.y"
                             ]
                           ],
-                          "P.y"
+                          2.0
                         ],
-                        2.0
+                        [
+                          "Power",
+                          [
+                            "Subtract",
+                            "P.y",
+                            [
+                              "Add",
+                              "P.y",
+                              [
+                                "Negate",
+                                "P.x"
+                              ]
+                            ]
+                          ],
+                          2.0
+                        ]
+                      ]
+                    ],
+                    2.0
+                  ],
+                  1e-12
+                ]
+              ],
+              [
+                "Add",
+                [
+                  "Add",
+                  "P.x",
+                  [
+                    "Multiply",
+                    0.22,
+                    [
+                      "Divide",
+                      [
+                        "Subtract",
+                        "O.x",
+                        "P.x"
+                      ],
+                      [
+                        "Sqrt",
+                        [
+                          "Add",
+                          [
+                            "Power",
+                            [
+                              "Subtract",
+                              "O.x",
+                              "P.x"
+                            ],
+                            2.0
+                          ],
+                          [
+                            "Power",
+                            [
+                              "Subtract",
+                              "O.y",
+                              "P.y"
+                            ],
+                            2.0
+                          ]
+                        ]
+                      ]
+                    ]
+                  ]
+                ],
+                [
+                  "Multiply",
+                  0.22,
+                  [
+                    "Divide",
+                    [
+                      "Subtract",
+                      [
+                        "Add",
+                        "P.x",
+                        "P.y"
+                      ],
+                      "P.x"
+                    ],
+                    [
+                      "Sqrt",
+                      [
+                        "Add",
+                        [
+                          "Power",
+                          [
+                            "Subtract",
+                            [
+                              "Add",
+                              "P.x",
+                              "P.y"
+                            ],
+                            "P.x"
+                          ],
+                          2.0
+                        ],
+                        [
+                          "Power",
+                          [
+                            "Subtract",
+                            [
+                              "Add",
+                              "P.y",
+                              [
+                                "Negate",
+                                "P.x"
+                              ]
+                            ],
+                            "P.y"
+                          ],
+                          2.0
+                        ]
+                      ]
+                    ]
+                  ]
+                ]
+              ]
+            ],
+            [
+              "Where",
+              [
+                "Min",
+                [
+                  "Subtract",
+                  [
+                    "Power",
+                    [
+                      "Sqrt",
+                      [
+                        "Add",
+                        [
+                          "Power",
+                          [
+                            "Subtract",
+                            "P.x",
+                            "O.x"
+                          ],
+                          2.0
+                        ],
+                        [
+                          "Power",
+                          [
+                            "Subtract",
+                            "P.y",
+                            "O.y"
+                          ],
+                          2.0
+                        ]
+                      ]
+                    ],
+                    2.0
+                  ],
+                  1e-12
+                ],
+                [
+                  "Subtract",
+                  [
+                    "Power",
+                    [
+                      "Sqrt",
+                      [
+                        "Add",
+                        [
+                          "Power",
+                          [
+                            "Subtract",
+                            "P.x",
+                            [
+                              "Add",
+                              "P.x",
+                              "P.y"
+                            ]
+                          ],
+                          2.0
+                        ],
+                        [
+                          "Power",
+                          [
+                            "Subtract",
+                            "P.y",
+                            [
+                              "Add",
+                              "P.y",
+                              [
+                                "Negate",
+                                "P.x"
+                              ]
+                            ]
+                          ],
+                          2.0
+                        ]
+                      ]
+                    ],
+                    2.0
+                  ],
+                  1e-12
+                ]
+              ],
+              [
+                "Add",
+                [
+                  "Add",
+                  "P.y",
+                  [
+                    "Multiply",
+                    0.22,
+                    [
+                      "Divide",
+                      [
+                        "Subtract",
+                        "O.y",
+                        "P.y"
+                      ],
+                      [
+                        "Sqrt",
+                        [
+                          "Add",
+                          [
+                            "Power",
+                            [
+                              "Subtract",
+                              "O.x",
+                              "P.x"
+                            ],
+                            2.0
+                          ],
+                          [
+                            "Power",
+                            [
+                              "Subtract",
+                              "O.y",
+                              "P.y"
+                            ],
+                            2.0
+                          ]
+                        ]
+                      ]
+                    ]
+                  ]
+                ],
+                [
+                  "Multiply",
+                  0.22,
+                  [
+                    "Divide",
+                    [
+                      "Subtract",
+                      [
+                        "Add",
+                        "P.y",
+                        [
+                          "Negate",
+                          "P.x"
+                        ]
+                      ],
+                      "P.y"
+                    ],
+                    [
+                      "Sqrt",
+                      [
+                        "Add",
+                        [
+                          "Power",
+                          [
+                            "Subtract",
+                            [
+                              "Add",
+                              "P.x",
+                              "P.y"
+                            ],
+                            "P.x"
+                          ],
+                          2.0
+                        ],
+                        [
+                          "Power",
+                          [
+                            "Subtract",
+                            [
+                              "Add",
+                              "P.y",
+                              [
+                                "Negate",
+                                "P.x"
+                              ]
+                            ],
+                            "P.y"
+                          ],
+                          2.0
+                        ]
                       ]
                     ]
                   ]
@@ -738,54 +1062,135 @@
           ],
           [
             [
-              "Add",
-              "P.x",
+              "Where",
               [
-                "Multiply",
-                0.22,
+                "Min",
                 [
-                  "Divide",
+                  "Subtract",
                   [
-                    "Subtract",
+                    "Power",
                     [
-                      "Add",
-                      "P.x",
-                      "P.y"
-                    ],
-                    "P.x"
-                  ],
-                  [
-                    "Sqrt",
-                    [
-                      "Add",
+                      "Sqrt",
                       [
-                        "Power",
+                        "Add",
                         [
-                          "Subtract",
+                          "Power",
                           [
-                            "Add",
+                            "Subtract",
                             "P.x",
-                            "P.y"
+                            "O.x"
                           ],
-                          "P.x"
+                          2.0
                         ],
-                        2.0
-                      ],
-                      [
-                        "Power",
                         [
-                          "Subtract",
+                          "Power",
                           [
-                            "Add",
+                            "Subtract",
                             "P.y",
+                            "O.y"
+                          ],
+                          2.0
+                        ]
+                      ]
+                    ],
+                    2.0
+                  ],
+                  1e-12
+                ],
+                [
+                  "Subtract",
+                  [
+                    "Power",
+                    [
+                      "Sqrt",
+                      [
+                        "Add",
+                        [
+                          "Power",
+                          [
+                            "Subtract",
+                            "P.x",
                             [
-                              "Negate",
-                              "P.x"
+                              "Add",
+                              "P.x",
+                              "P.y"
                             ]
                           ],
-                          "P.y"
+                          2.0
                         ],
-                        2.0
+                        [
+                          "Power",
+                          [
+                            "Subtract",
+                            "P.y",
+                            [
+                              "Add",
+                              "P.y",
+                              [
+                                "Negate",
+                                "P.x"
+                              ]
+                            ]
+                          ],
+                          2.0
+                        ]
+                      ]
+                    ],
+                    2.0
+                  ],
+                  1e-12
+                ]
+              ],
+              [
+                "Add",
+                "P.x",
+                [
+                  "Multiply",
+                  0.22,
+                  [
+                    "Divide",
+                    [
+                      "Subtract",
+                      [
+                        "Add",
+                        "P.x",
+                        "P.y"
+                      ],
+                      "P.x"
+                    ],
+                    [
+                      "Sqrt",
+                      [
+                        "Add",
+                        [
+                          "Power",
+                          [
+                            "Subtract",
+                            [
+                              "Add",
+                              "P.x",
+                              "P.y"
+                            ],
+                            "P.x"
+                          ],
+                          2.0
+                        ],
+                        [
+                          "Power",
+                          [
+                            "Subtract",
+                            [
+                              "Add",
+                              "P.y",
+                              [
+                                "Negate",
+                                "P.x"
+                              ]
+                            ],
+                            "P.y"
+                          ],
+                          2.0
+                        ]
                       ]
                     ]
                   ]
@@ -793,57 +1198,138 @@
               ]
             ],
             [
-              "Add",
-              "P.y",
+              "Where",
               [
-                "Multiply",
-                0.22,
+                "Min",
                 [
-                  "Divide",
+                  "Subtract",
                   [
-                    "Subtract",
+                    "Power",
                     [
-                      "Add",
-                      "P.y",
+                      "Sqrt",
                       [
-                        "Negate",
-                        "P.x"
+                        "Add",
+                        [
+                          "Power",
+                          [
+                            "Subtract",
+                            "P.x",
+                            "O.x"
+                          ],
+                          2.0
+                        ],
+                        [
+                          "Power",
+                          [
+                            "Subtract",
+                            "P.y",
+                            "O.y"
+                          ],
+                          2.0
+                        ]
                       ]
                     ],
-                    "P.y"
+                    2.0
                   ],
+                  1e-12
+                ],
+                [
+                  "Subtract",
                   [
-                    "Sqrt",
+                    "Power",
                     [
-                      "Add",
+                      "Sqrt",
                       [
-                        "Power",
+                        "Add",
                         [
-                          "Subtract",
+                          "Power",
                           [
-                            "Add",
+                            "Subtract",
                             "P.x",
-                            "P.y"
-                          ],
-                          "P.x"
-                        ],
-                        2.0
-                      ],
-                      [
-                        "Power",
-                        [
-                          "Subtract",
-                          [
-                            "Add",
-                            "P.y",
                             [
-                              "Negate",
-                              "P.x"
+                              "Add",
+                              "P.x",
+                              "P.y"
                             ]
                           ],
-                          "P.y"
+                          2.0
                         ],
-                        2.0
+                        [
+                          "Power",
+                          [
+                            "Subtract",
+                            "P.y",
+                            [
+                              "Add",
+                              "P.y",
+                              [
+                                "Negate",
+                                "P.x"
+                              ]
+                            ]
+                          ],
+                          2.0
+                        ]
+                      ]
+                    ],
+                    2.0
+                  ],
+                  1e-12
+                ]
+              ],
+              [
+                "Add",
+                "P.y",
+                [
+                  "Multiply",
+                  0.22,
+                  [
+                    "Divide",
+                    [
+                      "Subtract",
+                      [
+                        "Add",
+                        "P.y",
+                        [
+                          "Negate",
+                          "P.x"
+                        ]
+                      ],
+                      "P.y"
+                    ],
+                    [
+                      "Sqrt",
+                      [
+                        "Add",
+                        [
+                          "Power",
+                          [
+                            "Subtract",
+                            [
+                              "Add",
+                              "P.x",
+                              "P.y"
+                            ],
+                            "P.x"
+                          ],
+                          2.0
+                        ],
+                        [
+                          "Power",
+                          [
+                            "Subtract",
+                            [
+                              "Add",
+                              "P.y",
+                              [
+                                "Negate",
+                                "P.x"
+                              ]
+                            ],
+                            "P.y"
+                          ],
+                          2.0
+                        ]
                       ]
                     ]
                   ]

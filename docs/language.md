@@ -90,14 +90,44 @@ compile time, so the IR stays symbolic and bindings are evaluated once per frame
 | `length(P)`, `dist(A, B)`, `dot(A, B)` | Numbers from points. |
 | `midpoint(A, B)` | Halfway between. |
 | `circle(C, T)` | About `C` through `T`. Fields `.x`, `.y`, `.r`. |
-| `line(A, B)`, `ray(A, B)` | Through two points. A ray starts at `A`. |
+| `line(A, B)`, `ray(A, B)` | Through two points. A ray starts at `A`. Two points in one place make no line. |
 | `perpendicular(P, l)` | The line through `P` at right angles to `l`. |
-| `intersect(u, v, which)` | Where lines, rays and circles meet (order below). `which` is 0 or 1, and defaults to 0. |
+| `intersect(u, v, which)` | Where lines, rays and circles meet, if they do (below). `which` is 0 or 1, and defaults to 0. |
 | `mirror(s, across)` | A point across a line or point, or a circle across a line. |
+| `exists(v)` | 1 if all of `v` exists this frame, and 0 if not. |
+| `otherwise(v, fallback)` | `v`, or all of `fallback` where `v` doesn't exist. They must be the same kind. |
 
-Along a line, intersections come in order of its direction. A ray keeps only the points ahead
-of its start, so from inside a circle it has one point, and that's both 0 and 1. For two
-circles, 0 is left of the line from the first center to the second.
+`which` names a root, not a place among the points that remain. Along a line, 0 and 1 are in
+order of its direction. For two circles, 0 is left of the line from the first center to the
+second. A ray only has the points ahead of its start, so from inside a circle only its root 1
+exists, and root 0 is absent, rather than root 1 taking its place and jumping.
+
+### When a value doesn't exist
+
+Geometry is partial, so a value can be absent on some frames. Only constructions make one:
+
+- A line or ray that misses a circle, or a circle that's apart from, inside or the same as another.
+- Parallel lines.
+- A point behind the start of a ray.
+- A line through two points in one place, or a `rightangle` with a side of no length.
+
+Touching counts as meeting, within rounding, so a tangent by construction doesn't flicker.
+
+Whatever is built from an absent value is absent too, and only `exists` and `otherwise` can see
+the difference. What that means for each thing that uses one:
+
+| Use | When its value is absent |
+|---|---|
+| A mark | Isn't drawn, along with its label, which pages must then hide. |
+| A style value | Hides the mark. To respond instead, `let shown = exists(P)` and use `shown`. |
+| A parametric curve's point | Leaves a gap there, and the curve can come in pieces. |
+| A region's boundary | Hides the region: with a gap it doesn't enclose anything. |
+| `fit` | Skips it, and if nothing is left, uses the declared `x` and `y`. |
+| `handle` | Can't be grabbed. An inverse with no answer leaves the param where it is. |
+| `paper` | A compile error: there has to be something to draw on. |
+| A curve's field | Has to name the value with `let` first: a field runs per pixel, and existence is decided per frame. |
+
+On a page, `player.value` reads an absent binding as `NaN`.
 
 ### Colors
 
@@ -146,6 +176,11 @@ Newest first. "Why" is the reason at the time, so these can be revisited.
 
 | Date | Decision | Why |
 |---|---|---|
+| 2026-11-05 | `which` names a root, not a place among the points left | One formula per root, so nothing jumps when a ray's start enters a circle. This replaced "a ray from inside has one point, and it's both 0 and 1" |
+| 2026-11-05 | A ray means a ray when intersecting lines too | A point behind its start isn't on it. `bounds.pen` came out identical, so nothing relied on the old reading |
+| 2026-11-05 | A value's existence is an explicit condition in the IR (`Where`), not NaN | NaN can't tell a missing point from a bug, `min` and `max` swallow it, and WGSL leaves it undefined |
+| 2026-11-05 | Existence is decided on the CPU per frame, and the shader gets a flag per mark | No partial values reach the GPU, and a vanished mark skips its shader work |
+| 2026-11-05 | `exists` and `otherwise` are the only way to see absence | Everything else propagates it, so a figure can't half-use a value that isn't there |
 | 2026-11-05 | `self.age` is substituted per mark at compile time | One style rule fades every beat, and the runtime needs nothing new |
 | 2026-11-05 | A beat is a discrete param, not a separate timeline feature | Same model as time and sliders, so video and buttons both just bind it |
 | 2026-11-05 | A dragged param uses `bind` plus an override, like time and a slider | Sliders and drags need no new mechanism, and `q` can set θ through its binding |
@@ -164,6 +199,6 @@ Newest first. "Why" is the reason at the time, so these can be revisited.
 ## Not built from the specs
 
 `SPEC/15`: path selectors, `in clip(…)`, `:hover`, keyed collections, branch labels with continuity
-tracking. `SPEC/16`: relations, rigs, automatic inverses. `PLAN`: charts, modules (`use`,
+tracking, `:appearing`, `:vanishing` and `on appear: fade`. `SPEC/16`: relations, rigs, automatic inverses. `PLAN`: charts, modules (`use`,
 `expose`), timelines with clips, profiles, the print round-trip, Unicode name normalization.
 Also not built: `orient ccw` and `reverse`.

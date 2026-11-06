@@ -1,0 +1,16 @@
+style paper { fill: rgb(251, 250, 247) }
+
+style c { stroke: rgb(28, 27, 25); width: 1.75px }
+style thales { stroke: rgb(107, 103, 95); width: 1px; dash: 3px; gap: 4px; opacity: 0.2 + 0.6·outside }
+
+style .tangent { stroke: rgb(46, 98, 168); width: 1.75px }
+style .radius { stroke: rgb(46, 98, 168); width: 1px; opacity: 0.6 }
+style decoration { stroke: rgb(46, 98, 168); width: 1px; opacity: 0.6 }
+style T, U { fill: rgb(46, 98, 168); radius: 4px }
+
+style chord { stroke: rgb(181, 68, 60); width: 1.75px }
+style E, F { fill: rgb(181, 68, 60); radius: 4px }
+
+style O { fill: rgb(28, 27, 25); radius: 3px }
+style P { fill: rgb(251, 250, 247); stroke: rgb(28, 27, 25); width: 3px; radius: 7px }
+style label { size: 16px; font: math; halo: 3px; fill: rgb(28, 27, 25) }

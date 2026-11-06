@@ -179,6 +179,145 @@ fn bounds_beats_step_with_time_for_video_and_hold_at_the_end() {
 
 /// Hints choose how a stroke is drawn, never what it means, so every form of one shape
 /// and every `draw` choice has to agree, apart from small differences on edge pixels.
+fn tangents_read(name: &str) -> String {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../corpus/005-tangents")
+        .join(name);
+    std::fs::read_to_string(path).unwrap()
+}
+
+#[test]
+fn tangents_ir_matches_golden() {
+    let scene = compile(&parse(&tangents_read("tangents.pen")).unwrap()).unwrap();
+    let actual = serde_json::to_string_pretty(&scene.to_json()).unwrap() + "\n";
+    let golden =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus/005-tangents/expected.ir.json");
+    if std::env::var_os("UPDATE_GOLDENS").is_some() {
+        std::fs::write(&golden, &actual).unwrap();
+    }
+    assert_eq!(actual, std::fs::read_to_string(golden).unwrap());
+}
+
+fn tangents() -> pencil_core::Figure {
+    build(
+        &tangents_read("tangents.pen"),
+        &[&tangents_read("plain.style")],
+    )
+    .unwrap()
+}
+
+fn tangents_env(f: &pencil_core::Figure, d: f64) -> pencil_core::eval::Env {
+    let inputs = pencil_core::frame::Inputs {
+        time: 0.0,
+        params: vec![("d".to_string(), d)],
+    };
+    pencil_core::eval::frame_env(f, &inputs).unwrap()
+}
+
+fn tangents_point(env: &pencil_core::eval::Env, name: &str) -> Option<(f64, f64)> {
+    Some((
+        env.get(&format!("{name}.x"))?,
+        env.get(&format!("{name}.y"))?,
+    ))
+}
+
+/// The geometry decides what exists: a tangent needs the point outside, a chord inside.
+#[test]
+fn tangents_exist_outside_the_circle_and_chords_inside() {
+    let f = tangents();
+    for i in 0..=300 {
+        let d = 0.15 + 0.01 * i as f64;
+        if (d - 1.0f64).abs() < 1e-6 {
+            continue;
+        }
+        let env = tangents_env(&f, d);
+        let (t, u) = (tangents_point(&env, "T"), tangents_point(&env, "U"));
+        let (e, g) = (tangents_point(&env, "E"), tangents_point(&env, "F"));
+        let p = tangents_point(&env, "P").unwrap();
+        if d > 1.0 {
+            assert!(e.is_none() && g.is_none(), "d={d}");
+            for touch in [t.unwrap(), u.unwrap()] {
+                // On the circle, with the radius square to the tangent.
+                assert!((touch.0.hypot(touch.1) - 1.0).abs() < 1e-9, "d={d}");
+                let square = touch.0 * (p.0 - touch.0) + touch.1 * (p.1 - touch.1);
+                assert!(square.abs() < 1e-9, "d={d}: {square}");
+                let length = (p.0 - touch.0).hypot(p.1 - touch.1);
+                assert!((length - (d * d - 1.0).sqrt()).abs() < 1e-9, "d={d}");
+            }
+            assert_eq!(env.get("outside"), Some(1.0));
+            assert!((env.get("tangent_length").unwrap() - (d * d - 1.0).sqrt()).abs() < 1e-9);
+            assert_eq!(env.get("half_chord"), Some(0.0));
+        } else {
+            assert!(t.is_none() && u.is_none(), "d={d}");
+            for end in [e.unwrap(), g.unwrap()] {
+                assert!((end.0.hypot(end.1) - 1.0).abs() < 1e-9, "d={d}");
+                let length = (p.0 - end.0).hypot(p.1 - end.1);
+                assert!((length - (1.0 - d * d).sqrt()).abs() < 1e-9, "d={d}");
+            }
+            assert_eq!(env.get("outside"), Some(0.0));
+            assert_eq!(env.get("tangent_length"), Some(0.0));
+            assert!((env.get("half_chord").unwrap() - (1.0 - d * d).sqrt()).abs() < 1e-9);
+        }
+    }
+}
+
+/// On the circle, both constructions land on the point itself and neither flickers out.
+#[test]
+fn tangents_meet_the_chord_at_the_circle() {
+    let f = tangents();
+    let env = tangents_env(&f, 1.0);
+    let p = tangents_point(&env, "P").unwrap();
+    for name in ["T", "U", "E", "F"] {
+        let q = tangents_point(&env, name).unwrap_or_else(|| panic!("{name} is absent"));
+        assert!((p.0 - q.0).hypot(p.1 - q.1) < 1e-6, "{name}");
+    }
+}
+
+/// PLAN's M3 test: dense sampling finds no teleports. Each root is one formula, so it
+/// holds without a tracker. A point moves fast near the tangency, as √(d − 1), so that
+/// stretch gets its own bound.
+#[test]
+fn tangent_points_do_not_teleport() {
+    let f = tangents();
+    for name in ["T", "U"] {
+        let step = 0.001;
+        let mut previous: Option<(f64, (f64, f64))> = None;
+        for i in 0..2000 {
+            let d = 1.001 + step * i as f64;
+            let at = tangents_point(&tangents_env(&f, d), name).unwrap();
+            if let Some((was_d, was)) = previous {
+                let moved = (at.0 - was.0).hypot(at.1 - was.1);
+                // |dT/dd| is 1 / (d·√(d² − 1)), taken at the step's start.
+                let limit = 1.1 * step / (was_d * (was_d * was_d - 1.0).sqrt());
+                assert!(moved < limit, "{name} at d={d}: {moved} over {limit}");
+            }
+            previous = Some((d, at));
+        }
+    }
+}
+
+/// Absent or not, a frame is a pure function of its inputs.
+#[test]
+fn tangents_seek_in_any_order() {
+    use pencil_core::eval::Frame;
+    use pencil_core::frame::Inputs;
+    let f = tangents();
+    let at = |t: f64| {
+        Frame::new(&f, &Inputs::at(t), 48, 30)
+            .unwrap()
+            .rgba()
+            .unwrap()
+    };
+    let forward: Vec<_> = [0.0, 4.0, 6.0, 8.0].map(at).into();
+    let shuffled: Vec<_> = [6.0, 0.0, 8.0, 4.0].map(at).into();
+    assert_eq!(forward[0], shuffled[1]);
+    assert_eq!(forward[1], shuffled[3]);
+    assert_eq!(forward[2], shuffled[0]);
+    assert_eq!(forward[3], shuffled[2]);
+    // Time 0 has the point outside, and time 6 inside, so they differ.
+    assert_ne!(forward[0], forward[2]);
+}
+
 #[test]
 fn every_form_and_hint_draws_the_same_circle() {
     use pencil_core::eval::Frame;

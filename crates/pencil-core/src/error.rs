@@ -6,6 +6,9 @@ pub struct Error {
     pub line: usize,
     pub col: usize,
     pub message: String,
+    /// Not a failure: a value that doesn't exist this frame, such as where two curves
+    /// don't meet. It travels like an error so that anything built from it is absent too.
+    pub absent: bool,
 }
 
 impl Error {
@@ -14,6 +17,14 @@ impl Error {
             line,
             col,
             message: message.into(),
+            absent: false,
+        }
+    }
+
+    pub fn absent() -> Self {
+        Self {
+            absent: true,
+            ..Self::new("this value doesn't exist here")
         }
     }
 
