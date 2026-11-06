@@ -1,0 +1,357 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Label Motion</title>
+<style>
+  :root { color-scheme: light dark; --ink: #1c1b19; --paper: #fbfaf7; --muted: #6b675f; --line: #a29d93; --accent: #2e62a8; }
+  @media (prefers-color-scheme: dark) { :root { --ink: #ece9e2; --paper: #1a1917; --muted: #a29d93; --line: #6b675f; --accent: #8ab2e6; } }
+  body { margin: 0; padding: 24px 16px; background: var(--paper); color: var(--ink); font: 15px/1.45 ui-sans-serif, system-ui, sans-serif; }
+  main { max-width: 1040px; margin: 0 auto; }
+  h1 { font-size: 16px; font-weight: 600; margin: 0 0 4px; }
+  h2 { font-size: 14px; font-weight: 600; margin: 0; }
+  p { margin: 2px 0 10px; color: var(--muted); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 400px), 1fr)); gap: 14px; }
+  svg { display: block; width: 100%; height: auto; border: 1px solid color-mix(in srgb, var(--line) 35%, transparent); }
+  svg text { font: italic 16px Charter, 'Bitstream Charter', Cambria, serif; fill: var(--ink); text-anchor: middle; dominant-baseline: middle;
+             paint-order: stroke; stroke: var(--paper); stroke-width: 3px; }
+  .controls { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; margin: 12px 0; }
+  .controls input[type=range] { flex: 1; min-width: 12rem; }
+  output, td { font-variant-numeric: tabular-nums; }
+  button { font: inherit; }
+  .table { overflow-x: auto; margin-top: 14px; }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { padding: 4px 10px 4px 0; text-align: right; border-bottom: 1px solid color-mix(in srgb, var(--line) 35%, transparent); white-space: nowrap; }
+  th:first-child, td:first-child { text-align: left; }
+  th { font-weight: 600; }
+</style>
+</head>
+<body>
+<main>
+  <h1>How should a label get out of the way?</h1>
+  <p>The same moving construction, placed four ways. The slider plays the role of dragging a param. Everything is computed from the time alone, so scrubbing and playing agree.</p>
+  <div class="controls">
+    <button id="play" type="button">Pause</button>
+    <label>speed <select id="speed"><option value="1">1×</option><option value="0.5" selected>½×</option><option value="0.25">¼×</option></select></label>
+    <input id="time" type="range" min="0" max="1439" step="1" value="0" aria-label="Time">
+    <output id="clock" for="time"></output>
+    <label>firmness <input id="firm" type="range" min="0.6" max="4" step="0.1" value="1.8" style="flex:none;min-width:0;width:7rem"></label>
+    <output id="firm-value" for="firm"></output>
+  </div>
+  <div class="grid" id="panels"></div>
+  <div class="table"><table id="metrics"></table></div>
+  <p id="status" style="margin-top:10px"></p>
+</main>
+<script>
+  const W = 520, H = 360, C = [260, 180], FONT = "italic 16px Charter, 'Bitstream Charter', Cambria, serif", LINE = 20;
+  const T = 24, FPS = 60, FRAMES = T * FPS, TAU = Math.PI * 2;
+  const NAMES = ['O', 'P', 'Q', 'R', 'M', 'N', '2πi'];
+  const ctx = document.createElement('canvas').getContext('2d');
+  ctx.font = FONT;
+  const WIDTHS = NAMES.map((n) => ctx.measureText(n).width);
+
+  const polar = (r, a) => [C[0] + r * Math.cos(a), C[1] + r * Math.sin(a)];
+  const mid = (a, b) => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+  const CIRCLE = Array.from({ length: 97 }, (_, i) => polar(92, (i / 96) * TAU));
+
+  /** A construction whose edges sweep across its own labels. A pure function of time. */
+  function scene(t) {
+    const u = (TAU * t) / T;
+    const P = polar(128 + 34 * Math.sin(3 * u), u + 0.5 * Math.sin(2 * u) + 0.4);
+    const Q = polar(118 + 44 * Math.cos(2 * u + 1), -2 * u + 2.1);
+    const R = polar(100 + 54 * Math.sin(2 * u + 2), 3 * u + 4.2);
+    const at = [C, P, Q, R, mid(P, Q), mid(P, R), mid(Q, R)];
+    const G = [(P[0] + Q[0] + R[0]) / 3, (P[1] + Q[1] + R[1]) / 3];
+    const prefer = at.map((a, i) => (i === 0 ? [-20, 20] : [a[0] - G[0], a[1] - G[1]]));
+    const segments = [[P, Q], [Q, R], [R, P], [C, P], [C, Q], [C, R]];
+    return { at, prefer, segments };
+  }
+
+  const segHitsRect = ([ax, ay], [bx, by], r) => {
+    if (Math.max(ax, bx) < r.x0 || Math.min(ax, bx) > r.x1 || Math.max(ay, by) < r.y0 || Math.min(ay, by) > r.y1) return false;
+    let t0 = 0, t1 = 1;
+    const dx = bx - ax, dy = by - ay;
+    const clip = (p, q) => {
+      if (p === 0) return q >= 0;
+      const t = q / p;
+      if (p < 0) t0 = Math.max(t0, t); else t1 = Math.min(t1, t);
+      return t0 <= t1;
+    };
+    return clip(-dx, ax - r.x0) && clip(dx, r.x1 - ax) && clip(-dy, ay - r.y0) && clip(dy, r.y1 - ay);
+  };
+  const obstaclesHit = (r, s, own) => {
+    for (const [a, b] of s.segments) if (segHitsRect(a, b, r)) return true;
+    for (let i = 1; i < CIRCLE.length; i++) if (segHitsRect(CIRCLE[i - 1], CIRCLE[i], r)) return true;
+    return s.at.some((p, i) => {
+      if (i === own) return false;
+      const nx = Math.max(r.x0, Math.min(p[0], r.x1)), ny = Math.max(r.y0, Math.min(p[1], r.y1));
+      return Math.hypot(p[0] - nx, p[1] - ny) < 5;
+    });
+  };
+
+  /** The blog's `LabelPlacer.place`, from src/lib/labels.ts: greedy, in order, no memory. */
+  function placer(s) {
+    const out = [], placed = [];
+    const collides = (r, i) => {
+      const pad = 3;
+      const R = { x0: r.x0 - pad, y0: r.y0 - pad, x1: r.x1 + pad, y1: r.y1 + pad };
+      if (R.x0 < 0 || R.y0 < 0 || R.x1 > W || R.y1 > H) return true;
+      for (const p of s.at) {
+        const nx = Math.max(R.x0, Math.min(p[0], R.x1)), ny = Math.max(R.y0, Math.min(p[1], R.y1));
+        if (Math.hypot(p[0] - nx, p[1] - ny) < 6) return true;
+      }
+      for (const [a, b] of s.segments) if (segHitsRect(a, b, R)) return true;
+      for (let k = 1; k < CIRCLE.length; k++) if (segHitsRect(CIRCLE[k - 1], CIRCLE[k], R)) return true;
+      return placed.some((o) => R.x0 < o.x1 && R.x1 > o.x0 && R.y0 < o.y1 && R.y1 > o.y0);
+    };
+    s.at.forEach((anchor, i) => {
+      const w = WIDTHS[i], h = LINE;
+      const pa = Math.atan2(s.prefer[i][1], s.prefer[i][0]);
+      let best;
+      for (const gap of [8, 16, 28]) {
+        for (let k = 0; k < 16; k++) {
+          const a = pa + (k % 2 ? 1 : -1) * Math.ceil(k / 2) * (Math.PI / 8);
+          const ux = Math.cos(a), uy = Math.sin(a);
+          const reach = gap + Math.abs(ux) * (w / 2) + Math.abs(uy) * (h / 2);
+          const c = [anchor[0] + ux * reach, anchor[1] + uy * reach];
+          const r = { x0: c[0] - w / 2, y0: c[1] - h / 2, x1: c[0] + w / 2, y1: c[1] + h / 2 };
+          const turn = Math.abs(Math.atan2(Math.sin(a - pa), Math.cos(a - pa)));
+          const cost = turn + gap / 40;
+          if (!collides(r, i) && (!best || cost < best.cost)) best = { c, cost };
+        }
+      }
+      const c = best?.c ?? [anchor[0] + Math.cos(pa) * (16 + w / 2), anchor[1] + Math.sin(pa) * (16 + h / 2)];
+      placed.push({ x0: c[0] - w / 2, y0: c[1] - h / 2, x1: c[0] + w / 2, y1: c[1] + h / 2 });
+      out.push(c);
+    });
+    return out;
+  }
+
+  /**
+   * Where springs settle: each label is tied to a home by a spring and pushed by smooth
+   * bumps around edges, dots and other labels. It starts from home every frame and takes
+   * a fixed number of steps, so it has no memory, and a wall keeps it in frame.
+   *
+   * Strictly it's continuous, but it still looks like a jump: when a label's home crosses
+   * a line, it starts on the other side of a ridge and settles somewhere else. Only firmness
+   * well below 1 avoids that, and then labels sit on the lines. See the table.
+   */
+  const REACH = 2.4, STEP = 0.22, GAP = 10, PAIR_REACH = 1.3;
+  let ITERATIONS = 32;
+  function settle(s, firmness) {
+    const n = s.at.length;
+    const a = WIDTHS.map((w) => w / 2 + 3), b = 13;
+    const home = s.at.map((p, i) => {
+      const [dx, dy] = s.prefer[i];
+      const len = Math.sqrt(dx * dx + dy * dy + 400); // Smooth through zero.
+      const ux = dx / len, uy = dy / len;
+      const extent = GAP + Math.abs(ux) * (WIDTHS[i] / 2) + Math.abs(uy) * (LINE / 2);
+      return [p[0] + ux * extent, p[1] + uy * extent];
+    });
+    let x = home.map((p) => [p[0], p[1]]);
+    const near = (qx, qy, A, B, ax, ay) => {
+      const px = A[0] / ax, py = A[1] / ay, ex = B[0] / ax - px, ey = B[1] / ay - py;
+      const len2 = ex * ex + ey * ey;
+      const t = len2 > 0 ? Math.max(0, Math.min(1, ((qx - px) * ex + (qy - py) * ey) / len2)) : 0;
+      return [qx - (px + ex * t), qy - (py + ey * t)];
+    };
+    for (let it = 0; it < ITERATIONS; it++) {
+      const next = [];
+      for (let i = 0; i < n; i++) {
+        const [xi, yi] = x[i], ax = a[i], ay = b;
+        const weight = (firmness * (REACH * Math.min(ax, ay)) ** 2) / 4;
+        let fx = home[i][0] - xi, fy = home[i][1] - yi;
+        const qx = xi / ax, qy = yi / ay;
+        const push = (vx, vy) => {
+          const s2 = (vx * vx + vy * vy) / (REACH * REACH);
+          if (s2 >= 1) return;
+          const m = (weight * 4 * (1 - s2)) / (REACH * REACH);
+          fx += (m * vx) / ax;
+          fy += (m * vy) / ay;
+        };
+        for (const [A, B] of s.segments) {
+          if (Math.max(A[0], B[0]) < xi - REACH * ax || Math.min(A[0], B[0]) > xi + REACH * ax) continue;
+          if (Math.max(A[1], B[1]) < yi - REACH * ay || Math.min(A[1], B[1]) > yi + REACH * ay) continue;
+          const v = near(qx, qy, A, B, ax, ay);
+          push(v[0], v[1]);
+        }
+        // One curve is one obstacle: its nearest point pushes, not every piece of it.
+        let bv = null, bd = Infinity;
+        for (let k = 1; k < CIRCLE.length; k++) {
+          const v = near(qx, qy, CIRCLE[k - 1], CIRCLE[k], ax, ay);
+          const d = v[0] * v[0] + v[1] * v[1];
+          if (d < bd) { bd = d; bv = v; }
+        }
+        push(bv[0], bv[1]);
+        for (const p of s.at) push(qx - p[0] / ax, qy - p[1] / ay);
+        for (let j = 0; j < n; j++) {
+          if (j === i) continue;
+          const sx = ax + a[j], sy = ay + b;
+          const vx = (xi - x[j][0]) / sx, vy = (yi - x[j][1]) / sy;
+          const s2 = (vx * vx + vy * vy) / (PAIR_REACH * PAIR_REACH);
+          if (s2 < 1) {
+            const m = (firmness * 3 * (1 - s2)) / (PAIR_REACH * PAIR_REACH);
+            fx += m * vx * sx * 0.5;
+            fy += m * vy * sy * 0.5;
+          }
+        }
+        const margin = 3;
+        fx += 2 * Math.max(0, margin + WIDTHS[i] / 2 - xi) - 2 * Math.max(0, xi + WIDTHS[i] / 2 + margin - W);
+        fy += 2 * Math.max(0, margin + LINE / 2 - yi) - 2 * Math.max(0, yi + LINE / 2 + margin - H);
+        next.push([xi + STEP * fx, yi + STEP * fy]);
+      }
+      x = next;
+    }
+    return x;
+  }
+
+  const LABELS = NAMES.length;
+  const SCENES = Array.from({ length: FRAMES }, (_, f) => scene(f / FPS));
+  const table = (place) => {
+    const out = new Float64Array(FRAMES * LABELS * 2);
+    const start = performance.now();
+    for (let f = 0; f < FRAMES; f++) {
+      const x = place(SCENES[f]);
+      for (let i = 0; i < LABELS; i++) { out[(f * LABELS + i) * 2] = x[i][0]; out[(f * LABELS + i) * 2 + 1] = x[i][1]; }
+    }
+    return { out, ms: (performance.now() - start) / FRAMES };
+  };
+
+  /**
+   * A critically damped spring is a filter over the past: a pure function of time, looking
+   * back a fixed window, so it needs no simulation. It's applied to the label's offset from
+   * its anchor, so the label still rides on a moving point.
+   */
+  const OMEGA = 12;
+  const KERNEL = (() => {
+    const k = Array.from({ length: 48 }, (_, i) => { const tau = i / FPS; return OMEGA * OMEGA * tau * Math.exp(-OMEGA * tau); });
+    const sum = k.reduce((a, b) => a + b, 0);
+    return k.map((v) => v / sum);
+  })();
+  const springOf = (t) => {
+    const out = new Float64Array(t.length);
+    for (let f = 0; f < FRAMES; f++) {
+      for (let i = 0; i < LABELS; i++) {
+        let ox = 0, oy = 0;
+        for (let j = 0; j < KERNEL.length; j++) {
+          const g = (f - j + FRAMES) % FRAMES;
+          const k = (g * LABELS + i) * 2;
+          ox += KERNEL[j] * (t[k] - SCENES[g].at[i][0]);
+          oy += KERNEL[j] * (t[k + 1] - SCENES[g].at[i][1]);
+        }
+        const k = (f * LABELS + i) * 2;
+        out[k] = SCENES[f].at[i][0] + ox;
+        out[k + 1] = SCENES[f].at[i][1] + oy;
+      }
+    }
+    return out;
+  };
+
+  function measure(t) {
+    let biggest = 0, jumps = 0, overlap = 0, farthest = 0, anchorStep = 0, offFrame = 0, travel = 0, worst = null, reversals = 0;
+    const heading = new Array(LABELS).fill(null);
+    for (let f = 0; f < FRAMES; f++) {
+      const g = (f + 1) % FRAMES, s = SCENES[f];
+      const boxes = [];
+      for (let i = 0; i < LABELS; i++) {
+        const k = (f * LABELS + i) * 2, m = (g * LABELS + i) * 2;
+        const x = t[k], y = t[k + 1];
+        const dx = t[m] - x, dy = t[m + 1] - y;
+        const step = Math.hypot(dx, dy);
+        const aStep = Math.hypot(SCENES[g].at[i][0] - s.at[i][0], SCENES[g].at[i][1] - s.at[i][1]);
+        anchorStep = Math.max(anchorStep, aStep);
+        if (step > biggest) { biggest = step; worst = { label: NAMES[i], frame: f }; }
+        if (step > aStep + 6) jumps++;
+        // How far the label moves relative to its point, the motion the reader sees as dodging.
+        const ox = dx - (SCENES[g].at[i][0] - s.at[i][0]), oy = dy - (SCENES[g].at[i][1] - s.at[i][1]);
+        travel += Math.hypot(ox, oy);
+        // A change of mind: the dodge turns back on itself while it's visibly moving.
+        if (Math.hypot(ox, oy) > 0.25) {
+          if (heading[i] && ox * heading[i][0] + oy * heading[i][1] < 0) reversals++;
+          heading[i] = [ox, oy];
+        }
+        farthest = Math.max(farthest, Math.hypot(x - s.at[i][0], y - s.at[i][1]));
+        const w = WIDTHS[i], h = LINE * 0.8;
+        boxes.push({ x0: x - w / 2, y0: y - h / 2, x1: x + w / 2, y1: y + h / 2 });
+        if (boxes[i].x0 < 0 || boxes[i].y0 < 0 || boxes[i].x1 > W || boxes[i].y1 > H) offFrame++;
+      }
+      boxes.forEach((r, i) => {
+        const others = boxes.some((o, j) => j !== i && r.x0 < o.x1 && r.x1 > o.x0 && r.y0 < o.y1 && r.y1 > o.y0);
+        if (others || obstaclesHit(r, s, i)) overlap++;
+      });
+    }
+    const all = FRAMES * LABELS;
+    return { biggest, jumps, overlap: (100 * overlap) / all, farthest, offFrame: (100 * offFrame) / all, anchorStep, worst, travel: travel / LABELS / T, reversals };
+  }
+
+  const METHODS = [
+    { id: 'placer', title: 'Placer, as on the blog' },
+    { id: 'placerSpring', title: 'Placer, with a spring on top' },
+    { id: 'settle', title: 'Where springs settle' },
+    { id: 'settleSpring', title: 'Where springs settle, with a spring on top' },
+  ];
+  const $ = (id) => document.getElementById(id);
+  $('panels').innerHTML = METHODS.map((m) => `<section><h2>${m.title}</h2><svg id="${m.id}" viewBox="0 0 ${W} ${H}" role="img" aria-label="${m.title}"></svg></section>`).join('');
+
+  const tables = {};
+  const results = {};
+  const report = () => {
+    const rows = METHODS.map((m) => {
+      const r = results[m.id];
+      return `<tr><td>${m.title}</td><td>${r.jumps}</td><td>${r.reversals}</td><td>${r.biggest.toFixed(1)}</td><td>${r.overlap.toFixed(1)}%</td><td>${r.travel.toFixed(0)}</td><td>${r.farthest.toFixed(0)}</td></tr>`;
+    }).join('');
+    $('metrics').innerHTML = `<thead><tr><th>Over one 24 s loop at 60 fps</th><th>Jumps</th><th>Changes of mind</th><th>Biggest step, px</th><th>Touching something</th><th>Dodging motion, px/s</th><th>Farthest from point, px</th></tr></thead><tbody>${rows}</tbody>`;
+  };
+  function compute(firmness) {
+    const p = tables.placer ?? table(placer);
+    tables.placer = p;
+    const s = table((sc) => settle(sc, firmness));
+    tables.settle = s;
+    const out = { placer: p.out, placerSpring: tables.placerSpringOut ??= springOf(p.out), settle: s.out, settleSpring: springOf(s.out) };
+    tables.out = out;
+    for (const m of METHODS) results[m.id] = (m.id.startsWith('placer') && results[m.id]) || measure(out[m.id]);
+    report();
+    $('status').textContent = `CPU per frame in this browser, for ${LABELS} labels: placer ${p.ms.toFixed(2)} ms, settling ${s.ms.toFixed(2)} ms. A jump is a step more than 6 px beyond what its point moved. Fastest point: ${results.placer.anchorStep.toFixed(1)} px a frame.`;
+  }
+
+  const fmt = (v) => v.toFixed(1);
+  const lines = (s) => s.segments.map(([a, b]) => `<line x1="${fmt(a[0])}" y1="${fmt(a[1])}" x2="${fmt(b[0])}" y2="${fmt(b[1])}" stroke="var(--line)" stroke-width="1.25"/>`).join('');
+  function draw(frame) {
+    const s = SCENES[frame];
+    const common = `<circle cx="${C[0]}" cy="${C[1]}" r="92" fill="none" stroke="var(--ink)" stroke-width="1.5"/>${lines(s)}${s.at.map((p) => `<circle cx="${fmt(p[0])}" cy="${fmt(p[1])}" r="3.5" fill="var(--accent)"/>`).join('')}`;
+    for (const m of METHODS) {
+      const t = tables.out[m.id];
+      const labels = NAMES.map((n, i) => {
+        const k = (frame * LABELS + i) * 2;
+        return `<text x="${fmt(t[k])}" y="${fmt(t[k + 1])}">${n}</text>`;
+      }).join('');
+      $(m.id).innerHTML = common + labels;
+    }
+    $('time').value = frame;
+    $('clock').textContent = `${(frame / FPS).toFixed(2)} s`;
+  }
+
+  let frame = 0, playing = !matchMedia('(prefers-reduced-motion: reduce)').matches, last = 0, carry = 0;
+  $('play').textContent = playing ? 'Pause' : 'Play';
+  $('play').addEventListener('click', () => { playing = !playing; $('play').textContent = playing ? 'Pause' : 'Play'; });
+  $('time').addEventListener('input', () => { frame = Number($('time').value); draw(frame); });
+  $('firm').addEventListener('change', () => { compute(Number($('firm').value)); draw(frame); });
+  $('firm').addEventListener('input', () => { $('firm-value').textContent = $('firm').value; });
+  $('firm-value').textContent = $('firm').value;
+  const tick = (now) => {
+    if (playing) {
+      carry += ((now - last) / 1000) * FPS * Number($('speed').value);
+      const steps = Math.floor(carry);
+      if (steps > 0) { carry -= steps; frame = (frame + steps) % FRAMES; draw(frame); }
+    }
+    last = now;
+    requestAnimationFrame(tick);
+  };
+  compute(Number($('firm').value));
+  draw(frame);
+  requestAnimationFrame((now) => { last = now; tick(now); });
+  window.lab = { iterations(n) { ITERATIONS = n; }, settle, table, springOf, measure, compute, results, tables, SCENES, draw, stop() { playing = false; } };
+</script>
+</body>
+</html>

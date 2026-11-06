@@ -178,6 +178,10 @@ pub fn lines(
 ) -> Result<Vec<Polyline>, Error> {
     let close_enough = |a: [f64; 2], b: [f64; 2]| (a[0] - b[0]).hypot(a[1] - b[1]) < 1e-9;
     match form {
+        // A curve that knows its own path doesn't need tracing.
+        Form::Field {
+            line: Some(arc), ..
+        } => lines(&Form::Parametric(arc.clone()), env, view, width, height),
         Form::Field {
             vars, field, grad, ..
         } => {

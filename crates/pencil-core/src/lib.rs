@@ -12,6 +12,7 @@ pub mod eval;
 pub mod frame;
 pub mod ir;
 pub mod parse;
+pub mod place;
 pub mod presence;
 pub mod stroke;
 pub mod style;

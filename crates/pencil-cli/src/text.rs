@@ -248,6 +248,8 @@ mod tests {
             halo: 0.0,
             opacity: 1.0,
             font: FontRole::Sans,
+            anchor: [x, y],
+            place: Default::default(),
         }
     }
 

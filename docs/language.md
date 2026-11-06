@@ -143,6 +143,11 @@ On a page, `player.value` reads an absent binding as `NaN`.
 `style selector, selector { property: value; … }`. Later rules win, across files, with the
 document's own rules last. There's no specificity (SPEC/15).
 
+**A style sheet can name values** with `let ink = rgb(28, 27, 25)`, for itself and the sheets after it,
+so `corpus/theme.style` holds a theme's colors and label roles. A document picks a role by tag:
+`label n = "|z|" at M tag note`, and it never picks a number. A rule that names a mark has to find
+it, but a rule by type or tag may match nothing, since a shared sheet can't know what each figure uses.
+
 **Selectors** combine a name or type with tags: `c`, `circle`, `.aux`, `circle.blue`, and
 `c::inside` for a facet. A mark's type is one of its tags: `circle`, `line`, `ray`, `curve`,
 `segment`, `decoration`, `region`, `dot`, `label`. `paper` is the background.
@@ -169,6 +174,8 @@ only here: `self.dist` (distance to the mark, in `fill` and `stroke`, on marks t
 | `size` | Labels | In `px`. |
 | `halo` | Labels | Full width in `px`, in the paper's color. |
 | `font` | Labels | A role: `sans` (default) or `math`. |
+| `place` | Labels | `fixed` (default) at its `offset`, or `settle`, tied there by a spring and pushed off what's drawn and other labels. |
+| `show` | Any mark | Draws it only while this is above 0, decided per frame. Can also read `view.width`, the view's width in world units, for zoom levels. |
 
 ## Decisions
 
@@ -176,6 +183,11 @@ Newest first. "Why" is the reason at the time, so these can be revisited.
 
 | Date | Decision | Why |
 |---|---|---|
+| 2026-11-05 | Labels move by settling springs, with a second spring on top | Kris chose it by eye in `lab/labels`: the placer jumps, a spring on the placer looks indecisive, and settling alone is wiggly |
+| 2026-11-05 | Placement estimates text width from its length | It's soft anyway, and a page and a video then agree without sharing fonts |
+| 2026-11-05 | A label's spring runs over earlier times in video, and over the clock on a page | A drag has no time axis, and a video's frames must not depend on order |
+| 2026-11-05 | `show` uses the same per-frame flag as absent values | One way to be not there, and a hidden mark skips its shader work |
+| 2026-11-05 | A construction's circle follows its own path when it needs a line | Tracing one for its dashes cost 12.7 ms a frame, for a path it already knew |
 | 2026-11-05 | `which` names a root, not a place among the points left | One formula per root, so nothing jumps when a ray's start enters a circle. This replaced "a ray from inside has one point, and it's both 0 and 1" |
 | 2026-11-05 | A ray means a ray when intersecting lines too | A point behind its start isn't on it. `bounds.pen` came out identical, so nothing relied on the old reading |
 | 2026-11-05 | A value's existence is an explicit condition in the IR (`Where`), not NaN | NaN can't tell a missing point from a bug, `min` and `max` swallow it, and WGSL leaves it undefined |

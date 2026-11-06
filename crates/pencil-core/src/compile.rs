@@ -684,6 +684,7 @@ fn field_form(
         field,
         grad,
         exact,
+        line: None,
     })
 }
 
@@ -698,11 +699,26 @@ fn circle_form(name: &str) -> Result<Form, Error> {
         Expr::sym(format!("{name}.r")),
     );
     let grad = [derivative(&field, "x")?, derivative(&field, "y")?];
+    let var = "t";
+    let around = |center: &str, wave: &str| {
+        add(
+            Expr::sym(format!("{name}.{center}")),
+            mul(
+                Expr::sym(format!("{name}.r")),
+                Expr::app(wave, vec![Expr::sym(var)]),
+            ),
+        )
+    };
     Ok(Form::Field {
         vars,
         field,
         grad,
         exact: true,
+        line: Some(Arc {
+            var: var.to_string(),
+            point: [around("x", "Cos"), around("y", "Sin")],
+            range: [num(0.0), Expr::sym("tau")],
+        }),
     })
 }
 

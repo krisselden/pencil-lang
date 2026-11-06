@@ -113,6 +113,57 @@ a chord through it from inside. Drag it across the circle and each construction 
 - **A `fit` view can jump** when something it fits vanishes, as a slider moves. It's correct, and it may want
   easing or a rule of its own once a figure hits it.
 
+## Decisions before the Doyle figures
+
+The Doyle series is the main test from here. These came out of reading its figures on 2026-11-05, and
+each one changes the language or the frame's order, so they come before more figures.
+
+1. **Views and collections are the biggest gap.** Its figures are linked panels over lattices built in loops,
+   and a Pencil figure has one viewport and no `for`. `LatticeMapping` needs both, and "which labels show"
+   there is per view, so it's the next port. Reading the whole figure, it needs:
+   - **Panels:** the same marks drawn through a different map in each, with their own `fit`.
+   - **Collections:** up to about 500 circles and hundreds of dots. These can't each be a uniform and a block of
+     shader, so they need to be one mark with a count that follows `q`, drawn through coverage layers.
+   - **`solve`:** the map needs the exact skew, which `doyle.ts` finds by Newton's method. The IR has symbolic
+     derivatives, so this could be declared and stay pure.
+   - **Sizes that know the view:** dots and rings capped in screen pixels, such as `3 / plot.scale`.
+   - **Arrowheads, and label text from expressions,** such as `−7`.
+2. **Labels get roles, placement and visibility, all in style.** The document tags a role (`name`, `note`,
+   `tick`, `display`), and a shared sheet holds the sizes, as the site's design system does. Style files also
+   need shared color names, like its palette. `place: dodge` and `show: expr` are the new properties.
+3. **One source of text widths.** Placement needs them, and today a page and a video measure differently.
+4. **One way to be "not there".** `show` uses the same per-frame flag as absent values, so a hidden label stops
+   blocking others. Beats could too, and stop paying shader time for hidden marks.
+5. **Continuity comes from pure transitions, not memory.** A frame still depends only on its inputs. A discrete
+   choice that changes (a label's spot, a step's view, what a `fit` includes) gets a smooth path that's a
+   function of those inputs, not state carried between frames. Two cases so far:
+   - **Labels (chosen 2026-11-05):** where springs settle, with a spring on top. Kris's test: it's the only one
+     that "doesn't wiggle or jump without an obvious reason, and it does so smoothly". The placer is too jumpy.
+     With a spring it's smooth, but it picks spots that are about to be trouble, so it makes "a quick series of
+     corrections that look like someone being indecisive". Settling alone is good, but wiggly. Built in
+     `place.rs`, with `corpus/theme.style` for roles and colors. A critically damped spring is a filter over the past, so a video and a seek can
+     compute it from a window of earlier times. `lab/labels` measured this on a deliberately hostile figure:
+
+     | Over one 24 s loop | Jumps | Biggest step | Touching something | Dodging motion |
+     |---|---|---|---|---|
+     | The blog's placer | 700 | 79 px | 1.1% | 114 px/s |
+     | The placer with a spring on top | 0 | 5.8 px | 15% | 38 px/s |
+     | Where springs settle, firm | 100 | 61 px | 11% | 39 px/s |
+     | Where springs settle, soft | 26 | 31 px | 25% | 16 px/s |
+     | Where springs settle, firm, with a spring on top | 0 | 5.8 px | 16% | 21 px/s |
+
+     Counting how often a visible dodge turns back on itself matches Kris's words: 652 for the placer, 197 with
+     a spring ("indecisive"), 1155 settling alone ("wiggly"), and 110 for settling with a spring.
+
+     Settling alone doesn't stop the jumps: as a label's home crosses a line, the answer still leaps to the other
+     side. The spring on top is what removes them, on either target. Settling then gives about half the motion
+     for the same overlap, and a label's spot no longer depends on placement order. A page runs the same spring over its own clock, which a real drag on `web/tangents.html` confirms: as the
+     distance sweeps, a spot leaps up to 41 px in a frame and its label moves at most 2.5 px. Not tried yet: a Doyle
+     figure, phones, and an in-between spot in a video that holds still while its label is still gliding.
+   - **Views (not built):** the site moves between a step's views along the van Wijk and Nuij path
+     (`src/lib/zoom.ts`, used by `NewtonDoyle`). The `beat` param can carry this: a fraction between two beats
+     is a point on the path between their two `fit` views, so a page tweens the param, and a video binds it.
+
 ## Text without a page
 
 Compared on 2026-11-05 in `lab/text`, with results on `web/text.html`. 269 glyphs at 1024×460 on an

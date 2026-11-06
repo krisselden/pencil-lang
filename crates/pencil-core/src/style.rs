@@ -6,8 +6,11 @@
 //! negative side is inside. Later declarations win (SPEC/15's layers, without
 //! specificity).
 
+use std::collections::HashMap;
+
 use crate::compile::{BEAT_PARAM, CONSTANTS, SIGNALS};
 use crate::error::Error;
+use crate::frame::VIEW_WIDTH;
 use crate::ir::{Expr, Form, Scene};
 use crate::parse::{Document, Item};
 
@@ -19,7 +22,7 @@ pub const SELF_T: &str = "self.t";
 pub const SELF_AGE: &str = "self.age";
 /// Every property a style can set. `docs/language.md` must describe each one, and a test
 /// holds it to that.
-pub const PROPERTIES: [&str; 14] = [
+pub const PROPERTIES: [&str; 16] = [
     "fill",
     "fill_opacity",
     "stroke",
@@ -34,8 +37,22 @@ pub const PROPERTIES: [&str; 14] = [
     "size",
     "halo",
     "font",
+    "place",
+    "show",
 ];
 pub const COLORS: [&str; 2] = ["white", "black"];
+/// The tags that say what kind of mark something is.
+const MARK_TYPES: [&str; 9] = [
+    "circle",
+    "line",
+    "ray",
+    "curve",
+    "segment",
+    "decoration",
+    "region",
+    "dot",
+    "label",
+];
 
 /// The space a mark's edges blend in. The default is gamma-encoded sRGB, because
 /// that's what SVG and CSS do and SVG's look is the quality bar. Linear light makes
@@ -77,6 +94,16 @@ pub enum Font {
     Math,
 }
 
+/// How a label finds its spot. See `place.rs`.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub enum Place {
+    /// At its offset from its point.
+    #[default]
+    Fixed,
+    /// Tied to that spot by a spring, and pushed off what's drawn and other labels.
+    Settle,
+}
+
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct MarkStyle {
     pub negative: Option<Expr>,
@@ -99,6 +126,9 @@ pub struct MarkStyle {
     pub size: Option<Expr>,
     /// The width of a label's halo in style pixels.
     pub halo: Option<Expr>,
+    pub place: Place,
+    /// Draws the mark only while this is above 0, decided once per frame.
+    pub show: Option<Expr>,
 }
 
 impl MarkStyle {
@@ -132,6 +162,7 @@ impl MarkStyle {
             &self.radius,
             &self.size,
             &self.halo,
+            &self.show,
         ]
         .into_iter()
         .flatten()
@@ -218,6 +249,19 @@ pub fn type_of(e: &Expr, names: &[&str], spatial: bool) -> Result<Ty, String> {
     }
 }
 
+/// Replaces a style sheet's own names with what they stand for, so a theme can name its
+/// colors and sizes and nothing downstream needs to know.
+fn with_names(e: &Expr, names: &HashMap<String, Expr>) -> Expr {
+    match e {
+        Expr::Sym(s) => names.get(s).cloned().unwrap_or_else(|| e.clone()),
+        Expr::App(head, args) => Expr::App(
+            head.clone(),
+            args.iter().map(|a| with_names(a, names)).collect(),
+        ),
+        other => other.clone(),
+    }
+}
+
 /// Replaces `self.age` with this mark's own expression: `beat` minus its beat's index.
 /// A mark outside any beat is always current. Done symbolically, so the runtime needs
 /// nothing new.
@@ -241,14 +285,27 @@ pub fn resolve(scene: &Scene, sheets: &[Document]) -> Result<Styled, Error> {
         paper: None,
     };
     let names: Vec<&str> = scene.bindings.iter().map(|b| b.id.as_str()).collect();
+    // A sheet's `let`s name values for the sheets from there on. The document comes last,
+    // and its own `let`s are bindings.
+    let mut sheet_names: HashMap<String, Expr> = HashMap::new();
 
-    for sheet in sheets {
+    for (index, sheet) in sheets.iter().enumerate() {
         for item in &sheet.items {
+            if let (Item::Let { name, expr, .. }, true) = (item, index + 1 < sheets.len()) {
+                let value = with_names(expr, &sheet_names);
+                sheet_names.insert(name.clone(), value);
+                continue;
+            }
             let Item::Style(rule) = item else { continue };
             let at = |message: String| Error::at(rule.line, 1, message);
+            let decls: Vec<(String, Expr)> = rule
+                .decls
+                .iter()
+                .map(|(prop, value)| (prop.clone(), with_names(value, &sheet_names)))
+                .collect();
             for selector in &rule.selectors {
                 if selector.target == "paper" {
-                    for (prop, value) in &rule.decls {
+                    for (prop, value) in &decls {
                         if prop != "fill" || selector.facet.is_some() {
                             return Err(at(format!("`paper` only takes `fill`, not `{prop}`")));
                         }
@@ -271,7 +328,12 @@ pub fn resolve(scene: &Scene, sheets: &[Document]) -> Result<Styled, Error> {
                     })
                     .map(|(i, _)| i)
                     .collect();
-                if matches.is_empty() {
+                // A shared sheet can't know which types and roles a figure uses, but a rule
+                // that names a mark has to find it.
+                let is_general = selector.target.is_empty()
+                    || !selector.tags.is_empty()
+                    || MARK_TYPES.contains(&selector.target.as_str());
+                if matches.is_empty() && !is_general {
                     let mut words = selector.target.clone();
                     for tag in &selector.tags {
                         words.push('.');
@@ -287,7 +349,7 @@ pub fn resolve(scene: &Scene, sheets: &[Document]) -> Result<Styled, Error> {
                         mark.beat,
                         &mark.id,
                         selector.facet.as_deref(),
-                        &rule.decls,
+                        &decls,
                         &names,
                     )
                     .map_err(&at)?;
@@ -318,7 +380,7 @@ fn apply(
 ) -> Result<(), String> {
     let spatial_ok = matches!(form, Form::Field { .. } | Form::Region(_) | Form::Dot(_));
     for (prop, value) in decls {
-        if let (None, "draw" | "blend" | "cap" | "font") = (facet, prop.as_str()) {
+        if let (None, "draw" | "blend" | "cap" | "font" | "place") = (facet, prop.as_str()) {
             let word = match value {
                 Expr::Sym(word) => word.as_str(),
                 _ => return Err(format!("`{prop}` needs a keyword")),
@@ -340,6 +402,13 @@ fn apply(
                 ("cap", "round") => target.cap = Cap::Round,
                 ("font", "sans") => target.font = Font::Sans,
                 ("font", "math") => target.font = Font::Math,
+                ("place", "fixed") => target.place = Place::Fixed,
+                ("place", "settle") => {
+                    if !matches!(form, Form::Label { .. }) {
+                        return Err(format!("`{id}` isn't a label, so it can't use `place`"));
+                    }
+                    target.place = Place::Settle;
+                }
                 _ => return Err(format!("`{prop}` can't be `{word}`")),
             }
             continue;
@@ -347,11 +416,22 @@ fn apply(
         let value = &with_age(value, beat);
         let measure = matches!(
             prop.as_str(),
-            "width" | "dash" | "gap" | "opacity" | "fill_opacity" | "radius" | "size" | "halo"
+            "width"
+                | "dash"
+                | "gap"
+                | "opacity"
+                | "fill_opacity"
+                | "radius"
+                | "size"
+                | "halo"
+                | "show"
         );
         let mut scope = names.to_vec();
         if prop == "width" {
             scope.push(SELF_T);
+        }
+        if prop == "show" {
+            scope.push(VIEW_WIDTH);
         }
         let ty = type_of(value, &scope, !measure)?;
         let want = if measure { Ty::Real } else { Ty::Color };
@@ -369,6 +449,7 @@ fn apply(
             (None, "stroke") => &mut target.stroke,
             (None, "opacity") => &mut target.opacity,
             (None, "fill_opacity") => &mut target.fill_opacity,
+            (None, "show") => &mut target.show,
             (None, "width" | "dash" | "gap" | "radius" | "size" | "halo") => {
                 if !has_pixels(value) {
                     return Err(format!("`{prop}` needs a unit, such as `2px`"));
@@ -416,6 +497,31 @@ mod tests {
 
     fn styled(sheet: &str) -> Result<crate::Figure, Error> {
         build(DOC, &[sheet])
+    }
+
+    #[test]
+    fn a_sheet_can_name_its_values_for_later_sheets() {
+        let f = build(
+            DOC,
+            &[
+                "let ink = rgb(1, 2, 3)
+                 let line = 2px",
+                "style c { stroke: ink; width: line }",
+            ],
+        )
+        .unwrap();
+        let style = &f.styles.marks[0];
+        assert_eq!(
+            style.stroke,
+            Some(Expr::app(
+                "Rgb",
+                vec![Expr::Num(1.0), Expr::Num(2.0), Expr::Num(3.0)]
+            ))
+        );
+        assert!(style.width.is_some());
+        // A document's own `let`s aren't style names, and a keyword isn't either.
+        let err = build(DOC, &["style c { stroke: ink }"]).unwrap_err();
+        assert!(err.message.contains("unknown name `ink`"), "{err}");
     }
 
     #[test]
@@ -566,8 +672,10 @@ mod tests {
         let has = |i: usize| f.styles.marks[i].stroke.is_some();
         assert!(!has(0) && has(1) && has(2), "names");
 
-        let err = build(BEATS, &["style .purple { stroke: white }"]).unwrap_err();
-        assert!(err.message.contains("no mark named `.purple`"), "{err}");
+        // A shared sheet can name roles a figure doesn't use, but a name has to be there.
+        assert!(build(BEATS, &["style .purple { stroke: white }"]).is_ok());
+        let err = build(BEATS, &["style purple { stroke: white }"]).unwrap_err();
+        assert!(err.message.contains("no mark named `purple`"), "{err}");
     }
 
     /// One rule, a different expression per mark: each mark's own beat is substituted.

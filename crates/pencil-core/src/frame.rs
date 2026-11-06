@@ -5,9 +5,10 @@ use crate::Figure;
 use crate::error::Error;
 use crate::eval::{self, Env};
 use crate::ir::{Expr, Form, Part, Viewport};
+use crate::place;
 use crate::presence;
 use crate::stroke;
-use crate::style::{Font, MarkStyle};
+use crate::style::{Font, MarkStyle, Place};
 
 /// Sizes of the uniform arrays in `wgsl.rs`.
 pub const VALUE_VEC4S: usize = 64;
@@ -16,6 +17,8 @@ pub const GEOMETRY_VEC4S: usize = 512;
 pub const DEFAULT_LABEL_SIZE: f64 = 17.0;
 pub const DEFAULT_DOT_RADIUS: f64 = 3.0;
 pub const DEFAULT_STROKE_WIDTH: f64 = 1.0;
+/// How wide the view is in world units, which `show` can read: the zoom level.
+pub const VIEW_WIDTH: &str = "view.width";
 
 /// What drives a frame: the clock, and any params a reader has taken over.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -46,6 +49,9 @@ pub struct Label {
     pub halo: f64,
     pub opacity: f64,
     pub font: Font,
+    /// The point it labels, in device pixels. `x` and `y` are its offset from this.
+    pub anchor: [f64; 2],
+    pub place: Place,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -291,8 +297,20 @@ pub fn drag_value(
     Ok((handle.param.clone(), value.clamp(range[0], range[1])))
 }
 
-/// Computes a frame's CPU side. `dpr` is device pixels per style pixel.
+/// Computes a frame's CPU side, with labels where they settle. For motion that doesn't
+/// jump, a caller then applies a spring: `place::spring`, or a page's own over its clock.
+/// `dpr` is device pixels per style pixel.
 pub fn prepare(
+    figure: &Figure,
+    inputs: &Inputs,
+    width: u32,
+    height: u32,
+    dpr: f64,
+) -> Result<Prepared, Error> {
+    prepare_settled(figure, inputs, width, height, dpr)
+}
+
+pub(crate) fn prepare_settled(
     figure: &Figure,
     inputs: &Inputs,
     width: u32,
@@ -304,6 +322,9 @@ pub fn prepare(
     let view_now = view_for(figure, inputs, width, height)?;
     let view = &view_now;
 
+    // `show` can ask about the view, and nothing else can.
+    let mut seen = env.clone();
+    seen.set(VIEW_WIDTH, view.x[1] - view.x[0]);
     let mut shown = Vec::with_capacity(scene.marks.len());
     for ((mark, style), conditional) in scene
         .marks
@@ -311,7 +332,7 @@ pub fn prepare(
         .zip(&figure.styles.marks)
         .zip(&figure.conditional)
     {
-        shown.push(!conditional || presence::present(mark, style, &env)?);
+        shown.push(!conditional || presence::present(mark, style, &seen)?);
     }
 
     let mut values = scene
@@ -421,10 +442,12 @@ pub fn prepare(
                 None => 1.0,
             },
             font: style.font,
+            anchor: [dx, dy],
+            place: style.place,
         });
     }
 
-    Ok(Prepared {
+    let mut prepared = Prepared {
         values,
         shown,
         geometry,
@@ -433,7 +456,9 @@ pub fn prepare(
         paper,
         dpr,
         view: view_now,
-    })
+    };
+    place::settle(figure, &env, &mut prepared, width, height)?;
+    Ok(prepared)
 }
 
 #[cfg(test)]

@@ -9,7 +9,7 @@ use std::process::{Command, Stdio};
 mod text;
 
 use pencil_core::frame::{self, Inputs};
-use pencil_core::{Figure, build, eval::Frame, wgsl};
+use pencil_core::{Figure, build, eval::Frame, place, wgsl};
 use pencil_render::Offscreen;
 
 const USAGE: &str = "\
@@ -127,7 +127,15 @@ fn render(args: &Args) -> Result<(), Box<dyn Error>> {
         params: args.params.clone(),
     };
     let dpr = frame::design_scale(&figure, width).unwrap_or(1.0);
-    let prepared = frame::prepare(&figure, &inputs, width, height, dpr)?;
+    let mut prepared = frame::prepare(&figure, &inputs, width, height, dpr)?;
+    place::spring(
+        &figure,
+        &inputs,
+        width,
+        height,
+        &mut prepared,
+        &mut place::SpringCache::new(),
+    )?;
     let mut rgba = if args.cpu {
         Frame::new(&figure, &inputs, width, height)?.rgba()?
     } else {
@@ -203,11 +211,14 @@ fn video(args: &Args) -> Result<(), Box<dyn Error>> {
     let mut pipe = encoder.stdin.take().ok_or("no pipe to ffmpeg")?;
 
     let start = std::time::Instant::now();
+    // Only a shortcut: what's in it depends only on the time, so it can't change a frame.
+    let mut springs = place::SpringCache::new();
     for n in 0..frames {
         // Every frame is computed from its own time alone, so frames could be rendered
         // in any order. Nothing carries over from the frame before.
         let inputs = Inputs::at(n as f64 / args.fps as f64);
-        let prepared = frame::prepare(&figure, &inputs, width, height, dpr)?;
+        let mut prepared = frame::prepare(&figure, &inputs, width, height, dpr)?;
+        place::spring(&figure, &inputs, width, height, &mut prepared, &mut springs)?;
         let mut rgba = gpu.render(&mut pipeline, &prepared, inputs.time as f32, width, height)?;
         text::draw_labels(
             &mut rgba,

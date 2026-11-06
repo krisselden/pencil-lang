@@ -4297,6 +4297,39 @@
           ]
         ],
         "kind": "sdf",
+        "line": {
+          "point": [
+            [
+              "Add",
+              "c.x",
+              [
+                "Multiply",
+                "c.r",
+                [
+                  "Cos",
+                  "t"
+                ]
+              ]
+            ],
+            [
+              "Add",
+              "c.y",
+              [
+                "Multiply",
+                "c.r",
+                [
+                  "Sin",
+                  "t"
+                ]
+              ]
+            ]
+          ],
+          "range": [
+            0.0,
+            "tau"
+          ],
+          "var": "t"
+        },
         "vars": [
           "x",
           "y"
@@ -4421,6 +4454,39 @@
           ]
         ],
         "kind": "sdf",
+        "line": {
+          "point": [
+            [
+              "Add",
+              "thales.x",
+              [
+                "Multiply",
+                "thales.r",
+                [
+                  "Cos",
+                  "t"
+                ]
+              ]
+            ],
+            [
+              "Add",
+              "thales.y",
+              [
+                "Multiply",
+                "thales.r",
+                [
+                  "Sin",
+                  "t"
+                ]
+              ]
+            ]
+          ],
+          "range": [
+            0.0,
+            "tau"
+          ],
+          "var": "t"
+        },
         "vars": [
           "x",
           "y"

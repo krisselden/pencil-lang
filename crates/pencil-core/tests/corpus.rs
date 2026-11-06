@@ -199,9 +199,13 @@ fn tangents_ir_matches_golden() {
 }
 
 fn tangents() -> pencil_core::Figure {
+    let theme = std::fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus/theme.style"),
+    )
+    .unwrap();
     build(
         &tangents_read("tangents.pen"),
-        &[&tangents_read("plain.style")],
+        &[&theme, &tangents_read("plain.style")],
     )
     .unwrap()
 }
@@ -294,6 +298,102 @@ fn tangent_points_do_not_teleport() {
             previous = Some((d, at));
         }
     }
+}
+
+/// How a set of labels moves: the biggest step, and how often a visible dodge turns back on
+/// itself, which is what wiggling and indecision look like.
+#[derive(Default)]
+struct Motion {
+    last: std::collections::HashMap<String, [f64; 2]>,
+    heading: std::collections::HashMap<String, [f64; 2]>,
+    biggest: f64,
+    reversals: usize,
+    travel: f64,
+}
+
+impl Motion {
+    fn see(&mut self, labels: &[pencil_core::frame::Label]) {
+        for l in labels {
+            let offset = [l.x - l.anchor[0], l.y - l.anchor[1]];
+            if let Some(was) = self.last.get(&l.id) {
+                let step = [offset[0] - was[0], offset[1] - was[1]];
+                let size = step[0].hypot(step[1]);
+                self.biggest = self.biggest.max(size);
+                self.travel += size;
+                if size > 0.25 {
+                    if let Some(h) = self.heading.get(&l.id)
+                        && h[0] * step[0] + h[1] * step[1] < 0.0
+                    {
+                        self.reversals += 1;
+                    }
+                    self.heading.insert(l.id.clone(), step);
+                }
+            }
+            self.last.insert(l.id.clone(), offset);
+        }
+        // A label that vanished comes back at its spot, which isn't motion.
+        self.last.retain(|id, _| labels.iter().any(|l| l.id == *id));
+    }
+}
+
+/// Kris's test: a label moves only smoothly, and doesn't keep changing its mind.
+#[test]
+fn tangent_labels_glide_and_do_not_change_their_minds() {
+    use pencil_core::frame::{Inputs, prepare};
+    use pencil_core::place::{SPRING_RATE, SpringCache, spring};
+    let f = tangents();
+    let mut cache = SpringCache::new();
+    let (mut settled, mut sprung) = (Motion::default(), Motion::default());
+    for frame in 0..720 {
+        let inputs = Inputs::at(frame as f64 / 60.0);
+        let mut p = prepare(&f, &inputs, 640, 400, 1.0).unwrap();
+        settled.see(&p.labels);
+        spring(&f, &inputs, 640, 400, &mut p, &mut cache).unwrap();
+        sprung.see(&p.labels);
+    }
+    println!(
+        "settled: biggest {:.1}, reversals {}, travel {:.0}; sprung: biggest {:.1}, reversals {}, travel {:.0}",
+        settled.biggest,
+        settled.reversals,
+        settled.travel,
+        sprung.biggest,
+        sprung.reversals,
+        sprung.travel
+    );
+    assert!(sprung.travel > 20.0, "the labels do dodge here");
+    // The spring's peak speed: rate / e of a leap, per second. Leaps close together add up,
+    // so this allows for two at once, however far the spot goes. A label that has just
+    // appeared has to obey this too.
+    let peak = SPRING_RATE / std::f64::consts::E / 60.0;
+    assert!(
+        sprung.biggest <= 2.0 * peak * settled.biggest,
+        "{} against a leap of {}",
+        sprung.biggest,
+        settled.biggest
+    );
+    assert!(
+        sprung.reversals * 2 < settled.reversals.max(1),
+        "{} reversals, against {} without the spring",
+        sprung.reversals,
+        settled.reversals
+    );
+}
+
+/// A dashed construction circle follows its own path instead of being traced.
+#[test]
+fn a_dashed_circle_is_not_traced() {
+    use pencil_core::frame::{Inputs, prepare};
+    let doc = "viewport { x: -2..2, y: -2..2 }
+               curve c = circle((0, 0), (1, 0))";
+    let sheet = "style c { stroke: black; width: 2px; dash: 4px }";
+    let f = build(doc, &[sheet]).unwrap();
+    let p = prepare(&f, &Inputs::at(0.0), 400, 400, 1.0).unwrap();
+    // World radius 1 is 100 px, and these all sit on it.
+    for s in p.strokes[0].chunks(pencil_core::stroke::FLOATS_PER_SEGMENT) {
+        let r = (s[0] as f64 - 200.0).hypot(s[1] as f64 - 200.0);
+        assert!((r - 100.0).abs() < 1e-2, "{r}");
+    }
+    assert!(!p.strokes[0].is_empty());
 }
 
 /// Absent or not, a frame is a pure function of its inputs.

@@ -88,6 +88,9 @@ pub enum Form {
         grad: [Expr; 2],
         /// `sdf` declares a true distance, so per-pixel strokes are trustworthy.
         exact: bool,
+        /// How to follow the curve as a line, if that's known, so that dashes and tapers
+        /// don't have to trace it. A construction's circle knows.
+        line: Option<Arc>,
     },
     Parametric(Arc),
     Polyline {
@@ -185,11 +188,13 @@ impl Scene {
                     field,
                     grad,
                     exact,
+                    line,
                 } => json!({
                     "kind": if *exact { "sdf" } else { "implicit" },
                     "vars": vars,
                     "field": field.to_mathjson(),
                     "grad": pair(grad),
+                    "line": line.as_ref().map(arc_json),
                 }),
                 Form::Parametric(a) => json!({ "kind": "parametric", "arc": arc_json(a) }),
                 Form::Polyline { points, closed } => json!({

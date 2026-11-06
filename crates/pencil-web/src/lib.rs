@@ -309,6 +309,8 @@ impl Player {
                     "color": css(l.color), "halo": l.halo, "haloColor": css(prepared.paper),
                     "opacity": l.opacity,
                     "math": l.font == pencil_core::style::Font::Math,
+                    "anchorX": l.anchor[0], "anchorY": l.anchor[1],
+                    "settles": l.place == pencil_core::style::Place::Settle,
                 })
             })
             .collect();

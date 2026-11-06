@@ -77,10 +77,11 @@ pub fn conditional_marks(scene: &Scene, styles: &Styled) -> Result<Vec<bool>, Er
         .iter()
         .zip(&styles.marks)
         .map(|(mark, style)| {
-            form_exprs(&mark.form)
-                .into_iter()
-                .chain(style.exprs())
-                .any(|e| may_vanish(e, &vanishing))
+            style.show.is_some()
+                || form_exprs(&mark.form)
+                    .into_iter()
+                    .chain(style.exprs())
+                    .any(|e| may_vanish(e, &vanishing))
         })
         .collect())
 }
@@ -111,6 +112,11 @@ pub fn present(mark: &Mark, style: &MarkStyle, env: &Env) -> Result<bool, Error>
     // Styles and fields hold plain names and arithmetic, and can use coordinates and
     // `self`, which have no value here.
     if !style.exprs().all(|e| names_exist(e, env)) {
+        return Ok(false);
+    }
+    if let Some(show) = &style.show
+        && eval::real(show, env)? <= 0.0
+    {
         return Ok(false);
     }
     match &mark.form {
@@ -354,6 +360,45 @@ mod tests {
         let sampled = crate::stroke::sample_arc(arc, &env, &f.scene.viewport, 400, 400).unwrap();
         assert_eq!(sampled.pieces.len(), 3);
         assert!(!sampled.complete);
+    }
+
+    #[test]
+    fn show_hides_a_mark_and_can_read_the_view() {
+        let doc = "viewport { fit: c, pad: 0 }
+            param r = 1 in 0..9
+            curve c = circle((0, 0), (r, 0))
+            segment big = (0, 0), (1, 1)
+            label near = \"N\" at (0, 0)";
+        // Only shown while zoomed in: while the view is under 4 world units wide.
+        let sheet = "style near, big { show: 4 - view.width }
+                     style big { stroke: black }";
+        let f = build(doc, &[sheet]).unwrap();
+        let at = |r: f64| {
+            prepare(
+                &f,
+                &{
+                    Inputs {
+                        time: 0.0,
+                        params: vec![("r".to_string(), r)],
+                    }
+                },
+                100,
+                100,
+                1.0,
+            )
+            .unwrap()
+        };
+        let close = at(1.0);
+        assert_eq!(close.labels.len(), 1);
+        assert!(close.shown[1] && close.shown[2]);
+        let wide = at(3.0);
+        assert!(wide.labels.is_empty());
+        assert!(!wide.shown[1]);
+        // It goes through the same flag as anything else that isn't there.
+        assert!(wgsl::emit(&f).contains("if u.values["));
+        // And `view.width` isn't for anything that runs per pixel.
+        let err = build(doc, &["style big { opacity: view.width }"]).unwrap_err();
+        assert!(err.message.contains("unknown name"), "{err}");
     }
 
     #[test]

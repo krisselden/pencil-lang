@@ -294,6 +294,7 @@
           ]
         ],
         "kind": "sdf",
+        "line": null,
         "vars": [
           "x",
           "y"

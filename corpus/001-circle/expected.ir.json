@@ -58,6 +58,7 @@
           ]
         ],
         "kind": "implicit",
+        "line": null,
         "vars": [
           "x",
           "y"

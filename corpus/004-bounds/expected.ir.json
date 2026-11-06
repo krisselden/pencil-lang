@@ -17250,6 +17250,39 @@
           ]
         ],
         "kind": "sdf",
+        "line": {
+          "point": [
+            [
+              "Add",
+              "c.x",
+              [
+                "Multiply",
+                "c.r",
+                [
+                  "Cos",
+                  "t"
+                ]
+              ]
+            ],
+            [
+              "Add",
+              "c.y",
+              [
+                "Multiply",
+                "c.r",
+                [
+                  "Sin",
+                  "t"
+                ]
+              ]
+            ]
+          ],
+          "range": [
+            0.0,
+            "tau"
+          ],
+          "var": "t"
+        },
         "vars": [
           "x",
           "y"
@@ -17391,6 +17424,39 @@
           ]
         ],
         "kind": "sdf",
+        "line": {
+          "point": [
+            [
+              "Add",
+              "d.x",
+              [
+                "Multiply",
+                "d.r",
+                [
+                  "Cos",
+                  "t"
+                ]
+              ]
+            ],
+            [
+              "Add",
+              "d.y",
+              [
+                "Multiply",
+                "d.r",
+                [
+                  "Sin",
+                  "t"
+                ]
+              ]
+            ]
+          ],
+          "range": [
+            0.0,
+            "tau"
+          ],
+          "var": "t"
+        },
         "vars": [
           "x",
           "y"
@@ -17516,6 +17582,39 @@
           ]
         ],
         "kind": "sdf",
+        "line": {
+          "point": [
+            [
+              "Add",
+              "t.x",
+              [
+                "Multiply",
+                "t.r",
+                [
+                  "Cos",
+                  "t"
+                ]
+              ]
+            ],
+            [
+              "Add",
+              "t.y",
+              [
+                "Multiply",
+                "t.r",
+                [
+                  "Sin",
+                  "t"
+                ]
+              ]
+            ]
+          ],
+          "range": [
+            0.0,
+            "tau"
+          ],
+          "var": "t"
+        },
         "vars": [
           "x",
           "y"
@@ -18116,6 +18215,39 @@
           ]
         ],
         "kind": "sdf",
+        "line": {
+          "point": [
+            [
+              "Add",
+              "c_1.x",
+              [
+                "Multiply",
+                "c_1.r",
+                [
+                  "Cos",
+                  "t"
+                ]
+              ]
+            ],
+            [
+              "Add",
+              "c_1.y",
+              [
+                "Multiply",
+                "c_1.r",
+                [
+                  "Sin",
+                  "t"
+                ]
+              ]
+            ]
+          ],
+          "range": [
+            0.0,
+            "tau"
+          ],
+          "var": "t"
+        },
         "vars": [
           "x",
           "y"
@@ -18241,6 +18373,39 @@
           ]
         ],
         "kind": "sdf",
+        "line": {
+          "point": [
+            [
+              "Add",
+              "d_1.x",
+              [
+                "Multiply",
+                "d_1.r",
+                [
+                  "Cos",
+                  "t"
+                ]
+              ]
+            ],
+            [
+              "Add",
+              "d_1.y",
+              [
+                "Multiply",
+                "d_1.r",
+                [
+                  "Sin",
+                  "t"
+                ]
+              ]
+            ]
+          ],
+          "range": [
+            0.0,
+            "tau"
+          ],
+          "var": "t"
+        },
         "vars": [
           "x",
           "y"
@@ -18366,6 +18531,39 @@
           ]
         ],
         "kind": "sdf",
+        "line": {
+          "point": [
+            [
+              "Add",
+              "t_m.x",
+              [
+                "Multiply",
+                "t_m.r",
+                [
+                  "Cos",
+                  "t"
+                ]
+              ]
+            ],
+            [
+              "Add",
+              "t_m.y",
+              [
+                "Multiply",
+                "t_m.r",
+                [
+                  "Sin",
+                  "t"
+                ]
+              ]
+            ]
+          ],
+          "range": [
+            0.0,
+            "tau"
+          ],
+          "var": "t"
+        },
         "vars": [
           "x",
           "y"
@@ -18491,6 +18689,39 @@
           ]
         ],
         "kind": "sdf",
+        "line": {
+          "point": [
+            [
+              "Add",
+              "e_1.x",
+              [
+                "Multiply",
+                "e_1.r",
+                [
+                  "Cos",
+                  "t"
+                ]
+              ]
+            ],
+            [
+              "Add",
+              "e_1.y",
+              [
+                "Multiply",
+                "e_1.r",
+                [
+                  "Sin",
+                  "t"
+                ]
+              ]
+            ]
+          ],
+          "range": [
+            0.0,
+            "tau"
+          ],
+          "var": "t"
+        },
         "vars": [
           "x",
           "y"
@@ -18616,6 +18847,39 @@
           ]
         ],
         "kind": "sdf",
+        "line": {
+          "point": [
+            [
+              "Add",
+              "g_1.x",
+              [
+                "Multiply",
+                "g_1.r",
+                [
+                  "Cos",
+                  "t"
+                ]
+              ]
+            ],
+            [
+              "Add",
+              "g_1.y",
+              [
+                "Multiply",
+                "g_1.r",
+                [
+                  "Sin",
+                  "t"
+                ]
+              ]
+            ]
+          ],
+          "range": [
+            0.0,
+            "tau"
+          ],
+          "var": "t"
+        },
         "vars": [
           "x",
           "y"
@@ -18949,6 +19213,39 @@
           ]
         ],
         "kind": "sdf",
+        "line": {
+          "point": [
+            [
+              "Add",
+              "e.x",
+              [
+                "Multiply",
+                "e.r",
+                [
+                  "Cos",
+                  "t"
+                ]
+              ]
+            ],
+            [
+              "Add",
+              "e.y",
+              [
+                "Multiply",
+                "e.r",
+                [
+                  "Sin",
+                  "t"
+                ]
+              ]
+            ]
+          ],
+          "range": [
+            0.0,
+            "tau"
+          ],
+          "var": "t"
+        },
         "vars": [
           "x",
           "y"
@@ -19550,6 +19847,39 @@
           ]
         ],
         "kind": "sdf",
+        "line": {
+          "point": [
+            [
+              "Add",
+              "p.x",
+              [
+                "Multiply",
+                "p.r",
+                [
+                  "Cos",
+                  "t"
+                ]
+              ]
+            ],
+            [
+              "Add",
+              "p.y",
+              [
+                "Multiply",
+                "p.r",
+                [
+                  "Sin",
+                  "t"
+                ]
+              ]
+            ]
+          ],
+          "range": [
+            0.0,
+            "tau"
+          ],
+          "var": "t"
+        },
         "vars": [
           "x",
           "y"
@@ -19675,6 +20005,39 @@
           ]
         ],
         "kind": "sdf",
+        "line": {
+          "point": [
+            [
+              "Add",
+              "r.x",
+              [
+                "Multiply",
+                "r.r",
+                [
+                  "Cos",
+                  "t"
+                ]
+              ]
+            ],
+            [
+              "Add",
+              "r.y",
+              [
+                "Multiply",
+                "r.r",
+                [
+                  "Sin",
+                  "t"
+                ]
+              ]
+            ]
+          ],
+          "range": [
+            0.0,
+            "tau"
+          ],
+          "var": "t"
+        },
         "vars": [
           "x",
           "y"
@@ -20060,6 +20423,39 @@
           ]
         ],
         "kind": "sdf",
+        "line": {
+          "point": [
+            [
+              "Add",
+              "q_1.x",
+              [
+                "Multiply",
+                "q_1.r",
+                [
+                  "Cos",
+                  "t"
+                ]
+              ]
+            ],
+            [
+              "Add",
+              "q_1.y",
+              [
+                "Multiply",
+                "q_1.r",
+                [
+                  "Sin",
+                  "t"
+                ]
+              ]
+            ]
+          ],
+          "range": [
+            0.0,
+            "tau"
+          ],
+          "var": "t"
+        },
         "vars": [
           "x",
           "y"
@@ -20185,6 +20581,39 @@
           ]
         ],
         "kind": "sdf",
+        "line": {
+          "point": [
+            [
+              "Add",
+              "s.x",
+              [
+                "Multiply",
+                "s.r",
+                [
+                  "Cos",
+                  "t"
+                ]
+              ]
+            ],
+            [
+              "Add",
+              "s.y",
+              [
+                "Multiply",
+                "s.r",
+                [
+                  "Sin",
+                  "t"
+                ]
+              ]
+            ]
+          ],
+          "range": [
+            0.0,
+            "tau"
+          ],
+          "var": "t"
+        },
         "vars": [
           "x",
           "y"
@@ -20310,6 +20739,39 @@
           ]
         ],
         "kind": "sdf",
+        "line": {
+          "point": [
+            [
+              "Add",
+              "p_m.x",
+              [
+                "Multiply",
+                "p_m.r",
+                [
+                  "Cos",
+                  "t"
+                ]
+              ]
+            ],
+            [
+              "Add",
+              "p_m.y",
+              [
+                "Multiply",
+                "p_m.r",
+                [
+                  "Sin",
+                  "t"
+                ]
+              ]
+            ]
+          ],
+          "range": [
+            0.0,
+            "tau"
+          ],
+          "var": "t"
+        },
         "vars": [
           "x",
           "y"
@@ -20435,6 +20897,39 @@
           ]
         ],
         "kind": "sdf",
+        "line": {
+          "point": [
+            [
+              "Add",
+              "r_m.x",
+              [
+                "Multiply",
+                "r_m.r",
+                [
+                  "Cos",
+                  "t"
+                ]
+              ]
+            ],
+            [
+              "Add",
+              "r_m.y",
+              [
+                "Multiply",
+                "r_m.r",
+                [
+                  "Sin",
+                  "t"
+                ]
+              ]
+            ]
+          ],
+          "range": [
+            0.0,
+            "tau"
+          ],
+          "var": "t"
+        },
         "vars": [
           "x",
           "y"
@@ -20560,6 +21055,39 @@
           ]
         ],
         "kind": "sdf",
+        "line": {
+          "point": [
+            [
+              "Add",
+              "p_1.x",
+              [
+                "Multiply",
+                "p_1.r",
+                [
+                  "Cos",
+                  "t"
+                ]
+              ]
+            ],
+            [
+              "Add",
+              "p_1.y",
+              [
+                "Multiply",
+                "p_1.r",
+                [
+                  "Sin",
+                  "t"
+                ]
+              ]
+            ]
+          ],
+          "range": [
+            0.0,
+            "tau"
+          ],
+          "var": "t"
+        },
         "vars": [
           "x",
           "y"
