@@ -1,0 +1,968 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>View Transitions</title>
+<style>
+  :root { color-scheme: light dark; --ink: rgb(18 17 15); --paper: rgb(242 240 235); --muted: rgb(110 106 99); --line: rgb(162 157 147); --accent: rgb(96 66 166); --blue: rgb(0 104 181); --red: rgb(171 58 51); --green: rgb(22 123 38); --accent-soft: rgb(157 144 200); --green-soft: rgb(130 176 127); }
+  @media (prefers-color-scheme: dark) { :root { --ink: rgb(243 240 234); --paper: rgb(23 22 20); --muted: rgb(148 143 134); --line: rgb(107 103 95); --accent: rgb(169 139 255); --blue: rgb(118 179 241); --red: rgb(243 141 130); --green: rgb(121 195 124); --accent-soft: rgb(98 84 140); --green-soft: rgb(75 111 74); } }
+  body { margin: 0; padding: 24px 16px 64px; background: var(--paper); color: var(--ink); font: 15px/1.45 ui-sans-serif, system-ui, sans-serif; }
+  main { max-width: 1320px; margin: 0 auto; }
+  h1 { font-size: 16px; font-weight: 600; margin: 0 0 4px; }
+  h2 { font-size: 15px; font-weight: 600; margin: 32px 0 4px; }
+  h3 { font-size: 13px; font-weight: 600; margin: 0 0 4px; }
+  p { color: var(--muted); margin: 2px 0 10px; max-width: 80ch; }
+  .controls { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; margin: 12px 0; }
+  .controls input[type=range] { width: 9rem; vertical-align: middle; }
+  output, td { font-variant-numeric: tabular-nums; }
+  button, select { font: inherit; }
+  .three { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr)); gap: 12px; }
+  .four { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); gap: 18px 14px; }
+  .facets { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-top: 4px; }
+  svg { display: block; width: 100%; height: auto; overflow: hidden; touch-action: none; border: 1px solid color-mix(in srgb, var(--line) 35%, transparent); }
+  svg * { fill: none; }
+  .ink { stroke: var(--ink); } .muted { stroke: var(--muted); } .accent { stroke: var(--accent); } .blue { stroke: var(--blue); } .red { stroke: var(--red); } .green { stroke: var(--green); } .accent-soft { stroke: var(--accent-soft); } .green-soft { stroke: var(--green-soft); }
+  .fill-ink { fill: var(--ink); } .fill-accent { fill: var(--accent); } .fill-blue { fill: var(--blue); } .fill-red { fill: var(--red); } .fill-green { fill: var(--green); } .fill-paper { fill: var(--paper); } .fill-accent-soft { fill: var(--accent-soft); } .fill-green-soft { fill: var(--green-soft); }
+  .dashed { stroke-dasharray: 10 8; }
+  svg text { stroke: var(--paper); stroke-width: 3px; paint-order: stroke; fill: var(--ink); font: italic 15px Charter, 'Bitstream Charter', Cambria, serif; }
+  .table { overflow-x: auto; margin: 12px 0; }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { padding: 4px 12px 4px 0; text-align: right; border-bottom: 1px solid color-mix(in srgb, var(--line) 35%, transparent); white-space: nowrap; }
+  th:first-child, td:first-child { text-align: left; }
+  th { font-weight: 600; }
+  #timing { font-size: 13px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Keeping a reader oriented when the view moves</h1>
+  <p>Both figures from the Doyle series, with the options running side by side from one set of controls. Each is a port of the site's figure, and the left or first panel is what the site does now. In both, the camera's path is the same. What differs is what moves with it, and when.</p>
+
+  <h2>Why only three neighbors? Slider drags</h2>
+  <p>The circles and the view follow different clocks on the site: the circles change on each step, and the view eases after them. Sweep at 25 ms a step is the speed where you saw it vibrate.</p>
+  <div class="controls">
+    <label><i>q</i> <input id="q" type="range" min="3" max="30" step="1" value="4"> <output id="q-out"></output></label>
+    <label><i>p</i> <input id="p" type="range" min="0" max="4" step="1" value="3"> <output id="p-out"></output></label>
+    <label>Newton step <input id="n" type="range" min="0" max="5" step="1" value="5"> <output id="n-out"></output></label>
+  </div>
+  <div class="controls">
+    <button id="sweep" type="button">Sweep q, 4 to 14</button>
+    <label>at <select id="gap"><option value="25" selected>25 ms a step</option><option value="40">40 ms</option><option value="60">60 ms</option><option value="100">100 ms</option><option value="170">170 ms</option><option value="350">350 ms</option></select></label>
+    <label><input id="repeat" type="checkbox"> keep sweeping, up and back</label>
+    <button id="jump" type="button">Jump q, 4 to 30</button>
+    <label>q's easing time <select id="tau"><option value="20">20 ms</option><option value="30">30 ms</option><option value="45" selected>45 ms</option><option value="60">60 ms</option><option value="90">90 ms</option></select></label>
+  </div>
+  <div class="three" id="flowers"></div>
+  <div class="table"><table id="flower-metrics"></table></div>
+
+  <h2>What's the tangent line in two dimensions? All the way in and out</h2>
+  <p>The camera's path is its own inverse in all of them. On the site, the subject changes as soon as a move starts, so coming out it's gone until the view reaches it. Holding it means showing the shallowest requested step that's in frame, going either way. Watch the 3D views. The grid belongs to the plane, so it shows the zoom: each line has one level, and fades with how many pixels its cell covers. In the last two there's no switch at all: the step is a continuous number, the figure is valid at every value of it, and the camera is a function of it.</p>
+  <div class="controls">
+    <label>Newton step <input id="step" type="range" min="0" max="4" step="1" value="0"> <output id="step-out"></output></label>
+    <button id="all-in" type="button">All the way in</button>
+    <button id="all-out" type="button">All the way out</button>
+    <button id="drag-out" type="button">Out, dragged at 80 ms a step</button>
+    <button id="one-out" type="button">Out, one step</button>
+    <label><input id="loop" type="checkbox"> keep going in and out</label>
+  </div>
+  <div class="controls">
+    <label>quick zoom-out time <select id="out-ms"><option value="800" selected>800 ms</option><option value="1000">1000 ms</option><option value="1400">1400 ms</option><option value="1800">1800 ms</option><option value="2200">2200 ms</option></select></label>
+    <label>quick zoom-out's ease <select id="power"><option value="3">power of 3</option><option value="4">power of 4</option><option value="5" selected>quintic</option><option value="6">power of 6</option></select></label>
+    <label><input id="grid" type="checkbox" checked> grid</label>
+    <label>3D lines <select id="wire"><option value="surface" selected>fixed to the surface</option><option value="view">fixed to the view, as on the site</option></select></label>
+    <span id="timing"></span>
+  </div>
+  <div class="four" id="newtons"></div>
+  <div class="table"><table id="newton-metrics"></table></div>
+</main>
+
+<script type="module">
+  const $ = (id) => document.getElementById(id);
+  const SVG = 'http://www.w3.org/2000/svg';
+
+  // ---- The math, from the site's src/lib/doyle.ts, contour.ts and zoom.ts --------------------
+  const SQRT3 = Math.sqrt(3);
+  const OMEGA = [-0.5, SQRT3 / 2];
+  function doyleSystem(p, q) {
+    const n2 = p * p - p * q + q * q;
+    const R = (re, im) => (((p + q) * im + SQRT3 * (q - p) * re) * Math.PI) / n2;
+    const I = (re, im) => (-(SQRT3 * (p - q) * im + (p + q) * re) * Math.PI) / n2;
+    const K2 = (re, im, mu, nu) => {
+      const x = R(re, im);
+      const s = 1 / (mu * mu + 1);
+      const rho = Math.exp(nu * s * x);
+      const theta = nu * mu * s * x + I(re, im);
+      return (rho * rho - 2 * rho * Math.cos(theta) + 1) / (rho + 1) ** 2;
+    };
+    const f = (mu, nu) => {
+      const k1 = K2(1, 0, mu, nu);
+      const kw = K2(-0.5, SQRT3 / 2, mu, nu);
+      const kw1 = K2(0.5, SQRT3 / 2, mu, nu);
+      return [kw - kw1, k1 - kw1];
+    };
+    const jacobian = (mu, nu) => {
+      const h = 1e-7 * Math.max(1, Math.abs(nu));
+      const [Fm1, Gm1] = f(mu + h, nu);
+      const [Fm0, Gm0] = f(mu - h, nu);
+      const [Fn1, Gn1] = f(mu, nu + h);
+      const [Fn0, Gn0] = f(mu, nu - h);
+      return [[(Fm1 - Fm0) / (2 * h), (Fn1 - Fn0) / (2 * h)], [(Gm1 - Gm0) / (2 * h), (Gn1 - Gn0) / (2 * h)]];
+    };
+    return { f, jacobian, k2: (mu, nu) => K2(-0.5, SQRT3 / 2, mu, nu), estimate: [0, Math.exp((Math.PI * Math.PI) / (6 * n2))] };
+  }
+  function newtonStep(sys, [mu, nu]) {
+    const [F, G] = sys.f(mu, nu);
+    const [[Fx, Fy], [Gx, Gy]] = sys.jacobian(mu, nu);
+    const det = Fx * Gy - Fy * Gx;
+    return [mu - (F * Gy - Fy * G) / det, nu - (Fx * G - F * Gx) / det];
+  }
+  function solved(p, q) {
+    const sys = doyleSystem(p, q);
+    let v = sys.estimate;
+    for (let i = 0; i < 30; i++) {
+      const next = newtonStep(sys, v);
+      if (!next.every(Number.isFinite)) break;
+      const step = Math.hypot(next[0] - v[0], next[1] - v[1]);
+      v = next;
+      if (step < 1e-14) break;
+    }
+    return { mu: v[0], nu: v[1], k: Math.sqrt(sys.k2(v[0], v[1])) };
+  }
+  const limacon = (k) => (theta) => {
+    const r = (2 * k * (1 + k * Math.cos(theta))) / (1 - k * k);
+    return [1 + r * Math.cos(theta), r * Math.sin(theta)];
+  };
+  const ratio = (z) => Math.hypot(z[0] - 1, z[1]) / (Math.hypot(z[0], z[1]) + 1);
+  const cdiv = ([a, b], [c, d]) => { const n = c * c + d * d; return [(a * c + b * d) / n, (b * c - a * d) / n]; };
+  const cexp = ([x, y]) => [Math.exp(x) * Math.cos(y), Math.exp(x) * Math.sin(y)];
+  function zeroContour(values, nx, ny, x0, x1, y0, y1) {
+    const dx = (x1 - x0) / nx;
+    const dy = (y1 - y0) / ny;
+    const segments = [];
+    const cross = (ax, ay, va, bx, by, vb) => {
+      const t = va / (va - vb);
+      return [x0 + (ax + (bx - ax) * t) * dx, y0 + (ay + (by - ay) * t) * dy];
+    };
+    for (let j = 0; j < ny; j++) {
+      for (let i = 0; i < nx; i++) {
+        const v00 = values[j * (nx + 1) + i];
+        const v10 = values[j * (nx + 1) + i + 1];
+        const v11 = values[(j + 1) * (nx + 1) + i + 1];
+        const v01 = values[(j + 1) * (nx + 1) + i];
+        const hits = [];
+        if (v00 < 0 !== v10 < 0) hits.push(cross(i, j, v00, i + 1, j, v10));
+        if (v10 < 0 !== v11 < 0) hits.push(cross(i + 1, j, v10, i + 1, j + 1, v11));
+        if (v11 < 0 !== v01 < 0) hits.push(cross(i + 1, j + 1, v11, i, j + 1, v01));
+        if (v01 < 0 !== v00 < 0) hits.push(cross(i, j + 1, v01, i, j, v00));
+        if (hits.length === 2) segments.push(hits);
+        else if (hits.length === 4) segments.push([hits[0], hits[1]], [hits[2], hits[3]]);
+      }
+    }
+    return segments;
+  }
+  /** van Wijk and Nuij's geodesic, as on the site. A view is [center x, center y, width]. */
+  function zoomPath([ux0, uy0, w0], [ux1, uy1, w1], rho = Math.SQRT2) {
+    const dx = ux1 - ux0;
+    const dy = uy1 - uy0;
+    const d2 = dx * dx + dy * dy;
+    const rho2 = rho * rho;
+    const rho4 = rho2 * rho2;
+    if (d2 < 1e-24 * Math.max(w0, w1) ** 2) {
+      const S = Math.log(w1 / w0) / rho;
+      return Object.assign((t) => [ux0 + t * dx, uy0 + t * dy, w0 * Math.exp(rho * t * S)], { S: Math.abs(S) });
+    }
+    const d1 = Math.sqrt(d2);
+    const r0 = -Math.asinh((w1 * w1 - w0 * w0 + rho4 * d2) / (2 * w0 * rho2 * d1));
+    const r1 = -Math.asinh((w1 * w1 - w0 * w0 - rho4 * d2) / (2 * w1 * rho2 * d1));
+    const S = (r1 - r0) / rho;
+    const cosh0 = Math.cosh(r0);
+    const sinh0 = Math.sinh(r0);
+    return Object.assign((t) => {
+      const s = t * S;
+      const u = (w0 / (rho2 * d1)) * (cosh0 * Math.tanh(rho * s + r0) - sinh0);
+      return [ux0 + u * dx, uy0 + u * dy, (w0 * cosh0) / Math.cosh(rho * s + r0)];
+    }, { S });
+  }
+
+  // ---- Drawing: elements reused by call order, as on the site, so a redraw is cheap -----------
+  const DASH = 18;
+  const dashCounts = new WeakMap();
+  class Scope {
+    constructor(parent) { this.parent = parent; this.index = 0; }
+    node(tag, attrs) {
+      let node = this.parent.children[this.index];
+      if (!node || node.localName !== tag) {
+        const fresh = document.createElementNS(SVG, tag);
+        if (node) this.parent.replaceChild(fresh, node); else this.parent.append(fresh);
+        node = fresh;
+      }
+      this.index++;
+      const prev = node.__attrs ?? {};
+      for (const k in attrs) {
+        if (prev[k] === attrs[k]) continue;
+        if (attrs[k] === undefined) node.removeAttribute(k); else node.setAttribute(k, attrs[k]);
+      }
+      for (const k in prev) if (!(k in attrs) && prev[k] !== undefined) node.removeAttribute(k);
+      node.__attrs = attrs;
+      return node;
+    }
+    peek() { return this.parent.children[this.index]; }
+    text(attrs, words) {
+      const node = this.node('text', attrs);
+      if (node.textContent !== words) node.textContent = words;
+      return node;
+    }
+    group(attrs) { const g = this.node('g', attrs); return new Scope(g); }
+    trim() { while (this.parent.children.length > this.index) this.parent.lastChild.remove(); }
+  }
+  /** A whole number of dashes, kept while they stay near their usual length: the site's rule. */
+  function dashes(scope, length) {
+    const node = scope.peek();
+    const prev = node && dashCounts.get(node);
+    const stretch = prev ? length / (prev * DASH) : 0;
+    const count = prev && stretch > 0.7 && stretch < 1.4 ? prev : Math.max(1, Math.round(length / DASH));
+    return { count, pathLength: count * DASH };
+  }
+
+  class Plot {
+    constructor(svg, width, height) { this.svg = svg; this.width = width; this.height = height; svg.setAttribute('viewBox', `0 0 ${width} ${height}`); }
+    view(x0, x1, y0, y1) { this.x0 = x0; this.x1 = x1; this.y0 = y0; this.y1 = y1; this.scale = this.width / (x1 - x0); }
+    sx(x) { return ((x - this.x0) / (this.x1 - this.x0)) * this.width; }
+    sy(y) { return this.height - ((y - this.y0) / (this.y1 - this.y0)) * this.height; }
+    s(p) { return [this.sx(p[0]), this.sy(p[1])]; }
+  }
+  const stroke = ({ color = 'ink', width = 1.5, dashed, opacity }) => ({ class: `${color}${dashed ? ' dashed' : ''}`, 'stroke-width': width, opacity });
+  function circle(g, plot, c, r, style, fill) {
+    const [cx, cy] = plot.s(c);
+    const sr = r * plot.scale;
+    const d = style.dashed ? dashes(g, 2 * Math.PI * sr) : null;
+    const node = g.node('circle', { cx, cy, r: sr, ...stroke(style), pathLength: d?.pathLength });
+    if (d) dashCounts.set(node, d.count);
+    if (fill) { node.style.fill = `var(--${style.color})`; node.style.fillOpacity = fill; }
+    return node;
+  }
+  function curve(g, plot, fn, t0, t1, samples, style) {
+    const pts = [];
+    let length = 0;
+    let last = null;
+    for (let i = 0; i <= samples; i++) {
+      const p = plot.s(fn(t0 + ((t1 - t0) * i) / samples));
+      if (last) length += Math.hypot(p[0] - last[0], p[1] - last[1]);
+      pts.push(`${p[0].toFixed(2)},${p[1].toFixed(2)}`);
+      last = p;
+    }
+    const d = style.dashed ? dashes(g, length) : null;
+    const node = g.node('polyline', { points: pts.join(' '), ...stroke(style), pathLength: d?.pathLength });
+    if (d) dashCounts.set(node, d.count);
+    return node;
+  }
+  function segment(g, plot, a, b, style) {
+    const [x1, y1] = plot.s(a);
+    const [x2, y2] = plot.s(b);
+    return g.node('line', { x1, y1, x2, y2, ...stroke(style) });
+  }
+  /** A line through a point and a direction, across the view. */
+  function fullLine(g, plot, p, d, style) {
+    const reach = Math.hypot(plot.x1 - plot.x0, plot.y1 - plot.y0);
+    const len = Math.hypot(d[0], d[1]) || 1;
+    const c = [(plot.x0 + plot.x1) / 2, (plot.y0 + plot.y1) / 2];
+    const along = ((c[0] - p[0]) * d[0] + (c[1] - p[1]) * d[1]) / (len * len);
+    const mid = [p[0] + along * d[0], p[1] + along * d[1]];
+    const u = [d[0] / len, d[1] / len];
+    return segment(g, plot, [mid[0] - u[0] * reach, mid[1] - u[1] * reach], [mid[0] + u[0] * reach, mid[1] + u[1] * reach], style);
+  }
+  function arrowhead(g, x1, y1, x2, y2, color, width) {
+    const len = Math.hypot(x2 - x1, y2 - y1);
+    if (len < 1e-6) return;
+    const [ux, uy] = [(x2 - x1) / len, (y2 - y1) / len];
+    const head = Math.min(12, len / 2);
+    g.node('line', { x1, y1, x2: x2 - ux * head * 0.8, y2: y2 - uy * head * 0.8, class: color, 'stroke-width': width });
+    g.node('path', { class: `fill-${color}`, d: `M${x2},${y2} L${x2 - ux * head - uy * head * 0.45},${y2 - uy * head + ux * head * 0.45} L${x2 - ux * head + uy * head * 0.45},${y2 - uy * head - ux * head * 0.45}Z` });
+  }
+
+  let yaw = -0.6;
+  let pitch = 0.75;
+  const project = (w, h, [x, y, z]) => {
+    const [c, s] = [Math.cos(yaw), Math.sin(yaw)];
+    const xr = x * c - y * s;
+    const yr = x * s + y * c;
+    const up = z * Math.cos(pitch) + yr * Math.sin(pitch);
+    const scale = Math.min(w, h) * 0.42;
+    return [w / 2 + xr * scale, h * 0.52 - up * scale];
+  };
+
+  // ---- The flower ---------------------------------------------------------------------------
+  const FW = 560;
+  const FH = 480;
+  const FA = FH / FW;
+  const framed = (k) => (2 * k / (1 + k) + k) * 1.1;
+  const DIRS = [
+    { d: [1, 0], plus: 'blue', minus: 'blue' },
+    { d: [1 + OMEGA[0], OMEGA[1]], plus: 'green', minus: 'accent' },
+    { d: OMEGA, plus: 'red', minus: 'red' },
+  ];
+  const deg = (r) => ((((r * 180) / Math.PI) % 360) + 360) % 360;
+
+  function paintFlower(panel, p, q, n, half) {
+    const { plot } = panel;
+    plot.view(1 - half, 1 + half, -half * FA, half * FA);
+    const A = [-p + (q - p) * OMEGA[0], (q - p) * OMEGA[1]];
+    const sys = doyleSystem(p, q);
+    let v = [0, 1];
+    for (let i = 0; i < n; i++) v = newtonStep(sys, v);
+    const target = solved(p, q);
+    const logCenter = (w) => {
+      const t = cdiv(w, A);
+      const [x, y] = [-2 * Math.PI * t[1], 2 * Math.PI * t[0]];
+      const s = v[1] / (1 + v[0] * v[0]);
+      return [s * x, s * v[0] * x + y];
+    };
+    const k = Math.sqrt(sys.k2(v[0], v[1]));
+    const g = new Scope(plot.svg);
+    circle(g, plot, [1, 0], k, { color: 'ink', width: 1.5 }, 0.08);
+    for (const { d, plus, minus } of DIRS) {
+      for (const [w, color] of [[d, plus], [[-d[0], -d[1]], minus]]) {
+        const c = cexp(logCenter(w));
+        circle(g, plot, c, k * Math.hypot(c[0], c[1]), { color, width: 1.5 }, 0.06);
+      }
+    }
+    // The unit circle never moves, so it's what shows the zoom: solid, and over the fills.
+    curve(g, plot, (t) => [Math.cos(t), Math.sin(t)], 0, 2 * Math.PI, 360, { color: 'muted', width: 2.25 });
+    curve(g, plot, limacon(target.k), 0, 2 * Math.PI, 360, { color: 'ink', width: 1.25, dashed: true });
+    for (const { d, plus } of DIRS) curve(g, plot, limacon(ratio(cexp(logCenter(d)))), 0, 2 * Math.PI, 360, { color: plus, width: 1.25 });
+    for (const { d, plus, minus } of DIRS) {
+      const lz = logCenter(d);
+      curve(g, plot, (t) => cexp([lz[0] * t, lz[1] * t]), 0, 1, 64, { color: plus, width: 2.5 });
+      curve(g, plot, (t) => cexp([lz[0] * t, lz[1] * t]), -1, 0, 64, { color: minus, width: 2.5 });
+      segment(g, plot, [1 + lz[0], lz[1]], [1 - lz[0], -lz[1]], { color: plus, width: 1.25, dashed: true });
+      for (const [w, color] of [[d, plus], [[-d[0], -d[1]], minus]]) {
+        const [cx, cy] = plot.s(cexp(logCenter(w)));
+        g.node('circle', { cx, cy, r: 3, class: `fill-${color}` });
+      }
+    }
+    const dirs = DIRS.map(({ d }) => { const lz = logCenter(d); return Math.atan2(lz[1], lz[0]); });
+    dirs.push(dirs[0] + Math.PI);
+    const [ox, oy] = plot.s([1, 0]);
+    for (let i = 0; i < 3; i++) {
+      const [a0, a1] = [dirs[i], dirs[i] + (deg(dirs[i + 1] - dirs[i]) * Math.PI) / 180];
+      const pts = [];
+      for (let t = 0; t <= 24; t++) { const a = a0 + ((a1 - a0) * t) / 24; pts.push(`${(ox + 34 * Math.cos(a)).toFixed(2)},${(oy - 34 * Math.sin(a)).toFixed(2)}`); }
+      g.node('polyline', { points: pts.join(' '), class: 'ink', 'stroke-width': 1.25 });
+      const m = (a0 + a1) / 2;
+      g.text({ x: ox + Math.cos(m) * 66, y: oy - Math.sin(m) * 66, 'text-anchor': 'middle', 'dominant-baseline': 'middle' }, `${deg(a1 - a0).toFixed(1)}°`);
+    }
+    g.node('circle', { cx: ox, cy: oy, r: 2.5, class: 'fill-ink' });
+    g.trim();
+    return k * plot.scale;
+  }
+
+  const flowerModes = [
+    { id: 'now', title: 'Now: circles jump, view chases them' },
+    { id: 'locked', title: 'View locked to the circles (chosen)' },
+    { id: 'eased', title: 'q eases, and everything follows it' },
+  ];
+  const flower = {
+    q: 4, p: 3, n: 5,
+    panels: flowerModes.map(({ id, title }) => {
+      const section = document.createElement('section');
+      section.innerHTML = `<h3>${title}</h3><svg role="img" aria-label="${title}"></svg>`;
+      $('flowers').append(section);
+      return { id, title, plot: new Plot(section.querySelector('svg'), FW, FH), half: 0, qs: 4, ps: 3, last: null, log: [] };
+    }),
+    dirty: true,
+    sweeping: null,
+  };
+
+  function settleFlowers() {
+    const k = solved(flower.p, flower.q).k;
+    for (const panel of flower.panels) { panel.half = framed(k); panel.qs = flower.q; panel.ps = flower.p; panel.log = []; }
+    flower.dirty = true;
+  }
+  function showInputs() {
+    $('q').value = flower.q;
+    $('p').max = Math.min(flower.q, 12);
+    $('p').value = flower.p;
+    $('n').value = flower.n;
+    $('q-out').textContent = flower.q;
+    $('p-out').textContent = flower.p;
+    $('n-out').textContent = flower.n;
+  }
+  function setFlower(q, p = flower.p, n = flower.n) {
+    if (q === flower.q && p === flower.p && n === flower.n) return;
+    const wasResting = !flower.moving;
+    flower.q = q;
+    flower.p = Math.min(p, q);
+    flower.n = n;
+    if (wasResting) for (const panel of flower.panels) panel.log = [];
+    flower.dirty = true;
+    flower.moving = true;
+    showInputs();
+  }
+  function stepFlowers(now, dt) {
+    if (flower.sweeping) {
+      const s = flower.sweeping;
+      const i = Math.max(0, Math.floor((now - s.start) / s.gap));
+      const count = Math.abs(s.to - s.from);
+      setFlower(s.from + Math.sign(s.to - s.from) * Math.min(i, count));
+      if (i > count) {
+        const backAt = s.start + s.gap * count + 700;
+        if (now >= backAt) {
+          flower.sweeping = $('repeat').checked ? { from: s.to, to: s.from, gap: Number($('gap').value), start: now } : null;
+        }
+      }
+    }
+    // The site's view keeps its own 90 ms. The select is for the option that eases q.
+    const blend = Math.exp(-Math.min(64, dt) / 90);
+    const blendQ = Math.exp(-Math.min(64, dt) / Number($('tau').value));
+    let moving = false;
+    for (const panel of flower.panels) {
+      let [q, p] = [flower.q, flower.p];
+      if (panel.id === 'eased') {
+        panel.qs = q + (panel.qs - q) * blendQ;
+        panel.ps = p + (panel.ps - p) * blendQ;
+        if (Math.abs(panel.qs - q) < 1e-3) panel.qs = q;
+        if (Math.abs(panel.ps - p) < 1e-3) panel.ps = p;
+        if (panel.qs !== q || panel.ps !== p) moving = true;
+        q = panel.qs;
+        p = panel.ps;
+        panel.half = framed(solved(p, q).k);
+      } else {
+        const target = framed(solved(p, q).k);
+        if (panel.id === 'locked') panel.half = target;
+        else {
+          panel.half = Math.exp(Math.log(target) + (Math.log(panel.half) - Math.log(target)) * blend);
+          if (Math.abs(Math.log(panel.half / target)) < 1e-3) panel.half = target;
+          else moving = true;
+        }
+      }
+      const key = `${q},${p},${flower.n},${panel.half}`;
+      if (key !== panel.key) {
+        const r = paintFlower(panel, p, q, flower.n, panel.half);
+        panel.key = key;
+        panel.log.push(r);
+      }
+    }
+    flower.moving = moving || !!flower.sweeping;
+    if (flower.dirty || moving) showFlowerMetrics();
+    flower.dirty = false;
+  }
+  function flowerMetrics(panel) {
+    let [reversals, direction, biggest] = [0, 0, 0];
+    const log = panel.log;
+    for (let i = 1; i < log.length; i++) {
+      const d = log[i] - log[i - 1];
+      biggest = Math.max(biggest, Math.abs(d));
+      if (Math.abs(d) > 0.05) {
+        const s = Math.sign(d);
+        if (direction && s !== direction) reversals++;
+        direction = s;
+      }
+    }
+    return { title: panel.title, reversals, biggest, low: log.length ? Math.min(...log) : 0, high: log.length ? Math.max(...log) : 0 };
+  }
+  function showFlowerMetrics() {
+    const rows = flower.panels.map(flowerMetrics).map((m) => `<tr><td>${m.title}</td><td>${m.reversals}</td><td>${m.biggest.toFixed(1)} px</td><td>${m.low.toFixed(0)}–${m.high.toFixed(0)} px</td></tr>`);
+    $('flower-metrics').innerHTML = `<tr><th>In the last motion</th><th>Times the center circle reversed</th><th>Its biggest step in a frame</th><th>Its radius</th></tr>${rows.join('')}`;
+  }
+  const startSweep = (from, to, gap) => {
+    flower.q = from;
+    flower.p = Math.min(flower.p, from);
+    settleFlowers();
+    showInputs();
+    flower.sweeping = { from, to, gap, start: performance.now() + 120 };
+    flower.moving = true;
+  };
+  $('sweep').addEventListener('click', () => startSweep(4, 14, Number($('gap').value)));
+  $('jump').addEventListener('click', () => { flower.sweeping = null; flower.q = 4; flower.p = Math.min(flower.p, 4); settleFlowers(); paintAllFlowers(); setTimeout(() => setFlower(30), 150); });
+  const paintAllFlowers = () => { for (const panel of flower.panels) { paintFlower(panel, flower.p, flower.q, flower.n, panel.half); panel.key = null; } };
+  for (const id of ['q', 'p', 'n']) {
+    $(id).addEventListener('input', () => {
+      flower.sweeping = null;
+      setFlower(Number($('q').value), Number($('p').value), Number($('n').value));
+    });
+  }
+
+  // ---- The Newton figure --------------------------------------------------------------------
+  const sys = doyleSystem(1, 3);
+  const iterates = [[0, 1]];
+  for (let i = 0; i < 6; i++) iterates.push(newtonStep(sys, iterates[i]));
+  const root = iterates[iterates.length - 1];
+  const NW = 800;
+  const NH = 420;
+  const NA = NH / NW;
+  const PAD = 3;
+  const frameOf = (n) => {
+    const pts = [iterates[n], iterates[n + 1], root];
+    const xs = pts.map((p) => p[0]);
+    const ys = pts.map((p) => p[1]);
+    let w = Math.max(Math.max(...xs) - Math.min(...xs), 1e-15) * PAD;
+    let h = Math.max(Math.max(...ys) - Math.min(...ys), 1e-15) * PAD;
+    if (h / w < NA) h = w * NA; else w = h / NA;
+    return { cx: (Math.max(...xs) + Math.min(...xs)) / 2, cy: (Math.max(...ys) + Math.min(...ys)) / 2, w, h };
+  };
+  // The step as a continuous number. Between two iterates a point slides around the root, closing in
+  // geometrically, so it stays put on a camera that closes in with it. Tangent planes exist at any
+  // point, and the point's own Newton step is where their lines cross, so the figure is true throughout.
+  const pointAt = (s) => {
+    const k = Math.min(Math.floor(s), iterates.length - 3);
+    const f = s - k;
+    if (f === 0) return iterates[k];
+    const [a, b] = [iterates[k], iterates[k + 1]];
+    const [da, db] = [Math.hypot(a[0] - root[0], a[1] - root[1]), Math.hypot(b[0] - root[0], b[1] - root[1])];
+    const [ta, tb] = [Math.atan2(a[1] - root[1], a[0] - root[0]), Math.atan2(b[1] - root[1], b[0] - root[0])];
+    let turn = tb - ta;
+    while (turn > Math.PI) turn -= 2 * Math.PI;
+    while (turn < -Math.PI) turn += 2 * Math.PI;
+    const d = Math.exp(Math.log(da) + (Math.log(db) - Math.log(da)) * f);
+    const t = ta + turn * f;
+    return [root[0] + d * Math.cos(t), root[1] + d * Math.sin(t)];
+  };
+  const nextAt = (s) => (Number.isInteger(s) ? iterates[s + 1] : newtonStep(sys, pointAt(s)));
+  const frameAt = (s) => {
+    if (Number.isInteger(s)) return frameOf(s);
+    const pts = [pointAt(s), nextAt(s), root];
+    const xs = pts.map((p) => p[0]);
+    const ys = pts.map((p) => p[1]);
+    let w = Math.max(Math.max(...xs) - Math.min(...xs), 1e-15) * PAD;
+    let h = Math.max(Math.max(...ys) - Math.min(...ys), 1e-15) * PAD;
+    if (h / w < NA) h = w * NA; else w = h / NA;
+    return { cx: (Math.max(...xs) + Math.min(...xs)) / 2, cy: (Math.max(...ys) + Math.min(...ys)) / 2, w, h };
+  };
+  // Time goes by how far the view has to zoom, so a step that covers more scale gets more of it.
+  const logWidths = [0, 1, 2, 3, 4].map((n) => Math.log(frameOf(n).h));
+  const logWidthAt = (s) => { const k = Math.min(Math.floor(s), 3); return logWidths[k] + (logWidths[k + 1] - logWidths[k]) * (s - k); };
+  const stepAtLogWidth = (l) => {
+    for (let k = 0; k < 4; k++) if (l >= logWidths[k + 1]) return Math.min(4, Math.max(0, k + (l - logWidths[k]) / (logWidths[k + 1] - logWidths[k])));
+    return 4;
+  };
+  const toZoom = (v) => [v.cx * NA, v.cy, v.h];
+  const fromZoom = ([u, cy, h]) => ({ cx: u / NA, cy, w: h / NA, h });
+  const inView = (view, p) => Math.abs(p[0] - view.cx) <= view.w / 2 && Math.abs(p[1] - view.cy) <= view.h / 2;
+  const cubic = (t) => (t < 0.5 ? 4 * t ** 3 : 1 - (-2 * t + 2) ** 3 / 2);
+  const FADE = 160;
+  const SUB = '₀₁₂₃₄₅₆₇₈₉';
+  const sub = (n) => String(n).replace(/\d/g, (d) => SUB[Number(d)]);
+  const NX = 88;
+  const NY = 52;
+
+  /** The shallowest requested step whose marks are in frame. A function of the view alone. */
+  const heldSubject = (view, step) => {
+    for (let k = step; k < iterates.length - 1; k++) if (inView(view, iterates[k]) && inView(view, iterates[k + 1])) return k;
+    return step;
+  };
+
+  const newtonModes = [
+    { id: 'now', title: 'Now: subject changes at the start', hold: false, quick: false },
+    { id: 'quick', title: 'Quick zoom-out', hold: false, quick: true },
+    { id: 'hold', title: 'Subject held until the next is in frame', hold: true, quick: false },
+    { id: 'both', title: 'Held, and quick zoom-out (chosen)', hold: true, quick: true },
+    { id: 'slide', title: 'One param: the step is continuous', hold: false, quick: false, slide: true },
+    { id: 'slide-quick', title: 'One param, and quick zoom-out', hold: false, quick: true, slide: true },
+  ];
+
+  const newton = {
+    step: 0,
+    panels: newtonModes.map((mode) => {
+      const section = document.createElement('section');
+      section.innerHTML = `<h3>${mode.title}</h3><svg class="main" role="img" aria-label="The mu-nu plane"></svg><div class="facets"><svg class="f" role="img" aria-label="Surface F"></svg><svg class="g" role="img" aria-label="Surface G"></svg></div>`;
+      $('newtons').append(section);
+      const [main, f, g] = ['.main', '.f', '.g'].map((s) => section.querySelector(s));
+      f.setAttribute('viewBox', '0 0 400 330');
+      g.setAttribute('viewBox', '0 0 400 330');
+      return { ...mode, plot: new Plot(main, NW, NH), facets: [f, g], view: frameOf(0), subject: 0, previous: null, changedAt: 0, move: null, stats: null, dirty: true };
+    }),
+    timing: 0,
+  };
+
+  function goTo(n) {
+    newton.step = n;
+    $('step').value = n;
+    $('step-out').textContent = n;
+    const now = performance.now();
+    const outMs = Number($('out-ms').value);
+    const power = Number($('power').value);
+    for (const panel of newton.panels) {
+      const target = frameOf(n);
+      const out = target.h > panel.view.h * 1.0001;
+      const path = panel.slide
+        ? { S: Math.abs(logWidthAt(n) - logWidthAt(panel.subject)) / Math.SQRT2, from: logWidthAt(panel.subject), to: logWidthAt(n), target: n }
+        : zoomPath(toZoom(panel.view), toZoom(target));
+      const natural = Math.min(2200, Math.max(500, path.S * 260));
+      const quick = panel.quick && out;
+      panel.move = {
+        path,
+        start: now,
+        duration: quick ? Math.min(outMs, natural) : natural,
+        ease: quick ? (t) => 1 - (1 - t) ** power : cubic,
+      };
+      panel.stats = { out, duration: panel.move.duration, nothing: 0, last: now };
+      if (!panel.hold && !panel.slide && panel.subject !== n) panel.subject = n;
+      panel.dirty = true;
+    }
+  }
+  function settleNewton(n) {
+    newton.step = n;
+    $('step').value = n;
+    $('step-out').textContent = n;
+    for (const panel of newton.panels) {
+      panel.view = frameOf(n);
+      panel.subject = n;
+      panel.previous = null;
+      panel.move = null;
+      panel.dirty = true;
+    }
+  }
+
+  function subjectMarks(g, plot, k, opacity) {
+    const scope = g.group({ opacity });
+    const v = pointAt(k);
+    const next = nextAt(k);
+    const [F, G] = sys.f(v[0], v[1]);
+    const [gradF, gradG] = sys.jacobian(v[0], v[1]);
+    const trace = (value, grad) => {
+      const g2 = grad[0] ** 2 + grad[1] ** 2;
+      return [[v[0] - (value * grad[0]) / g2, v[1] - (value * grad[1]) / g2], [-grad[1], grad[0]]];
+    };
+    const [pF, dF] = trace(F, gradF);
+    const [pG, dG] = trace(G, gradG);
+    fullLine(scope, plot, pF, dF, { color: 'accent-soft', width: 2.5 });
+    fullLine(scope, plot, pG, dG, { color: 'green-soft', width: 2.5 });
+    const [x1, y1] = plot.s(v);
+    const [x2, y2] = plot.s(next);
+    arrowhead(scope, x1, y1, x2, y2, 'ink', 3);
+    scope.node('circle', { cx: x1, cy: y1, r: 5, class: 'ink fill-paper', 'stroke-width': 2.5 });
+    scope.node('circle', { cx: x2, cy: y2, r: 5, class: 'fill-ink' });
+    scope.text({ x: x1 + 12, y: y1 + 22 }, `v${sub(Math.round(k))}`);
+    scope.text({ x: x2 + 12, y: y2 - 12 }, `v${sub(Math.round(k) + 1)}`);
+    scope.trim();
+  }
+
+  // A grid that belongs to the plane. Each line has exactly one level, the coarsest it's a multiple
+  // of, and its opacity is a function of how many pixels that level's cell covers, from 0 where it
+  // starts to show. So nothing can pop: a line comes in at 0, and never doubles up on another.
+  const smooth = (t) => { const u = Math.min(1, Math.max(0, t)); return u * u * (3 - 2 * u); };
+  const GRID_FROM = 8;
+  const GRID_TO = 90;
+  const gridAlpha = (px, from = GRID_FROM, to = GRID_TO) => smooth(Math.log(px / from) / Math.log(to / from));
+  /** Calls back with a level's cell, its opacity, and its lines on each axis. */
+  function gridLevels(x0, x1, y0, y1, pxPerUnit, from, to, each) {
+    const span = Math.max(x1 - x0, y1 - y0);
+    let exponent = Math.ceil(Math.log10(from / pxPerUnit));
+    for (let guard = 0; guard < 8; guard++, exponent++) {
+      const cell = 10 ** exponent;
+      // Past this, a level's lines are few, and the top one takes all that are left, such as 0.
+      const top = cell > span * 10;
+      const lines = (a, b) => {
+        const out = [];
+        for (let i = Math.ceil(a / cell); i <= Math.floor(b / cell); i++) if (top || i % 10 !== 0) out.push(i * cell);
+        return out;
+      };
+      each(cell, gridAlpha(cell * pxPerUnit, from, to), lines(x0, x1), lines(y0, y1));
+      if (top) break;
+    }
+  }
+  function paintGrid(g, plot, view) {
+    gridLevels(view.cx - view.w / 2, view.cx + view.w / 2, view.cy - view.h / 2, view.cy + view.h / 2, plot.scale, GRID_FROM, GRID_TO, (cell, alpha, xs, ys) => {
+      let d = '';
+      for (const x of xs) { const sx = plot.sx(x).toFixed(2); d += `M${sx} 0V${plot.height}`; }
+      for (const y of ys) { const sy = plot.sy(y).toFixed(2); d += `M0 ${sy}H${plot.width}`; }
+      g.node('path', { d, class: 'muted', 'stroke-width': 1, opacity: (0.5 * alpha).toFixed(3) });
+    });
+  }
+
+  function paintMain(panel, contours, now) {
+    const { plot, view } = panel;
+    plot.view(view.cx - view.w / 2, view.cx + view.w / 2, view.cy - view.h / 2, view.cy + view.h / 2);
+    const g = new Scope(plot.svg);
+    const grid = g.group({});
+    if ($('grid').checked) paintGrid(grid, plot, view);
+    grid.trim();
+    const whole = Math.floor(panel.subject);
+    for (let k = 0; k < whole; k++) segment(g, plot, iterates[k], iterates[k + 1], { color: 'muted', width: 1.5, dashed: true });
+    if (panel.subject !== whole) segment(g, plot, iterates[whole], pointAt(panel.subject), { color: 'muted', width: 1.5, dashed: true });
+    for (const [which, color] of [['F', 'accent'], ['G', 'green']]) {
+      let d = '';
+      for (const [a, b] of contours[which]) { const [x1, y1] = plot.s(a); const [x2, y2] = plot.s(b); d += `M${x1.toFixed(1)} ${y1.toFixed(1)}L${x2.toFixed(1)} ${y2.toFixed(1)}`; }
+      g.node('path', { d, class: color, 'stroke-width': 3.5 });
+    }
+    const u = panel.previous === null ? 1 : Math.min(1, (now - panel.changedAt) / FADE);
+    if (panel.previous !== null && u < 1) subjectMarks(g, plot, panel.previous, 1 - u);
+    subjectMarks(g, plot, panel.subject, u);
+    g.trim();
+  }
+
+  function facetSubject(g, panel, which, k, opacity, X, Y, Z, zs, color, soft) {
+    const scope = g.group({ opacity });
+    const { view } = panel;
+    const h = (mu, nu) => sys.f(mu, nu)[which];
+    const P = (p) => project(400, 330, p);
+    const v = pointAt(k);
+    const next = nextAt(k);
+    const value = h(v[0], v[1]);
+    const grad = sys.jacobian(v[0], v[1])[which];
+    const zx = zs * grad[0] * (view.w / 2);
+    const zy = zs * grad[1] * (view.h / 2);
+    const z0 = zs * value - zx * X(v[0]) - zy * Y(v[1]);
+    const pz = (x, y) => z0 + zx * x + zy * y;
+    const ZC = 1.05;
+    const clipBy = (poly, inside) => {
+      const out = [];
+      poly.forEach((a, i) => {
+        const b = poly[(i + 1) % poly.length];
+        const [fa, fb] = [inside(a), inside(b)];
+        if (fa >= 0) out.push(a);
+        if (fa >= 0 !== fb >= 0) { const t = fa / (fa - fb); out.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]); }
+      });
+      return out;
+    };
+    let patch = [[-1, -1], [1, -1], [1, 1], [-1, 1]];
+    patch = clipBy(patch, ([x, y]) => ZC - pz(x, y));
+    patch = clipBy(patch, ([x, y]) => pz(x, y) + ZC);
+    if (patch.length >= 3) {
+      const d = patch.map(([x, y], i) => `${i ? 'L' : 'M'}${P([x, y, pz(x, y)]).map((c) => c.toFixed(1)).join(' ')}`).join('') + 'Z';
+      const node = scope.node('path', { d, class: soft, 'stroke-width': 1.5 });
+      node.style.fill = `var(--${soft})`;
+      node.style.fillOpacity = 0.16;
+    }
+    // The plane's line at height 0, within the floor.
+    const g2 = grad[0] ** 2 + grad[1] ** 2;
+    const p0 = [v[0] - (value * grad[0]) / g2, v[1] - (value * grad[1]) / g2];
+    const dir = [-grad[1], grad[0]];
+    const A = [X(p0[0]), Y(p0[1])];
+    const D = [X(p0[0] + dir[0]) - A[0], Y(p0[1] + dir[1]) - A[1]];
+    let [t0, t1] = [-Infinity, Infinity];
+    for (const [pc, dc] of [[A[0], D[0]], [A[1], D[1]]]) {
+      if (Math.abs(dc) < 1e-12) continue;
+      const [ta, tb] = [(-1 - pc) / dc, (1 - pc) / dc];
+      t0 = Math.max(t0, Math.min(ta, tb));
+      t1 = Math.min(t1, Math.max(ta, tb));
+    }
+    if (t0 < t1) {
+      const [a, b] = [P([A[0] + D[0] * t0, A[1] + D[1] * t0, 0]), P([A[0] + D[0] * t1, A[1] + D[1] * t1, 0])];
+      scope.node('line', { x1: a[0], y1: a[1], x2: b[0], y2: b[1], class: soft, 'stroke-width': 3.5 });
+    }
+    const base = [X(v[0]), Y(v[1]), 0];
+    const top = [X(v[0]), Y(v[1]), Z(value)];
+    const tip = [X(next[0]), Y(next[1]), 0];
+    const [bx, by] = P(base);
+    const [ax, ay] = P(tip);
+    const [tx, ty] = P(top);
+    arrowhead(scope, bx, by, ax, ay, 'ink', 2.5);
+    scope.node('line', { x1: bx, y1: by, x2: tx, y2: ty, class: 'ink', 'stroke-width': 2 });
+    const nLen = Math.hypot(zx, zy, 1);
+    const end = P([top[0] - (zx / nLen) * 0.45, top[1] - (zy / nLen) * 0.45, top[2] + 0.45 / nLen]);
+    arrowhead(scope, tx, ty, end[0], end[1], soft, 2.5);
+    scope.node('circle', { cx: tx, cy: ty, r: 4.5, class: `fill-${color}` });
+    scope.node('circle', { cx: bx, cy: by, r: 5, class: 'ink fill-paper', 'stroke-width': 2.5 });
+    scope.node('circle', { cx: ax, cy: ay, r: 5, class: 'fill-ink' });
+    scope.trim();
+  }
+
+  function paintFacet(panel, which, contours, now) {
+    const { view } = panel;
+    const color = which === 0 ? 'accent' : 'green';
+    const soft = which === 0 ? 'accent-soft' : 'green-soft';
+    const h = (mu, nu) => sys.f(mu, nu)[which];
+    const X = (mu) => (2 * (mu - view.cx)) / view.w;
+    const Y = (nu) => (2 * (nu - view.cy)) / view.h;
+    const M = (x) => view.cx + (x * view.w) / 2;
+    const N = (y) => view.cy + (y * view.h) / 2;
+    let zMax = 0;
+    for (let j = 0; j <= 12; j++) for (let i = 0; i <= 12; i++) zMax = Math.max(zMax, Math.abs(h(M(-1 + i / 6), N(-1 + j / 6))));
+    const Z = (value) => (0.85 * value) / (zMax || 1);
+    const P = (p) => project(400, 330, p);
+    const g = new Scope(panel.facets[which]);
+    const floor = [[-1, -1, 0], [1, -1, 0], [1, 1, 0], [-1, 1, 0], [-1, -1, 0]].map((p, i) => `${i ? 'L' : 'M'}${P(p).map((c) => c.toFixed(1)).join(' ')}`).join('');
+    g.node('path', { d: floor, class: 'muted', 'stroke-width': 1 });
+    const [wx0, wx1, wy0, wy1] = [view.cx - view.w / 2, view.cx + view.w / 2, view.cy - view.h / 2, view.cy + view.h / 2];
+    const floorScale = 277 / view.w;
+    const floorGrid = g.group({});
+    if ($('grid').checked) {
+      gridLevels(wx0, wx1, wy0, wy1, floorScale, GRID_FROM, GRID_TO, (cell, alpha, xs, ys) => {
+        let d = '';
+        const line = (a, b) => { const [p, q] = [P(a), P(b)]; d += `M${p[0].toFixed(2)} ${p[1].toFixed(2)}L${q[0].toFixed(2)} ${q[1].toFixed(2)}`; };
+        for (const x of xs) line([X(x), -1, 0], [X(x), 1, 0]);
+        for (const y of ys) line([-1, Y(y), 0], [1, Y(y), 0]);
+        floorGrid.node('path', { d, class: 'muted', 'stroke-width': 0.75, opacity: (0.45 * alpha).toFixed(3) });
+      });
+    }
+    floorGrid.trim();
+    let zeros = '';
+    for (const [a, b] of contours[which === 0 ? 'F' : 'G']) { const [x1, y1] = P([X(a[0]), Y(a[1]), 0]); const [x2, y2] = P([X(b[0]), Y(b[1]), 0]); zeros += `M${x1.toFixed(1)} ${y1.toFixed(1)}L${x2.toFixed(1)} ${y2.toFixed(1)}`; }
+    g.node('path', { d: zeros, class: color, 'stroke-width': 3.5 });
+    const wireLine = (at) => {
+      let d = '';
+      let pen = false;
+      for (let t = 0; t <= 24; t++) {
+        const [x, y] = at(-1 + t / 12);
+        const z = Z(h(M(x), N(y)));
+        if (Math.abs(z) > 1.05) { pen = false; continue; }
+        const [sx, sy] = P([x, y, z]);
+        d += `${pen ? 'L' : 'M'}${sx.toFixed(2)} ${sy.toFixed(2)}`;
+        pen = true;
+      }
+      return d;
+    };
+    const wires = g.group({});
+    if ($('wire').value === 'view') {
+      let d = '';
+      for (let k = 0; k <= 10; k++) {
+        const a = -1 + k / 5;
+        d += wireLine((b) => [b, a]) + wireLine((b) => [a, b]);
+      }
+      wires.node('path', { d, class: color, 'stroke-width': 1, opacity: 0.9 });
+    } else {
+      // Lines at fixed places on the surface, so they spread out as the view closes in.
+      gridLevels(wx0, wx1, wy0, wy1, floorScale, 16, 60, (cell, alpha, xs, ys) => {
+        let d = '';
+        for (const x of xs) d += wireLine((b) => [X(x), b]);
+        for (const y of ys) d += wireLine((b) => [b, Y(y)]);
+        wires.node('path', { d, class: color, 'stroke-width': 1, opacity: (0.9 * alpha).toFixed(3) });
+      });
+    }
+    wires.trim();
+    const u = panel.previous === null ? 1 : Math.min(1, (now - panel.changedAt) / FADE);
+    if (panel.previous !== null && u < 1) facetSubject(g, panel, which, panel.previous, 1 - u, X, Y, Z, 0.85 / (zMax || 1), color, soft);
+    facetSubject(g, panel, which, panel.subject, u, X, Y, Z, 0.85 / (zMax || 1), color, soft);
+    g.trim();
+  }
+
+  function contoursFor(view) {
+    const [x0, x1, y0, y1] = [view.cx - view.w / 2, view.cx + view.w / 2, view.cy - view.h / 2, view.cy + view.h / 2];
+    const Fv = new Float64Array((NX + 1) * (NY + 1));
+    const Gv = new Float64Array((NX + 1) * (NY + 1));
+    for (let j = 0; j <= NY; j++) {
+      for (let i = 0; i <= NX; i++) {
+        const [F, G] = sys.f(x0 + ((x1 - x0) * i) / NX, y0 + ((y1 - y0) * j) / NY);
+        Fv[j * (NX + 1) + i] = F;
+        Gv[j * (NX + 1) + i] = G;
+      }
+    }
+    return { F: zeroContour(Fv, NX, NY, x0, x1, y0, y1), G: zeroContour(Gv, NX, NY, x0, x1, y0, y1) };
+  }
+
+  function stepNewton(now) {
+    let drew = false;
+    for (const panel of newton.panels) {
+      if (panel.move) {
+        const { path, start, duration, ease } = panel.move;
+        const t = Math.min(1, Math.max(0, (now - start) / duration));
+        if (panel.slide) {
+          panel.subject = t >= 1 ? path.target : stepAtLogWidth(path.from + (path.to - path.from) * ease(t));
+          panel.view = frameAt(panel.subject);
+        } else {
+          panel.view = fromZoom(path(ease(t)));
+        }
+        if (t >= 1) panel.move = null;
+        panel.dirty = true;
+      }
+      if (panel.hold) {
+        const held = heldSubject(panel.view, newton.step);
+        if (held !== panel.subject) {
+          panel.previous = panel.subject;
+          panel.subject = held;
+          panel.changedAt = now;
+          panel.dirty = true;
+        }
+      }
+      if (panel.previous !== null) {
+        panel.dirty = true;
+        if (now - panel.changedAt >= FADE) panel.previous = null;
+      }
+      if (panel.stats && panel.stats.running !== false) {
+        const s = panel.stats;
+        const dt = Math.max(0, now - s.last);
+        s.last = now;
+        const shown = pointAt(panel.subject);
+        const nextShown = nextAt(panel.subject);
+        if (!inView(panel.view, shown) && !inView(panel.view, nextShown)) s.nothing += dt;
+        s.elapsed = (s.elapsed ?? 0) + dt;
+        if (s.reached === undefined && inView(panel.view, iterates[newton.step]) && inView(panel.view, iterates[newton.step + 1])) s.reached = s.elapsed;
+        if (!panel.move) s.running = false;
+      }
+      if (panel.dirty) {
+        const contours = contoursFor(panel.view);
+        paintMain(panel, contours, now);
+        paintFacet(panel, 0, contours, now);
+        paintFacet(panel, 1, contours, now);
+        panel.dirty = false;
+        drew = true;
+      }
+    }
+    if (drew) showNewtonMetrics();
+    return drew;
+  }
+  function showNewtonMetrics() {
+    const rows = newton.panels.map((panel) => {
+      const s = panel.stats;
+      if (!s) return `<tr><td>${panel.title}</td><td></td><td></td><td></td></tr>`;
+      return `<tr><td>${panel.title}</td><td>${s.duration.toFixed(0)} ms</td><td>${(s.nothing ?? 0).toFixed(0)} ms</td><td>${s.reached === undefined ? '' : `${s.reached.toFixed(0)} ms`}</td></tr>`;
+    });
+    $('newton-metrics').innerHTML = `<tr><th>In the last move</th><th>Length</th><th>Time with none of its subject in frame</th><th>Next subject in frame after</th></tr>${rows.join('')}`;
+  }
+
+  $('step').addEventListener('input', () => goTo(Number($('step').value)));
+  for (const id of ['grid', 'wire']) $(id).addEventListener('input', () => { for (const panel of newton.panels) panel.dirty = true; });
+  $('all-in').addEventListener('click', () => { settleNewton(0); setTimeout(() => goTo(4), 120); });
+  $('all-out').addEventListener('click', () => { settleNewton(4); setTimeout(() => goTo(0), 120); });
+  $('one-out').addEventListener('click', () => { const from = newton.step === 0 ? 4 : newton.step; settleNewton(from); setTimeout(() => goTo(from - 1), 120); });
+  $('drag-out').addEventListener('click', () => {
+    settleNewton(4);
+    [3, 2, 1, 0].forEach((n, i) => setTimeout(() => goTo(n), 120 + i * 80));
+  });
+  let looping = 0;
+  $('loop').addEventListener('change', () => {
+    clearTimeout(looping);
+    if (!$('loop').checked) return;
+    const go = () => {
+      if (!$('loop').checked) return;
+      goTo(newton.step === 4 ? 0 : 4);
+      looping = setTimeout(go, 3400);
+    };
+    go();
+  });
+
+  // Dragging any 3D view turns them all.
+  let turning = null;
+  for (const panel of newton.panels) {
+    for (const svg of panel.facets) {
+      svg.addEventListener('pointerdown', (e) => { svg.setPointerCapture(e.pointerId); turning = [e.clientX, e.clientY]; });
+      svg.addEventListener('pointermove', (e) => {
+        if (!turning || !svg.hasPointerCapture(e.pointerId)) return;
+        yaw += (e.clientX - turning[0]) * 0.01;
+        pitch = Math.min(1.45, Math.max(0.1, pitch + (e.clientY - turning[1]) * 0.01));
+        turning = [e.clientX, e.clientY];
+        for (const other of newton.panels) other.dirty = true;
+      });
+      svg.addEventListener('lostpointercapture', () => { turning = null; });
+    }
+  }
+
+  // ---- One clock ----------------------------------------------------------------------------
+  let last = performance.now();
+  const costs = [];
+  const frame = (now) => {
+    const dt = now - last;
+    last = now;
+    const begin = performance.now();
+    stepFlowers(now, dt);
+    const drew = stepNewton(now);
+    if (drew) {
+      costs.push(performance.now() - begin);
+      if (costs.length > 40) costs.shift();
+      const sorted = [...costs].sort((a, b) => a - b);
+      $('timing').textContent = `drawing them takes ${sorted[sorted.length >> 1].toFixed(1)} ms a frame`;
+    }
+    requestAnimationFrame(frame);
+  };
+  settleFlowers();
+  showInputs();
+  $('step-out').textContent = 0;
+  showFlowerMetrics();
+  showNewtonMetrics();
+  requestAnimationFrame(frame);
+  window.lab = { flower, newton, flowerMetrics, goTo, settleNewton, startSweep, setFlower, settleFlowers, costs, frameAt, pointAt, nextAt, stepAtLogWidth, gridAlpha };
+</script>
+</body>
+</html>

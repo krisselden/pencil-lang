@@ -588,6 +588,171 @@ fn lattice_ir_matches_golden() {
     assert_eq!(actual, std::fs::read_to_string(golden).unwrap());
 }
 
+/// The lattice under some sheets, on top of its plain one.
+fn lattice_with(more: &[&str]) -> pencil_core::Composition {
+    let [theme, plain] = [
+        square_read("theme.style"),
+        square_read("007-lattice/plain.style"),
+    ];
+    let extra: Vec<String> = more.iter().map(|f| square_read(f)).collect();
+    let mut sheets = vec![theme.as_str(), plain.as_str()];
+    sheets.extend(extra.iter().map(String::as_str));
+    pencil_core::compose(&square_read("007-lattice/lattice.pen"), &sheets).unwrap()
+}
+
+fn lattice_labels(composition: &pencil_core::Composition) -> Vec<pencil_core::frame::Label> {
+    use pencil_core::{frame::Inputs, terms::Estimate};
+    let inputs = Inputs {
+        params: vec![("q".into(), 7.0), ("p".into(), 2.0)],
+        ..Default::default()
+    };
+    let [w, h] = composition.size;
+    let frames = composition
+        .prepare(&inputs, w as u32, h as u32, 1.0, &Estimate)
+        .unwrap();
+    composition.labels(&frames, &inputs, &Estimate).unwrap()
+}
+
+/// WCAG's contrast ratio, from linear colors.
+fn contrast(a: [f64; 3], b: [f64; 3]) -> f64 {
+    let lum = |c: [f64; 3]| 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+    let (x, y) = (lum(a), lum(b));
+    (x.max(y) + 0.05) / (x.min(y) + 0.05)
+}
+
+/// The test of a style sheet: the same document, down to every mark, in another theme and shape.
+#[test]
+fn sheets_restyle_the_lattice_without_changing_a_mark() {
+    let plain = lattice_with(&[]);
+    for more in [
+        &["dark.style"][..],
+        &["007-lattice/narrow.style"],
+        &["007-lattice/narrow.style", "dark.style"],
+    ] {
+        let other = lattice_with(more);
+        assert_eq!(plain.panels.len(), other.panels.len());
+        for (a, b) in plain.panels.iter().zip(&other.panels) {
+            assert_eq!(a.id, b.id);
+            assert_eq!(
+                a.figure.scene.to_json()["marks"],
+                b.figure.scene.to_json()["marks"],
+                "{more:?} changed a mark in {}",
+                a.id
+            );
+        }
+        let ids = |c: &pencil_core::Composition| {
+            let mut ids: Vec<String> = lattice_labels(c).into_iter().map(|l| l.id).collect();
+            ids.sort();
+            ids
+        };
+        assert_eq!(ids(&plain), ids(&other), "{more:?} changed what's labelled");
+    }
+}
+
+#[test]
+fn a_later_sheet_changes_what_the_colors_mean_for_the_whole_figure() {
+    use pencil_core::{frame::Inputs, terms::Estimate};
+    for (more, dark) in [(&[][..], false), (&["dark.style"][..], true)] {
+        let composition = lattice_with(more);
+        let inputs = Inputs {
+            params: vec![("q".into(), 7.0), ("p".into(), 2.0)],
+            ..Default::default()
+        };
+        let frames = composition
+            .prepare(&inputs, 800, 780, 1.0, &Estimate)
+            .unwrap();
+        for frame in &frames {
+            let paper = frame.prepared.paper;
+            let light = 0.2126 * paper[0] + 0.7152 * paper[1] + 0.0722 * paper[2];
+            assert_eq!(light < 0.2, dark, "{more:?}: paper is {paper:?}");
+        }
+        // Every label stays readable on its paper, whichever theme it's in.
+        let paper = frames[0].prepared.paper;
+        for label in lattice_labels(&composition) {
+            let ratio = contrast(label.color, paper);
+            assert!(
+                ratio >= 4.5,
+                "{more:?}: `{}` is only {ratio:.2}:1",
+                label.id
+            );
+        }
+    }
+}
+
+#[test]
+fn a_sheet_sets_how_the_panels_sit() {
+    let wide = lattice_with(&[]);
+    assert_eq!(wide.size, [814.0, 826.0]);
+    assert_eq!(wide.panels[1].rect[0], 414.0 / 814.0);
+
+    let narrow = lattice_with(&["007-lattice/narrow.style"]);
+    assert_eq!(narrow.size, [360.0, 4.0 * (300.0 + 24.0) + 3.0 * 12.0]);
+    for (i, panel) in narrow.panels.iter().enumerate() {
+        assert_eq!(panel.rect[0], 0.0, "{} isn't in the one column", panel.id);
+        assert_eq!(panel.rect[2], 1.0);
+        let top = (i as f64 * (300.0 + 24.0 + 12.0) + 24.0) / narrow.size[1];
+        assert!((panel.rect[1] - top).abs() < 1e-12, "{}", panel.id);
+        assert_eq!(panel.figure.scene.viewport.design_height, Some(300.0));
+    }
+    // An outline shows what its panel shows under this sheet, not under the document alone.
+    let outlined = narrow.panels[2]
+        .figure
+        .scene
+        .marks
+        .iter()
+        .find_map(|m| match &m.form {
+            pencil_core::ir::Form::Outline { view, .. } => view.clone(),
+            _ => None,
+        })
+        .unwrap();
+    assert_eq!(outlined.design_height, Some(300.0));
+    assert_eq!(outlined.pad, 0.08);
+    assert_eq!(wide.panels[0].figure.scene.viewport.pad, 0.15);
+    assert_eq!(wide.panels[3].figure.scene.viewport.pad, 0.08);
+}
+
+#[test]
+fn a_panel_rule_is_checked() {
+    let doc = square_read("007-lattice/lattice.pen");
+    let [theme, plain] = [
+        square_read("theme.style"),
+        square_read("007-lattice/plain.style"),
+    ];
+    for (rule, says) in [
+        ("style panel.nope { pad: 0.1 }", "no panel named `nope`"),
+        ("style panel { width: 300 }", "needs a unit"),
+        ("style panels { columns: q }", "q"),
+        ("style panels { rows: 2 }", "not `rows`"),
+        ("style panel { size: 2px }", "not `size`"),
+    ] {
+        let err = pencil_core::compose(&doc, &[&theme, &plain, rule]).unwrap_err();
+        assert!(err.message.contains(says), "{rule}: {err}");
+    }
+    // A document draws on its own, at a default size.
+    let bare = pencil_core::compose(&doc, &[]).unwrap();
+    assert_eq!(
+        bare.panels[0].figure.scene.viewport.design_width,
+        Some(400.0)
+    );
+    let err = pencil_core::compose(&doc, &[&theme, &plain, "style panel.flat { width: 300px }"])
+        .unwrap_err();
+    assert!(err.message.contains("same size"), "{err}");
+}
+
+#[test]
+fn a_page_can_read_a_themes_colors() {
+    let [theme, dark] = [square_read("theme.style"), square_read("dark.style")];
+    let light = pencil_core::named_colors(&[&theme]).unwrap();
+    let night = pencil_core::named_colors(&[&theme, &dark]).unwrap();
+    let names = |c: &[(String, [f64; 3])]| c.iter().map(|(n, _)| n.clone()).collect::<Vec<_>>();
+    // The dark theme defines every color the light one does, and each comes out different.
+    assert_eq!(names(&light), names(&night));
+    assert!(names(&light).contains(&"paper_color".to_string()));
+    for (a, b) in light.iter().zip(&night) {
+        assert_ne!(a.1, b.1, "`{}` doesn't change in the dark theme", a.0);
+    }
+}
+
 /// A circle from the spiral's collection, by its grid point.
 fn spiral_circle(
     figure: &pencil_core::Figure,
@@ -608,8 +773,12 @@ fn spiral_circle(
     let mut local = env.clone();
     local.set("a", a);
     local.set("b", b);
-    let (center, r) = instance(lets, shape, &mut local).unwrap().unwrap();
-    (center, r.unwrap())
+    let pencil_core::stroke::Instance::Circle(center, r) =
+        instance(lets, shape, &mut local).unwrap().unwrap()
+    else {
+        panic!("a spiral's circles have centers");
+    };
+    (center, r)
 }
 
 /// What makes it a Doyle spiral: every circle touches its six neighbors. The geometry is the
@@ -727,6 +896,927 @@ fn solve_has_no_memory_of_the_last_answer() {
     assert_eq!(first.to_bits(), at(7.0, 2.0).to_bits());
 }
 
+fn hearts(sheets: &[&str]) -> pencil_core::Figure {
+    pencil_core::build(&square_read("008-hearts/hearts.pen"), sheets).unwrap()
+}
+
+#[test]
+fn hearts_ir_matches_golden() {
+    let figure = hearts(&[]);
+    let actual = golden_text(&figure.scene.to_json());
+    let golden =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus/008-hearts/expected.ir.json");
+    if std::env::var_os("UPDATE_GOLDENS").is_some() {
+        std::fs::write(&golden, &actual).unwrap();
+    }
+    assert_eq!(actual, std::fs::read_to_string(golden).unwrap());
+}
+
+/// A point of a curve in the hearts, with this shift and angle.
+fn hearts_curve(
+    figure: &pencil_core::Figure,
+    id: &str,
+    shift: f64,
+    theta: f64,
+    t: f64,
+) -> [f64; 2] {
+    use pencil_core::{eval::frame_env, eval::real, frame::Inputs, ir::Form};
+    let inputs = Inputs {
+        time: 0.0,
+        params: vec![("shift".to_string(), shift), ("theta".to_string(), theta)],
+    };
+    let mut env = frame_env(figure, &inputs).unwrap();
+    let arc = figure
+        .scene
+        .marks
+        .iter()
+        .find_map(|m| match &m.form {
+            Form::Parametric(arc) if m.id == id => Some(arc),
+            _ => None,
+        })
+        .unwrap();
+    env.set(&arc.var, t);
+    [
+        real(&arc.point[0], &env).unwrap(),
+        real(&arc.point[1], &env).unwrap(),
+    ]
+}
+
+/// Against the textbook's form of bipolar coordinates, and against what σ and τ mean, neither
+/// of which goes through coth: x = sinh τ / D and y = sin σ / D, with D = cosh τ − cos σ.
+#[test]
+fn hearts_are_bipolar_coordinates() {
+    let figure = hearts(&[]);
+    let tau_of = |a: f64| ((a - std::f64::consts::PI).cos() * 0.999999).atanh();
+    for shift in [0.0, 0.8, std::f64::consts::FRAC_PI_2, 2.5] {
+        for i in 1..200 {
+            let t = i as f64 / 200.0 * std::f64::consts::TAU;
+            let (sigma, tau) = (t + shift, tau_of(t));
+            let d = tau.cosh() - sigma.cos();
+            if d < 1e-3 {
+                continue; // At the pole.
+            }
+            let want = [tau.sinh() / d, sigma.sin() / d];
+            let got = hearts_curve(&figure, "heart_a", shift, 0.0, t);
+            let scale = 1.0 + want[0].abs() + want[1].abs();
+            assert!(
+                (got[0] - want[0]).abs() < 1e-9 * scale && (got[1] - want[1]).abs() < 1e-9 * scale,
+                "shift {shift}, t {t}: {got:?} {want:?}"
+            );
+            // τ is the log of the ratio of distances to the foci, and σ the angle between them.
+            let [x, y] = got;
+            let ratio = ((x + 1.0).hypot(y) / (x - 1.0).hypot(y)).ln();
+            assert!(
+                (ratio - tau).abs() < 1e-7 * (1.0 + tau.abs()),
+                "τ at {t}: {ratio} {tau}"
+            );
+            let turn = y.atan2(x + 1.0) - y.atan2(x - 1.0) + sigma;
+            let off = (turn / std::f64::consts::TAU).round() * std::f64::consts::TAU - turn;
+            assert!(off.abs() < 1e-7, "σ at {t}: {off}");
+        }
+    }
+}
+
+/// The coordinate curves are the circles they should be. Constant τ has its center at coth τ and
+/// radius |csch τ|, and constant σ has its center at i·cot σ and radius |csc σ|.
+#[test]
+fn hearts_coordinate_curves_are_circles() {
+    let figure = hearts(&[]);
+    let tau_of = |a: f64| ((a - std::f64::consts::PI).cos() * 0.999999).atanh();
+    for theta in [0.4, 1.2, 2.945, 4.0, 5.5] {
+        let tau: f64 = tau_of(theta);
+        let (center, radius) = (1.0 / tau.tanh(), (1.0 / tau.sinh()).abs());
+        let sigma: f64 = theta;
+        let (rise, reach) = (sigma.cos() / sigma.sin(), (1.0 / sigma.sin()).abs());
+        for i in 1..50 {
+            let t = i as f64 / 50.0 * std::f64::consts::TAU;
+            let [x, y] = hearts_curve(&figure, "level_tau", 0.0, theta, t);
+            assert!(
+                ((x - center).hypot(y) - radius).abs() < 1e-9 * (1.0 + radius),
+                "τ circle at {theta}"
+            );
+            let [x, y] = hearts_curve(&figure, "level_sigma_a", 0.0, theta, t);
+            assert!(
+                (x.hypot(y - rise) - reach).abs() < 1e-9 * (1.0 + reach),
+                "σ circle at {theta}"
+            );
+        }
+    }
+}
+
+/// Everything drawn in the frame has to be on the curve. A coordinate circle goes through infinity
+/// as it turns into a line and back, and a heart can too, and samples either side of a pole
+/// mustn't be joined by a chord across the figure. The truth here is dense sampling, not the
+/// sampler's own subdivision.
+#[test]
+fn hearts_draw_no_false_chords_at_a_pole() {
+    use pencil_core::{
+        eval::{frame_env, real},
+        frame::{Inputs, view_for},
+        ir::Form,
+        stroke::sample_arc,
+    };
+    use std::collections::HashSet;
+    use std::f64::consts::{FRAC_PI_2, PI};
+    let figure = hearts(&[]);
+    const CELL: f64 = 0.08;
+    let cell = |x: f64, y: f64| ((x / CELL).floor() as i64, (y / CELL).floor() as i64);
+    for (shift, theta) in [
+        (0.0, FRAC_PI_2),
+        (0.0, FRAC_PI_2 + 1e-7),
+        (0.0, FRAC_PI_2 - 1e-7),
+        (0.0, FRAC_PI_2 + 1e-4),
+        (0.0, FRAC_PI_2 + 0.02),
+        (0.0, 3.0 * FRAC_PI_2 + 1e-7),
+        (0.123, FRAC_PI_2 + 1e-7),
+        (0.123, FRAC_PI_2 - 3e-7),
+        (0.123, FRAC_PI_2 + 2e-8),
+        (FRAC_PI_2, 0.9),
+        (1.57, 0.9),
+        (FRAC_PI_2 + 3e-4, FRAC_PI_2),
+        (3.0 * FRAC_PI_2, 2.0),
+    ] {
+        let inputs = Inputs {
+            time: 0.0,
+            params: vec![("shift".to_string(), shift), ("theta".to_string(), theta)],
+        };
+        let env = frame_env(&figure, &inputs).unwrap();
+        let view = view_for(&figure, &inputs, 900, 765).unwrap();
+        let [x0, x1, y0, y1] = [view.x[0], view.x[1], view.y[0], view.y[1]];
+        for id in [
+            "level_tau",
+            "level_sigma_a",
+            "level_sigma_b",
+            "heart_a",
+            "heart_b",
+        ] {
+            let arc = figure
+                .scene
+                .marks
+                .iter()
+                .find_map(|m| match &m.form {
+                    Form::Parametric(arc) if m.id == id => Some(arc),
+                    _ => None,
+                })
+                .unwrap();
+            let mut truth = HashSet::new();
+            let mut dense = env.clone();
+            for k in 0..=6000 {
+                dense.set(&arc.var, k as f64 / 6000.0 * 2.0 * PI);
+                let (Ok(x), Ok(y)) = (real(&arc.point[0], &dense), real(&arc.point[1], &dense))
+                else {
+                    continue;
+                };
+                if x.is_finite() && y.is_finite() {
+                    truth.insert(cell(x, y));
+                }
+            }
+            let near = |x: f64, y: f64| {
+                let (cx, cy) = cell(x, y);
+                (-2..=2).any(|a| (-2..=2).any(|b| truth.contains(&(cx + a, cy + b))))
+            };
+            let sampled = sample_arc(arc, &env, &view, 900, 765).unwrap();
+            for piece in &sampled.pieces {
+                for pair in piece.windows(2) {
+                    let [a, b] = [pair[0], pair[1]];
+                    let steps = ((b[0] - a[0]).hypot(b[1] - a[1]) / 0.02)
+                        .ceil()
+                        .clamp(1.0, 2e5) as usize;
+                    // Only the part inside the frame shows.
+                    for k in 0..=steps {
+                        let u = k as f64 / steps as f64;
+                        let (x, y) = (a[0] + (b[0] - a[0]) * u, a[1] + (b[1] - a[1]) * u);
+                        let inside = x > x0 && x < x1 && y > y0 && y < y1;
+                        assert!(
+                            !inside || near(x, y),
+                            "shift {shift}, θ {theta}, `{id}`: a chord crosses the frame at ({x:.2}, {y:.2}), from {a:?} to {b:?}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn squaring() -> pencil_core::Figure {
+    pencil_core::build(&square_read("009-squaring/squaring.pen"), &[]).unwrap()
+}
+
+#[test]
+fn squaring_ir_matches_golden() {
+    let actual = golden_text(&squaring().scene.to_json());
+    let golden =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus/009-squaring/expected.ir.json");
+    if std::env::var_os("UPDATE_GOLDENS").is_some() {
+        std::fs::write(&golden, &actual).unwrap();
+    }
+    assert_eq!(actual, std::fs::read_to_string(golden).unwrap());
+}
+
+/// A curve in the squaring map, at this n and p. `plain_across:0` is the one with s = 0.
+fn squaring_point(figure: &pencil_core::Figure, id: &str, n: f64, p: f64, t: f64) -> [f64; 2] {
+    use pencil_core::{
+        eval::frame_env,
+        eval::real,
+        frame::Inputs,
+        ir::{Form, Shape},
+    };
+    let (id, s) = match id.split_once(':') {
+        Some((id, s)) => (id, s.parse::<f64>().unwrap()),
+        None => (id, 0.0),
+    };
+    let inputs = Inputs {
+        time: 0.0,
+        params: vec![("n".to_string(), n), ("p".to_string(), p)],
+    };
+    let mut env = frame_env(figure, &inputs).unwrap();
+    let arc = figure
+        .scene
+        .marks
+        .iter()
+        .find_map(|m| match &m.form {
+            Form::Parametric(arc) if m.id == id => Some(arc),
+            Form::Many {
+                shape: Shape::Curves(arc),
+                ..
+            } if m.id == id => Some(arc),
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("no `{id}`"));
+    env.set("s", s);
+    env.set(&arc.var, t);
+    [
+        real(&arc.point[0], &env).unwrap(),
+        real(&arc.point[1], &env).unwrap(),
+    ]
+}
+
+/// The circle through n and 1/n squares to the limaçon r(θ) = 2k(1 + k cos θ) / (1 − k²) about 1,
+/// with k = tanh(ln n), written here from the site's `doyle.ts`, not from squaring anything.
+#[test]
+fn the_circle_of_n_squares_to_the_limacon() {
+    let figure = squaring();
+    for n in [1.5, 3.3, 5.0f64] {
+        let k = n.ln().tanh();
+        for i in 0..240 {
+            let t = i as f64 / 240.0 * std::f64::consts::TAU;
+            let [x, y] = squaring_point(&figure, "square_orbit", n, 1.5, t);
+            let (dx, dy) = (x - 1.0, y);
+            let theta = dy.atan2(dx);
+            let r = 2.0 * k * (1.0 + k * theta.cos()) / (1.0 - k * k);
+            assert!(
+                (dx.hypot(dy) - r).abs() < 1e-9 * (1.0 + r),
+                "n {n}, t {t}: {} from 1, the limaçon has {r}",
+                dx.hypot(dy)
+            );
+        }
+        // It reaches n² and 1/n².
+        let far = squaring_point(&figure, "square_orbit", n, 1.5, 0.0);
+        assert!((far[0] - n * n).abs() < 1e-9, "{far:?}");
+        let near = squaring_point(&figure, "square_orbit", n, 1.5, std::f64::consts::PI);
+        assert!((near[0] - 1.0 / (n * n)).abs() < 1e-9, "{near:?}");
+    }
+}
+
+/// z^p is the plain figure at p = 1 and the square at p = 2, and conformal in between, so the grid's
+/// lines still cross square.
+#[test]
+fn the_morph_runs_from_the_figure_to_its_square_and_keeps_right_angles() {
+    let figure = squaring();
+    let n = 3.3f64;
+    for (plain, moving, square) in [
+        ("plain_across:0", "moving_across:0", "square_across:0"),
+        ("plain_up:2", "moving_up:2", "square_up:2"),
+        ("orbit", "moving_orbit", "square_orbit"),
+    ] {
+        for t in [0.1, 0.5, 1.0] {
+            let a = squaring_point(&figure, plain, n, 1.0, t);
+            let b = squaring_point(&figure, moving, n, 1.0, t);
+            assert!(
+                (a[0] - b[0]).abs() < 1e-12 && (a[1] - b[1]).abs() < 1e-12,
+                "{plain} at p = 1"
+            );
+            let c = squaring_point(&figure, moving, n, 2.0, t);
+            let d = squaring_point(&figure, square, n, 2.0, t);
+            assert!(
+                (c[0] - d[0]).abs() < 1e-9 && (c[1] - d[1]).abs() < 1e-9,
+                "{moving} at p = 2"
+            );
+        }
+    }
+    // Where across(0) meets up(0): x0 on the real axis. Their images cross at 90° for every p.
+    let x0 = n.ln().cosh();
+    for p in [1.0, 1.3, 1.7, 2.0] {
+        let h = 1e-5;
+        let along = |id: &str, t: f64| {
+            let (a, b) = (
+                squaring_point(&figure, id, n, p, t - h),
+                squaring_point(&figure, id, n, p, t + h),
+            );
+            [b[0] - a[0], b[1] - a[1]]
+        };
+        let v = along("moving_across:0", 0.0);
+        let u = along("moving_up:0", x0);
+        let cosine = (v[0] * u[0] + v[1] * u[1]) / (v[0].hypot(v[1]) * u[0].hypot(u[1]));
+        assert!(cosine.abs() < 1e-6, "p {p}: {cosine}");
+    }
+}
+
+fn mobius() -> pencil_core::Composition {
+    let [theme, plain] = [
+        square_read("theme.style"),
+        square_read("010-mobius/plain.style"),
+    ];
+    pencil_core::compose(&square_read("010-mobius/mobius.pen"), &[&theme, &plain]).unwrap()
+}
+
+#[test]
+fn mobius_ir_matches_golden() {
+    let scenes: Vec<_> = mobius()
+        .panels
+        .iter()
+        .map(|p| p.figure.scene.to_json())
+        .collect();
+    let actual = golden_text(&serde_json::Value::Array(scenes));
+    let golden =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus/010-mobius/expected.ir.json");
+    if std::env::var_os("UPDATE_GOLDENS").is_some() {
+        std::fs::write(&golden, &actual).unwrap();
+    }
+    assert_eq!(actual, std::fs::read_to_string(golden).unwrap());
+}
+
+fn circumcircle() -> pencil_core::Figure {
+    build(
+        &square_read("011-circumcircle/circumcircle.pen"),
+        &[&square_read("011-circumcircle/plain.style")],
+    )
+    .unwrap()
+}
+
+#[test]
+fn circumcircle_ir_matches_golden() {
+    let actual = golden_text(&circumcircle().scene.to_json());
+    let golden = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../corpus/011-circumcircle/expected.ir.json");
+    if std::env::var_os("UPDATE_GOLDENS").is_some() {
+        std::fs::write(&golden, &actual).unwrap();
+    }
+    assert_eq!(actual, std::fs::read_to_string(golden).unwrap());
+}
+
+/// The triangle turns over at about 0.59 s, and the circle goes through a line and comes back
+/// from the other side, inside out. Its curvature changes sign, and nothing else notices.
+#[test]
+fn the_circumcircle_passes_through_a_line_without_a_flash() {
+    use pencil_core::eval::{Frame, frame_env};
+    use pencil_core::frame::Inputs;
+    use pencil_core::ir::Expr;
+    let figure = circumcircle();
+    let curvature = |time: f64| {
+        let env = frame_env(&figure, &Inputs::at(time)).unwrap();
+        pencil_core::eval::real(&Expr::sym("around.a"), &env).unwrap()
+    };
+    let (mut before, mut after) = (0.5, 0.7);
+    assert!(curvature(before) > 0.0 && curvature(after) < 0.0);
+    for _ in 0..50 {
+        let middle = (before + after) / 2.0;
+        if curvature(middle) > 0.0 {
+            before = middle;
+        } else {
+            after = middle;
+        }
+    }
+    let (w, h) = (160, 100);
+    let frame = |time| Frame::new(&figure, &Inputs::at(time), w, h).unwrap();
+    let (near, far) = (frame(before - 1e-4), frame(after + 1e-4));
+    for y in 0..h {
+        for x in 0..w {
+            let (px, py) = (x as f64 + 0.5, y as f64 + 0.5);
+            let (a, b) = (near.shade(px, py).unwrap(), far.shade(px, py).unwrap());
+            for channel in 0..3 {
+                assert!(
+                    (a[channel] - b[channel]).abs() < 0.02,
+                    "{px}, {py}: {a:?} and {b:?}"
+                );
+            }
+        }
+    }
+    // Which isn't how the disk behaves: it's on the other side now, so the same pixels would swap.
+    let sheet = square_read("011-circumcircle/plain.style")
+        .replace("::negative", "::inside")
+        .replace("::positive", "::outside");
+    let disk = build(&square_read("011-circumcircle/circumcircle.pen"), &[&sheet]).unwrap();
+    let frame = |time| Frame::new(&disk, &Inputs::at(time), w, h).unwrap();
+    let (near, far) = (frame(before - 1e-4), frame(after + 1e-4));
+    let (a, b) = (near.shade(5.5, 5.5).unwrap(), far.shade(5.5, 5.5).unwrap());
+    assert!((a[0] - b[0]).abs() > 0.05, "{a:?} and {b:?}");
+}
+
+#[test]
+fn limacon_ir_matches_golden() {
+    let figure = build(
+        &square_read("012-limacon/limacon.pen"),
+        &[&square_read("012-limacon/plain.style")],
+    )
+    .unwrap();
+    let actual = golden_text(&figure.scene.to_json());
+    let golden =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus/012-limacon/expected.ir.json");
+    if std::env::var_os("UPDATE_GOLDENS").is_some() {
+        std::fs::write(&golden, &actual).unwrap();
+    }
+    assert_eq!(actual, std::fs::read_to_string(golden).unwrap());
+}
+
+// Complex numbers here are worked out by hand, apart from anything the compiler does.
+type Z = (f64, f64);
+fn z_mul(a: Z, b: Z) -> Z {
+    (a.0 * b.0 - a.1 * b.1, a.0 * b.1 + a.1 * b.0)
+}
+fn z_div(a: Z, b: Z) -> Z {
+    let n = b.0 * b.0 + b.1 * b.1;
+    ((a.0 * b.0 + a.1 * b.1) / n, (a.1 * b.0 - a.0 * b.1) / n)
+}
+fn z_pow(w: Z, m: i32) -> Z {
+    let mut out = (1.0, 0.0);
+    for _ in 0..m.abs() {
+        out = z_mul(out, w);
+    }
+    if m < 0 { z_div((1.0, 0.0), out) } else { out }
+}
+const COXETER_W: Z = (-1.7861513777574234, 2.272019649514069);
+fn coxeter_k() -> f64 {
+    (3.0 * 5f64.sqrt() / 2.0 - 2.5).sqrt()
+}
+fn z_abs(z: Z) -> f64 {
+    z.0.hypot(z.1)
+}
+/// The map, directly.
+fn z_map(map: [f64; 4], z: Z) -> Z {
+    let [a, b, c, d] = map;
+    z_div((a * z.0 - b, a * z.1), (c * z.0 + d, c * z.1))
+}
+
+/// A circle's center and radius, fitted through three points.
+fn circle_through(p: Z, q: Z, r: Z) -> (Z, f64) {
+    let d = 2.0 * (p.0 * (q.1 - r.1) + q.0 * (r.1 - p.1) + r.0 * (p.1 - q.1));
+    let (pp, qq, rr) = (
+        p.0 * p.0 + p.1 * p.1,
+        q.0 * q.0 + q.1 * q.1,
+        r.0 * r.0 + r.1 * r.1,
+    );
+    let c = (
+        (pp * (q.1 - r.1) + qq * (r.1 - p.1) + rr * (p.1 - q.1)) / d,
+        (pp * (r.0 - q.0) + qq * (p.0 - r.0) + rr * (q.0 - p.0)) / d,
+    );
+    (c, (p.0 - c.0).hypot(p.1 - c.1))
+}
+
+/// A circle from the image panel's collection, at this power and map.
+fn mobius_rim(
+    composition: &pencil_core::Composition,
+    panel: usize,
+    m: f64,
+    map: [f64; 4],
+) -> Option<(Z, f64)> {
+    use pencil_core::{
+        eval::frame_env,
+        frame::Inputs,
+        ir::Form,
+        stroke::{Instance, instance},
+    };
+    let figure = &composition.panels[panel].figure;
+    let inputs = Inputs {
+        time: 3.5,
+        params: ["a", "b", "c", "d"]
+            .iter()
+            .zip(map)
+            .map(|(n, v)| (n.to_string(), v))
+            .collect(),
+    };
+    let mut env = frame_env(figure, &inputs).unwrap();
+    let (lets, shape) = figure
+        .scene
+        .marks
+        .iter()
+        .find_map(|mark| match &mark.form {
+            Form::Many { lets, shape, .. } if mark.id == "rims" => Some((lets, shape)),
+            _ => None,
+        })
+        .unwrap();
+    env.set("m", m);
+    let Instance::Cycle([a, bx, by, _]) = instance(lets, shape, &mut env).unwrap()? else {
+        panic!("rims are circles through three points");
+    };
+    Some(((bx / a, by / a), 1.0 / a.abs()))
+}
+
+/// The sequence itself: every circle touches the ones one, two and three steps along, and no others.
+#[test]
+fn coxeters_circles_touch_their_neighbors() {
+    let composition = mobius();
+    // A map that does nothing shows the sequence itself.
+    let map = [1.0, 0.0, 0.0, 1.0];
+    for m in -4..=4 {
+        let (center, r) = mobius_rim(&composition, 0, m as f64, map).unwrap();
+        let z = z_pow(COXETER_W, m);
+        assert!(
+            (center.0 - z.0).abs() < 1e-9 * (1.0 + z_abs(z)),
+            "power {m}: {center:?}, {z:?}"
+        );
+        assert!(
+            (r - coxeter_k() * z_abs(z)).abs() < 1e-9 * (1.0 + r),
+            "radius of power {m}"
+        );
+        for step in 1..=3 {
+            let (other, s) = mobius_rim(&composition, 0, (m + step) as f64, map).unwrap();
+            let gap = (center.0 - other.0).hypot(center.1 - other.1) - (r + s);
+            assert!(
+                gap.abs() < 1e-9 * (r + s),
+                "{m} and {} are {gap} apart",
+                m + step
+            );
+        }
+        let (other, s) = mobius_rim(&composition, 0, (m + 4) as f64, map).unwrap();
+        assert!(
+            (center.0 - other.0).hypot(center.1 - other.1) > r + s + 1e-3,
+            "{m} touches its fourth"
+        );
+    }
+}
+
+/// The closed form for an image circle, against three points of the circle sent through the map
+/// directly, for maps with the pole inside a circle, outside them all, and nearly on one.
+#[test]
+fn a_mobius_map_sends_each_circle_to_the_circle_written_for_it() {
+    let composition = mobius();
+    let k = coxeter_k();
+    for map in [
+        [1.0, 1.0, 0.5, 2.0],
+        [1.0, 1.0, 0.5, 0.8],
+        [2.0, 3.0, 1.0, 1.5],
+        [1.0, 0.0, 0.0, 1.0],
+        [-1.0, 4.0, 2.0, -3.0],
+        [3.0, 1.0, -0.25, 2.0],
+    ] {
+        for m in -6..=6 {
+            let z = z_pow(COXETER_W, m);
+            let r = k * z_abs(z);
+            let on = |t: f64| z_map(map, (z.0 + r * t.cos(), z.1 + r * t.sin()));
+            let (center, radius) = circle_through(on(0.3), on(2.2), on(4.4));
+            let (got, size) = mobius_rim(&composition, 0, m as f64, map).unwrap();
+            let scale = 1.0 + radius + z_abs(center);
+            assert!(
+                (got.0 - center.0).hypot(got.1 - center.1) < 1e-6 * scale,
+                "map {map:?}, power {m}: center {got:?}, wanted {center:?}"
+            );
+            assert!(
+                (size - radius).abs() < 1e-6 * scale,
+                "map {map:?}, power {m}: radius {size}, wanted {radius}"
+            );
+        }
+    }
+}
+
+/// So they all still touch, inside or out.
+#[test]
+fn circles_still_touch_after_a_mobius_map() {
+    let composition = mobius();
+    for map in [
+        [1.0, 1.0, 0.5, 2.0],
+        [1.0, 1.0, 0.5, 0.8],
+        [2.0, 3.0, 1.0, 1.5],
+    ] {
+        for m in -5..=5 {
+            let (p, r) = mobius_rim(&composition, 0, m as f64, map).unwrap();
+            for step in 1..=3 {
+                let (q, s) = mobius_rim(&composition, 0, (m + step) as f64, map).unwrap();
+                let apart = (p.0 - q.0).hypot(p.1 - q.1);
+                let off = (apart - (r + s)).abs().min((apart - (r - s).abs()).abs());
+                assert!(
+                    off < 1e-7 * (1.0 + r + s),
+                    "map {map:?}: {m} and {} miss by {off}",
+                    m + step
+                );
+            }
+        }
+    }
+}
+
+/// The pole exactly on a circle makes it a line, the pole at its center is an ordinary circle, and
+/// a map with ad + bc = 0 squashes everything to a point. Nothing unusable reaches the GPU.
+#[test]
+fn a_pole_on_a_circle_draws_nothing_it_cant() {
+    use pencil_core::{frame::Inputs, terms::Estimate};
+    let composition = mobius();
+    let k = coxeter_k();
+    let finite = |map: [f64; 4]| {
+        let inputs = Inputs {
+            time: 3.5,
+            params: ["a", "b", "c", "d"]
+                .iter()
+                .zip(map)
+                .map(|(n, v)| (n.to_string(), v))
+                .collect(),
+        };
+        let frames = composition
+            .prepare(&inputs, 720, 590, 1.0, &Estimate)
+            .unwrap();
+        for frame in &frames {
+            for (layer, floats) in frame.prepared.strokes.iter().enumerate() {
+                assert!(
+                    floats.iter().all(|v| v.is_finite()),
+                    "map {map:?}, layer {layer}"
+                );
+            }
+            assert!(
+                frame.prepared.sides.iter().all(|v| v.is_finite()),
+                "map {map:?}, sides"
+            );
+        }
+    };
+    // z = 1 has radius k, so these put −d/c on it, and at its center.
+    finite([1.0, 1.0, 1.0, -(1.0 + k)]);
+    finite([1.0, 1.0, 1.0, -(1.0 - k)]);
+    finite([2.0, 1.0, 1.0, -1.0]);
+    finite([1.0, -2.0, 1.0, 2.0]);
+    finite([0.0, 0.0, 0.0, 0.0]);
+    // (2z − 1) / (z − 1) = 2 + 1 / (z − 1), so the circle of radius k around 1 goes to the one of
+    // radius 1/k around 2.
+    let (center, r) = mobius_rim(&composition, 0, 0.0, [2.0, 1.0, 1.0, -1.0]).unwrap();
+    assert!(
+        (center.0 - 2.0).abs() < 1e-9 && center.1.abs() < 1e-9,
+        "{center:?}"
+    );
+    assert!((r - 1.0 / k).abs() < 1e-9, "{r}");
+}
+
+/// What's drawn, not only what's worked out. Kris's values send two circles out to nearly lines, about
+/// 26,000 px across, where any difference between the two axes' scales moves them by tens of pixels. So
+/// this asks for a canvas that isn't the shape of the view, and holds every piece of every rim and
+/// every disk to circles fitted through points sent through the map directly.
+#[test]
+fn nearly_straight_circles_are_drawn_where_they_are() {
+    use pencil_core::{frame::Inputs, stroke::FLOATS_PER_SEGMENT, terms::Estimate};
+    let composition = mobius();
+    let map = [3.6, 4.24, -2.53, -0.97];
+    let k = coxeter_k();
+    let truth: Vec<(Z, f64)> = (-8..=8)
+        .map(|m| {
+            let z = z_pow(COXETER_W, m);
+            let r = k * z_abs(z);
+            let on = |t: f64| z_map(map, (z.0 + r * t.cos(), z.1 + r * t.sin()));
+            circle_through(on(0.3), on(2.2), on(4.4))
+        })
+        .collect();
+    assert!(
+        truth.iter().filter(|(_, r)| *r > 500.0).count() == 2,
+        "{truth:?}"
+    );
+    let inputs = Inputs {
+        time: 3.5,
+        params: ["a", "b", "c", "d"]
+            .iter()
+            .zip(map)
+            .map(|(n, v)| (n.to_string(), v))
+            .collect(),
+    };
+    let (w, h) = (900u32, 1400u32);
+    let frames = composition.prepare(&inputs, w, h, 1.0, &Estimate).unwrap();
+    let prepared = &frames[0].prepared;
+    let view = &prepared.view;
+    let (sx, sy) = (
+        w as f64 / (view.x[1] - view.x[0]),
+        h as f64 / (view.y[1] - view.y[0]),
+    );
+    assert!(
+        (sx / sy - 1.0).abs() < 1e-12,
+        "the view is stretched: {sx} and {sy}"
+    );
+    let figure = &composition.panels[0].figure;
+    let layer_of = |id: &str| {
+        figure
+            .scene
+            .marks
+            .iter()
+            .zip(&figure.styles.marks)
+            .take_while(|(mark, _)| mark.id != id)
+            .filter(|(mark, style)| style.stroke_is_line(&mark.form))
+            .count()
+    };
+    let world = |x: f64, y: f64| (view.x[0] + x / sx, view.y[1] - y / sy);
+    let rims = &prepared.strokes[layer_of("rims")];
+    assert!(
+        rims.len() > 100 * FLOATS_PER_SEGMENT,
+        "{} floats",
+        rims.len()
+    );
+    for segment in rims.chunks(FLOATS_PER_SEGMENT) {
+        for (x, y) in [(segment[0], segment[1]), (segment[2], segment[3])] {
+            let (px, py) = world(x as f64, y as f64);
+            // Off the frame, it doesn't show.
+            if !(px > view.x[0] && px < view.x[1] && py > view.y[0] && py < view.y[1]) {
+                continue;
+            }
+            let off = truth
+                .iter()
+                .map(|(c, r)| ((px - c.0).hypot(py - c.1) - r).abs() * sx)
+                .fold(f64::INFINITY, f64::min);
+            assert!(
+                off < 0.25,
+                "a rim is {off} px from every circle, at ({px}, {py})"
+            );
+        }
+    }
+    // The sides come from coefficients, in single precision, as the shader gets them. Each is
+    // measured against its true circle at a point on the frame.
+    let sided = figure.sided();
+    let group = sided
+        .iter()
+        .find(|g| figure.scene.marks[g.mark].id == "rims")
+        .unwrap();
+    let count = prepared.values[group.slot] as usize;
+    assert_eq!(count, truth.len());
+    let (px, py) = (0.4 * view.x[1], 0.3 * view.y[1]);
+    let rows = prepared.sides[group.base * 4..].chunks(group.stride * 4);
+    for (row, (center, r)) in rows.take(count).zip(&truth) {
+        let [a, bx, by, c] = [row[0], row[1], row[2], row[3]];
+        let (x, y) = (px as f32, py as f32);
+        let f = a * (x * x + y * y) - 2.0 * (bx * x + by * y) + c;
+        let d = f / (1.0 + (1.0 + a * f).max(0.0).sqrt());
+        let exact = (px - center.0).hypot(py - center.1) - r;
+        assert!(
+            (d.abs() as f64 - exact.abs()).abs() * sx < 0.5,
+            "off by {} px, where its radius is {r}",
+            (d.abs() as f64 - exact.abs()) * sx
+        );
+    }
+}
+
+/// A view keeps equal scales, whatever shape it's drawn at, by showing more and cropping nothing.
+#[test]
+fn an_explicit_view_never_stretches() {
+    use pencil_core::frame::{Inputs, view_for};
+    let doc = "viewport { x: -2..2, y: -1..1 }\ncurve c = circle(0, 1)";
+    let figure = pencil_core::build(doc, &[]).unwrap();
+    for (w, h) in [
+        (400u32, 200u32),
+        (400, 400),
+        (800, 200),
+        (300, 500),
+        (1000, 501),
+    ] {
+        let view = view_for(&figure, &Inputs::at(0.0), w, h).unwrap();
+        let (sx, sy) = (
+            w as f64 / (view.x[1] - view.x[0]),
+            h as f64 / (view.y[1] - view.y[0]),
+        );
+        assert!((sx / sy - 1.0).abs() < 1e-12, "{w}×{h}: {sx} and {sy}");
+        // All of what was asked for is still there, and it's still centered.
+        assert!(
+            view.x[0] <= -2.0 && view.x[1] >= 2.0 && view.y[0] <= -1.0 && view.y[1] >= 1.0,
+            "{view:?}"
+        );
+        assert!((view.x[0] + view.x[1]).abs() < 1e-12 && (view.y[0] + view.y[1]).abs() < 1e-12);
+    }
+    // Exactly the right shape, it's exactly what was written.
+    let view = view_for(&figure, &Inputs::at(0.0), 400, 200).unwrap();
+    assert_eq!((view.x, view.y), ([-2.0, 2.0], [-1.0, 1.0]));
+}
+
+/// The spiral itself runs through the pole when −d/c lands on it, where it crosses the negative real
+/// axis. With the pole exactly there, and either side of it, what's drawn is still the curve.
+#[test]
+fn the_mapped_spiral_draws_no_false_chord_through_the_pole() {
+    use pencil_core::{
+        eval::{frame_env, real},
+        frame::{Inputs, view_for},
+        ir::Form,
+        stroke::sample_arc,
+    };
+    use std::collections::HashSet;
+    let composition = mobius();
+    let figure = &composition.panels[0].figure;
+    let arc = figure
+        .scene
+        .marks
+        .iter()
+        .find_map(|m| match &m.form {
+            Form::Parametric(arc) if m.id == "loxodrome" => Some(arc),
+            _ => None,
+        })
+        .unwrap();
+    // w^t is on the negative real axis where t·arg w is an odd multiple of π.
+    let arg = COXETER_W.1.atan2(COXETER_W.0);
+    let t0 = std::f64::consts::PI / arg;
+    let pole = -z_abs(COXETER_W).powf(t0);
+    const CELL: f64 = 0.1;
+    let cell = |x: f64, y: f64| ((x / CELL).floor() as i64, (y / CELL).floor() as i64);
+    for off in [0.0, -1e-9, 1e-7, 0.01] {
+        let params = vec![
+            ("a".to_string(), 1.0),
+            ("b".to_string(), 1.0),
+            ("c".to_string(), 1.0),
+            ("d".to_string(), -(pole + off)),
+        ];
+        let inputs = Inputs { time: 3.5, params };
+        let env = frame_env(figure, &inputs).unwrap();
+        let view = view_for(figure, &inputs, 720, 1180).unwrap();
+        let mut truth = HashSet::new();
+        let mut dense = env.clone();
+        for k in 0..=40_000 {
+            dense.set(&arc.var, -8.0 + 16.0 * k as f64 / 40_000.0);
+            if let (Ok(x), Ok(y)) = (real(&arc.point[0], &dense), real(&arc.point[1], &dense))
+                && x.is_finite()
+                && y.is_finite()
+            {
+                truth.insert(cell(x, y));
+            }
+        }
+        let near = |x: f64, y: f64| {
+            let (cx, cy) = cell(x, y);
+            (-2..=2).any(|a| (-2..=2).any(|b| truth.contains(&(cx + a, cy + b))))
+        };
+        let sampled = sample_arc(arc, &env, &view, 720, 1180).unwrap();
+        for piece in &sampled.pieces {
+            for pair in piece.windows(2) {
+                let [p, q] = [pair[0], pair[1]];
+                let steps = ((q[0] - p[0]).hypot(q[1] - p[1]) / 0.03)
+                    .ceil()
+                    .clamp(1.0, 2e5) as usize;
+                for i in 0..=steps {
+                    let u = i as f64 / steps as f64;
+                    let (x, y) = (p[0] + (q[0] - p[0]) * u, p[1] + (q[1] - p[1]) * u);
+                    let inside = x > view.x[0] && x < view.x[1] && y > view.y[0] && y < view.y[1];
+                    assert!(
+                        !inside || near(x, y),
+                        "off {off}: a chord crosses the frame at ({x:.2}, {y:.2}), from {p:?} to {q:?}"
+                    );
+                }
+            }
+        }
+    }
+}
+
+/// The panels ask the same question, so a q or p change only answers it once.
+#[test]
+fn panels_with_the_same_systems_share_their_answers() {
+    let composition = lattice();
+    let first = &composition.panels[0].figure.solved;
+    for panel in &composition.panels {
+        assert!(
+            std::sync::Arc::ptr_eq(first, &panel.figure.solved),
+            "{}",
+            panel.id
+        );
+    }
+    // A panel with a system of its own keeps its own answers.
+    let own = pencil_core::compose(
+        "panel a { viewport { x: 0..1, y: 0..1 }
+           solve (u) from 1: u² = 4
+         }
+         panel b { viewport { x: 0..1, y: 0..1 }
+           solve (u) from 1: u² = 9
+         }",
+        &[],
+    )
+    .unwrap();
+    assert!(!std::sync::Arc::ptr_eq(
+        &own.panels[0].figure.solved,
+        &own.panels[1].figure.solved
+    ));
+}
+
+/// The way the post writes it: T(w) = 2πi·w / A, and i turns a thing 90°.
+#[test]
+fn the_figures_are_written_in_complex_numbers() {
+    let lattice = square_read("007-lattice/lattice.pen");
+    assert!(lattice.contains("fn to_turn(w) = tau·i·w / A"));
+    assert!(lattice.contains("fn grid(a, b) = a + b·omega"));
+    for gone in ["times_i", "fn over", "fn polar"] {
+        assert!(!lattice.contains(gone), "`{gone}` is back");
+    }
+    let square = square_read("006-square/square.pen");
+    assert!(square.contains("let BIZ = i·BZ"));
+    assert!(square.contains("let Z = a + b·i"));
+}
+
+/// Where a panel's map sends a point: its dot.
+fn dot_at(figure: &pencil_core::Figure, env: &pencil_core::eval::Env, id: &str) -> [f64; 2] {
+    use pencil_core::{eval::real, ir::Form};
+    let at = figure
+        .scene
+        .marks
+        .iter()
+        .find_map(|m| match &m.form {
+            Form::Dot(at) if m.id == id => Some(at),
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("no dot `{id}`"));
+    [real(&at[0], env).unwrap(), real(&at[1], env).unwrap()]
+}
+
 /// The period closes it: A lands on 2πi in log space, and on 1 in the spiral, where 0 lands too.
 #[test]
 fn the_period_closes_the_triangle() {
@@ -739,8 +1829,9 @@ fn the_period_closes_the_triangle() {
         .unwrap()
         .figure;
     let env = frame_env(log, &Inputs::at(0.0)).unwrap();
-    assert!(env.get("end_point.x").unwrap().abs() < 1e-12);
-    assert!((env.get("end_point.y").unwrap() - std::f64::consts::TAU).abs() < 1e-12);
+    let end = dot_at(log, &env, "end_point");
+    assert!(end[0].abs() < 1e-12);
+    assert!((end[1] - std::f64::consts::TAU).abs() < 1e-12);
     let whole = &composition
         .panels
         .iter()
@@ -755,6 +1846,135 @@ fn the_period_closes_the_triangle() {
         "{at_a:?}"
     );
     assert_eq!(at_zero, [1.0, 0.0]);
+}
+
+/// A thing is declared once, in the lattice's own coordinates. Panels only choose a map.
+#[test]
+fn each_thing_in_the_lattice_is_declared_once() {
+    let doc = square_read("007-lattice/lattice.pen");
+    for declaration in [
+        "curve minus_one =",
+        "curve along_omega =",
+        "curve up_to_a =",
+        "curve down_to_a =",
+        "dots steps_one =",
+        "dots grid_points =",
+        "circles spiral_circles =",
+        "segment period_line =",
+        "label count_one at",
+        "label name_zero at",
+        "label name_end at",
+        "dot zero, end_point",
+    ] {
+        assert_eq!(
+            doc.matches(declaration).count(),
+            1,
+            "`{declaration}` should be written once"
+        );
+    }
+    // Each panel draws it through a map, so each is the map's image of the same curve.
+    use pencil_core::{eval::frame_env, frame::Inputs, ir::Form};
+    let composition = lattice();
+    let point = |panel: usize, id: &str, t: f64| {
+        let figure = &composition.panels[panel].figure;
+        let mut env = frame_env(figure, &Inputs::at(0.0)).unwrap();
+        let arc = figure
+            .scene
+            .marks
+            .iter()
+            .find_map(|m| match &m.form {
+                Form::Parametric(arc) if m.id == id => Some(arc),
+                _ => None,
+            })
+            .unwrap();
+        env.set(&arc.var, t);
+        [
+            pencil_core::eval::real(&arc.point[0], &env).unwrap(),
+            pencil_core::eval::real(&arc.point[1], &env).unwrap(),
+        ]
+    };
+    // T(w) = 2πi·w / A, worked out here, for q = 7, p = 2, where A = −2 + 5ω.
+    let omega = [-0.5, 3f64.sqrt() / 2.0];
+    let a = [-2.0 + 5.0 * omega[0], 5.0 * omega[1]];
+    let tau = std::f64::consts::TAU;
+    let t_of = |w: [f64; 2]| {
+        let norm = a[0] * a[0] + a[1] * a[1];
+        let over = [
+            (w[0] * a[0] + w[1] * a[1]) / norm,
+            (w[1] * a[0] - w[0] * a[1]) / norm,
+        ];
+        [-over[1] * tau, over[0] * tau]
+    };
+    for t in [0.0, 1.5, 3.0, 7.0] {
+        let flat = point(0, "minus_one", t);
+        assert_eq!(flat, [-t, 0.0]);
+        let log = point(1, "minus_one", t);
+        let want = t_of(flat);
+        assert!(
+            (log[0] - want[0]).abs() < 1e-12 && (log[1] - want[1]).abs() < 1e-12,
+            "{log:?} {want:?}"
+        );
+        // The whole and the close-up look at one image, and differ only in their views.
+        assert_eq!(point(2, "minus_one", t), point(3, "minus_one", t));
+    }
+}
+
+/// A count sits out of the triangle in every panel, because its direction is worked out once in
+/// the lattice and carried through each map, which keeps sides.
+#[test]
+fn a_count_stays_on_the_same_side_of_its_edge_through_every_map() {
+    use pencil_core::{eval::frame_env, eval::real, frame::Inputs, ir::Form};
+    let composition = lattice();
+    let edges = [
+        ("count_one", "minus_one", 0.5),
+        ("count_omega", "along_omega", 0.5),
+        ("count_up", "up_to_a", 0.5),
+        ("count_down", "down_to_a", 0.5),
+    ];
+    for (q, p) in [(7.0, 2.0), (12.0, 7.0), (5.0, 3.0), (9.0, 1.0)] {
+        let inputs = Inputs {
+            time: 0.0,
+            params: vec![("q".to_string(), q), ("p".to_string(), p)],
+        };
+        for (label, edge, _) in edges {
+            let mut sides = Vec::new();
+            for panel in &composition.panels {
+                let figure = &panel.figure;
+                let mut env = frame_env(figure, &inputs).unwrap();
+                let marks = &figure.scene.marks;
+                let Some(Form::Label { away, .. }) =
+                    marks.iter().find(|m| m.id == label).map(|m| &m.form)
+                else {
+                    panic!("no {label} in {}", panel.id);
+                };
+                let away = away.as_ref().unwrap();
+                let direction = [real(&away[0], &env).unwrap(), real(&away[1], &env).unwrap()];
+                let arc = marks
+                    .iter()
+                    .find_map(|m| match &m.form {
+                        Form::Parametric(arc) if m.id == edge => Some(arc),
+                        _ => None,
+                    })
+                    .unwrap();
+                let end = real(&arc.range[1], &env).unwrap();
+                let mut at = |t: f64| {
+                    env.set(&arc.var, t);
+                    [
+                        real(&arc.point[0], &env).unwrap(),
+                        real(&arc.point[1], &env).unwrap(),
+                    ]
+                };
+                let (before, after) = (at(end / 2.0 - 1e-5), at(end / 2.0 + 1e-5));
+                let tangent = [after[0] - before[0], after[1] - before[1]];
+                let cross = tangent[0] * direction[1] - tangent[1] * direction[0];
+                sides.push((panel.id.clone(), cross.signum()));
+            }
+            assert!(
+                sides.iter().all(|(_, s)| *s == sides[0].1),
+                "q={q}, p={p}, {label}: {sides:?}"
+            );
+        }
+    }
 }
 
 #[test]
@@ -856,8 +2076,8 @@ fn each_panel_names_things_for_its_own_space() {
     assert!(has(3, "7"));
 }
 
-/// A thing is the same thing in every panel: same name, wherever its map sends it. Only what it's
-/// called changes with the space. So 0 and A are two points until exp makes them one, at 1.
+/// A thing is the same thing in every panel: one declaration, wherever its map sends it. Only what
+/// it's called changes with the space. So 0 and A are two points until exp makes them one, at 1.
 #[test]
 fn the_same_points_are_in_every_panel() {
     use pencil_core::{eval::frame_env, frame::Inputs};
@@ -874,26 +2094,23 @@ fn the_same_points_are_in_every_panel() {
             params: vec![("q".to_string(), q), ("p".to_string(), p)],
         };
         let env = frame_env(figure, &inputs).unwrap();
-        (
-            env.get(&format!("{name}.x")).unwrap(),
-            env.get(&format!("{name}.y")).unwrap(),
-        )
+        dot_at(figure, &env, name)
     };
     for (q, p) in [(7.0, 2.0), (12.0, 7.0), (3.0, 0.0), (5.0, 5.0)] {
         // Apart in the flat views.
-        assert_eq!(point("flat", "start", q, p), (0.0, 0.0));
-        assert_eq!(point("log", "start", q, p), (0.0, 0.0));
+        assert_eq!(point("flat", "zero", q, p), [0.0, 0.0]);
+        assert_eq!(point("log", "zero", q, p), [0.0, 0.0]);
         let end = point("log", "end_point", q, p);
         assert!(
-            end.0.abs() < 1e-12 && (end.1 - std::f64::consts::TAU).abs() < 1e-12,
+            end[0].abs() < 1e-12 && (end[1] - std::f64::consts::TAU).abs() < 1e-12,
             "{end:?}"
         );
         // One point, 1, in both of the spiral's.
         for panel in ["whole", "detail"] {
-            for name in ["start", "end_point"] {
+            for name in ["zero", "end_point"] {
                 let at = point(panel, name, q, p);
                 assert!(
-                    (at.0 - 1.0).abs() < 1e-12 && at.1.abs() < 1e-12,
+                    (at[0] - 1.0).abs() < 1e-12 && at[1].abs() < 1e-12,
                     "{panel} {name}: {at:?}"
                 );
             }
@@ -918,7 +2135,7 @@ fn the_same_points_are_in_every_panel() {
                 .prepared
                 .labels
                 .iter()
-                .find(|l| l.id == "name_start")
+                .find(|l| l.id == "name_zero")
                 .unwrap();
             (panel.id.as_str(), label.text.as_str())
         })
@@ -927,6 +2144,14 @@ fn the_same_points_are_in_every_panel() {
         names,
         [("flat", "0"), ("log", "0"), ("whole", "1"), ("detail", "1")]
     );
+    // The spiral has no second name for the same point, so there's nothing to collide with it.
+    for panel in composition
+        .panels
+        .iter()
+        .filter(|p| p.id == "whole" || p.id == "detail")
+    {
+        assert!(!panel.figure.scene.marks.iter().any(|m| m.id == "name_end"));
+    }
 }
 
 /// With nothing to step along, an edge has no count and no head, as at p = 0.
@@ -999,6 +2224,9 @@ fn the_fast_evaluator_agrees_with_the_real_one() {
         ("005-tangents/tangents.pen", "d"),
         ("006-square/square.pen", "step"),
         ("007-lattice/lattice.pen", "q"),
+        ("008-hearts/hearts.pen", "shift"),
+        ("009-squaring/squaring.pen", "n"),
+        ("010-mobius/mobius.pen", "d"),
     ];
     let mut checked = 0;
     for (doc, param) in docs {
@@ -1065,6 +2293,20 @@ fn the_fast_evaluator_agrees_with_the_real_one() {
                                         check(&center[0], &env);
                                         check(&center[1], &env);
                                         check(r, &env);
+                                    }
+                                    Shape::Curves(arc) => {
+                                        let lo = pencil_core::eval::real(&arc.range[0], &env);
+                                        if let Ok(lo) = lo {
+                                            env.set(&arc.var, lo + 0.25);
+                                            check(&arc.point[0], &env);
+                                            check(&arc.point[1], &env);
+                                        }
+                                    }
+                                    Shape::Cycles { a, b, c } => {
+                                        check(a, &env);
+                                        check(&b[0], &env);
+                                        check(&b[1], &env);
+                                        check(c, &env);
                                     }
                                 }
                             }

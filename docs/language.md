@@ -30,15 +30,17 @@ rules can sit in the document or in separate style files.
 | `rightangle m = A, V, B size 0.2` | A right-angle mark at `V`, a world size along each side. |
 | `region r = A, f(t) for t in 0..1` | A filled area bounded by points and arcs. |
 | `dot P, Q` | Draws point bindings. A dot takes its point's name, so a style can target it. |
-| `label n = "−{q}" at P offset (12, -12)` | Text at a point, offset in `px` with y down. `{expr}` in the text is a value, and a whole number prints as one. |
+| `label n = "−{q}" at P away D` | Text at a point, on the side `D` points to, in the figure's own coordinates. Its style's `distance` says how far. `{expr}` in the text is a value, and a whole number prints as one. Without text, each panel gives it (see Panels). |
+| `label n = "P" at P offset (12, -12)` | The same, at a fixed shift in `px` with y down. A sheet can't change it, so prefer `away`. |
 | `arrow v = A, B` | A shaft and a head, as one line. |
 | `dots d = P(i) for i in 1..n with z = f(i)` | One mark drawn many times (see below). |
 | `circles c = circle(C(i), T(i)) for i in 1..n` | The same, as circles. |
-| `group g(map, k) { … }` | Marks to draw in more than one place. A parameter can be a function. |
-| `use g(f, 2)` | Draws a group here, with these arguments. |
+| `curves c = parametric (t): P(t, i) for t in a..b for i in 1..n` | The same, as curves. |
+| `group g(k) { … }` | Things to draw in more than one place, declared once in their own coordinates. |
+| `use g(2)`, `use g(2) through f as up` | Draws a group here, optionally through a function and under a prefix (see Panels). |
+| `text n = "1"` | What a label says in this panel (see Panels). |
 | `outline o = detail` | The rectangle another panel is looking at. |
 | `panel p "Title" { … }` | One view of the figure, with its own marks (see below). |
-| `panels { columns: 2, gap: 14, title: 26 }` | How panels are laid out, in design pixels. |
 | `place p = P offset (8, 18) hang end` | Where an expression can sit (see below). |
 | `expression e by step { … }` | A list of states whose matching parts move (see below). |
 | `handle P sets a = expr` | Dragging `P` sets param `a`. `expr` can use `pointer.x` and `pointer.y`. |
@@ -60,7 +62,7 @@ Each form keeps its own representation (`goals.md`).
 
 `viewport { x: -2..2, y: -2..2, width: 640, height: 400 }`
 
-- `x`, `y`: a fixed world window.
+- `x`, `y`: a fixed world window. It always has one scale for both axes, so at a different shape it shows more, rather than stretching.
 - `width`, `height`: the design size. With `width`, `px` sizes scale with the output, as an
   SVG's do with its `viewBox`. Without it, a `px` is a CSS pixel.
 - `fit: a b c`: bounds these points and circles each frame instead of a fixed window, ignoring
@@ -94,51 +96,82 @@ It runs Newton's method each frame, using exact symbolic derivatives, on as many
 
 ### Collections
 
-`dots` and `circles` draw one mark many times, once for each combination of their variables. A variable
+`dots`, `circles` and `curves` draw one mark many times, once for each combination of their variables. A variable
 counts in whole numbers and includes both ends of its range, and a later range can use an earlier variable:
 
 `dots grid_points = grid(a, b) for a in -q..q, b in -2..q + 2`
+
+A curve has its own parameter too, which runs smoothly, and comes first. So what Desmos writes as `s = [-3...3] / 3` is:
+
+`curves across = parametric (t): x0 + s·r / 3 + t·i for t in -r..r for s in -3..3`
+
+Its range can read what counts it, and `with` names can be used in both. `curves` can go `through` a map, and a viewport can `fit` one, which fits all of them. It's lines, so it has a `stroke`
+and no `fill`, and that `stroke` is one color for all of them. Its `width` can vary per curve, and along each with `self.t`, and each gets its own dashes and head. Where curves in one collection cross, they don't darken each other, as they do when they're separate marks.
 
 - **It's one mark,** so one rule styles it all, and the count can follow a param from frame to frame.
 - **`with` names a value per instance:** `circles c = circle(z, z + (r, 0)) for a in 0..q with z = spiral(a)` works `z` out
   once per circle. It can be a number or a point, and can use the names before it.
 - **An instance that doesn't exist is skipped,** and one off the frame or too small to see costs nothing further.
-- **Sizes can vary per instance:** `radius` and `width` can use the variables, and `self.scale`, the style pixels
-  per world unit: `radius: min(0.3·k·self.scale·1px, 3px)`.
+- **Sizes can vary per instance:** `radius` and `width` can use the variables, `self.scale`, the style pixels per world
+  unit, and for `dots`, `self.x` and `self.y`, where the dot ended up: `radius: min(0.3·k·self.x·self.scale·1px, 3px)`.
+- **`circles` can be circles through three points,** so `circles c = circle(f(p), f(q), f(s)) for …` is what a Möbius map makes of a family. Any of them can be a line this frame, and is drawn as one.
+- **Circles have sides, per instance:** `style c::inside { fill: … }`. A side's `fill` and `fill_opacity` can use the variables, the `with` names, `self.dist`, `self.pixel` and `self.curvature`. Every pixel adds up every circle,
+  so this costs about 0.09 ms per circle at 1080² on an M1 Pro, and it's limited to 256 per collection, which is an error past that. A collection with only rims doesn't pay for it and has no limit.
 - **A collection is a backdrop:** labels don't try to avoid it.
 
 ### Panels
 
-A `panel` is its own view of the figure, with its own marks, its own `viewport` and its own shader. What's outside
-any panel is shared, so every panel sees the same params and bindings. A `group` draws the same marks through
-different maps, since a parameter can be a function:
+A `panel` is its own view of the figure, with its own marks, its own `viewport` saying what it looks at, and its own shader.
+How panels sit is a sheet's (see Styles). What's outside any panel is shared, so every panel sees the same params and bindings.
+
+**A thing is declared once, and each panel draws it through a map.** A `group` holds things in their own coordinates, and
+`use … through` sends them through a function:
 
 ```
-fn plain(w) = w
-group edges(map) {
-  curve side = parametric (t): map(corner·t) for t in 0..1
+fn to_turn(w) = …
+let zero = (0, 0)
+group edges() {
+  curve side = parametric (t): corner·t for t in 0..1
+  dot zero
+  label name_zero at zero away (-1, 0)
 }
 panel flat "Lattice" {
-  viewport { fit: side, pad: 0.12, width: 400, height: 380 }
-  use edges(plain)
+  viewport { fit: side }
+  use edges()
+  text name_zero = "0"
 }
 panel log "Log space" "T(w) = 2πi·w / A" {
-  viewport { fit: side, pad: 0.12, width: 400, height: 380 }
-  use edges(above) as up
-  use edges(to_turn)
+  viewport { fit: side }
+  use edges() through above as up
+  use edges() through to_turn
+  text name_zero = "0"
 }
 ```
 
-A group's parameters are its own, so two groups can both have a `map`. `use … as up` draws a group again: what it declares
-becomes `up_side`, and each mark is tagged with its plain name and `up`, so `style side` reaches every copy and `style .up`
-reaches one set. After a panel's title can come a formula, styled by `style formula { fill: muted }`.
+- **What goes through:** parametric curves, two-point segments, dots, labels, and `dots` and `curves` collections. A segment becomes the map's
+  image of it, so it can bend. A construction or a `circles` collection can't, since the image of a circle isn't a circle: map a
+  center in its `with` instead.
+- **Only marks move.** A `let` stays what was written, in the group's coordinates, so one point has one value, and what a panel
+  shows is its image.
+- **A label's `away` goes through too,** exactly, by the map's derivative at that point. A direction worked out once in the
+  group's coordinates keeps its side of a curve in every panel, as long as the map doesn't flip orientation.
+- **Maps compose:** a group can `use` another `through` a map, and the outer one applies last.
+- **`use … as up` draws a group again:** what it declares becomes `up_side`, and each mark is tagged with its plain name and `up`,
+  so `style side` reaches every copy and `style .up` reaches one set.
+- **A group's parameters are values,** and they're its own, so two groups can both have a `k`.
+
+**What a thing is called is up to each panel.** `label n at P` declares where a name goes, and `text n = "1"` says what it is here,
+with `{expr}` for values. A panel with no text for a label doesn't show it, since that space has no name for it. `text` for a
+label that doesn't exist is a mistake. `label n = "P" at P` still writes both at once.
+
+After a panel's title can come a formula, styled by `style formula { fill: muted }`.
 
 `outline o = detail` draws the rectangle another panel is looking at, to mark a close-up. `radius` keeps it big enough to read
 as a marker, even when what it marks is only a few pixels across.
 
 A mark carries its panel's name as a tag, so `style steps.whole { … }` styles it in that panel alone, and `style steps`
 styles it in all of them. A rule that names a mark has to find it in at least one panel. `style title { fill: ink; size: 14px }`
-styles panel titles. `fit` can name parametric curves as well as points and circles.
+styles panel titles. `fit` can name parametric curves and `curves` collections as well as points and circles.
 
 ### Expressions that move
 
@@ -170,7 +203,7 @@ colors every `a`. A renderer measures the text with its own font, and core says 
 ## Expressions
 
 Numbers, names, `+ - * / ^`, `·` for multiply, `²` and `³`, unary `-`, and calls. `(a, b)` is a
-point, and `P.x` and `P.y` read one. Names can be Unicode. `time`, `pi`, `π` and `tau` are
+point, which is also a complex number (see below), and `P.x` and `P.y` read one. Names can be Unicode. `time`, `pi`, `π` and `tau` are
 always available. Coordinates only exist inside the curve that names them.
 
 Points add and subtract, scale by a number, and negate. All of this expands to scalars at
@@ -196,7 +229,9 @@ compile time, so the IR stays symbolic and bindings are evaluated once per frame
 |---|---|
 | `length(P)`, `dist(A, B)`, `dot(A, B)` | Numbers from points. |
 | `midpoint(A, B)` | Halfway between. |
-| `circle(C, T)` | About `C` through `T`. Fields `.x`, `.y`, `.r`. |
+| `circle(C, T)` | About `C` through `T`. Fields `.x`, `.y`, `.r`. Its disk is its negative side. |
+| `circle(A, B, C)` | Through three points, in order (below). Fields `.a`, which is its signed curvature, and `.x`, `.y`, `.r`, which don't exist on a line. |
+| `flip(c)` | The same circle running the other way round, so its sides trade signs. |
 | `line(A, B)`, `ray(A, B)` | Through two points. A ray starts at `A`. Two points in one place make no line. |
 | `perpendicular(P, l)` | The line through `P` at right angles to `l`. |
 | `intersect(u, v, which)` | Where lines, rays and circles meet, if they do (below). `which` is 0 or 1, and defaults to 0. |
@@ -204,10 +239,38 @@ compile time, so the IR stays symbolic and bindings are evaluated once per frame
 | `exists(v)` | 1 if all of `v` exists this frame, and 0 if not. |
 | `otherwise(v, fallback)` | `v`, or all of `fallback` where `v` doesn't exist. They must be the same kind. |
 
+A circle through three points has a handedness. Going counterclockwise, its negative side is its disk,
+and its curvature is positive. Going clockwise, its negative side is everything else, and its
+curvature is negative. Three points in a line are a line, which runs through 0 curvature without
+any value going to infinity, and has no center or radius. Two points in one place make no circle.
+
 `which` names a root, not a place among the points that remain. Along a line, 0 and 1 are in
 order of its direction. For two circles, 0 is left of the line from the first center to the
 second. A ray only has the points ahead of its start, so from inside a circle only its root 1
 exists, and root 0 is absent, rather than root 1 taking its place and jumping.
+
+### Complex numbers
+
+**A point is a complex number.** `(x, y)` and `x + y·i` are the same value, there's no second type, and `i` is the point `(0, 1)`:
+
+```
+let omega = -1 / 2 + sqrt(3) / 2·i
+fn to_turn(w) = tau·i·w / A
+fn spiral(t) = exp(t)
+```
+
+- **A number is a point on the real axis,** wherever a point is wanted, so `curve c = parametric (t): -t for t in 0..q`, `label n = "1" at 1`,
+  `circle(0, 1)` and `1 + omega` all work, and a number answers `.x` and `.y`.
+- **Arithmetic is complex:** `·` and `/` between two points multiply and divide them as complex numbers, and `+`, `-` and scaling are what they
+  were. `dot(a, b)` is still the dot product.
+- **Powers:** `z²` and `z^-3` multiply out, up to a power of 8. Anything else, such as `z^2.5` or `z^i`, is `exp(w·ln(z))`, on the principal branch.
+- **Functions:** `real(z)`, `imag(z)`, `conj(z)`, `abs(z)` and `arg(z)` read it. `exp`, `ln` and `sqrt` take one too, with principal values.
+  `ln(0)` and `arg(0)` don't exist, and a figure with one draws what it can (see below). `sin`, `cos` and the rest take numbers only, for now.
+- **Hyperbolic functions:** `sinh(x)`, `cosh(x)`, `tanh(x)`, `coth(x)`, `sech(x)`, `csch(x)` and `arctanh(x)` take numbers and complex numbers. They compile to `exp` and `ln`.
+- **`i` gives way to anything named `i`,** so `for i in 1..q` still counts, and inside it `i` is the count. It's clearer to use another name there.
+  It also means a stray `i` outside a loop isn't an unknown name any more.
+- **Exact derivatives see through all of it,** so `solve` and a label's `away` work on complex values. It all compiles to plain numbers, so a
+  shader and an evaluator don't know it's there.
 
 ### When a value doesn't exist
 
@@ -250,21 +313,35 @@ On a page, `player.value` reads an absent binding as `NaN`.
 `style selector, selector { property: value; … }`. Later rules win, across files, with the
 document's own rules last. There's no specificity (SPEC/15).
 
-**A style sheet can name values** with `let ink = rgb(28, 27, 25)`, for itself and the sheets after it,
-so `corpus/theme.style` holds a theme's colors and label roles. A document picks a role by tag:
-`label n = "|z|" at M tag note`, and it never picks a number. A rule that names a mark has to find
+**A style sheet can name values** with `let ink = rgb(28, 27, 25)`. The last sheet to define a name decides what it
+means everywhere, including in rules written before it, as a CSS variable does. So `corpus/theme.style` holds a theme's
+colors and label roles, and `corpus/dark.style` only redefines the colors. A name can use another defined in any order, but
+not itself. A document picks a role by tag: `label n = "|z|" at M tag note`, and it never picks a number. A rule that names a mark has to find
 it, but a rule by type or tag may match nothing, since a shared sheet can't know what each figure uses.
 
 **Selectors** combine a name or type with tags: `c`, `circle`, `.aux`, `circle.blue`, and
 `c::inside` for a facet. A mark's type is one of its tags: `circle`, `line`, `ray`, `curve`,
 `segment`, `decoration`, `region`, `dot`, `label`, `arrow`, `term`, `dots`, `circles`, `outline`. `paper` is the background.
 
-**Facets** are the two sides of a mark: `::negative` and `::positive` are the field's sign, and
-`::inside` and `::outside` are aliases. The negative side is inside.
+**Facets** are the two sides of a mark. `::negative` and `::positive` are the field's sign. On a circle, `::inside` and
+`::outside` are its true disk and everything else, whichever way round it runs, and on a line, where there's no disk, they follow the sign. Where both name the same part of the plane,
+`::inside` and `::outside` win. On anything else that has sides, `::inside` and `::outside` are aliases for the sign, with the negative side inside.
 
-**Values are expressions**, so they can use `time`, params and bindings. Three more names exist
-only here: `self.dist` (distance to the mark, in `fill` and `stroke`, on marks that have one),
-`self.t` (position along a stroke, 0 to 1, in `width`), and `self.age` (see Beats).
+So a circle through three points that turns over goes through a line and comes back with its sides' signs where they were, and its disk on the other one. Style `::negative` and the plane doesn't flash, and style `::inside` and
+the color stays with the disk. A style can tell which it is from `self.curvature`.
+
+**Values are expressions**, so they can use `time`, params and bindings. A few more names exist only here:
+
+| Name | Meaning |
+|---|---|
+| `self.dist` | Distance to the mark, in `fill`, `stroke` and `fill_opacity`, on marks that have one. |
+| `self.pixel` | How big a device pixel is in world units, wherever `self.dist` is, so that a glow can be a number of pixels across. |
+| `self.curvature` | A circle's signed curvature: above 0 counterclockwise, below 0 clockwise, and 0 on a line. |
+| `self.t` | Position along a stroke, 0 to 1, in `width`. |
+| `self.age` | See Beats. |
+
+**Colors can be scaled and added:** `white·4`, `mix(a, b, t) + c / 3`. They aren't clipped until the end, and `rgb` can go past 255. `sinh`, `cosh` and `tanh` also work in a style. So a glow reads
+`fill_opacity: tanh(2·self.pixel / abs(self.dist))`.
 
 | Property | Applies to | Meaning |
 |---|---|---|
@@ -276,7 +353,8 @@ only here: `self.dist` (distance to the mark, in `fill` and `stroke`, on marks t
 | `dash`, `gap` | Lines | In `px`. A loop gets a whole number of dashes, stretched to fit. |
 | `cap` | Lines | `butt` (default) or `round`. |
 | `draw` | Strokes | A hint: `auto` (default), `line` or `field`. |
-| `blend` | Edges | `gamma` (default, as SVG does) or `linear`. |
+| `blend` | Edges, sides | `gamma` (default, as SVG does), `linear`, or `add`, which adds to what's there in display values and never covers it. |
+| `tone` | `paper` | `clip` (default) or `tanh`, which runs the finished picture through `tanh` in display values, so that what `blend: add` piles up stays in range. |
 | `opacity` | Any mark | Scales the whole mark. |
 | `radius` | Dots, circles, outlines | In `px`. A dot's size, a cap on a collection's circles, or an outline's least half-size. |
 | `size` | Labels | In `px`. |
@@ -284,7 +362,19 @@ only here: `self.dist` (distance to the mark, in `fill` and `stroke`, on marks t
 | `font` | Labels | A role: `sans` (default) or `math`. |
 | `place` | Labels | `fixed` (default) at its `offset`, or `settle`, tied there by a spring and pushed off what's drawn and other labels. |
 | `head` | Arrows | The head's length in `px`. Defaults to 14. |
+| `distance` | Labels | In `px`. How far a label written with `away` sits from its point. Defaults to 16. |
 | `show` | Any mark | Draws it only while this is above 0, decided per frame. Can also read `view.width`, the view's width in world units, for zoom levels. |
+
+**Panels are laid out by two rules.** Their values hold for the whole figure, so they can't read a param, and a rule for a panel
+that doesn't exist is a mistake. A panel's `width` and `height` also win over its viewport's, and all panels have to be one size, for now.
+
+| Rule | Property | Meaning |
+|---|---|---|
+| `style panels` | `columns` | How many columns. Defaults to 1. |
+| | `gap` | In `px`, between panels. |
+| | `title` | In `px`, the band above each panel for its title. |
+| `style panel`, `style panel.whole` | `width`, `height` | In `px`, a panel's design size. Defaults to 400. |
+| | `pad` | How much room a `fit` leaves around what it fits, as a fraction of its size. Defaults to 0.1. |
 
 ## Decisions
 
@@ -292,6 +382,18 @@ Newest first. "Why" is the reason at the time, so these can be revisited.
 
 | Date | Decision | Why |
 |---|---|---|
+| 2026-11-06 | A view keeps equal scales, showing more rather than stretching | Kris: distortion spends a reader's budget fast. A 0.07% stretch also moved a near-straight circle by tens of pixels, since its center and radius were scaled differently. Unequal axes would have to be asked for, and nothing asks yet |
+| 2026-11-06 | Bindings run in dependency order, not the order they're written | `bind b = grown` failed at runtime, since a bound param ran at its `param` line, before a later `let`. A real cycle is now an error when compiled. A name still has to be written before it's read |
+| 2026-11-06 | `fast.rs` works out a repeated piece once per sample | Inlining copies arguments, so a complex figure repeats itself many times over, and Bipolar Hearts took 18 ms a frame. It's 2.4 ms now. Setting any value starts a new generation, so nothing stale can be read |
+| 2026-11-06 | A curve doesn't join two samples across a jump | Bipolar Hearts' coordinate circle goes through infinity as it turns into a line. At the deepest subdivision a chord can still be far from flat, and then it isn't the curve: it's the two sides of a pole, and drawing it flashed a false line across the figure |
+| 2026-11-06 | A segment's normal is its own, except at a cap | The way from a pixel to a line was also its direction, but with the pixel center almost on the line that's only rounding error in the shader's single precision. A thin stroke's coverage depends on direction, so the GPU drew those pixels too dark, by up to 18/255 in a test made to show it, and the CPU oracle matched a 400 × 400 supersample. Squaring map's square grid had two such pixels. |
+| 2026-11-06 | A point is a complex number, and a number is one on the real axis | Half of Kris's 583 Desmos graphs use complex mode, and `T(w) = 2πi·w / A` should be writable that way. It also means i turns a thing 90°, as he teaches it. No second type, and it compiles to plain numbers. The cost: a stray `i` isn't an error |
+| 2026-11-06 | Panels with the same systems share their answers | They solve one question, and solving it four times was most of a q or p change |
+| 2026-11-06 | A thing is declared once, and `use … through` draws it through a map | The lattice wrote every mark as `map(…)` and worked out sides again in every space, so `start` being one point was only a convention. Now it's one declaration. This replaces a `group` taking functions as arguments, which nothing needed after that |
+| 2026-11-06 | A direction goes through a map by its exact derivative | A label's side is geometry in the group's coordinates, and the IR already has derivatives, so no step to tune. The lattice's differencing went away |
+| 2026-11-06 | `text` gives a label's words per panel, and no text means no label | Kris: it's the same point, and the name is the space's. The spiral has one name for 0 and A, so A's label simply isn't there |
+| 2026-11-06 | Where panels sit, and how far a label sits from its point, are a sheet's | A second sheet for the lattice, dark and one column, couldn't express them. The document keeps what's geometry: what a view looks at, and which way is out of the triangle |
+| 2026-11-06 | The last definition of a sheet's name holds everywhere, even in rules before it | The dark sheet went last and silently did nothing. Now a theme only has to redefine its colors |
 | 2026-11-06 | Hot loops run through `fast.rs`, with `eval` as the definition | A frame evaluates thousands of times, and resolving names first took this figure from 20 ms to under 8. A test requires them to agree to the bit |
 | 2026-11-06 | A thing keeps its name across panels, and only its label's text is the space's | Kris: 0 and 1 are one point in different spaces, and connections like that are worth keeping |
 | 2026-11-06 | A group's parameters are scoped to each use, and `use … as` prefixes what it declares | Log space draws the same edges three times, and two groups in one panel both wanted a `map` |
@@ -303,7 +405,7 @@ Newest first. "Why" is the reason at the time, so these can be revisited.
 | 2026-11-05 | A collection is one mark, drawn through coverage layers | Hundreds of circles can't each be a block of shader and a uniform, and the count has to be able to change |
 | 2026-11-05 | A variable's range includes both ends | Lattices are written that way, and `1..n` should have n in it |
 | 2026-11-05 | A panel is its own scene, on one shared canvas | WebGL2 can't share a device across canvases, and a video needs one canvas anyway |
-| 2026-11-05 | A `group` takes functions as arguments | "A figure is a composition of functions": the same marks through a different map is what a panel usually is |
+| 2026-11-05 | A `group` takes functions as arguments, replaced by `through` on 2026-11-06 | "A figure is a composition of functions": the same marks through a different map is what a panel usually is |
 | 2026-11-05 | Expressions are lists of states, with identity in what's written | Manim's result, where what matches moves and only the rest fades, without its diff. Kris on the placement in `lab/expressions`: "beautiful" |
 | 2026-11-05 | Moves use `snap`, a power of 5 | Kris wants a move to get there fast and leave time to take it in. Above 5, `za` joining `+zbi` goes by too quickly to see. The blog's is 4 |
 | 2026-11-05 | Core lays out terms with widths from the renderer | The matching is the language's, and the fonts are the renderer's. It comes out as ordinary labels |
@@ -313,7 +415,12 @@ Newest first. "Why" is the reason at the time, so these can be revisited.
 | 2026-11-05 | A label's spring runs over earlier times in video, and over the clock on a page | A drag has no time axis, and a video's frames must not depend on order |
 | 2026-11-05 | `show` uses the same per-frame flag as absent values | One way to be not there, and a hidden mark skips its shader work |
 | 2026-11-05 | A construction's circle follows its own path when it needs a line | Tracing one for its dashes cost 12.7 ms a frame, for a path it already knew |
-| 2026-11-05 | `which` names a root, not a place among the points left | One formula per root, so nothing jumps when a ray's start enters a circle. This replaced "a ray from inside has one point, and it's both 0 and 1" |
+| 2026-11-05 | A circle through three points has a handedness. Going counterclockwise, its negative side is its disk,
+and its curvature is positive. Going clockwise, its negative side is everything else, and its
+curvature is negative. Three points in a line are a line, which runs through 0 curvature without
+any value going to infinity, and has no center or radius. Two points in one place make no circle.
+
+`which` names a root, not a place among the points left | One formula per root, so nothing jumps when a ray's start enters a circle. This replaced "a ray from inside has one point, and it's both 0 and 1" |
 | 2026-11-05 | A ray means a ray when intersecting lines too | A point behind its start isn't on it. `bounds.pen` came out identical, so nothing relied on the old reading |
 | 2026-11-05 | A value's existence is an explicit condition in the IR (`Where`), not NaN | NaN can't tell a missing point from a bug, `min` and `max` swallow it, and WGSL leaves it undefined |
 | 2026-11-05 | Existence is decided on the CPU per frame, and the shader gets a flag per mark | No partial values reach the GPU, and a vanished mark skips its shader work |

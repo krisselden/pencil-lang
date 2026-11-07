@@ -94,6 +94,8 @@ pub fn derivative(e: &Expr, var: &str) -> Result<Expr, Error> {
             ("Ln", [a]) => div(d(a)?, a.clone()),
             ("Abs", [a]) => mul(app("Sign", vec![a.clone()]), d(a)?),
             ("Sign", [_]) | ("Floor", [_]) => Num(0.0),
+            ("IfNonnegative", [c, a, b]) => app("IfNonnegative", vec![c.clone(), d(a)?, d(b)?]),
+            ("Where", [c, v]) => app("Where", vec![c.clone(), d(v)?]),
             ("Arccos", [a]) => neg(div(
                 d(a)?,
                 app("Sqrt", vec![sub(Num(1.0), power(a.clone(), 2.0))]),

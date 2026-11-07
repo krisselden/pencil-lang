@@ -1,0 +1,78 @@
+{
+  "beats": [],
+  "bindings": [
+    {
+      "expr": 8.0,
+      "id": "a"
+    },
+    {
+      "expr": ["Divide",["Add","a",["Divide",1.0,"a"]],2.0],
+      "id": "x0"
+    },
+    {
+      "expr": ["Divide",["Add","x0",1.0],2.0],
+      "id": "x1"
+    },
+    {
+      "expr": ["Subtract",["Divide",["Add","a",1.0],2.0],"x1"],
+      "id": "r1"
+    },
+    {
+      "expr": 1.0,
+      "id": "focus.x"
+    },
+    {
+      "expr": 0.0,
+      "id": "focus.y"
+    }
+  ],
+  "doc": "limacon",
+  "duration": 6.2831853,
+  "expressions": [],
+  "handles": [],
+  "marks": [
+    {
+      "beat": null,
+      "form": {
+        "kind": "many",
+        "shape": {
+          "circles": ["c.x","c.y"],
+          "r": ["Sqrt",["Add",["Power",["Subtract","focus.x","c.x"],2.0],["Power",["Subtract","focus.y","c.y"],2.0]]]
+        },
+        "vars": [
+          {
+            "range": [0.0,23.0],
+            "var": "i"
+          }
+        ],
+        "with": [
+          {
+            "expr": ["Subtract","time",["Divide",["Multiply","i","tau"],24.0]],
+            "id": "angle"
+          },
+          {
+            "expr": ["Add",["Multiply","r1",["Cos","angle"]],"x1"],
+            "id": "c.x"
+          },
+          {
+            "expr": ["Multiply","r1",["Sin","angle"]],
+            "id": "c.y"
+          }
+        ]
+      },
+      "id": "rings",
+      "tags": ["circles"]
+    }
+  ],
+  "params": [],
+  "places": [],
+  "systems": [],
+  "viewport": {
+    "fit": 0,
+    "height": 640.0,
+    "pad": 0.1,
+    "width": 640.0,
+    "x": [-1.5,10.5],
+    "y": [-6.0,6.0]
+  }
+}

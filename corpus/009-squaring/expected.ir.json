@@ -1,0 +1,260 @@
+{
+  "beats": [],
+  "bindings": [
+    {
+      "expr": 3.3,
+      "id": "n"
+    },
+    {
+      "expr": ["Add",1.0,["Abs",["Subtract",["Divide",["Mod","time",8.0],4.0],1.0]]],
+      "id": "p"
+    },
+    {
+      "expr": ["Divide",["Add",["Exp",["Ln","n"]],["Exp",["Negate",["Ln","n"]]]],2.0],
+      "id": "x0"
+    },
+    {
+      "expr": ["Divide",["Subtract",["Exp",["Ln","n"]],["Exp",["Negate",["Ln","n"]]]],2.0],
+      "id": "r0"
+    },
+    {
+      "expr": 0.0,
+      "id": "unit.x"
+    },
+    {
+      "expr": 0.0,
+      "id": "unit.y"
+    },
+    {
+      "expr": ["Sqrt",["Add",["Power",["Subtract",1.0,0.0],2.0],["Power",["Subtract",0.0,0.0],2.0]]],
+      "id": "unit.r"
+    },
+    {
+      "expr": "n",
+      "id": "marker"
+    }
+  ],
+  "doc": "squaring",
+  "duration": 8.0,
+  "expressions": [],
+  "handles": [],
+  "marks": [
+    {
+      "beat": null,
+      "form": {
+        "kind": "many",
+        "shape": {
+          "curves": {
+            "point": [["Add","x0",["Divide",["Multiply","s","r0"],3.0]],"t"],
+            "range": [["Negate","r0"],"r0"],
+            "var": "t"
+          }
+        },
+        "vars": [
+          {
+            "range": [-3.0,3.0],
+            "var": "s"
+          }
+        ],
+        "with": []
+      },
+      "id": "plain_across",
+      "tags": ["curves","across","plain"]
+    },
+    {
+      "beat": null,
+      "form": {
+        "kind": "many",
+        "shape": {
+          "curves": {
+            "point": [["Add",["Divide",0.0,3.0],"t"],["Divide",["Multiply","s","r0"],3.0]],
+            "range": [["Divide",1.0,"n"],"n"],
+            "var": "t"
+          }
+        },
+        "vars": [
+          {
+            "range": [-3.0,3.0],
+            "var": "s"
+          }
+        ],
+        "with": []
+      },
+      "id": "plain_up",
+      "tags": ["curves","up","plain"]
+    },
+    {
+      "beat": null,
+      "form": {
+        "kind": "many",
+        "shape": {
+          "curves": {
+            "point": [["Multiply",["Exp",["Multiply","p",["Where",["Subtract",["Add",["Power",["Add","x0",["Divide",["Multiply","s","r0"],3.0]],2.0],["Power","t",2.0]],1e-12],["Ln",["Sqrt",["Add",["Power",["Add","x0",["Divide",["Multiply","s","r0"],3.0]],2.0],["Power","t",2.0]]]]]]],["Cos",["Multiply","p",["Where",["Subtract",["Add",["Power",["Add","x0",["Divide",["Multiply","s","r0"],3.0]],2.0],["Power","t",2.0]],1e-12],["Arctan2","t",["Add","x0",["Divide",["Multiply","s","r0"],3.0]]]]]]],["Multiply",["Exp",["Multiply","p",["Where",["Subtract",["Add",["Power",["Add","x0",["Divide",["Multiply","s","r0"],3.0]],2.0],["Power","t",2.0]],1e-12],["Ln",["Sqrt",["Add",["Power",["Add","x0",["Divide",["Multiply","s","r0"],3.0]],2.0],["Power","t",2.0]]]]]]],["Sin",["Multiply","p",["Where",["Subtract",["Add",["Power",["Add","x0",["Divide",["Multiply","s","r0"],3.0]],2.0],["Power","t",2.0]],1e-12],["Arctan2","t",["Add","x0",["Divide",["Multiply","s","r0"],3.0]]]]]]]],
+            "range": [["Negate","r0"],"r0"],
+            "var": "t"
+          }
+        },
+        "vars": [
+          {
+            "range": [-3.0,3.0],
+            "var": "s"
+          }
+        ],
+        "with": []
+      },
+      "id": "moving_across",
+      "tags": ["curves","across","moving"]
+    },
+    {
+      "beat": null,
+      "form": {
+        "kind": "many",
+        "shape": {
+          "curves": {
+            "point": [["Multiply",["Exp",["Multiply","p",["Where",["Subtract",["Add",["Power",["Add",["Divide",0.0,3.0],"t"],2.0],["Power",["Divide",["Multiply","s","r0"],3.0],2.0]],1e-12],["Ln",["Sqrt",["Add",["Power",["Add",["Divide",0.0,3.0],"t"],2.0],["Power",["Divide",["Multiply","s","r0"],3.0],2.0]]]]]]],["Cos",["Multiply","p",["Where",["Subtract",["Add",["Power",["Add",["Divide",0.0,3.0],"t"],2.0],["Power",["Divide",["Multiply","s","r0"],3.0],2.0]],1e-12],["Arctan2",["Divide",["Multiply","s","r0"],3.0],["Add",["Divide",0.0,3.0],"t"]]]]]],["Multiply",["Exp",["Multiply","p",["Where",["Subtract",["Add",["Power",["Add",["Divide",0.0,3.0],"t"],2.0],["Power",["Divide",["Multiply","s","r0"],3.0],2.0]],1e-12],["Ln",["Sqrt",["Add",["Power",["Add",["Divide",0.0,3.0],"t"],2.0],["Power",["Divide",["Multiply","s","r0"],3.0],2.0]]]]]]],["Sin",["Multiply","p",["Where",["Subtract",["Add",["Power",["Add",["Divide",0.0,3.0],"t"],2.0],["Power",["Divide",["Multiply","s","r0"],3.0],2.0]],1e-12],["Arctan2",["Divide",["Multiply","s","r0"],3.0],["Add",["Divide",0.0,3.0],"t"]]]]]]],
+            "range": [["Divide",1.0,"n"],"n"],
+            "var": "t"
+          }
+        },
+        "vars": [
+          {
+            "range": [-3.0,3.0],
+            "var": "s"
+          }
+        ],
+        "with": []
+      },
+      "id": "moving_up",
+      "tags": ["curves","up","moving"]
+    },
+    {
+      "beat": null,
+      "form": {
+        "kind": "many",
+        "shape": {
+          "curves": {
+            "point": [["Subtract",["Multiply",["Add","x0",["Divide",["Multiply","s","r0"],3.0]],["Add","x0",["Divide",["Multiply","s","r0"],3.0]]],["Multiply","t","t"]],["Add",["Multiply",["Add","x0",["Divide",["Multiply","s","r0"],3.0]],"t"],["Multiply","t",["Add","x0",["Divide",["Multiply","s","r0"],3.0]]]]],
+            "range": [["Negate","r0"],"r0"],
+            "var": "t"
+          }
+        },
+        "vars": [
+          {
+            "range": [-3.0,3.0],
+            "var": "s"
+          }
+        ],
+        "with": []
+      },
+      "id": "square_across",
+      "tags": ["curves","across","square"]
+    },
+    {
+      "beat": null,
+      "form": {
+        "kind": "many",
+        "shape": {
+          "curves": {
+            "point": [["Subtract",["Multiply",["Add",["Divide",0.0,3.0],"t"],["Add",["Divide",0.0,3.0],"t"]],["Multiply",["Divide",["Multiply","s","r0"],3.0],["Divide",["Multiply","s","r0"],3.0]]],["Add",["Multiply",["Add",["Divide",0.0,3.0],"t"],["Divide",["Multiply","s","r0"],3.0]],["Multiply",["Divide",["Multiply","s","r0"],3.0],["Add",["Divide",0.0,3.0],"t"]]]],
+            "range": [["Divide",1.0,"n"],"n"],
+            "var": "t"
+          }
+        },
+        "vars": [
+          {
+            "range": [-3.0,3.0],
+            "var": "s"
+          }
+        ],
+        "with": []
+      },
+      "id": "square_up",
+      "tags": ["curves","up","square"]
+    },
+    {
+      "beat": null,
+      "form": {
+        "arc": {
+          "point": [["Add",["Multiply","r0",["Multiply",["Exp",0.0],["Cos","t"]]],"x0"],["Multiply","r0",["Multiply",["Exp",0.0],["Sin","t"]]]],
+          "range": [0.0,"tau"],
+          "var": "t"
+        },
+        "kind": "parametric"
+      },
+      "id": "orbit",
+      "tags": ["curve"]
+    },
+    {
+      "beat": null,
+      "form": {
+        "arc": {
+          "point": [["Multiply",["Exp",["Multiply","p",["Where",["Subtract",["Add",["Power",["Add",["Multiply","r0",["Multiply",["Exp",0.0],["Cos","t"]]],"x0"],2.0],["Power",["Multiply","r0",["Multiply",["Exp",0.0],["Sin","t"]]],2.0]],1e-12],["Ln",["Sqrt",["Add",["Power",["Add",["Multiply","r0",["Multiply",["Exp",0.0],["Cos","t"]]],"x0"],2.0],["Power",["Multiply","r0",["Multiply",["Exp",0.0],["Sin","t"]]],2.0]]]]]]],["Cos",["Multiply","p",["Where",["Subtract",["Add",["Power",["Add",["Multiply","r0",["Multiply",["Exp",0.0],["Cos","t"]]],"x0"],2.0],["Power",["Multiply","r0",["Multiply",["Exp",0.0],["Sin","t"]]],2.0]],1e-12],["Arctan2",["Multiply","r0",["Multiply",["Exp",0.0],["Sin","t"]]],["Add",["Multiply","r0",["Multiply",["Exp",0.0],["Cos","t"]]],"x0"]]]]]],["Multiply",["Exp",["Multiply","p",["Where",["Subtract",["Add",["Power",["Add",["Multiply","r0",["Multiply",["Exp",0.0],["Cos","t"]]],"x0"],2.0],["Power",["Multiply","r0",["Multiply",["Exp",0.0],["Sin","t"]]],2.0]],1e-12],["Ln",["Sqrt",["Add",["Power",["Add",["Multiply","r0",["Multiply",["Exp",0.0],["Cos","t"]]],"x0"],2.0],["Power",["Multiply","r0",["Multiply",["Exp",0.0],["Sin","t"]]],2.0]]]]]]],["Sin",["Multiply","p",["Where",["Subtract",["Add",["Power",["Add",["Multiply","r0",["Multiply",["Exp",0.0],["Cos","t"]]],"x0"],2.0],["Power",["Multiply","r0",["Multiply",["Exp",0.0],["Sin","t"]]],2.0]],1e-12],["Arctan2",["Multiply","r0",["Multiply",["Exp",0.0],["Sin","t"]]],["Add",["Multiply","r0",["Multiply",["Exp",0.0],["Cos","t"]]],"x0"]]]]]]],
+          "range": [0.0,"tau"],
+          "var": "t"
+        },
+        "kind": "parametric"
+      },
+      "id": "moving_orbit",
+      "tags": ["curve","orbit","moving"]
+    },
+    {
+      "beat": null,
+      "form": {
+        "arc": {
+          "point": [["Subtract",["Multiply",["Add",["Multiply","r0",["Multiply",["Exp",0.0],["Cos","t"]]],"x0"],["Add",["Multiply","r0",["Multiply",["Exp",0.0],["Cos","t"]]],"x0"]],["Multiply",["Multiply","r0",["Multiply",["Exp",0.0],["Sin","t"]]],["Multiply","r0",["Multiply",["Exp",0.0],["Sin","t"]]]]],["Add",["Multiply",["Add",["Multiply","r0",["Multiply",["Exp",0.0],["Cos","t"]]],"x0"],["Multiply","r0",["Multiply",["Exp",0.0],["Sin","t"]]]],["Multiply",["Multiply","r0",["Multiply",["Exp",0.0],["Sin","t"]]],["Add",["Multiply","r0",["Multiply",["Exp",0.0],["Cos","t"]]],"x0"]]]],
+          "range": [0.0,"tau"],
+          "var": "t"
+        },
+        "kind": "parametric"
+      },
+      "id": "square_orbit",
+      "tags": ["curve","orbit","square"]
+    },
+    {
+      "beat": null,
+      "form": {
+        "curvature": ["Divide",1.0,"unit.r"],
+        "field": ["Subtract",["Sqrt",["Add",["Power",["Subtract","x","unit.x"],2.0],["Power",["Subtract","y","unit.y"],2.0]]],"unit.r"],
+        "grad": [["Divide",["Multiply",2.0,["Subtract","x","unit.x"]],["Multiply",2.0,["Sqrt",["Add",["Power",["Subtract","x","unit.x"],2.0],["Power",["Subtract","y","unit.y"],2.0]]]]],["Divide",["Multiply",2.0,["Subtract","y","unit.y"]],["Multiply",2.0,["Sqrt",["Add",["Power",["Subtract","x","unit.x"],2.0],["Power",["Subtract","y","unit.y"],2.0]]]]]],
+        "kind": "sdf",
+        "line": {
+          "point": [["Add","unit.x",["Multiply","unit.r",["Cos","t"]]],["Add","unit.y",["Multiply","unit.r",["Sin","t"]]]],
+          "range": [0.0,"tau"],
+          "var": "t"
+        },
+        "vars": ["x","y"]
+      },
+      "id": "unit",
+      "tags": ["circle"]
+    },
+    {
+      "beat": null,
+      "form": {
+        "at": ["marker",0.0],
+        "kind": "dot"
+      },
+      "id": "marker",
+      "tags": ["dot"]
+    }
+  ],
+  "params": [
+    {
+      "id": "n",
+      "range": [1.1,6.0]
+    },
+    {
+      "id": "p",
+      "range": [1.0,2.0]
+    }
+  ],
+  "places": [],
+  "systems": [],
+  "viewport": {
+    "fit": 2,
+    "height": 520.0,
+    "pad": 0.06,
+    "width": 640.0,
+    "x": [-2.0,2.0],
+    "y": [-2.0,2.0]
+  }
+}

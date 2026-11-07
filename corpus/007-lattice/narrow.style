@@ -1,0 +1,6 @@
+// The same figure for a phone: one column, with shorter panels.
+style panels { columns: 1; gap: 12px; title: 24px }
+style panel { width: 360px; height: 300px }
+// Labels sit closer in, and the counts stay readable at this size.
+style label { size: 15px; distance: 14px }
+style label.tick { size: 12px }

@@ -8,7 +8,7 @@ duration 19
 
 viewport { x: -0.7..2.7, y: -0.35..2.0, width: 340, height: 235 }
 
-fn turned(p, t) = (p.x·cos(t) - p.y·sin(t), p.x·sin(t) + p.y·cos(t))
+fn turned(p, t) = p·exp(i·t)
 fn between(p, q, s) = p + (q - p)·s
 
 // One step per state of the expression. A reader or a clock can drive it.
@@ -22,10 +22,10 @@ bind step = timeline(time,
 let a = 1.5
 let b = 0.55
 let O = (0, 0)
-let Z = (a, b)
+let Z = a + b·i
 let AZ = Z·a
 let BZ = Z·b
-let BIZ = turned(BZ, pi / 2)
+let BIZ = i·BZ
 let Z2 = AZ + BIZ
 let angle = atan2(b, a)
 

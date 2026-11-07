@@ -5,10 +5,13 @@
 //! see the same values and a shader only computes what varies per pixel.
 
 use crate::Figure;
+use crate::eval::TANH_LIMIT;
 use crate::eval::{MIN_GRADIENT, SNAP_POWER};
-use crate::frame::{DEFAULT_DOT_RADIUS, DEFAULT_STROKE_WIDTH, GEOMETRY_VEC4S, VALUE_VEC4S};
+use crate::frame::{
+    DEFAULT_DOT_RADIUS, DEFAULT_STROKE_WIDTH, GEOMETRY_VEC4S, SIDE_TEXTURE_WIDTH, VALUE_VEC4S,
+};
 use crate::ir::{Expr, Form};
-use crate::style::{Blend, MarkStyle};
+use crate::style::{Blend, MarkStyle, Tone};
 
 const PRELUDE: &str = r#"
 fn oklch(l: f32, c: f32, h: f32) -> vec3<f32> {
@@ -56,6 +59,12 @@ fn encode(c: f32) -> f32 {
 fn decode(c: f32) -> f32 {
     return select(pow((c + 0.055) / 1.055, 2.4), c / 12.92, c <= 0.04045);
 }
+fn lift(c: f32) -> f32 {
+    let v = max(c, 0.0);
+    return select(1.055 * pow(v, 1.0 / 2.4) - 0.055, 12.92 * v, v <= 0.0031308);
+}
+fn lift3(c: vec3<f32>) -> vec3<f32> { return vec3<f32>(lift(c.r), lift(c.g), lift(c.b)); }
+fn limited(x: f32) -> f32 { return clamp(x, -TANH_LIMIT, TANH_LIMIT); }
 fn encode3(c: vec3<f32>) -> vec3<f32> { return vec3<f32>(encode(c.r), encode(c.g), encode(c.b)); }
 fn decode3(c: vec3<f32>) -> vec3<f32> { return vec3<f32>(decode(c.r), decode(c.g), decode(c.b)); }
 fn rgb(r: f32, g: f32, b: f32) -> vec3<f32> { return decode3(vec3<f32>(r, g, b) / 255.0); }
@@ -175,8 +184,10 @@ fn fs(in: Varying) -> @location(0) vec4<f32> {
     let v = p - (a + d * t);
     let rho = length(v);
     let len = max(sqrt(len2), 1e-6);
-    let side = vec2<f32>(-d.y, d.x) / len;
-    let n = select(side, v / rho, rho > 1e-6);
+    let side = select(vec2<f32>(1.0, 0.0), vec2<f32>(-d.y, d.x) / len, len2 > 1e-12);
+    // Along the segment, its normal is exact. So near the centerline, where `v` is only rounding
+    // error, a thin stroke's coverage doesn't depend on that error. Only a cap needs `v`.
+    let n = select(v / rho, side, (along > 0.0 && along < 1.0) || rho < 0.01);
     let half_width = mix(in.rs.x, in.rs.y, t);
     var c = box_coverage(half_width - rho, n) - box_coverage(-half_width - rho, n);
     let period = in.dash.y;
@@ -235,6 +246,8 @@ pub fn emit_expr(e: &Expr) -> String {
             "white" => "vec3<f32>(1.0)".to_string(),
             "black" => "vec3<f32>(0.0)".to_string(),
             "self.dist" => "self_dist".to_string(),
+            "self.pixel" => "pixel".to_string(),
+            "self.curvature" => "self_curvature".to_string(),
             other => mangle(other),
         },
         Expr::App(head, args) => match (head.as_str(), args.as_slice()) {
@@ -256,6 +269,9 @@ pub fn emit_expr(e: &Expr) -> String {
             ("Arccos", _) => call("acos", args),
             ("Floor", _) => call("floor", args),
             ("Reveal", _) => call("reveal", args),
+            ("Sinh", [a]) => format!("sinh(limited({}))", emit_expr(a)),
+            ("Cosh", [a]) => format!("cosh(limited({}))", emit_expr(a)),
+            ("Tanh", [a]) => format!("tanh(limited({}))", emit_expr(a)),
             ("Exp", _) => call("exp", args),
             ("Ln", _) => call("log", args),
             ("Abs", _) => call("abs", args),
@@ -293,13 +309,15 @@ pub fn emit(figure: &Figure) -> String {
         "struct Uniforms {{ time: f32, width: f32, height: f32, dpr: f32, view: vec4<f32>, origin: vec2<f32>, values: array<vec4<f32>, {VALUE_VEC4S}> }}\n\
          @group(0) @binding(0) var<uniform> u: Uniforms;\n\
          @group(0) @binding(1) var coverage: texture_2d_array<f32>;\n\
-         @group(0) @binding(2) var<uniform> geometry: array<vec4<f32>, {GEOMETRY_VEC4S}>;\n\n\
+         @group(0) @binding(2) var<uniform> geometry: array<vec4<f32>, {GEOMETRY_VEC4S}>;\n\
+         @group(0) @binding(3) var sides: texture_2d<f32>;\n\n\
          @vertex\n\
          fn vs(@builtin(vertex_index) i: u32) -> @builtin(position) vec4<f32> {{\n    \
              let p = vec2<f32>(f32((i << 1u) & 2u), f32(i & 2u));\n    \
              return vec4<f32>(p * 2.0 - 1.0, 0.0, 1.0);\n\
          }}\n"
     );
+    out.push_str(&format!("const TANH_LIMIT: f32 = {TANH_LIMIT:?};\n"));
     out.push_str(PRELUDE);
     out.push_str(BOX_COVERAGE);
     out.push_str(
@@ -328,6 +346,7 @@ pub fn emit(figure: &Figure) -> String {
         None => out.push_str("    var color = vec3<f32>(1.0);\n"),
     }
     let slots: std::collections::HashMap<usize, usize> = figure.presence_slots().collect();
+    let sided = figure.sided();
     let mut layer = 0;
     let mut region = 0;
     for (i, (mark, style)) in figure
@@ -354,7 +373,12 @@ pub fn emit(figure: &Figure) -> String {
         let mut measured = true;
         match &mark.form {
             Form::Field {
-                vars, field, grad, ..
+                vars,
+                field,
+                grad,
+                exact,
+                curvature,
+                ..
             } => {
                 out.push_str(&format!("        let {} = world_x;\n", mangle(&vars[0])));
                 out.push_str(&format!("        let {} = world_y;\n", mangle(&vars[1])));
@@ -365,10 +389,21 @@ pub fn emit(figure: &Figure) -> String {
                     emit_expr(&grad[1]),
                 ));
                 out.push_str("        let glen = length(gradient);\n");
-                out.push_str(&format!(
-                    "        let self_dist = field / max(glen, {});\n",
-                    literal(MIN_GRADIENT),
-                ));
+                // A true distance doesn't need its gradient, which is lost at a circle's center.
+                if *exact {
+                    out.push_str("        let self_dist = field;\n");
+                } else {
+                    out.push_str(&format!(
+                        "        let self_dist = field / max(glen, {});\n",
+                        literal(MIN_GRADIENT),
+                    ));
+                }
+                if let Some(curvature) = curvature {
+                    out.push_str(&format!(
+                        "        let self_curvature: f32 = {};\n",
+                        emit_expr(curvature)
+                    ));
+                }
                 out.push_str(&format!(
                     "        let normal = select(vec2<f32>(1.0, 0.0), gradient / glen, glen > {});\n",
                     literal(MIN_GRADIENT),
@@ -410,34 +445,119 @@ pub fn emit(figure: &Figure) -> String {
             Some(o) => format!("opacity * clamp({}, 0.0, 1.0)", emit_expr(o)),
             None => "opacity".to_string(),
         };
-        let gamma = style.blend == Blend::Gamma;
-        let into = |e: String| if gamma { format!("encode3({e})") } else { e };
-        let back = |e: String| if gamma { format!("decode3({e})") } else { e };
-        if measured {
+        let blend = style.blend;
+        let adds = blend == Blend::Add;
+        let into = |e: String| match blend {
+            Blend::Gamma => format!("encode3({e})"),
+            Blend::Add => format!("lift3({e})"),
+            Blend::Linear => e,
+        };
+        let back = |e: String| match blend {
+            Blend::Gamma | Blend::Add => format!("decode3({e})"),
+            Blend::Linear => e,
+        };
+        // What one side adds to the color, as `covered` and `filled`, from `dist_px` and `normal`.
+        let sides_of = |out: &mut String| {
             out.push_str("        let negative = box_coverage(-dist_px, normal);\n");
             out.push_str("        var covered = 0.0;\n        var filled = vec3<f32>(0.0);\n");
-            if let Some(fill) = &style.negative {
-                out.push_str(&format!("        covered += negative * {fill_opacity};\n"));
-                out.push_str(&format!(
-                    "        filled += {} * negative * {fill_opacity};\n",
-                    into(emit_expr(fill))
-                ));
+            // `::inside` and `::outside` only exist on a circle, and win over the sign they share.
+            let round = style.inside.is_some() || style.outside.is_some();
+            let bare_negative = "negative".to_string();
+            let bare_positive = "(1.0 - negative)".to_string();
+            let gated = |side: String, gates: [f64; 2]| {
+                if round {
+                    format!(
+                        "({side} * select({}, {}, self_curvature >= 0.0))",
+                        literal(gates[1]),
+                        literal(gates[0]),
+                    )
+                } else {
+                    side
+                }
+            };
+            let [negative_gates, positive_gates] = style.sign_gates();
+            let disk = "select(1.0 - negative, negative, self_curvature >= 0.0)".to_string();
+            for (fill, weight) in [
+                (&style.negative, gated(bare_negative, negative_gates)),
+                (&style.positive, gated(bare_positive, positive_gates)),
+                (&style.inside, disk.clone()),
+                (&style.outside, format!("(1.0 - {disk})")),
+            ] {
+                if let Some(fill) = fill {
+                    out.push_str(&format!("        covered += {weight} * {fill_opacity};\n"));
+                    out.push_str(&format!(
+                        "        filled += {} * {weight} * {fill_opacity};\n",
+                        into(emit_expr(fill)),
+                    ));
+                }
             }
-            if let Some(fill) = &style.positive {
-                out.push_str(&format!(
-                    "        covered += (1.0 - negative) * {fill_opacity};\n"
-                ));
-                out.push_str(&format!(
-                    "        filled += {} * (1.0 - negative) * {fill_opacity};\n",
-                    into(emit_expr(fill)),
-                ));
-            }
+        };
+        if measured {
+            sides_of(&mut out);
             out.push_str(&format!(
                 "        color = {};\n",
-                back(format!(
-                    "{} * (1.0 - covered) + filled",
-                    into("color".to_string())
-                ))
+                back(if adds {
+                    format!("{} + filled", into("color".to_string()))
+                } else {
+                    format!("{} * (1.0 - covered) + filled", into("color".to_string()))
+                })
+            ));
+        }
+        // Every circle, in order, from the data texture. Going in and out of the blend's own space
+        // happens once around all of them.
+        if let Some(group) = sided.iter().find(|group| group.mark == i) {
+            out.push_str(&format!(
+                "        var blended = {};\n",
+                into("color".to_string())
+            ));
+            out.push_str(&format!(
+                "        let sided_count = i32(u.values[{}][{}]);\n",
+                group.slot / 4,
+                group.slot % 4,
+            ));
+            out.push_str("        for (var instance = 0; instance < sided_count; instance++) {\n");
+            out.push_str(&format!(
+                "        let texel = {} + instance * {};\n",
+                group.base, group.stride,
+            ));
+            for row in 0..group.stride {
+                out.push_str(&format!(
+                    "        let row{row} = textureLoad(sides, vec2<i32>((texel + {row}) % {SIDE_TEXTURE_WIDTH}, (texel + {row}) / {SIDE_TEXTURE_WIDTH}), 0);\n",
+                ));
+            }
+            for (k, name) in group.names.iter().enumerate() {
+                out.push_str(&format!(
+                    "        let {}: f32 = row{}[{}];\n",
+                    mangle(name),
+                    1 + k / 4,
+                    k % 4,
+                ));
+            }
+            out.push_str("        let self_curvature = row0.x;\n");
+            out.push_str(
+                "        let field = row0.x * (world_x * world_x + world_y * world_y) - 2.0 * (row0.y * world_x + row0.z * world_y) + row0.w;\n",
+            );
+            out.push_str("        let spread = 1.0 + row0.x * field;\n");
+            out.push_str("        let self_dist = field / (1.0 + sqrt(max(spread, 0.0)));\n");
+            out.push_str(
+                "        let gradient = vec2<f32>(row0.x * world_x - row0.y, row0.x * world_y - row0.z) / sqrt(max(spread, 1e-12));\n",
+            );
+            out.push_str("        let glen = length(gradient);\n");
+            out.push_str(&format!(
+                "        let normal = select(vec2<f32>(1.0, 0.0), gradient / glen, glen > {});\n",
+                literal(MIN_GRADIENT),
+            ));
+            out.push_str("        let dist_px = self_dist / pixel;\n");
+            sides_of(&mut out);
+            out.push_str(if adds {
+                "        blended += filled;\n"
+            } else {
+                "        blended = blended * (1.0 - covered) + filled;\n"
+            });
+            out.push_str("        }\n");
+            out.push_str(&format!(
+                "        color = {};\n",
+                back("blended".to_string())
             ));
         }
         if let Some(stroke) = &style.stroke {
@@ -462,18 +582,28 @@ pub fn emit(figure: &Figure) -> String {
             }
             out.push_str(&format!(
                 "        color = {};\n",
-                back(format!(
-                    "mix({}, {}, stroke_coverage * opacity)",
-                    into("color".to_string()),
-                    into(emit_expr(stroke)),
-                ))
+                back(if adds {
+                    format!(
+                        "{} + {} * stroke_coverage * opacity",
+                        into("color".to_string()),
+                        into(emit_expr(stroke)),
+                    )
+                } else {
+                    format!(
+                        "mix({}, {}, stroke_coverage * opacity)",
+                        into("color".to_string()),
+                        into(emit_expr(stroke)),
+                    )
+                })
             ));
         }
         out.push_str("    }\n");
     }
-    out.push_str(
-        "    return vec4<f32>(encode(color.r), encode(color.g), encode(color.b), 1.0);\n}\n",
-    );
+    out.push_str(if figure.styles.tone == Tone::Tanh {
+        "    return vec4<f32>(tanh(limited(lift(color.r))), tanh(limited(lift(color.g))), tanh(limited(lift(color.b))), 1.0);\n}\n"
+    } else {
+        "    return vec4<f32>(encode(color.r), encode(color.g), encode(color.b), 1.0);\n}\n"
+    });
     out
 }
 
@@ -511,7 +641,7 @@ mod tests {
             dot P
             label l = \"L\" at P";
         let sheet = "
-            style paper { fill: rgb(242, 240, 235) }
+            style paper { fill: rgb(242, 240, 235); tone: tanh }
             style c::inside  { fill: oklch(0.7, 0.1, 40 * time) }
             style c::outside { fill: mix(hue(0.2), white, 0.5 + 0.5 * cos(24 * self.dist)) }
             style c          { stroke: black; width: 2px; draw: field; blend: linear }
@@ -520,7 +650,7 @@ mod tests {
             style e          { stroke: black; width: 2px; opacity: smoothstep(0, 1, a); fill_opacity: 0.5 }
             style e::inside  { fill: white }
             style f, g       { stroke: black; width: 2px }
-            style h          { fill: mix(white, black, clamp(self.dist, 0, 1)); stroke: black }
+            style h          { fill: mix(white, black, clamp(self.dist, 0, 1)) * 2 + white / 3 - black; stroke: black; blend: add; fill_opacity: tanh(self.pixel / abs(self.dist)) + sinh(1) - cosh(1) }
             style P          { fill: black; radius: 4px; stroke: white; width: 1px }";
         let figure = build(doc, &[sheet]).unwrap();
         validate(&emit(&figure));

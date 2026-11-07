@@ -88,6 +88,9 @@ pub enum Form {
         grad: [Expr; 2],
         /// `sdf` declares a true distance, so per-pixel strokes are trustworthy.
         exact: bool,
+        /// Signed curvature, for a circle, which says which side is its disk: the negative one,
+        /// unless this is below 0. A line is 0.
+        curvature: Option<Expr>,
         /// How to follow the curve as a line, if that's known, so that dashes and tapers
         /// don't have to trace it. A construction's circle knows.
         line: Option<Arc>,
@@ -124,6 +127,9 @@ pub enum Form {
         values: Vec<Expr>,
         at: [Expr; 2],
         offset: [Expr; 2],
+        /// Which way it sits from its point, in the figure's own coordinates, at the distance
+        /// its style sets. Replaces `offset`.
+        away: Option<[Expr; 2]>,
     },
     /// The rectangle another panel is looking at. Compiling all the panels fills in its view.
     Outline {
@@ -159,7 +165,19 @@ pub struct System {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Shape {
     Dots([Expr; 2]),
-    Circles { center: [Expr; 2], r: Expr },
+    Circles {
+        center: [Expr; 2],
+        r: Expr,
+    },
+    /// Circles with a handedness, any of which can be a line, as the coefficients of
+    /// `a|p|² − 2b·p + c`, scaled so that `|b|² − ac` is 1.
+    Cycles {
+        a: Expr,
+        b: [Expr; 2],
+        c: Expr,
+    },
+    /// A parametric curve, whose own parameter runs over its range in every instance.
+    Curves(Arc),
 }
 
 /// Which end of an expression sits at its place.
@@ -207,6 +225,13 @@ pub struct Handle {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub struct Family {
+    pub vars: Vec<(String, [Expr; 2])>,
+    pub lets: Vec<(String, Expr)>,
+    pub arc: Arc,
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct Viewport {
     pub x: [f64; 2],
     pub y: [f64; 2],
@@ -219,6 +244,8 @@ pub struct Viewport {
     pub fit: Vec<[Expr; 3]>,
     /// Curves the view fits, by sampling them.
     pub fit_curves: Vec<Arc>,
+    /// Collections of curves the view fits, by sampling every one.
+    pub fit_families: Vec<Family>,
     pub pad: f64,
 }
 
@@ -231,6 +258,7 @@ impl Default for Viewport {
             design_height: None,
             fit: Vec::new(),
             fit_curves: Vec::new(),
+            fit_families: Vec::new(),
             pad: 0.1,
         }
     }
@@ -273,14 +301,21 @@ impl Scene {
                     field,
                     grad,
                     exact,
+                    curvature,
                     line,
-                } => json!({
-                    "kind": if *exact { "sdf" } else { "implicit" },
-                    "vars": vars,
-                    "field": field.to_mathjson(),
-                    "grad": pair(grad),
-                    "line": line.as_ref().map(arc_json),
-                }),
+                } => {
+                    let mut form = json!({
+                        "kind": if *exact { "sdf" } else { "implicit" },
+                        "vars": vars,
+                        "field": field.to_mathjson(),
+                        "grad": pair(grad),
+                        "line": line.as_ref().map(arc_json),
+                    });
+                    if let Some(curvature) = curvature {
+                        form["curvature"] = curvature.to_mathjson();
+                    }
+                    form
+                }
                 Form::Parametric(a) => json!({ "kind": "parametric", "arc": arc_json(a) }),
                 Form::Polyline { points, closed } => json!({
                     "kind": "polyline",
@@ -314,6 +349,14 @@ impl Scene {
                             "circles": pair(center),
                             "r": r.to_mathjson(),
                         }),
+                        Shape::Curves(arc) => json!({ "curves": arc_json(arc) }),
+                        Shape::Cycles { a, b, c } => json!({
+                            "cycles": {
+                                "a": a.to_mathjson(),
+                                "b": pair(b),
+                                "c": c.to_mathjson(),
+                            },
+                        }),
                     },
                 }),
                 Form::Term {
@@ -328,13 +371,20 @@ impl Scene {
                     values,
                     at,
                     offset,
-                } => json!({
-                    "kind": "label",
-                    "text": text,
-                    "values": values.iter().map(Expr::to_mathjson).collect::<Vec<_>>(),
-                    "at": pair(at),
-                    "offset": pair(offset),
-                }),
+                    away,
+                } => {
+                    let mut label = json!({
+                        "kind": "label",
+                        "text": text,
+                        "values": values.iter().map(Expr::to_mathjson).collect::<Vec<_>>(),
+                        "at": pair(at),
+                        "offset": pair(offset),
+                    });
+                    if let Some(away) = away {
+                        label["away"] = pair(away);
+                    }
+                    label
+                }
                 Form::Outline { panel, .. } => json!({ "kind": "outline", "panel": panel }),
             };
             json!({ "id": m.id, "form": form, "tags": m.tags, "beat": m.beat })
@@ -379,7 +429,9 @@ impl Scene {
                 "y": self.viewport.y,
                 "width": self.viewport.design_width,
                 "height": self.viewport.design_height,
-                "fit": self.viewport.fit.len() + self.viewport.fit_curves.len(),
+                "fit": self.viewport.fit.len()
+                    + self.viewport.fit_curves.len()
+                    + self.viewport.fit_families.len(),
                 "pad": self.viewport.pad,
             },
         })

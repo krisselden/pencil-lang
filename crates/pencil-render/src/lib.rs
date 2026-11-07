@@ -2,7 +2,7 @@
 //! offscreen path and the browser, so both run the same shader.
 
 use pencil_core::eval::srgb_encode;
-use pencil_core::frame::{GEOMETRY_VEC4S, Prepared, VALUE_VEC4S};
+use pencil_core::frame::{GEOMETRY_VEC4S, Prepared, SIDE_TEXTURE_WIDTH, VALUE_VEC4S, side_rows};
 use pencil_core::{Figure, stroke, wgsl};
 use wgpu::util::DeviceExt;
 
@@ -62,6 +62,9 @@ pub struct FigurePipeline {
     layout: wgpu::BindGroupLayout,
     uniforms: wgpu::Buffer,
     geometry: wgpu::Buffer,
+    /// Each collection's sides, per instance. Always there, since the layout says so.
+    sides: wgpu::Texture,
+    sides_view: wgpu::TextureView,
     coverage_pipeline: wgpu::RenderPipeline,
     coverage_bind_group: wgpu::BindGroup,
     coverage: Option<Coverage>,
@@ -111,6 +114,16 @@ impl FigurePipeline {
                 wgpu::BindGroupLayoutEntry {
                     binding: 2,
                     ..uniform_entry(wgpu::ShaderStages::FRAGMENT)
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
                 },
             ],
         });
@@ -215,11 +228,28 @@ impl FigurePipeline {
             .zip(&figure.styles.marks)
             .filter(|(m, s)| s.stroke_is_line(&m.form))
             .count() as u32;
+        let sides = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("pencil sides"),
+            size: wgpu::Extent3d {
+                width: SIDE_TEXTURE_WIDTH as u32,
+                height: side_rows(&figure.sided()) as u32,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba32Float,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        let sides_view = sides.create_view(&Default::default());
         Self {
             pipeline,
             layout,
             uniforms,
             geometry,
+            sides,
+            sides_view,
             coverage_pipeline,
             coverage_bind_group,
             coverage: None,
@@ -266,6 +296,10 @@ impl FigurePipeline {
                     binding: 2,
                     resource: self.geometry.as_entire_binding(),
                 },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::TextureView(&self.sides_view),
+                },
             ],
         });
         self.coverage = Some(Coverage {
@@ -296,6 +330,23 @@ impl FigurePipeline {
             .flat_map(|f| f.to_le_bytes())
             .collect();
         queue.write_buffer(&self.geometry, 0, &geometry);
+        if !prepared.sides.is_empty() {
+            let bytes: Vec<u8> = prepared
+                .sides
+                .iter()
+                .flat_map(|f| f.to_le_bytes())
+                .collect();
+            queue.write_texture(
+                self.sides.as_image_copy(),
+                &bytes,
+                wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(SIDE_TEXTURE_WIDTH as u32 * 16),
+                    rows_per_image: None,
+                },
+                self.sides.size(),
+            );
+        }
         self.coverage_for(device, inputs.width, inputs.height);
         let coverage = self.coverage.as_ref().expect("just created");
 

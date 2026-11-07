@@ -658,6 +658,7 @@
     {
       "beat": 0,
       "form": {
+        "curvature": ["Divide",1.0,"c.r"],
         "field": ["Subtract",["Sqrt",["Add",["Power",["Subtract","x","c.x"],2.0],["Power",["Subtract","y","c.y"],2.0]]],"c.r"],
         "grad": [["Divide",["Multiply",2.0,["Subtract","x","c.x"]],["Multiply",2.0,["Sqrt",["Add",["Power",["Subtract","x","c.x"],2.0],["Power",["Subtract","y","c.y"],2.0]]]]],["Divide",["Multiply",2.0,["Subtract","y","c.y"]],["Multiply",2.0,["Sqrt",["Add",["Power",["Subtract","x","c.x"],2.0],["Power",["Subtract","y","c.y"],2.0]]]]]],
         "kind": "sdf",
@@ -683,6 +684,7 @@
     {
       "beat": 1,
       "form": {
+        "curvature": ["Divide",1.0,"d.r"],
         "field": ["Subtract",["Sqrt",["Add",["Power",["Subtract","x","d.x"],2.0],["Power",["Subtract","y","d.y"],2.0]]],"d.r"],
         "grad": [["Divide",["Multiply",2.0,["Subtract","x","d.x"]],["Multiply",2.0,["Sqrt",["Add",["Power",["Subtract","x","d.x"],2.0],["Power",["Subtract","y","d.y"],2.0]]]]],["Divide",["Multiply",2.0,["Subtract","y","d.y"]],["Multiply",2.0,["Sqrt",["Add",["Power",["Subtract","x","d.x"],2.0],["Power",["Subtract","y","d.y"],2.0]]]]]],
         "kind": "sdf",
@@ -699,6 +701,7 @@
     {
       "beat": 2,
       "form": {
+        "curvature": ["Divide",1.0,"t.r"],
         "field": ["Subtract",["Sqrt",["Add",["Power",["Subtract","x","t.x"],2.0],["Power",["Subtract","y","t.y"],2.0]]],"t.r"],
         "grad": [["Divide",["Multiply",2.0,["Subtract","x","t.x"]],["Multiply",2.0,["Sqrt",["Add",["Power",["Subtract","x","t.x"],2.0],["Power",["Subtract","y","t.y"],2.0]]]]],["Divide",["Multiply",2.0,["Subtract","y","t.y"]],["Multiply",2.0,["Sqrt",["Add",["Power",["Subtract","x","t.x"],2.0],["Power",["Subtract","y","t.y"],2.0]]]]]],
         "kind": "sdf",
@@ -800,6 +803,7 @@
     {
       "beat": 3,
       "form": {
+        "curvature": ["Divide",1.0,"c_1.r"],
         "field": ["Subtract",["Sqrt",["Add",["Power",["Subtract","x","c_1.x"],2.0],["Power",["Subtract","y","c_1.y"],2.0]]],"c_1.r"],
         "grad": [["Divide",["Multiply",2.0,["Subtract","x","c_1.x"]],["Multiply",2.0,["Sqrt",["Add",["Power",["Subtract","x","c_1.x"],2.0],["Power",["Subtract","y","c_1.y"],2.0]]]]],["Divide",["Multiply",2.0,["Subtract","y","c_1.y"]],["Multiply",2.0,["Sqrt",["Add",["Power",["Subtract","x","c_1.x"],2.0],["Power",["Subtract","y","c_1.y"],2.0]]]]]],
         "kind": "sdf",
@@ -816,6 +820,7 @@
     {
       "beat": 3,
       "form": {
+        "curvature": ["Divide",1.0,"d_1.r"],
         "field": ["Subtract",["Sqrt",["Add",["Power",["Subtract","x","d_1.x"],2.0],["Power",["Subtract","y","d_1.y"],2.0]]],"d_1.r"],
         "grad": [["Divide",["Multiply",2.0,["Subtract","x","d_1.x"]],["Multiply",2.0,["Sqrt",["Add",["Power",["Subtract","x","d_1.x"],2.0],["Power",["Subtract","y","d_1.y"],2.0]]]]],["Divide",["Multiply",2.0,["Subtract","y","d_1.y"]],["Multiply",2.0,["Sqrt",["Add",["Power",["Subtract","x","d_1.x"],2.0],["Power",["Subtract","y","d_1.y"],2.0]]]]]],
         "kind": "sdf",
@@ -832,6 +837,7 @@
     {
       "beat": 4,
       "form": {
+        "curvature": ["Divide",1.0,"t_m.r"],
         "field": ["Subtract",["Sqrt",["Add",["Power",["Subtract","x","t_m.x"],2.0],["Power",["Subtract","y","t_m.y"],2.0]]],"t_m.r"],
         "grad": [["Divide",["Multiply",2.0,["Subtract","x","t_m.x"]],["Multiply",2.0,["Sqrt",["Add",["Power",["Subtract","x","t_m.x"],2.0],["Power",["Subtract","y","t_m.y"],2.0]]]]],["Divide",["Multiply",2.0,["Subtract","y","t_m.y"]],["Multiply",2.0,["Sqrt",["Add",["Power",["Subtract","x","t_m.x"],2.0],["Power",["Subtract","y","t_m.y"],2.0]]]]]],
         "kind": "sdf",
@@ -848,6 +854,7 @@
     {
       "beat": 4,
       "form": {
+        "curvature": ["Divide",1.0,"e_1.r"],
         "field": ["Subtract",["Sqrt",["Add",["Power",["Subtract","x","e_1.x"],2.0],["Power",["Subtract","y","e_1.y"],2.0]]],"e_1.r"],
         "grad": [["Divide",["Multiply",2.0,["Subtract","x","e_1.x"]],["Multiply",2.0,["Sqrt",["Add",["Power",["Subtract","x","e_1.x"],2.0],["Power",["Subtract","y","e_1.y"],2.0]]]]],["Divide",["Multiply",2.0,["Subtract","y","e_1.y"]],["Multiply",2.0,["Sqrt",["Add",["Power",["Subtract","x","e_1.x"],2.0],["Power",["Subtract","y","e_1.y"],2.0]]]]]],
         "kind": "sdf",
@@ -864,6 +871,7 @@
     {
       "beat": 4,
       "form": {
+        "curvature": ["Divide",1.0,"g_1.r"],
         "field": ["Subtract",["Sqrt",["Add",["Power",["Subtract","x","g_1.x"],2.0],["Power",["Subtract","y","g_1.y"],2.0]]],"g_1.r"],
         "grad": [["Divide",["Multiply",2.0,["Subtract","x","g_1.x"]],["Multiply",2.0,["Sqrt",["Add",["Power",["Subtract","x","g_1.x"],2.0],["Power",["Subtract","y","g_1.y"],2.0]]]]],["Divide",["Multiply",2.0,["Subtract","y","g_1.y"]],["Multiply",2.0,["Sqrt",["Add",["Power",["Subtract","x","g_1.x"],2.0],["Power",["Subtract","y","g_1.y"],2.0]]]]]],
         "kind": "sdf",
@@ -908,6 +916,7 @@
     {
       "beat": 5,
       "form": {
+        "curvature": ["Divide",1.0,"e.r"],
         "field": ["Subtract",["Sqrt",["Add",["Power",["Subtract","x","e.x"],2.0],["Power",["Subtract","y","e.y"],2.0]]],"e.r"],
         "grad": [["Divide",["Multiply",2.0,["Subtract","x","e.x"]],["Multiply",2.0,["Sqrt",["Add",["Power",["Subtract","x","e.x"],2.0],["Power",["Subtract","y","e.y"],2.0]]]]],["Divide",["Multiply",2.0,["Subtract","y","e.y"]],["Multiply",2.0,["Sqrt",["Add",["Power",["Subtract","x","e.x"],2.0],["Power",["Subtract","y","e.y"],2.0]]]]]],
         "kind": "sdf",
@@ -1009,6 +1018,7 @@
     {
       "beat": 6,
       "form": {
+        "curvature": ["Divide",1.0,"p.r"],
         "field": ["Subtract",["Sqrt",["Add",["Power",["Subtract","x","p.x"],2.0],["Power",["Subtract","y","p.y"],2.0]]],"p.r"],
         "grad": [["Divide",["Multiply",2.0,["Subtract","x","p.x"]],["Multiply",2.0,["Sqrt",["Add",["Power",["Subtract","x","p.x"],2.0],["Power",["Subtract","y","p.y"],2.0]]]]],["Divide",["Multiply",2.0,["Subtract","y","p.y"]],["Multiply",2.0,["Sqrt",["Add",["Power",["Subtract","x","p.x"],2.0],["Power",["Subtract","y","p.y"],2.0]]]]]],
         "kind": "sdf",
@@ -1025,6 +1035,7 @@
     {
       "beat": 6,
       "form": {
+        "curvature": ["Divide",1.0,"r.r"],
         "field": ["Subtract",["Sqrt",["Add",["Power",["Subtract","x","r.x"],2.0],["Power",["Subtract","y","r.y"],2.0]]],"r.r"],
         "grad": [["Divide",["Multiply",2.0,["Subtract","x","r.x"]],["Multiply",2.0,["Sqrt",["Add",["Power",["Subtract","x","r.x"],2.0],["Power",["Subtract","y","r.y"],2.0]]]]],["Divide",["Multiply",2.0,["Subtract","y","r.y"]],["Multiply",2.0,["Sqrt",["Add",["Power",["Subtract","x","r.x"],2.0],["Power",["Subtract","y","r.y"],2.0]]]]]],
         "kind": "sdf",
@@ -1097,6 +1108,7 @@
     {
       "beat": 7,
       "form": {
+        "curvature": ["Divide",1.0,"q_1.r"],
         "field": ["Subtract",["Sqrt",["Add",["Power",["Subtract","x","q_1.x"],2.0],["Power",["Subtract","y","q_1.y"],2.0]]],"q_1.r"],
         "grad": [["Divide",["Multiply",2.0,["Subtract","x","q_1.x"]],["Multiply",2.0,["Sqrt",["Add",["Power",["Subtract","x","q_1.x"],2.0],["Power",["Subtract","y","q_1.y"],2.0]]]]],["Divide",["Multiply",2.0,["Subtract","y","q_1.y"]],["Multiply",2.0,["Sqrt",["Add",["Power",["Subtract","x","q_1.x"],2.0],["Power",["Subtract","y","q_1.y"],2.0]]]]]],
         "kind": "sdf",
@@ -1113,6 +1125,7 @@
     {
       "beat": 7,
       "form": {
+        "curvature": ["Divide",1.0,"s.r"],
         "field": ["Subtract",["Sqrt",["Add",["Power",["Subtract","x","s.x"],2.0],["Power",["Subtract","y","s.y"],2.0]]],"s.r"],
         "grad": [["Divide",["Multiply",2.0,["Subtract","x","s.x"]],["Multiply",2.0,["Sqrt",["Add",["Power",["Subtract","x","s.x"],2.0],["Power",["Subtract","y","s.y"],2.0]]]]],["Divide",["Multiply",2.0,["Subtract","y","s.y"]],["Multiply",2.0,["Sqrt",["Add",["Power",["Subtract","x","s.x"],2.0],["Power",["Subtract","y","s.y"],2.0]]]]]],
         "kind": "sdf",
@@ -1129,6 +1142,7 @@
     {
       "beat": 8,
       "form": {
+        "curvature": ["Divide",1.0,"p_m.r"],
         "field": ["Subtract",["Sqrt",["Add",["Power",["Subtract","x","p_m.x"],2.0],["Power",["Subtract","y","p_m.y"],2.0]]],"p_m.r"],
         "grad": [["Divide",["Multiply",2.0,["Subtract","x","p_m.x"]],["Multiply",2.0,["Sqrt",["Add",["Power",["Subtract","x","p_m.x"],2.0],["Power",["Subtract","y","p_m.y"],2.0]]]]],["Divide",["Multiply",2.0,["Subtract","y","p_m.y"]],["Multiply",2.0,["Sqrt",["Add",["Power",["Subtract","x","p_m.x"],2.0],["Power",["Subtract","y","p_m.y"],2.0]]]]]],
         "kind": "sdf",
@@ -1145,6 +1159,7 @@
     {
       "beat": 8,
       "form": {
+        "curvature": ["Divide",1.0,"r_m.r"],
         "field": ["Subtract",["Sqrt",["Add",["Power",["Subtract","x","r_m.x"],2.0],["Power",["Subtract","y","r_m.y"],2.0]]],"r_m.r"],
         "grad": [["Divide",["Multiply",2.0,["Subtract","x","r_m.x"]],["Multiply",2.0,["Sqrt",["Add",["Power",["Subtract","x","r_m.x"],2.0],["Power",["Subtract","y","r_m.y"],2.0]]]]],["Divide",["Multiply",2.0,["Subtract","y","r_m.y"]],["Multiply",2.0,["Sqrt",["Add",["Power",["Subtract","x","r_m.x"],2.0],["Power",["Subtract","y","r_m.y"],2.0]]]]]],
         "kind": "sdf",
@@ -1161,6 +1176,7 @@
     {
       "beat": 9,
       "form": {
+        "curvature": ["Divide",1.0,"p_1.r"],
         "field": ["Subtract",["Sqrt",["Add",["Power",["Subtract","x","p_1.x"],2.0],["Power",["Subtract","y","p_1.y"],2.0]]],"p_1.r"],
         "grad": [["Divide",["Multiply",2.0,["Subtract","x","p_1.x"]],["Multiply",2.0,["Sqrt",["Add",["Power",["Subtract","x","p_1.x"],2.0],["Power",["Subtract","y","p_1.y"],2.0]]]]],["Divide",["Multiply",2.0,["Subtract","y","p_1.y"]],["Multiply",2.0,["Sqrt",["Add",["Power",["Subtract","x","p_1.x"],2.0],["Power",["Subtract","y","p_1.y"],2.0]]]]]],
         "kind": "sdf",

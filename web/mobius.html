@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Coxeter and Möbius</title>
+<style>
+  :root { color-scheme: light dark; --ink: rgb(18 17 15); --paper: rgb(242 240 235); --muted: rgb(110 106 99); --bad: #b5443c; }
+  @media (prefers-color-scheme: dark) { :root { --ink: rgb(243 240 234); --paper: rgb(23 22 20); --muted: rgb(148 143 134); } }
+  body { margin: 0; padding: 24px 16px; background: var(--paper); color: var(--ink); font: 15px/1.45 ui-sans-serif, system-ui, sans-serif; }
+  main { max-width: 640px; margin: 0 auto; }
+  h1 { font-size: 16px; font-weight: 600; margin: 0 0 12px; }
+  .stage { position: relative; overflow: hidden; }
+  canvas { display: block; width: 100%; }
+  .label { position: absolute; left: 0; top: 0; white-space: nowrap; font-family: system-ui, -apple-system, sans-serif; line-height: 1; will-change: transform; }
+  .label.math { font-family: Charter, 'Bitstream Charter', 'Sitka Text', Cambria, serif; font-style: italic; }
+  .controls { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; margin: 12px 0; }
+  .controls input[type=range] { width: 8rem; }
+  output { font-variant-numeric: tabular-nums; }
+  button { font: inherit; }
+  p { margin: 4px 0; color: var(--muted); }
+  #error { color: var(--bad); white-space: pre-wrap; font-family: ui-monospace, monospace; font-size: 13px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Coxeter’s loxodromic sequence, through a Möbius map</h1>
+  <div class="stage" id="stage"><canvas id="figure" aria-label="Circles at the powers of w, each touching its neighbors, and their image under a Möbius map, where they still touch."></canvas></div>
+  <p id="formula" style="color: var(--ink); font: italic 17px Charter, 'Bitstream Charter', Cambria, serif">f(z) = (az − b) / (cz + d)</p>
+  <div class="controls">
+    <button id="play" type="button">Pause</button>
+    <label><i>n</i> <input data-param id="n" type="range" min="1" max="10" step="1" value="8"> <output></output></label>
+    <label><i>a</i> <input data-param id="a" type="range" min="-10" max="10" step="0.01" value="1"> <output></output></label>
+    <label><i>b</i> <input data-param id="b" type="range" min="-10" max="10" step="0.01" value="1"> <output></output></label>
+    <label><i>c</i> <input data-param id="c" type="range" min="-10" max="10" step="0.01" value="0.5"> <output></output></label>
+    <label><i>d</i> <input data-param id="d" type="range" min="-10" max="10" step="0.01" value="2"> <output></output></label>
+  </div>
+  <p id="status">Starting…</p>
+  <p id="error" role="alert"></p>
+</main>
+<script type="module">
+  import init, { Player, figure_size, named_colors } from './pkg/pencil_web.js';
+  import { LabelLayer } from './labels.js';
+  const $ = (id) => document.getElementById(id);
+  const get = async (path) => {
+    const response = await fetch(path, { cache: 'no-store' });
+    if (!response.ok) throw new Error(`${path}: ${response.status}`);
+    return response.text();
+  };
+  const canvas = $('figure');
+  const doc = await get('../corpus/010-mobius/mobius.pen');
+  const [theme, plain, dark] = await Promise.all(['theme.style', '010-mobius/plain.style', 'dark.style'].map((f) => get(`../corpus/${f}`)));
+  const sheets = matchMedia('(prefers-color-scheme: dark)').matches ? [theme, plain, dark] : [theme, plain];
+  await init();
+  const dpr = window.devicePixelRatio || 1;
+  const [width, height] = JSON.parse(figure_size(doc, sheets));
+  canvas.style.aspectRatio = `${width} / ${height}`;
+  canvas.width = Math.round(canvas.clientWidth * dpr);
+  canvas.height = Math.round((canvas.clientWidth * height) / width * dpr);
+  const player = await Player.create(canvas, new URLSearchParams(location.search).has('gl'));
+  const layer = new LabelLayer($('stage'), dpr);
+  player.set_measure(layer.measure);
+  const PERIOD = 13;
+  let time = 3.5, last = 0, playing = false, dirty = true;
+  const inputs = [...document.querySelectorAll('[data-param]')];
+  const show = (el) => { el.nextElementSibling.textContent = Number(el.value).toFixed(el.id === 'n' ? 0 : 2); };
+  const take = (el) => { player.set_param(el.id, Number(el.value)); show(el); dirty = true; };
+  try {
+    player.load(doc, sheets);
+    inputs.forEach(take);
+    $('status').textContent = `${player.backend}, ${canvas.width}×${canvas.height}`;
+  } catch (e) {
+    $('error').textContent = e.message;
+  }
+  $('play').textContent = 'Play';
+  // Playing hands the map back to the clock, and moving a slider takes that one back.
+  $('play').addEventListener('click', () => {
+    playing = !playing;
+    $('play').textContent = playing ? 'Pause' : 'Play';
+    if (playing) for (const name of ['b', 'c', 'd']) player.release_param(name);
+    dirty = true;
+  });
+  inputs.forEach((el) => el.addEventListener('input', () => { take(el); if (playing && el.id !== 'n') { playing = false; $('play').textContent = 'Play'; } }));
+  const frame = (now) => {
+    if (playing) { time = (time + (now - last) / 1000) % PERIOD; dirty = true; }
+    last = now;
+    if (dirty) {
+      dirty = false;
+      try { layer.update(JSON.parse(player.draw(time, dpr))); } catch (e) { $('error').textContent = e.message; playing = false; }
+    }
+    layer.tick(now);
+    requestAnimationFrame(frame);
+  };
+  requestAnimationFrame((now) => { last = now; frame(now); });
+  window.pencil = { player, layer, take, redraw() { dirty = true; } };
+</script>
+</body>
+</html>

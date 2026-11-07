@@ -1,9 +1,9 @@
 //! Resolves stylesheets against a scene. Style values are expressions, so a fill
 //! can depend on `time`, a param or `self.dist`. Nothing here changes the scene's IR.
 //!
-//! Facets: `::negative` and `::positive` are the field's raw sign. `::inside` and
-//! `::outside` are aliases for them under the gradient convention, where the
-//! negative side is inside. Later declarations win (SPEC/15's layers, without
+//! Facets: `::negative` and `::positive` are the field's raw sign. On a circle, `::inside` and
+//! `::outside` are its true disk and the rest, whichever way round it runs. Elsewhere, they're
+//! aliases for the sign under the gradient convention, where the negative side is inside. Later declarations win (SPEC/15's layers, without
 //! specificity).
 
 use std::collections::HashMap;
@@ -18,13 +18,17 @@ use crate::parse::{Document, Item};
 pub const SELF_DIST: &str = "self.dist";
 /// Arc-length position along a stroke, 0 to 1. Only legal in `width`.
 pub const SELF_T: &str = "self.t";
+/// How big a device pixel is, in world units, wherever `self.dist` can be read.
+pub const SELF_PIXEL: &str = "self.pixel";
+/// A circle's signed curvature, which is below 0 when it runs clockwise and 0 on a line.
+pub const SELF_CURVATURE: &str = "self.curvature";
 /// Style pixels per world unit, in a collection's sizes.
 pub const SELF_SCALE: &str = "self.scale";
 /// How many beats ago this mark's beat was: negative before it, 0 during it.
 pub const SELF_AGE: &str = "self.age";
 /// Every property a style can set. `docs/language.md` must describe each one, and a test
 /// holds it to that.
-pub const PROPERTIES: [&str; 18] = [
+pub const PROPERTIES: [&str; 19] = [
     "fill",
     "fill_opacity",
     "stroke",
@@ -43,6 +47,7 @@ pub const PROPERTIES: [&str; 18] = [
     "show",
     "head",
     "head_span",
+    "distance",
 ];
 pub const COLORS: [&str; 2] = ["white", "black"];
 /// The tags that say what kind of mark something is.
@@ -71,6 +76,19 @@ pub enum Blend {
     #[default]
     Gamma,
     Linear,
+    /// Adds to what's underneath, in display space, with no limit, as a shader's `col +=` does.
+    /// What's drawn this way usually wants a `tone` on the paper.
+    Add,
+}
+
+/// What a figure does with its finished color, for a figure that adds light.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub enum Tone {
+    /// Past 1 is white.
+    #[default]
+    Clip,
+    /// tanh of each channel, in display space, which rolls off smoothly.
+    Tanh,
 }
 
 /// A rendering hint. It chooses how a stroke is drawn, never what it means, so every
@@ -117,6 +135,9 @@ pub enum Place {
 pub struct MarkStyle {
     pub negative: Option<Expr>,
     pub positive: Option<Expr>,
+    /// A circle's true disk, whichever sign it has, and the rest.
+    pub inside: Option<Expr>,
+    pub outside: Option<Expr>,
     pub stroke: Option<Expr>,
     /// In style pixels. Doesn't vary per pixel.
     pub width: Option<Expr>,
@@ -135,6 +156,8 @@ pub struct MarkStyle {
     pub size: Option<Expr>,
     /// The width of a label's halo in style pixels.
     pub halo: Option<Expr>,
+    /// How far a label sits from its point, when the document says which way.
+    pub distance: Option<Expr>,
     pub place: Place,
     /// Draws the mark only while this is above 0, decided once per frame.
     pub show: Option<Expr>,
@@ -166,11 +189,45 @@ impl MarkStyle {
         }
     }
 
+    /// Whether this colors the sides of what it styles.
+    pub fn has_sides(&self) -> bool {
+        self.negative.is_some()
+            || self.positive.is_some()
+            || self.inside.is_some()
+            || self.outside.is_some()
+    }
+
+    /// What a side's color can read per instance.
+    pub fn side_exprs(&self) -> impl Iterator<Item = &Expr> {
+        [
+            &self.negative,
+            &self.positive,
+            &self.inside,
+            &self.outside,
+            &self.fill_opacity,
+        ]
+        .into_iter()
+        .flatten()
+    }
+
+    /// How much of each side's sign this style's `::negative` and `::positive` still get, for a
+    /// circle that has `a >= 0` and one that doesn't. Where `::inside` or `::outside` name the
+    /// same part of the plane, those win.
+    pub fn sign_gates(&self) -> [[f64; 2]; 2] {
+        let open = |taken: &Option<Expr>| if taken.is_some() { 0.0 } else { 1.0 };
+        [
+            [open(&self.inside), open(&self.outside)],
+            [open(&self.outside), open(&self.inside)],
+        ]
+    }
+
     /// Every expression this style evaluates.
     pub fn exprs(&self) -> impl Iterator<Item = &Expr> {
         [
             &self.negative,
             &self.positive,
+            &self.inside,
+            &self.outside,
             &self.stroke,
             &self.width,
             &self.dash,
@@ -201,10 +258,24 @@ pub struct Styled {
     /// One entry per `scene.marks`, in the same order.
     pub marks: Vec<MarkStyle>,
     pub paper: Option<Expr>,
+    pub tone: Tone,
     /// A panel title's color and size, and the color of the formula beside it.
     pub title_fill: Option<Expr>,
     pub title_size: Option<Expr>,
     pub formula_fill: Option<Expr>,
+    pub panels: PanelStyle,
+}
+
+/// How panels sit on the canvas, in design pixels: `style panels` for the whole, and
+/// `style panel` for each.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct PanelStyle {
+    pub columns: Option<Expr>,
+    pub gap: Option<Expr>,
+    pub title: Option<Expr>,
+    pub width: Option<Expr>,
+    pub height: Option<Expr>,
+    pub pad: Option<Expr>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -230,11 +301,13 @@ fn uses(e: &Expr, name: &str) -> bool {
 pub fn type_of(e: &Expr, names: &[&str], spatial: bool) -> Result<Ty, String> {
     match e {
         Expr::Num(_) => Ok(Ty::Real),
-        Expr::Sym(s) if s == SELF_DIST => {
+        Expr::Sym(s) if s == SELF_DIST || s == SELF_PIXEL || s == SELF_CURVATURE => {
             if spatial {
                 Ok(Ty::Real)
             } else {
-                Err("`self.dist` is only legal in spatial properties (`fill`, `stroke`)".into())
+                Err(format!(
+                    "`{s}` is only legal in spatial properties (`fill`, `stroke`, `fill_opacity`)"
+                ))
             }
         }
         Expr::Sym(s) if COLORS.contains(&s.as_str()) => Ok(Ty::Color),
@@ -257,6 +330,10 @@ pub fn type_of(e: &Expr, names: &[&str], spatial: bool) -> Result<Ty, String> {
                 ("Hue", [Real]) => Ok(Color),
                 ("Mix", [Color, Color, Real]) => Ok(Color),
                 ("Mix" | "Clamp" | "Smoothstep" | "Reveal", [Real, Real, Real]) => Ok(Real),
+                ("Multiply", [Color, Real] | [Real, Color]) | ("Divide", [Color, Real]) => {
+                    Ok(Color)
+                }
+                ("Add" | "Subtract", [Color, Color]) => Ok(Color),
                 ("Snap", [Real] | [Real, Real]) => Ok(Real),
                 (
                     "Add" | "Subtract" | "Multiply" | "Divide" | "Power" | "Min" | "Max" | "Mod"
@@ -265,7 +342,7 @@ pub fn type_of(e: &Expr, names: &[&str], spatial: bool) -> Result<Ty, String> {
                 ) => Ok(Real),
                 (
                     "Negate" | "Sqrt" | "Sin" | "Cos" | "Tan" | "Arccos" | "Exp" | "Ln" | "Abs"
-                    | "Sign" | "Floor" | "Pixels",
+                    | "Sign" | "Floor" | "Pixels" | "Sinh" | "Cosh" | "Tanh",
                     [Real],
                 ) => Ok(Real),
                 _ => Err(format!("`{head}` doesn't take {tys:?}")),
@@ -304,9 +381,57 @@ fn with_age(e: &Expr, beat: Option<usize>) -> Expr {
     }
 }
 
+/// The values sheets name. A later sheet's definition replaces an earlier one's everywhere,
+/// including in rules written before it, so a sheet can change what `ink` means for a whole
+/// figure. A definition can use any other name, in any order.
+pub fn sheet_names(sheets: &[Document]) -> Result<HashMap<String, Expr>, Error> {
+    let mut written: HashMap<&str, (&Expr, usize)> = HashMap::new();
+    for sheet in sheets {
+        for item in &sheet.items {
+            if let Item::Let { name, expr, line } = item {
+                written.insert(name, (expr, *line));
+            }
+        }
+    }
+    fn expand(
+        name: &str,
+        written: &HashMap<&str, (&Expr, usize)>,
+        done: &mut HashMap<String, Expr>,
+        visiting: &mut Vec<String>,
+    ) -> Result<(), Error> {
+        if done.contains_key(name) {
+            return Ok(());
+        }
+        let (expr, line) = written[name];
+        if visiting.iter().any(|v| v == name) {
+            return Err(Error::at(
+                line,
+                1,
+                format!("`{name}` is defined in terms of itself"),
+            ));
+        }
+        visiting.push(name.to_string());
+        let mut used = Vec::new();
+        expr.visit_syms(&mut |s| used.push(s.to_string()));
+        for other in used {
+            if written.contains_key(other.as_str()) {
+                expand(&other, written, done, visiting)?;
+            }
+        }
+        visiting.pop();
+        done.insert(name.to_string(), with_names(expr, done));
+        Ok(())
+    }
+    let mut done = HashMap::new();
+    for name in written.keys() {
+        expand(name, &written, &mut done, &mut Vec::new())?;
+    }
+    Ok(done)
+}
+
 pub fn resolve(scene: &Scene, sheets: &[Document]) -> Result<Styled, Error> {
     let mut unmatched = Vec::new();
-    let styled = resolve_keeping(scene, sheets, &mut unmatched)?;
+    let styled = resolve_keeping(scene, None, sheets, &mut unmatched)?;
     match unmatched.into_iter().next() {
         Some(error) => Err(error),
         None => Ok(styled),
@@ -317,6 +442,7 @@ pub fn resolve(scene: &Scene, sheets: &[Document]) -> Result<Styled, Error> {
 /// panels a name only has to be in one of them.
 pub fn resolve_keeping(
     scene: &Scene,
+    panel: Option<&str>,
     sheets: &[Document],
     unmatched: &mut Vec<Error>,
 ) -> Result<Styled, Error> {
@@ -325,17 +451,11 @@ pub fn resolve_keeping(
         ..Styled::default()
     };
     let names: Vec<&str> = scene.bindings.iter().map(|b| b.id.as_str()).collect();
-    // A sheet's `let`s name values for the sheets from there on. The document comes last,
-    // and its own `let`s are bindings.
-    let mut sheet_names: HashMap<String, Expr> = HashMap::new();
+    // The document comes last, and its own `let`s are bindings.
+    let sheet_names = sheet_names(&sheets[..sheets.len().saturating_sub(1)])?;
 
-    for (index, sheet) in sheets.iter().enumerate() {
+    for sheet in sheets {
         for item in &sheet.items {
-            if let (Item::Let { name, expr, .. }, true) = (item, index + 1 < sheets.len()) {
-                let value = with_names(expr, &sheet_names);
-                sheet_names.insert(name.clone(), value);
-                continue;
-            }
             let Item::Style(rule) = item else { continue };
             let at = |message: String| Error::at(rule.line, 1, message);
             let decls: Vec<(String, Expr)> = rule
@@ -344,6 +464,42 @@ pub fn resolve_keeping(
                 .map(|(prop, value)| (prop.clone(), with_names(value, &sheet_names)))
                 .collect();
             for selector in &rule.selectors {
+                if selector.target == "panels" && selector.tags.is_empty() {
+                    for (prop, value) in &decls {
+                        let slot = match prop.as_str() {
+                            "columns" => &mut styled.panels.columns,
+                            "gap" => &mut styled.panels.gap,
+                            "title" => &mut styled.panels.title,
+                            other => {
+                                return Err(at(format!(
+                                    "`panels` takes `columns`, `gap` and `title`, not `{other}`"
+                                )));
+                            }
+                        };
+                        set_layout(prop, value, prop != "columns", slot).map_err(&at)?;
+                    }
+                    continue;
+                }
+                if selector.target == "panel" {
+                    if !selector.tags.iter().all(|t| Some(t.as_str()) == panel) {
+                        unmatched.push(at(format!("no panel named `{}`", selector.tags.join("."))));
+                        continue;
+                    }
+                    for (prop, value) in &decls {
+                        let slot = match prop.as_str() {
+                            "width" => &mut styled.panels.width,
+                            "height" => &mut styled.panels.height,
+                            "pad" => &mut styled.panels.pad,
+                            other => {
+                                return Err(at(format!(
+                                    "`panel` takes `width`, `height` and `pad`, not `{other}`"
+                                )));
+                            }
+                        };
+                        set_layout(prop, value, prop != "pad", slot).map_err(&at)?;
+                    }
+                    continue;
+                }
                 if selector.target == "formula" && selector.tags.is_empty() {
                     for (prop, value) in &decls {
                         if prop != "fill"
@@ -376,8 +532,18 @@ pub fn resolve_keeping(
                 }
                 if selector.target == "paper" {
                     for (prop, value) in &decls {
+                        if prop == "tone" && selector.facet.is_none() {
+                            styled.tone = match value {
+                                Expr::Sym(word) if word == "clip" => Tone::Clip,
+                                Expr::Sym(word) if word == "tanh" => Tone::Tanh,
+                                _ => return Err(at("`tone` is `clip` or `tanh`".to_string())),
+                            };
+                            continue;
+                        }
                         if prop != "fill" || selector.facet.is_some() {
-                            return Err(at(format!("`paper` only takes `fill`, not `{prop}`")));
+                            return Err(at(format!(
+                                "`paper` only takes `fill` and `tone`, not `{prop}`"
+                            )));
                         }
                         if type_of(value, &names, false).map_err(&at)? != Ty::Color {
                             return Err(at("`fill` needs a Color".into()));
@@ -448,6 +614,23 @@ pub fn resolve_keeping(
     Ok(styled)
 }
 
+/// A layout value is one number that holds for the whole figure, so it can't read a param.
+fn set_layout(
+    prop: &str,
+    value: &Expr,
+    needs_unit: bool,
+    slot: &mut Option<Expr>,
+) -> Result<(), String> {
+    if type_of(value, &[], false)? != Ty::Real {
+        return Err(format!("`{prop}` needs a number"));
+    }
+    if needs_unit && !has_pixels(value) {
+        return Err(format!("`{prop}` needs a unit, such as `2px`"));
+    }
+    *slot = Some(value.clone());
+    Ok(())
+}
+
 /// Applies a rule's declarations to one mark.
 fn apply(
     target: &mut MarkStyle,
@@ -458,8 +641,42 @@ fn apply(
     decls: &[(String, Expr)],
     names: &[&str],
 ) -> Result<(), String> {
-    let spatial_ok = matches!(form, Form::Field { .. } | Form::Region(_) | Form::Dot(_));
+    // A collection of circles has sides, one instance at a time.
+    let many_circles = matches!(
+        form,
+        Form::Many {
+            shape: Shape::Circles { .. } | Shape::Cycles { .. },
+            ..
+        }
+    );
+    // A collection of curves is lines, as a curve is.
+    if matches!(
+        form,
+        Form::Many {
+            shape: Shape::Curves(_),
+            ..
+        }
+    ) && let Some((prop, _)) = decls
+        .iter()
+        .find(|(prop, _)| matches!(prop.as_str(), "fill" | "fill_opacity" | "radius"))
+    {
+        return Err(format!(
+            "`{id}` is made of lines, so it has a `stroke` and no `{prop}`"
+        ));
+    }
+    let spatial_ok =
+        many_circles || matches!(form, Form::Field { .. } | Form::Region(_) | Form::Dot(_));
     for (prop, value) in decls {
+        // A line of samples has no sides to fill, and silently drawing nothing hides a mistake.
+        if facet.is_some() && !spatial_ok {
+            return Err(format!(
+                "`{id}` has no sides, so it can't be styled with `::{}`",
+                facet.unwrap_or_default()
+            ));
+        }
+        if !PROPERTIES.contains(&prop.as_str()) {
+            return Err(format!("unknown property `{prop}`"));
+        }
         if let (None, "draw" | "blend" | "cap" | "font" | "place") = (facet, prop.as_str()) {
             let word = match value {
                 Expr::Sym(word) => word.as_str(),
@@ -478,6 +695,7 @@ fn apply(
                 }
                 ("blend", "linear") => target.blend = Blend::Linear,
                 ("blend", "gamma") => target.blend = Blend::Gamma,
+                ("blend", "add") => target.blend = Blend::Add,
                 ("cap", "butt") => target.cap = Cap::Butt,
                 ("cap", "round") => target.cap = Cap::Round,
                 ("font", "sans") => target.font = Font::Sans,
@@ -507,6 +725,7 @@ fn apply(
                 | "show"
                 | "head"
                 | "head_span"
+                | "distance"
         );
         let mut scope = names.to_vec();
         if prop == "width" {
@@ -522,17 +741,50 @@ fn apply(
             scope.extend(lets.iter().map(|(name, _)| name.as_str()));
             scope.push(SELF_SCALE);
         }
-        let ty = type_of(value, &scope, !measure)?;
+        // A side's color and fade are worked out per instance too. Its rim isn't: that's one line.
+        let per_side = (facet.is_some() && prop == "fill") || prop == "fill_opacity";
+        if let (Form::Many { vars, lets, .. }, true) = (form, many_circles && per_side) {
+            scope.extend(vars.iter().map(|(name, _)| name.as_str()));
+            scope.extend(lets.iter().map(|(name, _)| name.as_str()));
+        }
+        // `fill_opacity` is a measure that can still fade with distance, as a glow does.
+        let spatial = !measure || prop == "fill_opacity";
+        let ty = type_of(value, &scope, spatial)?;
         let want = if measure { Ty::Real } else { Ty::Color };
         if ty != want {
             return Err(format!("`{prop}` needs a {want:?}, found a {ty:?}"));
         }
-        if !measure && !spatial_ok && uses(value, SELF_DIST) {
+        if spatial && !spatial_ok && (uses(value, SELF_DIST) || uses(value, SELF_PIXEL)) {
             return Err(format!(
                 "`{id}` has no distance, so it can't use `self.dist`"
             ));
         }
+        let round = many_circles
+            || matches!(
+                form,
+                Form::Field {
+                    curvature: Some(_),
+                    ..
+                }
+            );
+        if uses(value, SELF_CURVATURE) && !round {
+            return Err(format!(
+                "`{id}` isn't a circle, so it can't use `self.curvature`"
+            ));
+        }
+        if many_circles
+            && !per_side
+            && [SELF_DIST, SELF_PIXEL, SELF_CURVATURE]
+                .iter()
+                .any(|name| uses(value, name))
+        {
+            return Err(format!(
+                "`{id}`'s `{prop}` is the same along all its circles, so it can't use `self`: only a side's `fill` and `fill_opacity` can"
+            ));
+        }
         let slot = match (facet, prop.as_str()) {
+            (Some("inside"), "fill") if round => &mut target.inside,
+            (Some("outside"), "fill") if round => &mut target.outside,
             (Some("inside" | "negative"), "fill") => &mut target.negative,
             (Some("outside" | "positive"), "fill") => &mut target.positive,
             (None, "stroke") => &mut target.stroke,
@@ -540,7 +792,7 @@ fn apply(
             (None, "fill_opacity") => &mut target.fill_opacity,
             (None, "show") => &mut target.show,
             (None, "head_span") => &mut target.head_span,
-            (None, "width" | "dash" | "gap" | "radius" | "size" | "halo" | "head") => {
+            (None, "width" | "dash" | "gap" | "radius" | "size" | "halo" | "head" | "distance") => {
                 if !has_pixels(value) {
                     return Err(format!("`{prop}` needs a unit, such as `2px`"));
                 }
@@ -551,11 +803,12 @@ fn apply(
                     "radius" => &mut target.radius,
                     "size" => &mut target.size,
                     "head" => &mut target.head,
+                    "distance" => &mut target.distance,
                     _ => &mut target.halo,
                 }
             }
             (None, "fill") => {
-                if matches!(form, Form::Field { .. }) {
+                if many_circles || matches!(form, Form::Field { .. }) {
                     return Err("`fill` needs a facet, such as `::inside`, for now".into());
                 }
                 &mut target.negative
@@ -588,6 +841,49 @@ mod tests {
 
     fn styled(sheet: &str) -> Result<crate::Figure, Error> {
         build(DOC, &[sheet])
+    }
+
+    fn paper_of(doc: &str, sheets: &[&str]) -> Result<Expr, Error> {
+        Ok(crate::build(doc, sheets)?.styles.paper.unwrap())
+    }
+
+    #[test]
+    fn a_later_sheets_name_reaches_rules_before_it() {
+        let earlier = "let ink = rgb(1, 2, 3)\nstyle paper { fill: ink }";
+        let later = "let ink = rgb(4, 5, 6)";
+        let doc = "curve c = circle((0, 0), (1, 0))";
+        let plain = paper_of(doc, &[earlier]).unwrap();
+        let both = paper_of(doc, &[earlier, later]).unwrap();
+        assert_eq!(
+            both,
+            paper_of(doc, &["style paper { fill: rgb(4, 5, 6) }"]).unwrap()
+        );
+        assert_ne!(plain, both);
+    }
+
+    #[test]
+    fn a_name_can_use_one_defined_after_it() {
+        let sheet = "let ink = base\nlet base = rgb(4, 5, 6)\nstyle paper { fill: ink }";
+        let doc = "curve c = circle((0, 0), (1, 0))";
+        assert_eq!(
+            paper_of(doc, &[sheet]).unwrap(),
+            paper_of(doc, &["style paper { fill: rgb(4, 5, 6) }"]).unwrap()
+        );
+    }
+
+    #[test]
+    fn a_name_cannot_be_defined_in_terms_of_itself() {
+        let doc = "curve c = circle((0, 0), (1, 0))";
+        let err =
+            crate::build(doc, &["let a = b\nlet b = a\nstyle paper { fill: a }"]).unwrap_err();
+        assert!(err.message.contains("in terms of itself"), "{err}");
+    }
+
+    #[test]
+    fn an_unknown_property_says_so() {
+        let doc = "curve c = circle((0, 0), (1, 0))";
+        let err = crate::build(doc, &["style c { distnce: 2px }"]).unwrap_err();
+        assert!(err.message.contains("unknown property `distnce`"), "{err}");
     }
 
     #[test]

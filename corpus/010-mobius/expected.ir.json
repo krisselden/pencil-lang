@@ -1,0 +1,184 @@
+[
+  {
+    "beats": [],
+    "bindings": [
+      {
+        "expr": 8.0,
+        "id": "n"
+      },
+      {
+        "expr": 1.0,
+        "id": "a"
+      },
+      {
+        "expr": ["Multiply",["Smoothstep",0.0,3.0,"time"],["Subtract",1.0,["Smoothstep",11.0,13.0,"time"]]],
+        "id": "grown"
+      },
+      {
+        "expr": ["Multiply",["Smoothstep",4.0,7.0,"time"],["Subtract",1.0,["Smoothstep",8.0,11.0,"time"]]],
+        "id": "dipped"
+      },
+      {
+        "expr": ["Sqrt",["Subtract",["Divide",["Multiply",3.0,["Sqrt",5.0]],2.0],["Divide",5.0,2.0]]],
+        "id": "k"
+      },
+      {
+        "expr": ["Subtract",["Negate",1.0],["Sqrt",["Divide",["Add",["Sqrt",["Add",["Power",-1.0,2.0],["Power",["Negate",2.0],2.0]]],-1.0],2.0]]],
+        "id": "w.x"
+      },
+      {
+        "expr": ["Subtract",1.0,["Multiply",["IfNonnegative",["Negate",2.0],1.0,-1.0],["Sqrt",["Divide",["Subtract",["Sqrt",["Add",["Power",-1.0,2.0],["Power",["Negate",2.0],2.0]]],-1.0],2.0]]]],
+        "id": "w.y"
+      },
+      {
+        "expr": "grown",
+        "id": "b"
+      },
+      {
+        "expr": ["Multiply",0.5,"grown"],
+        "id": "c"
+      },
+      {
+        "expr": ["Subtract",["Add",1.0,"grown"],["Multiply",1.2,"dipped"]],
+        "id": "d"
+      }
+    ],
+    "doc": "mobius",
+    "duration": 13.0,
+    "expressions": [],
+    "handles": [],
+    "marks": [
+      {
+        "beat": null,
+        "form": {
+          "kind": "many",
+          "shape": {
+            "cycles": {
+              "a": ["Where",["Subtract",["Add",["Power",["Subtract",["Multiply",["Add",["Multiply",["Subtract","q.x","p.x"],["Subtract","q.x","p.x"]],["Multiply",["Subtract","q.y","p.y"],["Subtract","q.y","p.y"]]],["Subtract","u.y","p.y"]],["Multiply",["Add",["Multiply",["Subtract","u.x","p.x"],["Subtract","u.x","p.x"]],["Multiply",["Subtract","u.y","p.y"],["Subtract","u.y","p.y"]]],["Subtract","q.y","p.y"]]],2.0],["Power",["Subtract",["Multiply",["Add",["Multiply",["Subtract","u.x","p.x"],["Subtract","u.x","p.x"]],["Multiply",["Subtract","u.y","p.y"],["Subtract","u.y","p.y"]]],["Subtract","q.x","p.x"]],["Multiply",["Add",["Multiply",["Subtract","q.x","p.x"],["Subtract","q.x","p.x"]],["Multiply",["Subtract","q.y","p.y"],["Subtract","q.y","p.y"]]],["Subtract","u.x","p.x"]]],2.0]],1e-24],["Divide",["Multiply",2.0,["Subtract",["Multiply",["Subtract","q.x","p.x"],["Subtract","u.y","p.y"]],["Multiply",["Subtract","q.y","p.y"],["Subtract","u.x","p.x"]]]],["Sqrt",["Add",["Power",["Subtract",["Multiply",["Add",["Multiply",["Subtract","q.x","p.x"],["Subtract","q.x","p.x"]],["Multiply",["Subtract","q.y","p.y"],["Subtract","q.y","p.y"]]],["Subtract","u.y","p.y"]],["Multiply",["Add",["Multiply",["Subtract","u.x","p.x"],["Subtract","u.x","p.x"]],["Multiply",["Subtract","u.y","p.y"],["Subtract","u.y","p.y"]]],["Subtract","q.y","p.y"]]],2.0],["Power",["Subtract",["Multiply",["Add",["Multiply",["Subtract","u.x","p.x"],["Subtract","u.x","p.x"]],["Multiply",["Subtract","u.y","p.y"],["Subtract","u.y","p.y"]]],["Subtract","q.x","p.x"]],["Multiply",["Add",["Multiply",["Subtract","q.x","p.x"],["Subtract","q.x","p.x"]],["Multiply",["Subtract","q.y","p.y"],["Subtract","q.y","p.y"]]],["Subtract","u.x","p.x"]]],2.0]]]]],
+              "b": [["Where",["Subtract",["Add",["Power",["Subtract",["Multiply",["Add",["Multiply",["Subtract","q.x","p.x"],["Subtract","q.x","p.x"]],["Multiply",["Subtract","q.y","p.y"],["Subtract","q.y","p.y"]]],["Subtract","u.y","p.y"]],["Multiply",["Add",["Multiply",["Subtract","u.x","p.x"],["Subtract","u.x","p.x"]],["Multiply",["Subtract","u.y","p.y"],["Subtract","u.y","p.y"]]],["Subtract","q.y","p.y"]]],2.0],["Power",["Subtract",["Multiply",["Add",["Multiply",["Subtract","u.x","p.x"],["Subtract","u.x","p.x"]],["Multiply",["Subtract","u.y","p.y"],["Subtract","u.y","p.y"]]],["Subtract","q.x","p.x"]],["Multiply",["Add",["Multiply",["Subtract","q.x","p.x"],["Subtract","q.x","p.x"]],["Multiply",["Subtract","q.y","p.y"],["Subtract","q.y","p.y"]]],["Subtract","u.x","p.x"]]],2.0]],1e-24],["Divide",["Add",["Subtract",["Multiply",["Add",["Multiply",["Subtract","q.x","p.x"],["Subtract","q.x","p.x"]],["Multiply",["Subtract","q.y","p.y"],["Subtract","q.y","p.y"]]],["Subtract","u.y","p.y"]],["Multiply",["Add",["Multiply",["Subtract","u.x","p.x"],["Subtract","u.x","p.x"]],["Multiply",["Subtract","u.y","p.y"],["Subtract","u.y","p.y"]]],["Subtract","q.y","p.y"]]],["Multiply",["Multiply",2.0,["Subtract",["Multiply",["Subtract","q.x","p.x"],["Subtract","u.y","p.y"]],["Multiply",["Subtract","q.y","p.y"],["Subtract","u.x","p.x"]]]],"p.x"]],["Sqrt",["Add",["Power",["Subtract",["Multiply",["Add",["Multiply",["Subtract","q.x","p.x"],["Subtract","q.x","p.x"]],["Multiply",["Subtract","q.y","p.y"],["Subtract","q.y","p.y"]]],["Subtract","u.y","p.y"]],["Multiply",["Add",["Multiply",["Subtract","u.x","p.x"],["Subtract","u.x","p.x"]],["Multiply",["Subtract","u.y","p.y"],["Subtract","u.y","p.y"]]],["Subtract","q.y","p.y"]]],2.0],["Power",["Subtract",["Multiply",["Add",["Multiply",["Subtract","u.x","p.x"],["Subtract","u.x","p.x"]],["Multiply",["Subtract","u.y","p.y"],["Subtract","u.y","p.y"]]],["Subtract","q.x","p.x"]],["Multiply",["Add",["Multiply",["Subtract","q.x","p.x"],["Subtract","q.x","p.x"]],["Multiply",["Subtract","q.y","p.y"],["Subtract","q.y","p.y"]]],["Subtract","u.x","p.x"]]],2.0]]]]],["Where",["Subtract",["Add",["Power",["Subtract",["Multiply",["Add",["Multiply",["Subtract","q.x","p.x"],["Subtract","q.x","p.x"]],["Multiply",["Subtract","q.y","p.y"],["Subtract","q.y","p.y"]]],["Subtract","u.y","p.y"]],["Multiply",["Add",["Multiply",["Subtract","u.x","p.x"],["Subtract","u.x","p.x"]],["Multiply",["Subtract","u.y","p.y"],["Subtract","u.y","p.y"]]],["Subtract","q.y","p.y"]]],2.0],["Power",["Subtract",["Multiply",["Add",["Multiply",["Subtract","u.x","p.x"],["Subtract","u.x","p.x"]],["Multiply",["Subtract","u.y","p.y"],["Subtract","u.y","p.y"]]],["Subtract","q.x","p.x"]],["Multiply",["Add",["Multiply",["Subtract","q.x","p.x"],["Subtract","q.x","p.x"]],["Multiply",["Subtract","q.y","p.y"],["Subtract","q.y","p.y"]]],["Subtract","u.x","p.x"]]],2.0]],1e-24],["Divide",["Add",["Subtract",["Multiply",["Add",["Multiply",["Subtract","u.x","p.x"],["Subtract","u.x","p.x"]],["Multiply",["Subtract","u.y","p.y"],["Subtract","u.y","p.y"]]],["Subtract","q.x","p.x"]],["Multiply",["Add",["Multiply",["Subtract","q.x","p.x"],["Subtract","q.x","p.x"]],["Multiply",["Subtract","q.y","p.y"],["Subtract","q.y","p.y"]]],["Subtract","u.x","p.x"]]],["Multiply",["Multiply",2.0,["Subtract",["Multiply",["Subtract","q.x","p.x"],["Subtract","u.y","p.y"]],["Multiply",["Subtract","q.y","p.y"],["Subtract","u.x","p.x"]]]],"p.y"]],["Sqrt",["Add",["Power",["Subtract",["Multiply",["Add",["Multiply",["Subtract","q.x","p.x"],["Subtract","q.x","p.x"]],["Multiply",["Subtract","q.y","p.y"],["Subtract","q.y","p.y"]]],["Subtract","u.y","p.y"]],["Multiply",["Add",["Multiply",["Subtract","u.x","p.x"],["Subtract","u.x","p.x"]],["Multiply",["Subtract","u.y","p.y"],["Subtract","u.y","p.y"]]],["Subtract","q.y","p.y"]]],2.0],["Power",["Subtract",["Multiply",["Add",["Multiply",["Subtract","u.x","p.x"],["Subtract","u.x","p.x"]],["Multiply",["Subtract","u.y","p.y"],["Subtract","u.y","p.y"]]],["Subtract","q.x","p.x"]],["Multiply",["Add",["Multiply",["Subtract","q.x","p.x"],["Subtract","q.x","p.x"]],["Multiply",["Subtract","q.y","p.y"],["Subtract","q.y","p.y"]]],["Subtract","u.x","p.x"]]],2.0]]]]]],
+              "c": ["Where",["Subtract",["Add",["Power",["Subtract",["Multiply",["Add",["Multiply",["Subtract","q.x","p.x"],["Subtract","q.x","p.x"]],["Multiply",["Subtract","q.y","p.y"],["Subtract","q.y","p.y"]]],["Subtract","u.y","p.y"]],["Multiply",["Add",["Multiply",["Subtract","u.x","p.x"],["Subtract","u.x","p.x"]],["Multiply",["Subtract","u.y","p.y"],["Subtract","u.y","p.y"]]],["Subtract","q.y","p.y"]]],2.0],["Power",["Subtract",["Multiply",["Add",["Multiply",["Subtract","u.x","p.x"],["Subtract","u.x","p.x"]],["Multiply",["Subtract","u.y","p.y"],["Subtract","u.y","p.y"]]],["Subtract","q.x","p.x"]],["Multiply",["Add",["Multiply",["Subtract","q.x","p.x"],["Subtract","q.x","p.x"]],["Multiply",["Subtract","q.y","p.y"],["Subtract","q.y","p.y"]]],["Subtract","u.x","p.x"]]],2.0]],1e-24],["Divide",["Add",["Multiply",["Multiply",2.0,["Subtract",["Multiply",["Subtract","q.x","p.x"],["Subtract","u.y","p.y"]],["Multiply",["Subtract","q.y","p.y"],["Subtract","u.x","p.x"]]]],["Add",["Multiply","p.x","p.x"],["Multiply","p.y","p.y"]]],["Multiply",2.0,["Add",["Multiply",["Subtract",["Multiply",["Add",["Multiply",["Subtract","q.x","p.x"],["Subtract","q.x","p.x"]],["Multiply",["Subtract","q.y","p.y"],["Subtract","q.y","p.y"]]],["Subtract","u.y","p.y"]],["Multiply",["Add",["Multiply",["Subtract","u.x","p.x"],["Subtract","u.x","p.x"]],["Multiply",["Subtract","u.y","p.y"],["Subtract","u.y","p.y"]]],["Subtract","q.y","p.y"]]],"p.x"],["Multiply",["Subtract",["Multiply",["Add",["Multiply",["Subtract","u.x","p.x"],["Subtract","u.x","p.x"]],["Multiply",["Subtract","u.y","p.y"],["Subtract","u.y","p.y"]]],["Subtract","q.x","p.x"]],["Multiply",["Add",["Multiply",["Subtract","q.x","p.x"],["Subtract","q.x","p.x"]],["Multiply",["Subtract","q.y","p.y"],["Subtract","q.y","p.y"]]],["Subtract","u.x","p.x"]]],"p.y"]]]],["Sqrt",["Add",["Power",["Subtract",["Multiply",["Add",["Multiply",["Subtract","q.x","p.x"],["Subtract","q.x","p.x"]],["Multiply",["Subtract","q.y","p.y"],["Subtract","q.y","p.y"]]],["Subtract","u.y","p.y"]],["Multiply",["Add",["Multiply",["Subtract","u.x","p.x"],["Subtract","u.x","p.x"]],["Multiply",["Subtract","u.y","p.y"],["Subtract","u.y","p.y"]]],["Subtract","q.y","p.y"]]],2.0],["Power",["Subtract",["Multiply",["Add",["Multiply",["Subtract","u.x","p.x"],["Subtract","u.x","p.x"]],["Multiply",["Subtract","u.y","p.y"],["Subtract","u.y","p.y"]]],["Subtract","q.x","p.x"]],["Multiply",["Add",["Multiply",["Subtract","q.x","p.x"],["Subtract","q.x","p.x"]],["Multiply",["Subtract","q.y","p.y"],["Subtract","q.y","p.y"]]],["Subtract","u.x","p.x"]]],2.0]]]]]
+            }
+          },
+          "vars": [
+            {
+              "range": [["Negate","n"],"n"],
+              "var": "m"
+            }
+          ],
+          "with": [
+            {
+              "expr": ["Multiply",["Exp",["Multiply","m",["Where",["Subtract",["Add",["Power","w.x",2.0],["Power","w.y",2.0]],1e-12],["Ln",["Sqrt",["Add",["Power","w.x",2.0],["Power","w.y",2.0]]]]]]],["Cos",["Multiply","m",["Where",["Subtract",["Add",["Power","w.x",2.0],["Power","w.y",2.0]],1e-12],["Arctan2","w.y","w.x"]]]]],
+              "id": "z.x"
+            },
+            {
+              "expr": ["Multiply",["Exp",["Multiply","m",["Where",["Subtract",["Add",["Power","w.x",2.0],["Power","w.y",2.0]],1e-12],["Ln",["Sqrt",["Add",["Power","w.x",2.0],["Power","w.y",2.0]]]]]]],["Sin",["Multiply","m",["Where",["Subtract",["Add",["Power","w.x",2.0],["Power","w.y",2.0]],1e-12],["Arctan2","w.y","w.x"]]]]],
+              "id": "z.y"
+            },
+            {
+              "expr": ["Multiply","k",["Sqrt",["Add",["Power","z.x",2.0],["Power","z.y",2.0]]]],
+              "id": "s"
+            },
+            {
+              "expr": ["Divide",["Add",["Multiply",["Subtract",["Multiply","a",["Add","z.x","s"]],"b"],["Add",["Multiply","c",["Add","z.x","s"]],"d"]],["Multiply",["Multiply","a","z.y"],["Multiply","c","z.y"]]],["Add",["Power",["Add",["Multiply","c",["Add","z.x","s"]],"d"],2.0],["Power",["Multiply","c","z.y"],2.0]]],
+              "id": "p.x"
+            },
+            {
+              "expr": ["Divide",["Subtract",["Multiply",["Multiply","a","z.y"],["Add",["Multiply","c",["Add","z.x","s"]],"d"]],["Multiply",["Subtract",["Multiply","a",["Add","z.x","s"]],"b"],["Multiply","c","z.y"]]],["Add",["Power",["Add",["Multiply","c",["Add","z.x","s"]],"d"],2.0],["Power",["Multiply","c","z.y"],2.0]]],
+              "id": "p.y"
+            },
+            {
+              "expr": ["Divide",["Add",["Multiply",["Subtract",["Multiply","a","z.x"],"b"],["Add",["Multiply","c","z.x"],"d"]],["Multiply",["Multiply","a",["Add","z.y","s"]],["Multiply","c",["Add","z.y","s"]]]],["Add",["Power",["Add",["Multiply","c","z.x"],"d"],2.0],["Power",["Multiply","c",["Add","z.y","s"]],2.0]]],
+              "id": "q.x"
+            },
+            {
+              "expr": ["Divide",["Subtract",["Multiply",["Multiply","a",["Add","z.y","s"]],["Add",["Multiply","c","z.x"],"d"]],["Multiply",["Subtract",["Multiply","a","z.x"],"b"],["Multiply","c",["Add","z.y","s"]]]],["Add",["Power",["Add",["Multiply","c","z.x"],"d"],2.0],["Power",["Multiply","c",["Add","z.y","s"]],2.0]]],
+              "id": "q.y"
+            },
+            {
+              "expr": ["Divide",["Add",["Multiply",["Subtract",["Multiply","a",["Subtract","z.x","s"]],"b"],["Add",["Multiply","c",["Subtract","z.x","s"]],"d"]],["Multiply",["Multiply","a","z.y"],["Multiply","c","z.y"]]],["Add",["Power",["Add",["Multiply","c",["Subtract","z.x","s"]],"d"],2.0],["Power",["Multiply","c","z.y"],2.0]]],
+              "id": "u.x"
+            },
+            {
+              "expr": ["Divide",["Subtract",["Multiply",["Multiply","a","z.y"],["Add",["Multiply","c",["Subtract","z.x","s"]],"d"]],["Multiply",["Subtract",["Multiply","a",["Subtract","z.x","s"]],"b"],["Multiply","c","z.y"]]],["Add",["Power",["Add",["Multiply","c",["Subtract","z.x","s"]],"d"],2.0],["Power",["Multiply","c","z.y"],2.0]]],
+              "id": "u.y"
+            }
+          ]
+        },
+        "id": "rims",
+        "tags": ["circles"]
+      },
+      {
+        "beat": null,
+        "form": {
+          "arc": {
+            "point": [["Divide",["Add",["Multiply",["Subtract",["Multiply","a",["Multiply",["Exp",["Multiply","t",["Where",["Subtract",["Add",["Power","w.x",2.0],["Power","w.y",2.0]],1e-12],["Ln",["Sqrt",["Add",["Power","w.x",2.0],["Power","w.y",2.0]]]]]]],["Cos",["Multiply","t",["Where",["Subtract",["Add",["Power","w.x",2.0],["Power","w.y",2.0]],1e-12],["Arctan2","w.y","w.x"]]]]]],"b"],["Add",["Multiply","c",["Multiply",["Exp",["Multiply","t",["Where",["Subtract",["Add",["Power","w.x",2.0],["Power","w.y",2.0]],1e-12],["Ln",["Sqrt",["Add",["Power","w.x",2.0],["Power","w.y",2.0]]]]]]],["Cos",["Multiply","t",["Where",["Subtract",["Add",["Power","w.x",2.0],["Power","w.y",2.0]],1e-12],["Arctan2","w.y","w.x"]]]]]],"d"]],["Multiply",["Multiply","a",["Multiply",["Exp",["Multiply","t",["Where",["Subtract",["Add",["Power","w.x",2.0],["Power","w.y",2.0]],1e-12],["Ln",["Sqrt",["Add",["Power","w.x",2.0],["Power","w.y",2.0]]]]]]],["Sin",["Multiply","t",["Where",["Subtract",["Add",["Power","w.x",2.0],["Power","w.y",2.0]],1e-12],["Arctan2","w.y","w.x"]]]]]],["Multiply","c",["Multiply",["Exp",["Multiply","t",["Where",["Subtract",["Add",["Power","w.x",2.0],["Power","w.y",2.0]],1e-12],["Ln",["Sqrt",["Add",["Power","w.x",2.0],["Power","w.y",2.0]]]]]]],["Sin",["Multiply","t",["Where",["Subtract",["Add",["Power","w.x",2.0],["Power","w.y",2.0]],1e-12],["Arctan2","w.y","w.x"]]]]]]]],["Add",["Power",["Add",["Multiply","c",["Multiply",["Exp",["Multiply","t",["Where",["Subtract",["Add",["Power","w.x",2.0],["Power","w.y",2.0]],1e-12],["Ln",["Sqrt",["Add",["Power","w.x",2.0],["Power","w.y",2.0]]]]]]],["Cos",["Multiply","t",["Where",["Subtract",["Add",["Power","w.x",2.0],["Power","w.y",2.0]],1e-12],["Arctan2","w.y","w.x"]]]]]],"d"],2.0],["Power",["Multiply","c",["Multiply",["Exp",["Multiply","t",["Where",["Subtract",["Add",["Power","w.x",2.0],["Power","w.y",2.0]],1e-12],["Ln",["Sqrt",["Add",["Power","w.x",2.0],["Power","w.y",2.0]]]]]]],["Sin",["Multiply","t",["Where",["Subtract",["Add",["Power","w.x",2.0],["Power","w.y",2.0]],1e-12],["Arctan2","w.y","w.x"]]]]]],2.0]]],["Divide",["Subtract",["Multiply",["Multiply","a",["Multiply",["Exp",["Multiply","t",["Where",["Subtract",["Add",["Power","w.x",2.0],["Power","w.y",2.0]],1e-12],["Ln",["Sqrt",["Add",["Power","w.x",2.0],["Power","w.y",2.0]]]]]]],["Sin",["Multiply","t",["Where",["Subtract",["Add",["Power","w.x",2.0],["Power","w.y",2.0]],1e-12],["Arctan2","w.y","w.x"]]]]]],["Add",["Multiply","c",["Multiply",["Exp",["Multiply","t",["Where",["Subtract",["Add",["Power","w.x",2.0],["Power","w.y",2.0]],1e-12],["Ln",["Sqrt",["Add",["Power","w.x",2.0],["Power","w.y",2.0]]]]]]],["Cos",["Multiply","t",["Where",["Subtract",["Add",["Power","w.x",2.0],["Power","w.y",2.0]],1e-12],["Arctan2","w.y","w.x"]]]]]],"d"]],["Multiply",["Subtract",["Multiply","a",["Multiply",["Exp",["Multiply","t",["Where",["Subtract",["Add",["Power","w.x",2.0],["Power","w.y",2.0]],1e-12],["Ln",["Sqrt",["Add",["Power","w.x",2.0],["Power","w.y",2.0]]]]]]],["Cos",["Multiply","t",["Where",["Subtract",["Add",["Power","w.x",2.0],["Power","w.y",2.0]],1e-12],["Arctan2","w.y","w.x"]]]]]],"b"],["Multiply","c",["Multiply",["Exp",["Multiply","t",["Where",["Subtract",["Add",["Power","w.x",2.0],["Power","w.y",2.0]],1e-12],["Ln",["Sqrt",["Add",["Power","w.x",2.0],["Power","w.y",2.0]]]]]]],["Sin",["Multiply","t",["Where",["Subtract",["Add",["Power","w.x",2.0],["Power","w.y",2.0]],1e-12],["Arctan2","w.y","w.x"]]]]]]]],["Add",["Power",["Add",["Multiply","c",["Multiply",["Exp",["Multiply","t",["Where",["Subtract",["Add",["Power","w.x",2.0],["Power","w.y",2.0]],1e-12],["Ln",["Sqrt",["Add",["Power","w.x",2.0],["Power","w.y",2.0]]]]]]],["Cos",["Multiply","t",["Where",["Subtract",["Add",["Power","w.x",2.0],["Power","w.y",2.0]],1e-12],["Arctan2","w.y","w.x"]]]]]],"d"],2.0],["Power",["Multiply","c",["Multiply",["Exp",["Multiply","t",["Where",["Subtract",["Add",["Power","w.x",2.0],["Power","w.y",2.0]],1e-12],["Ln",["Sqrt",["Add",["Power","w.x",2.0],["Power","w.y",2.0]]]]]]],["Sin",["Multiply","t",["Where",["Subtract",["Add",["Power","w.x",2.0],["Power","w.y",2.0]],1e-12],["Arctan2","w.y","w.x"]]]]]],2.0]]]],
+            "range": [["Negate","n"],"n"],
+            "var": "t"
+          },
+          "kind": "parametric"
+        },
+        "id": "loxodrome",
+        "tags": ["curve"]
+      },
+      {
+        "beat": null,
+        "form": {
+          "kind": "many",
+          "shape": {
+            "dots": ["self.x","self.y"]
+          },
+          "vars": [
+            {
+              "range": [["Negate","n"],"n"],
+              "var": "m"
+            }
+          ],
+          "with": [
+            {
+              "expr": ["Divide",["Add",["Multiply",["Subtract",["Multiply","a",["Multiply",["Exp",["Multiply","m",["Where",["Subtract",["Add",["Power","w.x",2.0],["Power","w.y",2.0]],1e-12],["Ln",["Sqrt",["Add",["Power","w.x",2.0],["Power","w.y",2.0]]]]]]],["Cos",["Multiply","m",["Where",["Subtract",["Add",["Power","w.x",2.0],["Power","w.y",2.0]],1e-12],["Arctan2","w.y","w.x"]]]]]],"b"],["Add",["Multiply","c",["Multiply",["Exp",["Multiply","m",["Where",["Subtract",["Add",["Power","w.x",2.0],["Power","w.y",2.0]],1e-12],["Ln",["Sqrt",["Add",["Power","w.x",2.0],["Power","w.y",2.0]]]]]]],["Cos",["Multiply","m",["Where",["Subtract",["Add",["Power","w.x",2.0],["Power","w.y",2.0]],1e-12],["Arctan2","w.y","w.x"]]]]]],"d"]],["Multiply",["Multiply","a",["Multiply",["Exp",["Multiply","m",["Where",["Subtract",["Add",["Power","w.x",2.0],["Power","w.y",2.0]],1e-12],["Ln",["Sqrt",["Add",["Power","w.x",2.0],["Power","w.y",2.0]]]]]]],["Sin",["Multiply","m",["Where",["Subtract",["Add",["Power","w.x",2.0],["Power","w.y",2.0]],1e-12],["Arctan2","w.y","w.x"]]]]]],["Multiply","c",["Multiply",["Exp",["Multiply","m",["Where",["Subtract",["Add",["Power","w.x",2.0],["Power","w.y",2.0]],1e-12],["Ln",["Sqrt",["Add",["Power","w.x",2.0],["Power","w.y",2.0]]]]]]],["Sin",["Multiply","m",["Where",["Subtract",["Add",["Power","w.x",2.0],["Power","w.y",2.0]],1e-12],["Arctan2","w.y","w.x"]]]]]]]],["Add",["Power",["Add",["Multiply","c",["Multiply",["Exp",["Multiply","m",["Where",["Subtract",["Add",["Power","w.x",2.0],["Power","w.y",2.0]],1e-12],["Ln",["Sqrt",["Add",["Power","w.x",2.0],["Power","w.y",2.0]]]]]]],["Cos",["Multiply","m",["Where",["Subtract",["Add",["Power","w.x",2.0],["Power","w.y",2.0]],1e-12],["Arctan2","w.y","w.x"]]]]]],"d"],2.0],["Power",["Multiply","c",["Multiply",["Exp",["Multiply","m",["Where",["Subtract",["Add",["Power","w.x",2.0],["Power","w.y",2.0]],1e-12],["Ln",["Sqrt",["Add",["Power","w.x",2.0],["Power","w.y",2.0]]]]]]],["Sin",["Multiply","m",["Where",["Subtract",["Add",["Power","w.x",2.0],["Power","w.y",2.0]],1e-12],["Arctan2","w.y","w.x"]]]]]],2.0]]],
+              "id": "self.x"
+            },
+            {
+              "expr": ["Divide",["Subtract",["Multiply",["Multiply","a",["Multiply",["Exp",["Multiply","m",["Where",["Subtract",["Add",["Power","w.x",2.0],["Power","w.y",2.0]],1e-12],["Ln",["Sqrt",["Add",["Power","w.x",2.0],["Power","w.y",2.0]]]]]]],["Sin",["Multiply","m",["Where",["Subtract",["Add",["Power","w.x",2.0],["Power","w.y",2.0]],1e-12],["Arctan2","w.y","w.x"]]]]]],["Add",["Multiply","c",["Multiply",["Exp",["Multiply","m",["Where",["Subtract",["Add",["Power","w.x",2.0],["Power","w.y",2.0]],1e-12],["Ln",["Sqrt",["Add",["Power","w.x",2.0],["Power","w.y",2.0]]]]]]],["Cos",["Multiply","m",["Where",["Subtract",["Add",["Power","w.x",2.0],["Power","w.y",2.0]],1e-12],["Arctan2","w.y","w.x"]]]]]],"d"]],["Multiply",["Subtract",["Multiply","a",["Multiply",["Exp",["Multiply","m",["Where",["Subtract",["Add",["Power","w.x",2.0],["Power","w.y",2.0]],1e-12],["Ln",["Sqrt",["Add",["Power","w.x",2.0],["Power","w.y",2.0]]]]]]],["Cos",["Multiply","m",["Where",["Subtract",["Add",["Power","w.x",2.0],["Power","w.y",2.0]],1e-12],["Arctan2","w.y","w.x"]]]]]],"b"],["Multiply","c",["Multiply",["Exp",["Multiply","m",["Where",["Subtract",["Add",["Power","w.x",2.0],["Power","w.y",2.0]],1e-12],["Ln",["Sqrt",["Add",["Power","w.x",2.0],["Power","w.y",2.0]]]]]]],["Sin",["Multiply","m",["Where",["Subtract",["Add",["Power","w.x",2.0],["Power","w.y",2.0]],1e-12],["Arctan2","w.y","w.x"]]]]]]]],["Add",["Power",["Add",["Multiply","c",["Multiply",["Exp",["Multiply","m",["Where",["Subtract",["Add",["Power","w.x",2.0],["Power","w.y",2.0]],1e-12],["Ln",["Sqrt",["Add",["Power","w.x",2.0],["Power","w.y",2.0]]]]]]],["Cos",["Multiply","m",["Where",["Subtract",["Add",["Power","w.x",2.0],["Power","w.y",2.0]],1e-12],["Arctan2","w.y","w.x"]]]]]],"d"],2.0],["Power",["Multiply","c",["Multiply",["Exp",["Multiply","m",["Where",["Subtract",["Add",["Power","w.x",2.0],["Power","w.y",2.0]],1e-12],["Ln",["Sqrt",["Add",["Power","w.x",2.0],["Power","w.y",2.0]]]]]]],["Sin",["Multiply","m",["Where",["Subtract",["Add",["Power","w.x",2.0],["Power","w.y",2.0]],1e-12],["Arctan2","w.y","w.x"]]]]]],2.0]]],
+              "id": "self.y"
+            }
+          ]
+        },
+        "id": "powers",
+        "tags": ["dots"]
+      }
+    ],
+    "params": [
+      {
+        "id": "n",
+        "range": [1.0,10.0]
+      },
+      {
+        "id": "a",
+        "range": [-10.0,10.0]
+      },
+      {
+        "id": "b",
+        "range": [-10.0,10.0]
+      },
+      {
+        "id": "c",
+        "range": [-10.0,10.0]
+      },
+      {
+        "id": "d",
+        "range": [-10.0,10.0]
+      }
+    ],
+    "places": [],
+    "systems": [],
+    "viewport": {
+      "fit": 0,
+      "height": 896.0,
+      "pad": 0.1,
+      "width": 640.0,
+      "x": [-10.0,10.0],
+      "y": [-14.0,14.0]
+    }
+  }
+]

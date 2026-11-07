@@ -5,8 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Lattice to Spiral</title>
 <style>
-  :root { color-scheme: light; --ink: rgb(18, 17, 15); --paper: rgb(242, 240, 235); --muted: rgb(110, 106, 99); --bad: #b5443c; --blue: rgb(0, 104, 181); --red: rgb(171, 58, 51); --green: rgb(22, 123, 38); --accent: rgb(96, 66, 166); }
-  body { margin: 0; padding: 24px 16px; background: var(--paper); color: var(--ink); font: 15px/1.45 ui-sans-serif, system-ui, sans-serif; }
+  /* Its colors come from the figure's sheets, set on the root as it loads. */
+  :root { --bad: #b5443c; }
+  body { margin: 0; padding: 24px 16px; background: var(--paper_color); color: var(--ink); font: 15px/1.45 ui-sans-serif, system-ui, sans-serif; }
   main { max-width: 860px; margin: 0 auto; }
   h1 { font-size: 16px; font-weight: 600; margin: 0 0 12px; }
   .stage { position: relative; overflow: hidden; }
@@ -43,7 +44,7 @@
   <p id="error" role="alert"></p>
 </main>
 <script type="module">
-  import init, { Player, figure_size } from './pkg/pencil_web.js';
+  import init, { Player, figure_size, named_colors } from './pkg/pencil_web.js';
   import { LabelLayer } from './labels.js';
 
   const $ = (id) => document.getElementById(id);
@@ -54,15 +55,41 @@
   };
   const canvas = $('figure');
   const doc = await get('../corpus/007-lattice/lattice.pen');
-  const sheets = await Promise.all([get('../corpus/theme.style'), get('../corpus/007-lattice/plain.style')]);
+  const [theme, plain, narrow, dark] = await Promise.all(
+    ['theme.style', '007-lattice/plain.style', '007-lattice/narrow.style', 'dark.style'].map((f) => get(`../corpus/${f}`)),
+  );
   await init();
-  const [width, height] = JSON.parse(figure_size(doc, sheets));
   const dpr = window.devicePixelRatio || 1;
-  canvas.style.aspectRatio = `${width} / ${height}`;
-  canvas.width = Math.round(canvas.clientWidth * dpr);
-  canvas.height = Math.round((canvas.clientWidth * height / width) * dpr);
 
-  const player = await Player.create(canvas, new URLSearchParams(location.search).has('gl'));
+  // The reader's theme and the page's width pick the sheets. `?dark`, `?light`, `?narrow` and
+  // `?wide` pin them, to look at one.
+  const query = new URLSearchParams(location.search);
+  const wantsDark = matchMedia('(prefers-color-scheme: dark)');
+  const wantsNarrow = matchMedia('(max-width: 600px)');
+  const sheets = () => {
+    const isDark = query.has('dark') || (!query.has('light') && wantsDark.matches);
+    const isNarrow = query.has('narrow') || (!query.has('wide') && wantsNarrow.matches);
+    return { isDark, list: [theme, plain, ...(isNarrow ? [narrow] : []), ...(isDark ? [dark] : [])] };
+  };
+  const shape = (list) => {
+    const [width, height] = JSON.parse(figure_size(doc, list));
+    canvas.style.aspectRatio = `${width} / ${height}`;
+    canvas.width = Math.round(canvas.clientWidth * dpr);
+    canvas.height = Math.round((canvas.clientWidth * height / width) * dpr);
+  };
+  const colors = (list, isDark) => {
+    document.documentElement.style.colorScheme = isDark ? 'dark' : 'light';
+    for (const [name, color] of Object.entries(JSON.parse(named_colors(list)))) {
+      document.documentElement.style.setProperty(`--${name}`, color);
+    }
+  };
+  {
+    const { isDark, list } = sheets();
+    colors(list, isDark);
+    shape(list);
+  }
+
+  const player = await Player.create(canvas, query.has('gl'));
   const layer = new LabelLayer($('stage'), dpr);
   player.set_measure(layer.measure);
   let dirty = true;
@@ -73,7 +100,7 @@
   };
   const inputs = ['q', 'p'];
   try {
-    player.load(doc, sheets);
+    player.load(doc, sheets().list);
     inputs.forEach(set);
     $('status').textContent = `${player.backend}, ${canvas.width}×${canvas.height}`;
   } catch (e) {
@@ -89,6 +116,20 @@
       set(name);
     });
   }
+  // Loading again keeps the sliders, and each label stays where it is relative to its point.
+  const restyle = () => {
+    const { isDark, list } = sheets();
+    try {
+      colors(list, isDark);
+      shape(list);
+      player.load(doc, list);
+      inputs.forEach(set);
+    } catch (e) {
+      $('error').textContent = e.message;
+    }
+  };
+  wantsDark.addEventListener('change', restyle);
+  wantsNarrow.addEventListener('change', restyle);
   const signed = (n, sign) => (n === 0 ? '0' : `${sign}${n}`);
   const readout = () => {
     const [q, p] = [Number($('q').value), Number($('p').value)];
@@ -104,7 +145,7 @@
     requestAnimationFrame(frame);
   };
   requestAnimationFrame(frame);
-  window.pencil = { player, layer, set, redraw() { dirty = true; } };
+  window.pencil = { player, layer, set, restyle, redraw() { dirty = true; } };
 </script>
 </body>
 </html>

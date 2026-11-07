@@ -1,0 +1,15 @@
+// A limaçon as the envelope of circles through a fixed point, with both sides of every circle lit
+// at once, from Kris's shader. Each circle is warm on its disk and cool outside, and they add up.
+doc limacon
+duration 6.2831853
+
+viewport { x: -1.5..10.5, y: -6..6, width: 640, height: 640 }
+
+let a = 8
+let x0 = (a + 1 / a) / 2
+let x1 = (x0 + 1) / 2
+let r1 = (a + 1) / 2 - x1
+
+let focus = (1, 0)
+
+circles rings = circle(c, focus) for i in 0..23 with angle = time - i·tau / 24, c = (r1·cos(angle) + x1, r1·sin(angle))

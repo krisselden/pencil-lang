@@ -46,11 +46,11 @@
       "id": "BZ.y"
     },
     {
-      "expr": ["Subtract",["Multiply","BZ.x",["Cos",["Divide","pi",2.0]]],["Multiply","BZ.y",["Sin",["Divide","pi",2.0]]]],
+      "expr": ["Negate","BZ.y"],
       "id": "BIZ.x"
     },
     {
-      "expr": ["Add",["Multiply","BZ.x",["Sin",["Divide","pi",2.0]]],["Multiply","BZ.y",["Cos",["Divide","pi",2.0]]]],
+      "expr": "BZ.x",
       "id": "BIZ.y"
     },
     {
@@ -110,11 +110,11 @@
       "id": "tip_a.y"
     },
     {
-      "expr": ["Subtract",["Multiply",["Add","Z.x",["Multiply","scaled_b",["Subtract","BZ.x","Z.x"]]],["Cos",["Divide",["Multiply","rotated","pi"],2.0]]],["Multiply",["Add","Z.y",["Multiply","scaled_b",["Subtract","BZ.y","Z.y"]]],["Sin",["Divide",["Multiply","rotated","pi"],2.0]]]],
+      "expr": ["Subtract",["Multiply",["Add","Z.x",["Multiply","scaled_b",["Subtract","BZ.x","Z.x"]]],["Multiply",["Exp",0.0],["Cos",["Divide",["Multiply","rotated","pi"],2.0]]]],["Multiply",["Add","Z.y",["Multiply","scaled_b",["Subtract","BZ.y","Z.y"]]],["Multiply",["Exp",0.0],["Sin",["Divide",["Multiply","rotated","pi"],2.0]]]]],
       "id": "along.x"
     },
     {
-      "expr": ["Add",["Multiply",["Add","Z.x",["Multiply","scaled_b",["Subtract","BZ.x","Z.x"]]],["Sin",["Divide",["Multiply","rotated","pi"],2.0]]],["Multiply",["Add","Z.y",["Multiply","scaled_b",["Subtract","BZ.y","Z.y"]]],["Cos",["Divide",["Multiply","rotated","pi"],2.0]]]],
+      "expr": ["Add",["Multiply",["Add","Z.x",["Multiply","scaled_b",["Subtract","BZ.x","Z.x"]]],["Multiply",["Exp",0.0],["Sin",["Divide",["Multiply","rotated","pi"],2.0]]]],["Multiply",["Add","Z.y",["Multiply","scaled_b",["Subtract","BZ.y","Z.y"]]],["Multiply",["Exp",0.0],["Cos",["Divide",["Multiply","rotated","pi"],2.0]]]]],
       "id": "along.y"
     },
     {

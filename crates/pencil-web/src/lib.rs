@@ -383,14 +383,6 @@ impl Player {
         let labels = composition
             .labels(&frames, &inputs, &widths)
             .map_err(js_error)?;
-        let css = |c: [f64; 3]| {
-            format!(
-                "rgb({} {} {})",
-                (eval::srgb_encode(c[0]) * 255.0).round(),
-                (eval::srgb_encode(c[1]) * 255.0).round(),
-                (eval::srgb_encode(c[2]) * 255.0).round(),
-            )
-        };
         let labels: Vec<_> = labels
             .iter()
             .map(|l| {
@@ -406,6 +398,28 @@ impl Player {
             .collect();
         Ok(serde_json::Value::Array(labels).to_string())
     }
+}
+
+fn css(c: [f64; 3]) -> String {
+    format!(
+        "rgb({} {} {})",
+        (eval::srgb_encode(c[0]) * 255.0).round(),
+        (eval::srgb_encode(c[1]) * 255.0).round(),
+        (eval::srgb_encode(c[2]) * 255.0).round(),
+    )
+}
+
+/// The colors these sheets name, as a JSON object of CSS colors, so a page can match the figure
+/// it holds without its own copy of the palette.
+#[wasm_bindgen]
+pub fn named_colors(sheets: Vec<String>) -> Result<String, JsError> {
+    let refs: Vec<&str> = sheets.iter().map(String::as_str).collect();
+    let colors: serde_json::Map<String, serde_json::Value> = pencil_core::named_colors(&refs)
+        .map_err(js_error)?
+        .into_iter()
+        .map(|(name, color)| (name, css(color).into()))
+        .collect();
+    Ok(serde_json::Value::Object(colors).to_string())
 }
 
 /// A document's design size, as JSON `[width, height]`, to shape its canvas before a player

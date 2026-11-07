@@ -30,11 +30,70 @@ pub struct Figure {
     pub styles: style::Styled,
     /// For each mark, whether it can stop existing. Most can't, and those cost nothing.
     pub conditional: Vec<bool>,
-    /// Its systems' last answers. See `eval::Solved`.
-    pub solved: eval::Solved,
+    /// Its systems' last answers. See `eval::Solved`. Panels with the same systems share them.
+    pub solved: std::sync::Arc<eval::Solved>,
+}
+
+/// Where one collection's sides are in the frame's data texture.
+#[derive(Debug, Clone)]
+pub struct Sided {
+    pub mark: usize,
+    /// Where its count is in `Prepared::values`.
+    pub slot: usize,
+    /// The texel it starts at.
+    pub base: usize,
+    /// Texels per instance: `a bx by c`, then what its style reads, four to a texel.
+    pub stride: usize,
+    /// What its style reads per instance.
+    pub names: Vec<String>,
 }
 
 impl Figure {
+    /// The collections of circles with colored sides, in mark order. Each has a place in the
+    /// frame's data texture, and a count in `Prepared::values`, after the presence.
+    pub fn sided(&self) -> Vec<Sided> {
+        let mut base = 0;
+        let mut slot = self.scene.bindings.len() + self.presence_slots().count();
+        let mut out = Vec::new();
+        for (mark, (m, style)) in self.scene.marks.iter().zip(&self.styles.marks).enumerate() {
+            let ir::Form::Many {
+                vars,
+                lets,
+                shape: ir::Shape::Circles { .. } | ir::Shape::Cycles { .. },
+            } = &m.form
+            else {
+                continue;
+            };
+            if !style.has_sides() {
+                continue;
+            }
+            let mut read = std::collections::HashSet::new();
+            for e in style.side_exprs() {
+                e.visit_syms(&mut |name| {
+                    read.insert(name.to_string());
+                });
+            }
+            let names: Vec<String> = vars
+                .iter()
+                .map(|(name, _)| name)
+                .chain(lets.iter().map(|(name, _)| name))
+                .filter(|name| read.contains(*name))
+                .cloned()
+                .collect();
+            let stride = 1 + names.len().div_ceil(4);
+            out.push(Sided {
+                mark,
+                slot,
+                base,
+                stride,
+                names,
+            });
+            base += stride * frame::MAX_SIDED_CIRCLES;
+            slot += 1;
+        }
+        out
+    }
+
     /// Where the shader finds each conditional mark's presence: mark index, then index
     /// in `Prepared::values`, after the bindings. Labels are drawn off the GPU.
     pub fn presence_slots(&self) -> impl Iterator<Item = (usize, usize)> + '_ {
@@ -133,7 +192,8 @@ pub fn compose(doc: &str, sheets: &[&str]) -> Result<Composition, Error> {
     let mut missing: Option<Vec<Error>> = None;
     for panel in scenes {
         let mut unmatched = Vec::new();
-        let styles = style::resolve_keeping(&panel.scene, &parsed, &mut unmatched)?;
+        let styles =
+            style::resolve_keeping(&panel.scene, Some(&panel.id), &parsed, &mut unmatched)?;
         // Only what every panel lacks is a mistake.
         missing = Some(match missing {
             None => unmatched,
@@ -149,34 +209,60 @@ pub fn compose(doc: &str, sheets: &[&str]) -> Result<Composition, Error> {
                 scene: panel.scene,
                 styles,
                 conditional,
+                // The same equations and the same params have the same answers.
                 solved: Default::default(),
             },
         ));
+        let newest = figures.len() - 1;
+        let (first, last) = figures.split_at_mut(newest);
+        if let Some(((_, shared), (_, figure))) = first.first().zip(last.first_mut())
+            && shared.scene.systems == figure.scene.systems
+        {
+            figure.solved = shared.solved.clone();
+        }
     }
     if let Some(error) = missing.and_then(|m| m.into_iter().next()) {
         return Err(error);
     }
 
-    let constant = |e: &ir::Expr| eval::real(e, &eval::Env::new(0.0));
-    let (mut columns, mut gap, mut band) = (1usize, 0.0, 0.0);
-    for item in &document.items {
-        if let parse::Item::Panels {
-            columns: c,
-            gap: g,
-            title,
-        } = item
-        {
-            columns = (constant(c)? as usize).max(1);
-            gap = g.as_ref().map(&constant).transpose()?.unwrap_or(0.0);
-            band = title.as_ref().map(&constant).transpose()?.unwrap_or(0.0);
-        }
-    }
-    let view = &figures[0].1.scene.viewport;
-    let (Some(w), Some(h)) = (view.design_width, view.design_height) else {
-        return Err(Error::new(
-            "a panel's viewport needs a `width` and `height`, for the layout",
-        ));
+    // Where panels sit and how much they show is the style's, and it wins over the viewport.
+    let constant = |e: &Option<ir::Expr>| {
+        e.as_ref()
+            .map(|e| eval::real(e, &eval::Env::new(0.0)))
+            .transpose()
     };
+    for (_, figure) in &mut figures {
+        let style = &figure.styles.panels;
+        let (width, height, pad) = (
+            constant(&style.width)?,
+            constant(&style.height)?,
+            constant(&style.pad)?,
+        );
+        let view = &mut figure.scene.viewport;
+        view.design_width = width.or(view.design_width).or(Some(PANEL_SIZE));
+        view.design_height = height.or(view.design_height).or(Some(PANEL_SIZE));
+        view.pad = pad.unwrap_or(view.pad);
+    }
+    compile::fill_outlines(
+        figures
+            .iter_mut()
+            .map(|(names, figure)| (&names.0, &mut figure.scene)),
+    )?;
+
+    let layout = &figures[0].1.styles.panels;
+    let columns = (constant(&layout.columns)?.unwrap_or(1.0) as usize).max(1);
+    let gap = constant(&layout.gap)?.unwrap_or(0.0);
+    let band = constant(&layout.title)?.unwrap_or(0.0);
+    let view = &figures[0].1.scene.viewport;
+    let (w, h) = (
+        view.design_width.unwrap_or(PANEL_SIZE),
+        view.design_height.unwrap_or(PANEL_SIZE),
+    );
+    if figures.iter().any(|(_, f)| {
+        f.scene.viewport.design_width != Some(w) || f.scene.viewport.design_height != Some(h)
+    }) {
+        return Err(Error::new("every panel has to be the same size, for now"));
+    }
     let rows = figures.len().div_ceil(columns);
     let total_w = columns as f64 * w + (columns - 1) as f64 * gap;
     let total_h = rows as f64 * (h + band) + (rows - 1) as f64 * gap;
@@ -203,6 +289,22 @@ pub fn compose(doc: &str, sheets: &[&str]) -> Result<Composition, Error> {
         panels,
         size: [total_w, total_h],
     })
+}
+
+/// The colors sheets name, for a page to match the figure it holds. Each is what the name
+/// means after every sheet, as a figure would draw it.
+pub fn named_colors(sheets: &[&str]) -> Result<Vec<(String, [f64; 3])>, Error> {
+    let parsed = sheets
+        .iter()
+        .map(|sheet| parse::parse(sheet))
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut out: Vec<(String, [f64; 3])> = style::sheet_names(&parsed)?
+        .into_iter()
+        .filter(|(_, e)| style::type_of(e, &[], false) == Ok(style::Ty::Color))
+        .map(|(name, e)| Ok((name, eval::color(&e, &eval::Env::new(0.0))?)))
+        .collect::<Result<_, Error>>()?;
+    out.sort_by(|a, b| a.0.cmp(&b.0));
+    Ok(out)
 }
 
 /// A panel's frame, and where on the canvas it goes, in device pixels.
@@ -322,3 +424,5 @@ impl Composition {
 }
 
 const TITLE_SIZE: f64 = 14.0;
+/// A panel's width and height until a sheet says otherwise, so a document draws on its own.
+const PANEL_SIZE: f64 = 400.0;

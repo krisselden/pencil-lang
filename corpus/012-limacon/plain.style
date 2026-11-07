@@ -1,0 +1,6 @@
+// The shader's `col += damp * glow_col * tanh(zoom * pixel / abs(d))`, then `tanh(col)`. Its `zoom * pixel` is
+// half a device pixel in the figure's own units.
+style paper { fill: black; tone: tanh }
+style rings { blend: add; fill_opacity: 0.9^i·tanh(self.pixel / 2 / abs(self.dist)) }
+style rings::inside { fill: rgb(1275, 255, 510) }
+style rings::outside { fill: rgb(510, 255, 1530) }

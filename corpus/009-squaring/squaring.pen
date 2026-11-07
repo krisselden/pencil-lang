@@ -1,0 +1,37 @@
+// The squaring map, from Kris's Desmos graph "Squaring map". A circle orthogonal to the unit
+// circle, through n and 1/n, and a grid of lines inside it. Raising them to a power p from 1 to 2
+// morphs the circle into its square, the limaçon, and the grid stays square at every crossing.
+doc squaring
+duration 8
+
+viewport { fit: orbit square_across, pad: 0.06, width: 640, height: 520 }
+
+param n = 3.3 in 1.1..6
+param p in 1..2
+bind p = 1 + abs(mod(time, 8) / 4 - 1)
+
+let x0 = cosh(ln(n))
+let r0 = sinh(ln(n))
+
+fn squared(z) = z²
+fn morphed(z) = z^p
+
+// As the graph writes it: s = [-3...3] / 3.
+group grid() {
+  curves across = parametric (t): x0 + s·r0 / 3 + t·i for t in -r0..r0 for s in -3..3
+  curves up = parametric (t): t + s·r0·i / 3 for t in 1 / n..n for s in -3..3
+}
+group circle_of_n() {
+  curve orbit = parametric (t): x0 + r0·exp(i·t) for t in 0..tau
+}
+
+use grid() as plain
+use grid() through morphed as moving
+use grid() through squared as square
+use circle_of_n()
+use circle_of_n() through morphed as moving
+use circle_of_n() through squared as square
+
+curve unit = circle(0, 1)
+let marker = n
+dot marker

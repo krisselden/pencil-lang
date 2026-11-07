@@ -10,7 +10,7 @@ use crate::error::Error;
 use crate::frame::{self, Inputs, Prepared};
 use crate::ir::{Expr, Form, Scene, System};
 use crate::stroke::{self, box_coverage};
-use crate::style::{Blend, MarkStyle, SELF_DIST};
+use crate::style::{Blend, MarkStyle, SELF_CURVATURE, SELF_DIST, SELF_PIXEL, Tone};
 
 /// How punchy a move is: it gets near its destination fast, then eases in, leaving time to
 /// take it in. 5 is Kris's choice in `lab/expressions`. Above it, `za` joining `+zbi` on their
@@ -119,10 +119,21 @@ pub fn eval(e: &Expr, env: &Env) -> Result<Value, Error> {
             },
         },
         Expr::App(head, args) => match (head.as_str(), args.as_slice()) {
-            ("Add", [a, b]) => Real(real(a)? + real(b)?),
-            ("Subtract", [a, b]) => Real(real(a)? - real(b)?),
-            ("Multiply", [a, b]) => Real(real(a)? * real(b)?),
-            ("Divide", [a, b]) => Real(real(a)? / real(b)?),
+            ("Add" | "Subtract" | "Multiply" | "Divide", [a, b]) => {
+                match (head.as_str(), eval(a, env)?, eval(b, env)?) {
+                    ("Add", Real(a), Real(b)) => Real(a + b),
+                    ("Subtract", Real(a), Real(b)) => Real(a - b),
+                    ("Multiply", Real(a), Real(b)) => Real(a * b),
+                    ("Divide", Real(a), Real(b)) => Real(a / b),
+                    ("Add", Color(a), Color(b)) => Color(std::array::from_fn(|i| a[i] + b[i])),
+                    ("Subtract", Color(a), Color(b)) => Color(std::array::from_fn(|i| a[i] - b[i])),
+                    ("Multiply", Color(c), Real(k)) | ("Multiply", Real(k), Color(c)) => {
+                        Color(c.map(|v| v * k))
+                    }
+                    ("Divide", Color(c), Real(k)) => Color(c.map(|v| v / k)),
+                    _ => return Err(Error::new(format!("`{head}` can't take these"))),
+                }
+            }
             ("Power", [a, b]) => Real(real(a)?.powf(real(b)?)),
             ("Negate", [a]) => Real(-real(a)?),
             ("Sqrt", [a]) => Real(real(a)?.sqrt()),
@@ -170,6 +181,9 @@ pub fn eval(e: &Expr, env: &Env) -> Result<Value, Error> {
                     real(later)?
                 })
             }
+            ("Sinh", [a]) => Real(real(a)?.clamp(-TANH_LIMIT, TANH_LIMIT).sinh()),
+            ("Cosh", [a]) => Real(real(a)?.clamp(-TANH_LIMIT, TANH_LIMIT).cosh()),
+            ("Tanh", [a]) => Real(real(a)?.clamp(-TANH_LIMIT, TANH_LIMIT).tanh()),
             ("Exp", [a]) => Real(real(a)?.exp()),
             ("Ln", [a]) => Real(real(a)?.ln()),
             ("Abs", [a]) => Real(real(a)?.abs()),
@@ -428,15 +442,30 @@ fn to_blend(c: [f64; 3], blend: Blend) -> [f64; 3] {
     match blend {
         Blend::Linear => c,
         Blend::Gamma => c.map(srgb_encode),
+        Blend::Add => c.map(srgb_lift),
     }
 }
 
 fn from_blend(c: [f64; 3], blend: Blend) -> [f64; 3] {
     match blend {
         Blend::Linear => c,
-        Blend::Gamma => c.map(srgb_decode),
+        Blend::Gamma | Blend::Add => c.map(srgb_decode),
     }
 }
+
+/// sRGB's encoding without its limit at 1, for what's adding light.
+pub fn srgb_lift(c: f64) -> f64 {
+    let c = c.max(0.0);
+    if c <= 0.0031308 {
+        12.92 * c
+    } else {
+        1.055 * c.powf(1.0 / 2.4) - 0.055
+    }
+}
+
+/// tanh's argument is held here, so that a glow at its own edge, dividing by zero, is 1. Past this
+/// it's 1 to well beyond what a color can show.
+pub const TANH_LIMIT: f64 = 20.0;
 
 fn over(under: [f64; 3], top: [f64; 3], coverage: f64) -> [f64; 3] {
     std::array::from_fn(|i| under[i] + (top[i] - under[i]) * coverage)
@@ -449,6 +478,7 @@ pub struct Frame<'a> {
     width: u32,
     height: u32,
     prepared: Prepared,
+    sided: Vec<crate::Sided>,
     /// One coverage buffer per line stroke, in mark order.
     coverage: Vec<Vec<f64>>,
     dpr: f64,
@@ -473,6 +503,7 @@ impl<'a> Frame<'a> {
             env: frame_env(figure, inputs)?,
             width,
             height,
+            sided: figure.sided(),
             prepared,
             coverage,
             dpr,
@@ -521,14 +552,27 @@ impl<'a> Frame<'a> {
             // Distance in device pixels and its direction, where the form has them.
             let measured = match &mark.form {
                 Form::Field {
-                    vars, field, grad, ..
+                    vars,
+                    field,
+                    grad,
+                    exact,
+                    curvature,
+                    ..
                 } => {
                     env.set(&vars[0], x);
                     env.set(&vars[1], y);
                     let f = real(field, &env)?;
                     let (gx, gy) = (real(&grad[0], &env)?, real(&grad[1], &env)?);
                     let glen = gx.hypot(gy);
-                    let dist = f / glen.max(MIN_GRADIENT);
+                    if let Some(curvature) = curvature {
+                        env.set(SELF_CURVATURE, real(curvature, &env)?);
+                    }
+                    // A true distance doesn't need its gradient, which is lost at a circle's center.
+                    let dist = if *exact {
+                        f
+                    } else {
+                        f / glen.max(MIN_GRADIENT)
+                    };
                     let n = if glen > MIN_GRADIENT {
                         (gx / glen, gy / glen)
                     } else {
@@ -570,8 +614,39 @@ impl<'a> Frame<'a> {
                 Some(o) => real(o, &env)?.clamp(0.0, 1.0),
                 None => 1.0,
             };
+            // Every circle, in order, from the same numbers the shader gets.
+            if let Some(group) = self.sided.iter().find(|group| group.mark == i) {
+                let count = self.prepared.values[group.slot] as usize;
+                let data = &self.prepared.sides[group.base * 4..];
+                for row in data.chunks(group.stride * 4).take(count) {
+                    let [a, bx, by, c] = [row[0], row[1], row[2], row[3]].map(f64::from);
+                    for (name, value) in group.names.iter().zip(&row[4..]) {
+                        env.set(name, f64::from(*value));
+                    }
+                    let f = a * (x * x + y * y) - 2.0 * (bx * x + by * y) + c;
+                    let spread = 1.0 + a * f;
+                    let dist = f / (1.0 + spread.max(0.0).sqrt());
+                    let root = spread.max(1e-12).sqrt();
+                    let (gx, gy) = ((a * x - bx) / root, (a * y - by) / root);
+                    let glen = gx.hypot(gy);
+                    let n = if glen > MIN_GRADIENT {
+                        (gx / glen, gy / glen)
+                    } else {
+                        (1.0, 0.0)
+                    };
+                    env.set(SELF_CURVATURE, a);
+                    env.set(SELF_DIST, dist);
+                    env.set(SELF_PIXEL, pixel);
+                    let fill_opacity = match &style.fill_opacity {
+                        Some(o) => real(o, &env)?.clamp(0.0, 1.0),
+                        None => 1.0,
+                    };
+                    out = self.fill(out, style, &env, dist / pixel, n, opacity * fill_opacity)?;
+                }
+            }
             if let Some((dist_px, n)) = measured {
                 env.set(SELF_DIST, dist_px * pixel);
+                env.set(SELF_PIXEL, pixel);
                 let fill_opacity = match &style.fill_opacity {
                     Some(o) => real(o, &env)?.clamp(0.0, 1.0),
                     None => 1.0,
@@ -594,7 +669,15 @@ impl<'a> Frame<'a> {
             };
             let top = to_blend(color(stroke_color, &env)?, style.blend);
             let under = to_blend(out, style.blend);
-            out = from_blend(over(under, top, coverage * opacity), style.blend);
+            let mixed = if style.blend == Blend::Add {
+                std::array::from_fn(|i| under[i] + top[i] * coverage * opacity)
+            } else {
+                over(under, top, coverage * opacity)
+            };
+            out = from_blend(mixed, style.blend);
+        }
+        if self.figure.styles.tone == Tone::Tanh {
+            out = out.map(|c| srgb_decode(srgb_lift(c).tanh()));
         }
         Ok(out)
     }
@@ -613,9 +696,22 @@ impl<'a> Frame<'a> {
         let negative = box_coverage(-dist_px, n.0, n.1);
         let mut covered = 0.0;
         let mut filled = [0.0; 3];
+        // `::inside` and `::outside` only exist on a circle, and win over the sign they share.
+        let round = style.inside.is_some() || style.outside.is_some();
+        let forward = !round || real(&Expr::sym(SELF_CURVATURE), env)? >= 0.0;
+        let which = usize::from(!forward);
+        let [negative_gates, positive_gates] = style.sign_gates();
+        let (negative_gate, positive_gate) = if round {
+            (negative_gates[which], positive_gates[which])
+        } else {
+            (1.0, 1.0)
+        };
+        let disk = if forward { negative } else { 1.0 - negative };
         for (fill, coverage) in [
-            (&style.negative, negative),
-            (&style.positive, 1.0 - negative),
+            (&style.negative, negative * negative_gate),
+            (&style.positive, (1.0 - negative) * positive_gate),
+            (&style.inside, disk),
+            (&style.outside, 1.0 - disk),
         ] {
             if let Some(fill) = fill {
                 let c = to_blend(color(fill, env)?, style.blend);
@@ -624,7 +720,12 @@ impl<'a> Frame<'a> {
             }
         }
         let under = to_blend(out, style.blend);
-        let mixed = std::array::from_fn(|i| under[i] * (1.0 - covered) + filled[i]);
+        let keep = if style.blend == Blend::Add {
+            1.0
+        } else {
+            1.0 - covered
+        };
+        let mixed = std::array::from_fn(|i| under[i] * keep + filled[i]);
         Ok(from_blend(mixed, style.blend))
     }
 
@@ -656,6 +757,76 @@ mod tests {
     const STYLE: &str = "
         style c::inside  { fill: black }
         style c::outside { fill: white }";
+
+    /// Both sides of one circle lit at once, warm inside and cool out, as the limaçon shader does:
+    /// `col += glow_col * tanh(k / abs(d))`, then `tanh(col)`, all in display space.
+    #[test]
+    fn a_circle_can_light_both_its_sides() {
+        let doc = "viewport { x: -2..2, y: -2..2 }
+                   curve c = sdf (x, y): sqrt(x² + y²) - 1";
+        let sheet = "style paper { fill: black; tone: tanh }
+                     style c { blend: add; fill_opacity: tanh(self.pixel / abs(self.dist)) }
+                     style c::inside { fill: rgb(1275, 255, 510) }
+                     style c::outside { fill: rgb(510, 255, 1530) }";
+        let figure = build(doc, &[sheet]).unwrap();
+        let (w, h) = (401u32, 401u32);
+        let frame = Frame::new(&figure, &crate::frame::Inputs::at(0.0), w, h).unwrap();
+        let pixel = 4.0 / w as f64;
+        for (px, py, warm) in [
+            (200.5, 200.5 - 90.0, true), // Inside: the circle is about 100 px across.
+            (200.5, 200.5 - 80.0, true),
+            (200.5, 200.5 - 130.0, false), // Outside.
+            (200.5, 200.5 - 180.0, false),
+            (200.5 + 90.0, 200.5, true),
+            (200.5 + 150.0, 200.5, false),
+        ] {
+            let (x, y): (f64, f64) = ((px - 200.5) * pixel, (200.5 - py) * pixel);
+            let d = x.hypot(y) - 1.0;
+            assert_eq!(d < 0.0, warm);
+            let glow: [f64; 3] = if warm {
+                [5.0, 1.0, 2.0]
+            } else {
+                [2.0, 1.0, 6.0]
+            };
+            let k = (pixel / d.abs()).tanh();
+            let want = glow.map(|c| (c * k).tanh());
+            let got = frame.shade(px, py).unwrap().map(srgb_encode);
+            for i in 0..3 {
+                assert!(
+                    (got[i] - want[i]).abs() < 1e-3,
+                    "({px}, {py})[{i}]: {got:?}, wanted {want:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn colors_can_be_scaled_and_summed() {
+        let env = Env::new(0.0);
+        let parse =
+            |src: &str| match &crate::parse::parse(&format!("style paper {{ fill: {src} }}"))
+                .unwrap()
+                .items[0]
+            {
+                crate::parse::Item::Style(rule) => rule.decls[0].1.clone(),
+                other => panic!("{other:?}"),
+            };
+        assert_eq!(color(&parse("white * 0.5"), &env).unwrap(), [0.5; 3]);
+        assert_eq!(color(&parse("0.5 * white"), &env).unwrap(), [0.5; 3]);
+        assert_eq!(color(&parse("white / 4"), &env).unwrap(), [0.25; 3]);
+        assert_eq!(color(&parse("white + white"), &env).unwrap(), [2.0; 3]);
+        assert_eq!(color(&parse("white - white"), &env).unwrap(), [0.0; 3]);
+    }
+
+    #[test]
+    fn a_line_of_samples_has_no_sides() {
+        let doc = "viewport { x: -2..2, y: -2..2 }
+                   curve c = parametric (t): (t, t) for t in 0..1";
+        let err = build(doc, &["style c::inside { fill: black }"]).unwrap_err();
+        assert!(err.message.contains("has no sides"), "{err}");
+        let err = build(doc, &["style paper { tone: loud }"]).unwrap_err();
+        assert!(err.message.contains("`tone` is"), "{err}");
+    }
 
     fn near(a: f64, b: f64) -> bool {
         (a - b).abs() < 1e-4

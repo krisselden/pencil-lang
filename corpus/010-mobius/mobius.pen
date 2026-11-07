@@ -1,0 +1,34 @@
+// Coxeter's loxodromic sequence, from Kris's Desmos graph, and its image under a Möbius map. Circles
+// at the powers of w, each with radius k|z|, touch their neighbors one, two and three steps along.
+// A Möbius map sends circles to circles, so they all still touch. When the pole −d/c lands on a
+// circle, that circle is a line for a moment, and past it the circle turns inside out.
+doc mobius
+duration 13
+
+param n = 8 in 1..10
+param a = 1 in -10..10
+param b = 1 in -10..10
+param c = 0.5 in -10..10
+param d = 2 in -10..10
+
+// Grows from doing nothing to the graph's map, then moves the pole through a circle and back. At
+// t = 3.5 these are the graph's own values, and the sliders take over from any of them.
+let grown = smoothstep(0, 3, time)·(1 - smoothstep(11, 13, time))
+let dipped = smoothstep(4, 7, time)·(1 - smoothstep(8, 11, time))
+bind b = grown
+bind c = 0.5·grown
+bind d = 1 + grown - 1.2·dipped
+
+let k = sqrt(3·sqrt(5) / 2 - 5 / 2)
+let w = i - 1 - sqrt(-1 - 2·i)
+
+fn f(z) = (a·z - b) / (c·z + d)
+
+viewport { x: -10..10, y: -14..14, width: 640, height: 896 }
+
+// A Möbius map keeps circles and which way round they run, so three points of each circle, sent
+// through it in order, are its image, with the image of its disk on the negative side. That's what's
+// outside the image when the pole is inside the circle, and a line when the pole is on it.
+circles rims = circle(p, q, u) for m in -n..n with z = w^m, s = k·abs(z), p = f(z + s), q = f(z + s·i), u = f(z - s)
+curve loxodrome = parametric (t): f(w^t) for t in -n..n
+dots powers = f(w^m) for m in -n..n

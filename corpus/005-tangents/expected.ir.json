@@ -188,6 +188,7 @@
     {
       "beat": null,
       "form": {
+        "curvature": ["Divide",1.0,"c.r"],
         "field": ["Subtract",["Sqrt",["Add",["Power",["Subtract","x","c.x"],2.0],["Power",["Subtract","y","c.y"],2.0]]],"c.r"],
         "grad": [["Divide",["Multiply",2.0,["Subtract","x","c.x"]],["Multiply",2.0,["Sqrt",["Add",["Power",["Subtract","x","c.x"],2.0],["Power",["Subtract","y","c.y"],2.0]]]]],["Divide",["Multiply",2.0,["Subtract","y","c.y"]],["Multiply",2.0,["Sqrt",["Add",["Power",["Subtract","x","c.x"],2.0],["Power",["Subtract","y","c.y"],2.0]]]]]],
         "kind": "sdf",
@@ -204,6 +205,7 @@
     {
       "beat": null,
       "form": {
+        "curvature": ["Divide",1.0,"thales.r"],
         "field": ["Subtract",["Sqrt",["Add",["Power",["Subtract","x","thales.x"],2.0],["Power",["Subtract","y","thales.y"],2.0]]],"thales.r"],
         "grad": [["Divide",["Multiply",2.0,["Subtract","x","thales.x"]],["Multiply",2.0,["Sqrt",["Add",["Power",["Subtract","x","thales.x"],2.0],["Power",["Subtract","y","thales.y"],2.0]]]]],["Divide",["Multiply",2.0,["Subtract","y","thales.y"]],["Multiply",2.0,["Sqrt",["Add",["Power",["Subtract","x","thales.x"],2.0],["Power",["Subtract","y","thales.y"],2.0]]]]]],
         "kind": "sdf",

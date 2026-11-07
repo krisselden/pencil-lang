@@ -1,0 +1,14 @@
+// The site's dark theme, from its design tokens. It goes after the other sheets and changes
+// only what the names mean, so every rule that uses them follows.
+let ink = rgb(243, 240, 234)
+let paper_color = rgb(23, 22, 20)
+let muted = rgb(148, 143, 134)
+let accent = rgb(169, 139, 255)
+let blue = rgb(118, 179, 241)
+let red = rgb(243, 141, 130)
+let green = rgb(121, 195, 124)
+// Softer shades, nearer the paper, for what's secondary.
+let accent_soft = rgb(98, 84, 140)
+let blue_soft = rgb(74, 103, 133)
+let red_soft = rgb(135, 84, 77)
+let green_soft = rgb(75, 111, 74)

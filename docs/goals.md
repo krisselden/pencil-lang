@@ -6,13 +6,16 @@ Revised with Kris on 2026-11-05.
 `SPEC-16-relations.md` and `SPEC-50-extensions.md`. Those files are unmodified originals.
 This file records what has changed since, and it wins wherever they disagree.
 
-The design chat is in the claude.ai pencil-lang Project:
-https://claude.ai/chat/0107bcf4-4411-4d45-a15c-741285344ed7
+The design chat is in Kris's private claude.ai pencil-lang Project.
 
 ## Purpose
 
 Give visualization a declarative artifact: a `.pen` file that can carry style,
 decorations, highlights and composition.
+
+It's the tool Kris wants for his own math explainer videos and interactive figures, and it should be ambitious, polished
+and high quality. It's public on purpose. A declarative text format with open expressions is meant to invite participation, and to
+mean that what people make with it isn't locked in, including being able to export their own video.
 
 ## The model
 
@@ -178,9 +181,92 @@ each one changes the language or the frame's order, so they come before more fig
      The balance, from Kris: a reader needs a sense of where a thing came from, so it doesn't seem to come out of
      nowhere, but shouldn't have to wait for it, especially when watching a few times to learn. A reader's eye may
      also be on the last thing to move, so what started earlier has to stay readable as it arrives.
-   - **Views (not built):** the site moves between a step's views along the van Wijk and Nuij path
+   - **Movement has budgets (Kris, 2026-11-06):** a cognitive budget and a time budget, and movement has to aid understanding
+     before it exceeds either. Nothing should come out of nowhere or have too much going on, and once a reader has the idea, it should
+     complete in a timely manner. As long as a reader can read what's happening, the punchier the better. This is the rule the options
+     below were judged by.
+   - **Distortion spends that budget fast (Kris, 2026-11-06):** a view stretched far out of square, to fit more range, looked wrong in a way
+     that took him a moment to name, and he thinks excess translation made a zoom confusing around the same time. Prefer equal scales,
+     and treat a stretch as a decision.
+   - **Views (not built in Pencil, chosen in `lab/zoom`, committed on the site):** the site moves between a step's views along the van Wijk and Nuij path
      (`src/lib/zoom.ts`, used by `NewtonDoyle`). The `beat` param can carry this: a fraction between two beats
-     is a point on the path between their two `fit` views, so a page tweens the param, and a video binds it.
+     is a point on the path between their two `fit` views, so a page tweens the param, and a video binds it. Kris named
+     auto-framing with interpolated zoom as a long struggle, and the lab ports the two figures he pointed to. In both, the
+     camera's path is right, and what's wrong is what moves with it: the camera is interpolated, and the subject isn't.
+     - **Slider drags (`DoyleFlower`), chosen: the view locked to the circles.** On the site, the circles change on each step while
+       the view eases after them, so the center circle shrinks in a frame and grows back: 18 reversals at 25 ms a step, where Kris sees it
+       vibrate, and 0 when locked. Easing `q` also has 0, and Kris kind of likes it, but locked feels cleaner, and easing also looked wrong
+       to him when `p` changed. The drawn circles still touch while `p` eases at Newton step 5 (under 0.001 px), so that isn't a failure of
+       tangency there, and what he saw isn't pinned down. The unit circle is the zoom indicator, so it's solid.
+     - **Newton steps (`NewtonDoyle`), chosen: subject held, with a quick zoom-out.** The path is its own inverse within 3e-10 of a view
+       width, but the subject changes as a move starts: going in it's already in frame, and coming out it isn't, for 1.5 s of 2.2 s. The
+       paper assumes every view is equally interesting and sets cognitive aspects aside, which doesn't hold near a root where nothing is
+       happening. Holding shows the shallowest requested step that's in frame, a function of the view alone, and it reads best when a
+       reader interrupts by playing with the steps. Zoom-out is quintic, at 800 ms in the lab, and still reads. Zoom-in stays as it was.
+     - **Not chosen: a continuous step.** It looks good, and it's true at every value, but these are discrete steps, and discreteness
+       wasn't the problem. A figure's motion should match the problem it shows. Being without a subject for a moment in a quick zoom-out
+       wasn't a problem either.
+     - **What reads as a zoom:** something fixed to the world. Some options felt "more a reshape than zoom" before the plot had a grid. Each
+       line has one level and fades with how many pixels its cell covers, so nothing pops, and Kris reports none of the original
+       issues in any option. In the site's code, a coarser level arrives at full opacity on top of its lines at each decade. The 3D lines are
+       fixed to the surface for the same reason, and Kris says they look good.
+
+## What Kris's own graphs ask for
+
+`krisselden_com/docs/desmos-catalog.md` catalogs his 583 Desmos graphs by topic, with the states saved in `design_examples/desmos-states/`.
+The catalog treats each graph as a sketch of the math, not a design, so they're a source for corpus figures, not something to convert
+wholesale. Counted across all the saved states (about 15,000 expressions, a median of 20 per graph), by regular expression, so roughly:
+
+| Share of graphs | Uses | In Pencil |
+|---|---|---|
+| 53% | Parametric curves | Yes |
+| 50% | Complex mode | Yes, since a point is a complex number |
+| 39% | Lists | As `dots`, `circles` and `curves`, though not as general values |
+| 33% | Dashed lines | Yes |
+| 26% | Piecewise values | Only as `where` and `otherwise` |
+| 20% | Polygons | Yes |
+| 16% | Animated sliders | Yes, as params bound to time |
+| 12% | Draggable points | Yes |
+| 7% | Derivatives | Inside the language only |
+| 6% | Actions | No, and a frame stays a function of its inputs |
+| 4% | 3D | No |
+
+**Two figures so far come straight from the catalog, chosen by Kris:**
+
+- **`corpus/008-hearts` ("Bipolar Hearts", `web/hearts.html`):** the whole figure is `z = coth((τ − σi) / 2)`, as the graph writes it. It only lacked `coth` and
+  `arctanh`, now built in for numbers and complex numbers. Its coordinate circle becomes a line and flips over as τ crosses 0, which found a real bug: just beside
+  that moment, samples either side of the pole could be joined by a chord across the frame. A curve now breaks where a chord still isn't flat at the deepest
+  subdivision. The test checks every curve against dense sampling, on both sides of the degenerate moment, and at the graph's poles.
+- **`corpus/009-squaring` ("Squaring map"):** a circle through n and 1/n and a grid inside it, through `z²` and a morphing `z^p`. `use … through` fits it exactly. Its
+  square is tested against the limaçon, with k = tanh(ln n). **It showed the list gap plainly.** Desmos writes `s = [-3...3] / 3` once, and this file wrote 14 `use` lines. A `curves` collection replaced them with two
+  lines, and every pixel the CPU oracle draws stayed the same, at the three times compared. The figure went from 47 marks, 45 coverage layers and 50 bindings to 11, 9 and 8, its shader from 21 KB to 9 KB, and a frame's CPU work stayed at about 1.5 ms.
+
+- **`corpus/010-mobius` ("Coxeter's loxodromic sequence", `web/mobius.html`):** circles at powers of w, through `f(z) = (az − b) / (cz + d)`. Kris made this one to be written in neither
+  re/im nor abs/arg, and it is. It found four things:
+  - **A stretched view.** At Kris's values, two circles go out to nearly lines, about 26,000 px across. A panel 0.07% off the shape of its view moved them by tens of pixels, so a line cut through
+    circles it should touch. He spotted it side by side with Desmos, and tests of the formula couldn't. A view now always has equal scales, and a test holds what's drawn to circles fitted independently.
+  - **`bind` could fail at runtime** because of where its `param` was written. Bindings now run in dependency order.
+  - **A collection could send NaN to the GPU** at a pole. An instance with no finite center or radius is skipped.
+  - **A wrong determinant in the figure itself** (`ad + bc`, since the numerator is `az − b`), which independent tests caught and the picture didn't.
+
+  Kris hid the graph's Spiral folder on purpose, since it's a Doyle spiral and well covered, so this figure doesn't draw it either. `through` refuses `circles`, since the image of a circle usually isn't one, but a
+  Möbius map is exactly where it is, so the figure sends three points of each circle through the map, in order. That's its image, with the image of its disk on the negative side, with no closed form to get wrong. A disk whose
+  circle holds the pole has the outside as its true image. Kris likes those as a rim only, which `plain.style` does in one rule, and `outside.style` draws the true image.
+
+Both export video directly, in about 7 to 10 seconds for 8 seconds at 1080 wide and 60 fps.
+
+## Which side is inside
+
+From Kris, 2026-11-06, on the Möbius figure's rim-only disks. Which side of a circle is its inside can differ from which side has the natural handedness, and it's useful to target
+either side, or both at once. The blog's circumcircle shader tints by the sign of det(B − A, C − A), which flips as vertices pass each other, as the circle goes through a line. His limaçon shader
+(fragcoord.xyz/s/wbmgmtwv) lights both sides of each circle at the same time, warm on one side and cool on the other, which warms the new steps and cools the old ones. So this isn't a color for one side:
+it's two sides, both drawn. A Möbius map is the same thing: the sign of `bottom` is the circle's handedness, and when it flips the disk's image is what was the outside.
+
+That's built now, and `plan-sides.md` has the plan and what it found. A circle carries a handedness and can be a line, and both of its sides can be drawn. Two figures prove it:
+
+- **`corpus/011-circumcircle` (`web/circumcircle.html`):** his shader's triangle and Lissajous curve, tinted by side. As the corners pass, the circle goes through a line and comes back inside out, and the plane doesn't flash. A test finds the moment by bisection and compares
+  every pixel either side of it, and shows that styling the disk instead would swap them.
+- **`corpus/012-limacon` (`web/limacon.html`):** 24 circles, each with both sides lit at once, adding up. A test holds it to the shader's formula, written out by hand, away from the rims, where the shader has a hard edge and this has an antialiased one.
 
 ## Collections and panels
 
@@ -205,13 +291,43 @@ from one file. `docs/language.md` has the rules.
   signed counts on the flat panels and plain ones on the spiral's, the wrapped copies in log space, and the marker box. In
   the flat panels the name of 0 goes outside the triangle, since every edge leaves it on the inside.
 - **A thing is the same thing in every panel.** Kris's point: 0 and 1 in the spiral aren't two things but one point, and only
-  the name is the space's. So `start` and `end_point` have those names in every panel, and a label keeps its identity across
-  them while its text changes, which a test holds it to. This is a connection to keep and build on, such as pointing at
-  something in one panel and seeing it in the others.
+  the name is the space's. So each thing is one declaration in the lattice's coordinates, each panel draws it `through` its
+  map, and `text` says what the panel calls it. `zero` and `end_point` are dots in every panel, and the spiral's ring around 1 is
+  `zero` itself, in a style for that panel. Not built yet: pointing at something in one panel and seeing it in the others, which
+  this makes possible, since marks in every panel now share one declaration and one name.
+- **What complex numbers cost, and what sharing bought back:** inlining copies arguments, so `coth` of something is about 400 nodes per coordinate, and Bipolar Hearts
+  took 18 ms a frame. Now `fast.rs` works out each repeated piece once per sample, which took it to 2.4 ms at 1520×1292. The lattice, written as `T(w) = 2πi·w / A`, is
+  now 7.0 ms a frame, 8.3 ms on a q or p change, and 10.4 ms at q = 12, p = 7, at 1580×1603. The old hand-written form was 7.6, 7.8 and 11.8 before sharing. On a change, the
+  panels also stopped solving one system four times, and literal zeros from `i` are folded. `eval` is still the definition, held to the bit on every expression in the corpus.
+- **What one declaration cost:** nothing visible. On the page, a frame takes about 7.5 ms, a q or p change 8.8 ms, and q = 12, p = 7
+  11.6 ms, at 1480×1502. That's a smaller canvas than the earlier numbers, so it only shows no slowdown large enough to see. The flat
+  panel now computes the same lattice points as log space and culls what's off its frame.
 - **Log space's copies are there for the crossings:** Kris's point is to show the cylinder wrapping, so the crossings there
   connect to the same ones in the spiral, with 0 and 2πi becoming 1. How light they are is one rule in the style.
 - **Not like the site:** the panels have no frames, since a panel's border is the page's business, and the title's bold isn't
   there, since a font names only a role for now.
+
+## The second style sheet
+
+Pencil's purpose is a document that can be styled separately, and none of the last four figures had a second sheet. So
+`corpus/dark.style` and `corpus/007-lattice/narrow.style` restyle `LatticeMapping`: the site's dark palette, and one column
+for a phone. Run against the file as it stood:
+
+- **The dark sheet did nothing, with no error.** A sheet's `let` didn't reach the rules before it. Now the last definition
+  holds everywhere, as a CSS variable does, and the dark theme is only its colors.
+- **The narrow sheet couldn't be written.** Columns, panel sizes, `pad` and label distances were all in the document, along
+  with a `·16` pixel constant. They're a sheet's now, and the document says only which way a label sits, with `away`, in the
+  figure's own coordinates. The file lost its `on_screen` helper and its `start_side` parameter.
+- **An unknown property blamed the wrong thing,** saying `distance` "needs a Color". It now says the property is unknown, whatever its value.
+- **The page copied the palette.** `web/lattice.html` now takes its colors from the figure's sheets and picks its sheets from the
+  reader's theme and width, with `?dark`, `?light`, `?narrow` and `?wide` to pin one.
+
+Tests hold every mark in the IR to the same value under all the sheets, the same labels to exist, and every label to at least
+4.5:1 on its paper in both themes.
+
+- **What this didn't reach:** figures before the lattice still use `offset`, which a sheet can't move, and their pages keep
+  their own palettes. A panel can't be hidden or moved by a sheet. Sheets are picked by the page, since the language has no
+  media query.
 
 ## Text without a page
 
@@ -267,9 +383,8 @@ Proposed by Claude and not contested so far. Change them freely.
 - `.pen` files are text, written by Kris and Claude. The plan does also want an editor
   eventually.
 - `krisselden_com` is the corpus and the quality bar for look and feel, but not the authority on
-  whether a figure is right: that's the geometry. Its figures stay untouched until Pencil has
-  proved itself.
-- Pencil isn't being built as a product for now.
+  whether a figure is right: that's the geometry. What a lab here settles can go straight to its figures, and has.
+- Pencil is open source under the MIT license, and it isn't being built as a product.
 - Third-party embeds and the attribution footer are deferred.
 
 ## Open questions
@@ -285,7 +400,11 @@ Proposed by Claude and not contested so far. Change them freely.
   this with hysteresis, which depends on history and so breaks seeking.
 - **What should `self.dist` mean?** It's still the first-order estimate. Tracing could give
   a true distance to the curve near it, at a cost.
-- **What in the kernel still holds?** Invariant 4 (MathJSON) still deserves a fresh look.
+- **How far should MathJSON go?** It stays: open expressions are the point (Kris, 2026-11-06). Today the IR's expressions are about
+  99.5% MathJSON-style heads, and the rest are Pencil's (`Where`, `Exists`, `Solved`, `Snap`, `Timeline`, `Smoothstep`, `Mix`,
+  `IfNonnegative`). But it only goes one way, since nothing reads the IR back, and it's the compiled form: functions are inlined and
+  points are split into scalars, so the lattice's IR is about 930 KB from a 150-line file, most of it the exact derivatives its `solve` needs. What's
+  truly open today is the `.pen` text.
 - **What do `px` mean without a design width?** With `viewport { width: 640 }` sizes scale with
   the output, like an SVG's viewBox. The blog keeps its labels a fixed screen size while lines
   scale, which this can't express yet.

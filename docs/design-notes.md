@@ -64,8 +64,7 @@ a slider, which is the model in `goals.md` written out imperatively.
 
 ## From the July chat
 
-Distilled from a claude.ai conversation on 2026-07-09, before the site's figure system:
-https://claude.ai/chat/1dcf497d-71e8-4382-8513-3a5fa5b22951
+Distilled from a private claude.ai conversation on 2026-07-09, before the site's figure system.
 
 These are conclusions from that discussion, and none of them has been built or tested
 here. The chat builds on the 2026-07-08 design chat, whose plan and specs are in `spec/`.
@@ -73,19 +72,16 @@ here. The chat builds on the 2026-07-08 design chat, whose plan and specs are in
 **Out of date:** the chat makes the embeddable figure the v0 instead of video, and defers
 video export. `goals.md` makes video a goal from the start.
 
-## Positioning
+## What sets it apart
 
 - The v0 is the **embeddable interactive figure**, not a video language. Something like
   `<pencil-figure src="doyle-spiral.pen">`, with a baked-in attribution footer. Desmos
   links carry no attribution, and here the credit travels with the artifact.
-- The wedge is **linked views over a shared parameter store**: one store, N viewports.
+- The idea others lack is **linked views over a shared parameter store**: one store, N viewports.
   Desmos is single-viewport, and Manim has no shared reactive state.
 - Pedagogy thesis: drill from a big picture into building blocks, rather than retaining
   building blocks and hoping to build up. Equations aren't wrong to show, only wrong to
   show alone and dead, so a live-substituted typeset panel is itself a view.
-- The tool itself is unlikely to be the business. Figures and animation work are what
-  sell, and Pencil is the engine behind them. Embeddable figures for publishers, edtech
-  and documentation teams are a possible later market, not the plan.
 
 ## v0 contract
 

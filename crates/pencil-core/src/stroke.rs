@@ -30,6 +30,9 @@ pub const CELL_PX: f64 = 6.0;
 const FLATNESS_PX: f64 = 0.05;
 const INITIAL_INTERVALS: usize = 32;
 const MAX_DEPTH: usize = 8;
+/// A chord still this far from flat at the deepest subdivision isn't the curve bending. The curve
+/// has gone through infinity or jumped, so the two ends aren't joined.
+const JUMP_PX: f64 = 2.0;
 /// How far to chase the point where a curve stops existing: 2⁻²⁴ of a starting interval.
 const EDGE_DEPTH: usize = 24;
 
@@ -101,7 +104,8 @@ fn sample_within(
         if let (Some(x), Some(y)) = (&x, &y) {
             slots.set(var, t);
             match (fast::run(x, &slots), fast::run(y, &slots)) {
-                (Ok(x), Ok(y)) => return Ok(Some([x, y])),
+                // A point at infinity, such as a pole, isn't a point to draw through.
+                (Ok(x), Ok(y)) => return Ok((x.is_finite() && y.is_finite()).then_some([x, y])),
                 (Err(fast::Stop::Absent), _) | (_, Err(fast::Stop::Absent)) => return Ok(None),
                 // `eval` says what's wrong.
                 _ => {}
@@ -111,7 +115,7 @@ fn sample_within(
         let point = eval::real(&arc.point[0], &slow_env)
             .and_then(|x| Ok([x, eval::real(&arc.point[1], &slow_env)?]));
         match point {
-            Ok(p) => Ok(Some(p)),
+            Ok(p) => Ok(p.iter().all(|v| v.is_finite()).then_some(p)),
             Err(e) if e.absent => Ok(None),
             Err(e) => Err(e),
         }
@@ -151,6 +155,7 @@ fn sample_within(
         }
         let tm = (span.t0 + span.t1) / 2.0;
         let pm = at(tm)?;
+        let mut jump = false;
         let divide = match (span.p0, span.p1, pm) {
             // Both ends exist, so this is the usual flatness test, unless the middle doesn't.
             (Some(p0), Some(p1), Some(pm)) => {
@@ -163,6 +168,7 @@ fn sample_within(
                         || (a.1.max(b.1).max(m.1) < -stray)
                         || (a.0.min(b.0).min(m.0) > w + stray)
                         || (a.1.min(b.1).min(m.1) > h + stray));
+                jump = !off && stray > JUMP_PX && span.depth >= MAX_DEPTH;
                 !off && stray > FLATNESS_PX && span.depth < MAX_DEPTH
             }
             // One end doesn't exist: close in on where the curve stops.
@@ -186,6 +192,10 @@ fn sample_within(
             continue;
         }
         match (span.p0, span.p1) {
+            (Some(_), Some(p1)) if jump => {
+                pieces.push(std::mem::take(&mut current));
+                current = vec![p1];
+            }
             (Some(_), Some(p1)) => current.push(p1),
             (Some(_), None) => {
                 complete = false;
@@ -219,7 +229,6 @@ pub fn lines(
     height: u32,
     frame_only: bool,
 ) -> Result<Vec<Polyline>, Error> {
-    let close_enough = |a: [f64; 2], b: [f64; 2]| (a[0] - b[0]).hypot(a[1] - b[1]) < 1e-9;
     match form {
         // A curve that knows its own path doesn't need tracing.
         Form::Field {
@@ -239,20 +248,7 @@ pub fn lines(
             let rows = (height as f64 / CELL_PX).ceil() as u32;
             trace(vars, field, grad, env, view, cols, rows)
         }
-        Form::Parametric(arc) => {
-            let sampled = sample_within(arc, env, view, width, height, frame_only)?;
-            // Only a fixed range makes a loop. A moving range whose ends happen to meet is
-            // still an open line for that frame, or its dashes would jump as it passes.
-            let fixed = sampled.complete && arc.range.iter().all(is_constant);
-            Ok(sampled
-                .pieces
-                .into_iter()
-                .map(|points| {
-                    let closed = fixed && close_enough(points[0], points[points.len() - 1]);
-                    Polyline { points, closed }
-                })
-                .collect())
-        }
+        Form::Parametric(arc) => arc_lines(arc, env, view, width, height, frame_only),
         Form::Polyline { points, closed } => {
             let mut world = Vec::with_capacity(points.len() + 1);
             for p in points {
@@ -332,6 +328,32 @@ pub fn build(
             let (x, y) = frame::device(p[0], p[1], view, width, height);
             [x, y]
         };
+        if let Form::Many {
+            vars,
+            lets,
+            shape: shape @ Shape::Curves(arc),
+        } = &mark.form
+        {
+            let mut local = env.clone();
+            local.set(SELF_SCALE, width as f64 / (view.x[1] - view.x[0]) / dpr);
+            let mut count = 0;
+            for_each(vars, &mut local, &mut count, &mut |env| {
+                if instance(lets, shape, env)?.is_none() {
+                    return Ok(());
+                }
+                // A range that doesn't exist for this one means there's no curve.
+                for bound in &arc.range {
+                    match eval::real(bound, env) {
+                        Ok(_) => {}
+                        Err(e) if e.absent => return Ok(()),
+                        Err(e) => return Err(e),
+                    }
+                }
+                push_arc(arc, style, env, view, width, height, dpr, &mut segments)
+            })?;
+            layers.push(segments);
+            continue;
+        }
         if let Form::Many { vars, lets, shape } = &mark.form {
             let mut local = env.clone();
             local.set(SELF_SCALE, width as f64 / (view.x[1] - view.x[0]) / dpr);
@@ -373,34 +395,8 @@ pub fn build(
             layers.push(segments);
             continue;
         }
-        if let (Form::Parametric(arc), Some(head)) = (&mark.form, &style.head) {
-            let wanted = pixels(head, env, dpr)?;
-            for line in lines(&mark.form, env, view, width, height, false)? {
-                let points: Vec<[f64; 2]> = line.points.iter().map(|p| to_device(*p)).collect();
-                // The head is no longer than 60% of the curve's last stretch, if it's told how
-                // long that is, so that it doesn't dwarf a spiral's tightest turns.
-                let limit = match &style.head_span {
-                    Some(span) => {
-                        let span = eval::real(span, env)?;
-                        let hi = eval::real(&arc.range[1], env)?;
-                        let mut local = env.clone();
-                        local.set(&arc.var, hi - span);
-                        match (
-                            eval::real(&arc.point[0], &local),
-                            eval::real(&arc.point[1], &local),
-                        ) {
-                            (Ok(x), Ok(y)) => {
-                                let [lx, ly] = to_device([x, y]);
-                                let [tx, ty] = points[points.len() - 1];
-                                (tx - lx).hypot(ty - ly) * 0.6
-                            }
-                            _ => wanted,
-                        }
-                    }
-                    None => wanted,
-                };
-                push_curve_arrow(&points, wanted.min(limit), style, env, dpr, &mut segments)?;
-            }
+        if let Form::Parametric(arc) = &mark.form {
+            push_arc(arc, style, env, view, width, height, dpr, &mut segments)?;
             layers.push(segments);
             continue;
         }
@@ -412,6 +408,84 @@ pub fn build(
         layers.push(segments);
     }
     Ok(layers)
+}
+
+/// A parametric curve as lines, in world units.
+fn arc_lines(
+    arc: &Arc,
+    env: &Env,
+    view: &Viewport,
+    width: u32,
+    height: u32,
+    frame_only: bool,
+) -> Result<Vec<Polyline>, Error> {
+    let close_enough = |a: [f64; 2], b: [f64; 2]| (a[0] - b[0]).hypot(a[1] - b[1]) < 1e-9;
+    let sampled = sample_within(arc, env, view, width, height, frame_only)?;
+    // Only a fixed range makes a loop. A moving range whose ends happen to meet is
+    // still an open line for that frame, or its dashes would jump as it passes.
+    let fixed = sampled.complete && arc.range.iter().all(is_constant);
+    Ok(sampled
+        .pieces
+        .into_iter()
+        .map(|points| {
+            let closed = fixed && close_enough(points[0], points[points.len() - 1]);
+            Polyline { points, closed }
+        })
+        .collect())
+}
+
+/// One parametric curve's stroke, ending in a head if it has one.
+#[allow(clippy::too_many_arguments)]
+fn push_arc(
+    arc: &Arc,
+    style: &MarkStyle,
+    env: &Env,
+    view: &Viewport,
+    width: u32,
+    height: u32,
+    dpr: f64,
+    segments: &mut Vec<f32>,
+) -> Result<(), Error> {
+    let to_device = |p: [f64; 2]| {
+        let (x, y) = frame::device(p[0], p[1], view, width, height);
+        [x, y]
+    };
+    let Some(head) = &style.head else {
+        // Dashes and tapers measure along the line, so they need all of it.
+        let frame_only = !style.needs_arc_length();
+        for line in arc_lines(arc, env, view, width, height, frame_only)? {
+            push_line(&line, style, env, dpr, &to_device, segments)?;
+        }
+        return Ok(());
+    };
+    let wanted = pixels(head, env, dpr)?;
+    for line in arc_lines(arc, env, view, width, height, false)? {
+        let points: Vec<[f64; 2]> = line.points.iter().map(|p| to_device(*p)).collect();
+        // The head is no longer than 60% of the curve's last stretch, if it's told how
+        // long that is, so that it doesn't dwarf a spiral's tightest turns.
+        let limit = match &style.head_span {
+            Some(span) => {
+                let span = eval::real(span, env)?;
+                let hi = eval::real(&arc.range[1], env)?;
+                let mut local = env.clone();
+                local.set(&arc.var, hi - span);
+                match (
+                    eval::real(&arc.point[0], &local),
+                    eval::real(&arc.point[1], &local),
+                ) {
+                    (Ok(x), Ok(y)) => {
+                        let [lx, ly] = to_device([x, y]);
+                        let [tx, ty] = points[points.len() - 1];
+                        (tx - lx).hypot(ty - ly) * 0.6
+                    }
+                    _ => wanted,
+                }
+            }
+            None => wanted,
+        };
+        push_curve_arrow(&points, wanted.min(limit), style, env, dpr, segments)?;
+    }
+    Ok(())
 }
 
 /// The rectangle another panel looks at, kept big enough to read as a marker.
@@ -547,8 +621,48 @@ pub fn for_each(
     Ok(())
 }
 
-/// One instance's numbers: its center and any radius.
-pub type Instance = ([f64; 2], Option<f64>);
+/// One instance's numbers.
+#[derive(Debug, Clone, Copy)]
+pub enum Instance {
+    Dot([f64; 2]),
+    Circle([f64; 2], f64),
+    /// `a`, `b` and `c`.
+    Cycle([f64; 4]),
+    /// A curve has no numbers of its own: it's sampled.
+    Curve,
+}
+
+impl Instance {
+    fn is_finite(&self) -> bool {
+        match self {
+            Instance::Dot(at) => at.iter().all(|v| v.is_finite()),
+            Instance::Circle(at, r) => at.iter().all(|v| v.is_finite()) && r.is_finite(),
+            Instance::Cycle(coefficients) => coefficients.iter().all(|v| v.is_finite()),
+            Instance::Curve => true,
+        }
+    }
+
+    fn from_numbers(shape: &Shape, n: &[f64]) -> Instance {
+        match shape {
+            Shape::Dots(_) => Instance::Dot([n[0], n[1]]),
+            Shape::Circles { .. } => Instance::Circle([n[0], n[1]], n[2]),
+            Shape::Cycles { .. } => Instance::Cycle([n[0], n[1], n[2], n[3]]),
+            Shape::Curves(_) => Instance::Curve,
+        }
+    }
+}
+
+fn shape_exprs(shape: &Shape) -> Vec<&Expr> {
+    match shape {
+        Shape::Dots(at) => at.iter().collect(),
+        Shape::Circles { center, r } => vec![&center[0], &center[1], r],
+        Shape::Cycles { a, b, c } => vec![a, &b[0], &b[1], c],
+        Shape::Curves(_) => Vec::new(),
+    }
+}
+
+/// Below this, a circle a view wide is off a straight line by much less than a pixel.
+const STRAIGHT_ACROSS_VIEW: f64 = 1e-9;
 
 /// The numbers of one instance, leaving its `with` names in `env` for its style. Nothing if it
 /// doesn't exist.
@@ -565,22 +679,50 @@ pub fn instance(
         }
     }
     let env = &*env;
-    let found = match shape {
-        Shape::Dots(at) => {
-            (|| Ok::<_, Error>(([eval::real(&at[0], env)?, eval::real(&at[1], env)?], None)))()
+    let mut numbers = Vec::with_capacity(4);
+    for e in shape_exprs(shape) {
+        match eval::real(e, env) {
+            Ok(value) => numbers.push(value),
+            Err(e) if e.absent => return Ok(None),
+            Err(e) => return Err(e),
         }
-        Shape::Circles { center, r } => (|| {
-            Ok((
-                [eval::real(&center[0], env)?, eval::real(&center[1], env)?],
-                Some(eval::real(r, env)?),
-            ))
-        })(),
-    };
-    match found {
-        Ok(found) => Ok(Some(found)),
-        Err(e) if e.absent => Ok(None),
-        Err(e) => Err(e),
     }
+    Ok(Some(Instance::from_numbers(shape, &numbers)))
+}
+
+/// The instances of a collection with colored sides, each as its circle's coefficients and then
+/// what its style reads. One that doesn't exist, or isn't a circle this frame, has no sides.
+pub fn sided_instances(
+    mark: &crate::ir::Mark,
+    group: &crate::Sided,
+    env: &Env,
+) -> Result<Vec<f32>, Error> {
+    let Form::Many { vars, lets, shape } = &mark.form else {
+        return Ok(Vec::new());
+    };
+    let mut local = env.clone();
+    let mut out = Vec::new();
+    let mut count = 0;
+    for_each(vars, &mut local, &mut count, &mut |env| {
+        let coefficients = match instance(lets, shape, env)? {
+            Some(Instance::Cycle(coefficients)) => coefficients,
+            Some(Instance::Circle([x, y], r)) => {
+                [1.0 / r, x / r, y / r, (x * x + y * y - r * r) / r]
+            }
+            _ => return Ok(()),
+        };
+        if !coefficients.iter().all(|v| v.is_finite()) {
+            return Ok(());
+        }
+        let start = out.len();
+        out.extend(coefficients.map(|v| v as f32));
+        for name in &group.names {
+            out.push(env.get(name).unwrap_or(0.0) as f32);
+        }
+        out.resize(start + group.stride * 4, 0.0);
+        Ok(())
+    })?;
+    Ok(out)
 }
 
 struct Target<'a> {
@@ -595,8 +737,9 @@ struct FastInstances {
     slots: fast::Slots,
     vars: Vec<u32>,
     lets: Option<Vec<(u32, fast::Node)>>,
-    center: Option<[fast::Node; 2]>,
-    r: Option<fast::Node>,
+    /// The numbers `Instance::from_numbers` takes, if all of them compile.
+    numbers: Option<Vec<fast::Node>>,
+    found: Vec<f64>,
     /// A size that's the same for every instance, worked out once.
     radius: Option<f64>,
     half: Option<f64>,
@@ -618,12 +761,10 @@ impl FastInstances {
             .zip(&let_slots)
             .map(|((_, e), slot)| Some((*slot, fast::compile(e, &mut slots, env)?)))
             .collect();
-        let (center, r) = match shape {
-            Shape::Dots(at) => (at, None),
-            Shape::Circles { center, r } => (center, Some(r)),
-        };
-        let cx = fast::compile(&center[0], &mut slots, env);
-        let cy = fast::compile(&center[1], &mut slots, env);
+        let numbers: Option<Vec<_>> = shape_exprs(shape)
+            .into_iter()
+            .map(|e| fast::compile(e, &mut slots, env))
+            .collect();
         // Does a size read anything that changes per instance?
         let local = |e: &Expr| {
             let mut found = false;
@@ -639,8 +780,8 @@ impl FastInstances {
         Self {
             vars: var_slots,
             lets: compiled,
-            center: cx.zip(cy).map(|(x, y)| [x, y]),
-            r: r.and_then(|r| fast::compile(r, &mut slots, env)),
+            numbers,
+            found: Vec::with_capacity(4),
             radius: constant(&style.radius),
             half: constant(&style.width),
             slots,
@@ -648,8 +789,13 @@ impl FastInstances {
     }
 
     /// The instance's numbers the fast way, or nothing if that's for `eval` to say.
-    fn numbers(&mut self, vars: &[(String, [Expr; 2])], env: &Env) -> Option<Option<Instance>> {
-        let center = self.center.as_ref()?;
+    fn numbers(
+        &mut self,
+        vars: &[(String, [Expr; 2])],
+        shape: &Shape,
+        env: &Env,
+    ) -> Option<Option<Instance>> {
+        let numbers = self.numbers.as_ref()?;
         for ((name, _), slot) in vars.iter().zip(&self.vars) {
             self.slots.set(*slot, env.get(name)?);
         }
@@ -660,17 +806,16 @@ impl FastInstances {
                 Err(fast::Stop::Unknown) => return None,
             }
         }
-        let x = fast::run(&center[0], &self.slots);
-        let y = fast::run(&center[1], &self.slots);
-        let r = self.r.as_ref().map(|r| fast::run(r, &self.slots));
-        match (x, y, r) {
-            (Ok(x), Ok(y), None) => Some(Some(([x, y], None))),
-            (Ok(x), Ok(y), Some(Ok(r))) => Some(Some(([x, y], Some(r)))),
-            (Err(fast::Stop::Unknown), ..)
-            | (_, Err(fast::Stop::Unknown), _)
-            | (.., Some(Err(fast::Stop::Unknown))) => None,
-            _ => Some(None),
+        self.found.clear();
+        let mut absent = false;
+        for node in numbers {
+            match fast::run(node, &self.slots) {
+                Ok(value) => self.found.push(value),
+                Err(fast::Stop::Absent) => absent = true,
+                Err(fast::Stop::Unknown) => return None,
+            }
         }
+        Some((!absent).then(|| Instance::from_numbers(shape, &self.found)))
     }
 }
 
@@ -686,12 +831,49 @@ fn push_instance(
     run: &mut FastInstances,
     segments: &mut Vec<f32>,
 ) -> Result<(), Error> {
-    let numbers = match run.numbers(vars, env) {
+    let numbers = match run.numbers(vars, shape, env) {
         Some(numbers) => numbers,
         None => instance(lets, shape, env)?,
     };
-    let Some((center, radius)) = numbers else {
+    let Some(numbers) = numbers else {
         return Ok(());
+    };
+    // At a pole there's no number to draw at, and every comparison below would let it through.
+    if !numbers.is_finite() {
+        return Ok(());
+    }
+    let view_width = frame.view.x[1] - frame.view.x[0];
+    let (center, radius) = match numbers {
+        Instance::Dot(at) => (at, None),
+        Instance::Circle(at, r) => (at, Some(r)),
+        Instance::Curve => return Ok(()),
+        Instance::Cycle([a, bx, by, _]) if (a * view_width).abs() >= STRAIGHT_ACROSS_VIEW => {
+            ([bx / a, by / a], Some(1.0 / a.abs()))
+        }
+        // A line, from the point on it nearest the middle of the view, and long enough to cross it.
+        Instance::Cycle([a, bx, by, c]) => {
+            let view = frame.view;
+            let p = [(view.x[0] + view.x[1]) / 2.0, (view.y[0] + view.y[1]) / 2.0];
+            let d = (a * (p[0] * p[0] + p[1] * p[1]) - 2.0 * (bx * p[0] + by * p[1]) + c) / 2.0;
+            let foot = [p[0] + d * bx, p[1] + d * by];
+            let reach = view_width.hypot(view.y[1] - view.y[0]);
+            let end = |s: f64| {
+                let (x, y) = frame::device(
+                    foot[0] - s * by,
+                    foot[1] + s * bx,
+                    view,
+                    frame.width,
+                    frame.height,
+                );
+                [x, y]
+            };
+            let line = Polyline {
+                points: vec![end(-reach), end(reach)],
+                closed: false,
+            };
+            instance(lets, shape, env)?;
+            return push_line(&line, style, env, frame.dpr, &|p| p, segments);
+        }
     };
     // A size that reads the instance needs its `with` names, which only `eval` looks at.
     let mut size = |e: &Option<Expr>, known: Option<f64>, default: f64| -> Result<f64, Error> {
@@ -923,12 +1105,17 @@ pub fn segment_coverage(s: &[f32], px: f64, py: f64) -> f64 {
     let (cx, cy) = (ax + dx * t, ay + dy * t);
     let (vx, vy) = (px - cx, py - cy);
     let rho = vx.hypot(vy);
-    // On the centerline the normal is the segment's own.
-    let len = len2.sqrt().max(1e-6);
-    let (nx, ny) = if rho > 1e-6 {
-        (vx / rho, vy / rho)
+    // Along the segment, the normal is its own. Only a cap needs the way to this pixel, which near
+    // the centerline would be rounding error in the shader's single precision.
+    let (nx, ny) = if (along > 0.0 && along < 1.0) || rho < 0.01 {
+        if len2 > 1e-12 {
+            let len = len2.sqrt();
+            (-dy / len, dx / len)
+        } else {
+            (1.0, 0.0)
+        }
     } else {
-        (-dy / len, dx / len)
+        (vx / rho, vy / rho)
     };
     let half = f(4) + (f(5) - f(4)) * t;
     let mut coverage = box_coverage(half - rho, nx, ny) - box_coverage(-half - rho, nx, ny);
@@ -992,6 +1179,31 @@ mod tests {
             viewport { x: 0..10, y: 0..10, width: 100 }
             param n = 3 in 0..9
             dots d = (i, 5) for i in 1..n";
+
+        /// Exactly at the pole, and either side of it, nothing is drawn through infinity.
+        #[test]
+        fn a_curve_through_a_pole_breaks_there() {
+            // x = 1 + 1/t, which runs off to both infinities at t = 0.
+            let doc = "viewport { x: -4..4, y: -4..4 }
+                   curve c = parametric (t): (1 + 1 / t, t) for t in -3..3";
+            let figure = crate::build(doc, &[]).unwrap();
+            let env = crate::eval::frame_env(&figure, &crate::frame::Inputs::at(0.0)).unwrap();
+            let crate::ir::Form::Parametric(arc) = &figure.scene.marks[0].form else {
+                panic!();
+            };
+            let view =
+                crate::frame::view_for(&figure, &crate::frame::Inputs::at(0.0), 400, 400).unwrap();
+            let sampled = crate::stroke::sample_arc(arc, &env, &view, 400, 400).unwrap();
+            assert_eq!(sampled.pieces.len(), 2, "one each side of the pole");
+            for piece in &sampled.pieces {
+                assert!(piece.iter().flatten().all(|v| v.is_finite()));
+                let side = piece[0][1].signum();
+                assert!(
+                    piece.iter().all(|p| p[1].signum() == side),
+                    "a piece crosses t = 0"
+                );
+            }
+        }
 
         #[test]
         fn a_collection_is_one_layer_with_a_count_that_follows_its_range() {

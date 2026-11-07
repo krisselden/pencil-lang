@@ -28,9 +28,15 @@ fn may_vanish(e: &Expr, vanishing: &HashSet<String>) -> bool {
 fn form_exprs(form: &Form) -> Vec<&Expr> {
     let mut out = Vec::new();
     match form {
-        Form::Field { field, grad, .. } => {
+        Form::Field {
+            field,
+            grad,
+            curvature,
+            ..
+        } => {
             out.push(field);
             out.extend(grad);
+            out.extend(curvature);
         }
         Form::Parametric(arc) => {
             out.extend(&arc.point);
@@ -62,16 +68,30 @@ fn form_exprs(form: &Form) -> Vec<&Expr> {
                     out.extend(center);
                     out.push(r);
                 }
+                Shape::Curves(arc) => {
+                    out.extend(&arc.point);
+                    out.extend(&arc.range);
+                }
+                Shape::Cycles { a, b, c } => {
+                    out.push(a);
+                    out.extend(b);
+                    out.push(c);
+                }
             }
         }
         // Where it sits is the expression's business, per state.
         Form::Term { .. } => {}
         Form::Outline { .. } => {}
         Form::Label {
-            at, offset, values, ..
+            at,
+            offset,
+            away,
+            values,
+            ..
         } => {
             out.extend(at);
             out.extend(offset);
+            out.extend(away.iter().flatten());
             out.extend(values);
         }
     }
@@ -165,8 +185,18 @@ pub fn present(mark: &Mark, style: &MarkStyle, env: &Env) -> Result<bool, Error>
         Form::Many { .. } | Form::Term { .. } => Ok(true),
         Form::Outline { .. } => Ok(true),
         Form::Label {
-            at, offset, values, ..
-        } => all_evaluate(at.iter().chain(offset).chain(values), env),
+            at,
+            offset,
+            away,
+            values,
+            ..
+        } => all_evaluate(
+            at.iter()
+                .chain(offset)
+                .chain(away.iter().flatten())
+                .chain(values),
+            env,
+        ),
     }
 }
 

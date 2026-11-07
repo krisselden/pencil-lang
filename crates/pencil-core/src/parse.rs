@@ -9,6 +9,7 @@ use crate::ir::Expr;
 pub enum ManyKind {
     Dots,
     Circles,
+    Curves,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -70,9 +71,31 @@ pub enum Item {
     },
     Label {
         name: String,
-        text: String,
+        /// Without any, a panel gives it with `text`, or doesn't show it.
+        text: Option<String>,
         at: Expr,
         offset: Option<Expr>,
+        /// Which way from its point, with the distance in its style.
+        away: Option<Expr>,
+        line: usize,
+    },
+    /// What a label says in this panel: a thing's name, in this space.
+    Text {
+        name: String,
+        text: String,
+        line: usize,
+    },
+    /// A point's dot, after a map.
+    DotAt {
+        name: String,
+        at: Expr,
+        line: usize,
+    },
+    /// A straight segment, after a map, which can bend it. `var` runs from 0 to 1.
+    ArcSegment {
+        name: String,
+        var: String,
+        point: Expr,
         line: usize,
     },
     /// Unknowns defined by equations, found by Newton's method each frame.
@@ -87,15 +110,11 @@ pub enum Item {
         name: String,
         kind: ManyKind,
         value: Expr,
+        /// A curve's own parameter and its range, for `curves`.
+        param: Option<(String, [Expr; 2])>,
         vars: Vec<(String, [Expr; 2])>,
         lets: Vec<(String, Expr)>,
         line: usize,
-    },
-    /// How panels are laid out, in design pixels.
-    Panels {
-        columns: Expr,
-        gap: Option<Expr>,
-        title: Option<Expr>,
     },
     /// Its own view of the figure, with its own marks. What's outside any panel is shared.
     Panel {
@@ -104,7 +123,7 @@ pub enum Item {
         formula: Option<String>,
         items: Vec<Item>,
     },
-    /// Marks to draw in more than one place. Parameters can be functions.
+    /// Things to draw in more than one place, each declared once.
     Group {
         name: String,
         params: Vec<String>,
@@ -113,6 +132,8 @@ pub enum Item {
     Use {
         name: String,
         args: Vec<Expr>,
+        /// A function to draw what the group declares through.
+        through: Option<String>,
         /// A prefix for what the group declares, so it can be drawn more than once.
         alias: Option<String>,
         line: usize,
@@ -383,7 +404,7 @@ struct Parser {
 /// Builtin names in source, and their MathJSON heads. Anything else is left under
 /// its own name for `compile` to resolve as a user function. `docs/language.md` must
 /// describe every one, and a test holds it to that.
-pub const FUNCTIONS: [(&str, &str); 35] = [
+pub const FUNCTIONS: [(&str, &str); 47] = [
     ("sqrt", "Sqrt"),
     ("sin", "Sin"),
     ("cos", "Cos"),
@@ -419,6 +440,18 @@ pub const FUNCTIONS: [(&str, &str); 35] = [
     ("otherwise", "Otherwise"),
     ("snap", "Snap"),
     ("timeline", "Timeline"),
+    ("real", "Real"),
+    ("imag", "Imag"),
+    ("conj", "Conj"),
+    ("arg", "Arg"),
+    ("sinh", "Sinh"),
+    ("cosh", "Cosh"),
+    ("tanh", "Tanh"),
+    ("coth", "Coth"),
+    ("sech", "Sech"),
+    ("csch", "Csch"),
+    ("arctanh", "Arctanh"),
+    ("flip", "Flip"),
 ];
 
 impl Parser {
@@ -556,6 +589,21 @@ impl Parser {
                 items.push(Item::Dots { names, line });
             }
             "label" => items.push(self.label(line)?),
+            "text" => {
+                let name = self.ident("a label's name")?;
+                self.expect("=")?;
+                let text = match self.bump() {
+                    Tok::Str(text) => text,
+                    other => {
+                        return Err(Error::at(
+                            line,
+                            1,
+                            format!("expected text, found {other:?}"),
+                        ));
+                    }
+                };
+                items.push(Item::Text { name, text, line });
+            }
             "solve" => {
                 let mut unknowns = Vec::new();
                 if self.eat("(") {
@@ -600,34 +648,7 @@ impl Parser {
             }
             "dots" => items.push(self.many(ManyKind::Dots, line)?),
             "circles" => items.push(self.many(ManyKind::Circles, line)?),
-            "panels" => {
-                self.expect("{")?;
-                let (mut columns, mut gap, mut title) = (None, None, None);
-                while !self.eat("}") {
-                    let key = self.ident("`columns`, `gap` or `title`")?;
-                    self.expect(":")?;
-                    let value = self.expr()?;
-                    match key.as_str() {
-                        "columns" => columns = Some(value),
-                        "gap" => gap = Some(value),
-                        "title" => title = Some(value),
-                        other => {
-                            return Err(self.error(format!(
-                                "`panels` takes `columns`, `gap` and `title`, not `{other}`"
-                            )));
-                        }
-                    }
-                    self.eat(",");
-                }
-                let Some(columns) = columns else {
-                    return Err(self.error("`panels` needs `columns`"));
-                };
-                items.push(Item::Panels {
-                    columns,
-                    gap,
-                    title,
-                });
-            }
+            "curves" => items.push(self.many(ManyKind::Curves, line)?),
             "panel" => {
                 let panel = self.ident("a panel's name")?;
                 let title = self.optional_string();
@@ -663,6 +684,12 @@ impl Parser {
                     args.push(self.expr()?);
                     self.eat(",");
                 }
+                let through = if self.at_word("through") {
+                    self.bump();
+                    Some(self.ident("a function")?)
+                } else {
+                    None
+                };
                 let alias = if self.at_word("as") {
                     self.bump();
                     Some(self.ident("a prefix")?)
@@ -672,6 +699,7 @@ impl Parser {
                 items.push(Item::Use {
                     name: group,
                     args,
+                    through,
                     alias,
                     line,
                 });
@@ -847,7 +875,23 @@ impl Parser {
     fn many(&mut self, kind: ManyKind, line: usize) -> Result<Item, Error> {
         let name = self.ident("a collection's name")?;
         self.expect("=")?;
-        let value = self.expr()?;
+        // A curve has its own parameter, which runs smoothly, before what counts the curves.
+        let mut param = None;
+        let value = if kind == ManyKind::Curves {
+            self.keyword("parametric")?;
+            self.expect("(")?;
+            let var = self.ident("a parameter")?;
+            self.expect(")")?;
+            self.expect(":")?;
+            let value = self.expr()?;
+            self.keyword("for")?;
+            self.keyword(&var)?;
+            self.keyword("in")?;
+            param = Some((var, self.range()?));
+            value
+        } else {
+            self.expr()?
+        };
         self.keyword("for")?;
         let mut vars = Vec::new();
         loop {
@@ -874,6 +918,7 @@ impl Parser {
             name,
             kind,
             value,
+            param,
             vars,
             lets,
             line,
@@ -1002,30 +1047,39 @@ impl Parser {
 
     fn label(&mut self, line: usize) -> Result<Item, Error> {
         let name = self.ident("a label name")?;
-        self.expect("=")?;
-        let text = match self.bump() {
-            Tok::Str(text) => text,
-            other => {
-                return Err(Error::at(
-                    line,
-                    1,
-                    format!("expected text, found {other:?}"),
-                ));
+        let text = if self.eat("=") {
+            match self.bump() {
+                Tok::Str(text) => Some(text),
+                other => {
+                    return Err(Error::at(
+                        line,
+                        1,
+                        format!("expected text, found {other:?}"),
+                    ));
+                }
             }
-        };
-        self.keyword("at")?;
-        let at = self.expr()?;
-        let offset = if matches!(self.peek(), Tok::Ident(w) if w == "offset") {
-            self.bump();
-            Some(self.expr()?)
         } else {
             None
         };
+        self.keyword("at")?;
+        let at = self.expr()?;
+        let (mut offset, mut away) = (None, None);
+        if matches!(self.peek(), Tok::Ident(w) if w == "offset") {
+            self.bump();
+            offset = Some(self.expr()?);
+        } else if matches!(self.peek(), Tok::Ident(w) if w == "away") {
+            self.bump();
+            away = Some(self.expr()?);
+        }
+        if matches!(self.peek(), Tok::Ident(w) if w == "offset" || w == "away") {
+            return Err(self.error("a label takes `offset` or `away`, not both"));
+        }
         Ok(Item::Label {
             name,
             text,
             at,
             offset,
+            away,
             line,
         })
     }

@@ -1,0 +1,11 @@
+// The graph's two colors: hsv(340, .7, 1) and hsv(200, .7, 1).
+let rose = rgb(255, 77, 136)
+let sky = rgb(77, 196, 255)
+
+style .first { stroke: rose; fill: rose }
+style .second { stroke: sky; fill: sky }
+
+style .heart { width: 3.5px }
+style .coordinate { width: 3.5px; opacity: 0.4 }
+style .ties { width: 1.5px; dash: 6px; gap: 5px; opacity: 0.6 }
+style dot { radius: 5px }

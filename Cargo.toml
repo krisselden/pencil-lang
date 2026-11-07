@@ -6,6 +6,7 @@ members = ["crates/pencil-core", "crates/pencil-render", "crates/pencil-cli", "c
 version = "0.0.0"
 edition = "2024"
 publish = false
+license = "MIT"
 
 [workspace.dependencies]
 pencil-core = { path = "crates/pencil-core" }

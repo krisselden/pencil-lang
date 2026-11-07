@@ -14,6 +14,8 @@ use crate::ir::{
 use crate::parse::{CurveSyntax, Document, Item, ManyKind, PartSyntax};
 
 /// Names every expression can use without declaring them.
+/// Beyond this, `z^n` goes through exp and ln rather than multiplying out.
+const MAX_COMPLEX_POWER: f64 = 8.0;
 pub const SIGNALS: [&str; 1] = ["time"];
 pub const CONSTANTS: [&str; 3] = ["pi", "π", "tau"];
 /// The discrete param that beats declare.
@@ -68,6 +70,15 @@ enum Val {
         y: Expr,
         r: Expr,
     },
+    /// A circle with a handedness, which is a line when `a` is 0: the zeros of
+    /// `a|p|² − 2(bx·x + by·y) + c`, scaled so that `bx² + by² − ac` is 1. Its negative side is
+    /// the inside of a counterclockwise circle. `a` is signed curvature.
+    Cycle {
+        a: Expr,
+        bx: Expr,
+        by: Expr,
+        c: Expr,
+    },
     Line {
         a: [Expr; 2],
         b: [Expr; 2],
@@ -80,7 +91,7 @@ impl Val {
         match self {
             Val::Scalar(_) => "a number",
             Val::Point(..) => "a point",
-            Val::Circle { .. } => "a circle",
+            Val::Circle { .. } | Val::Cycle { .. } => "a circle",
             Val::Line { .. } => "a line",
         }
     }
@@ -90,6 +101,7 @@ impl Val {
             Val::Scalar(e) => vec![e.clone()],
             Val::Point(x, y) => vec![x.clone(), y.clone()],
             Val::Circle { x, y, r } => vec![x.clone(), y.clone(), r.clone()],
+            Val::Cycle { a, bx, by, c } => vec![a.clone(), bx.clone(), by.clone(), c.clone()],
             Val::Line { a, b, .. } => vec![a[0].clone(), a[1].clone(), b[0].clone(), b[1].clone()],
         }
     }
@@ -105,6 +117,12 @@ impl Val {
                 x: next(),
                 y: next(),
                 r: next(),
+            },
+            Val::Cycle { .. } => Val::Cycle {
+                a: next(),
+                bx: next(),
+                by: next(),
+                c: next(),
             },
             Val::Line { ray, .. } => Val::Line {
                 a: [next(), next()],
@@ -142,6 +160,7 @@ struct Function {
 enum Shape {
     Point,
     Circle,
+    Cycle,
     Line,
     Ray,
 }
@@ -196,6 +215,66 @@ fn plus_scaled(a: &[Expr; 2], d: &[Expr; 2], t: &Expr) -> [Expr; 2] {
 }
 fn length2(d: &[Expr; 2]) -> Expr {
     sqrt(add(square(d[0].clone()), square(d[1].clone())))
+}
+// Complex arithmetic folds literal 0s and 1s, since `i` is one of each, so `2·i·w` costs what
+// it would to write it out.
+fn is_num(e: &Expr, n: f64) -> bool {
+    matches!(e, Expr::Num(v) if *v == n)
+}
+fn times(a: &Expr, b: &Expr) -> Expr {
+    if is_num(a, 0.0) || is_num(b, 0.0) {
+        num(0.0)
+    } else if is_num(a, 1.0) {
+        b.clone()
+    } else if is_num(b, 1.0) {
+        a.clone()
+    } else {
+        mul(a.clone(), b.clone())
+    }
+}
+fn plus(a: Expr, b: Expr) -> Expr {
+    if is_num(&a, 0.0) {
+        b
+    } else if is_num(&b, 0.0) {
+        a
+    } else {
+        add(a, b)
+    }
+}
+fn less(a: Expr, b: Expr) -> Expr {
+    if is_num(&b, 0.0) {
+        a
+    } else if is_num(&a, 0.0) {
+        negated(b)
+    } else {
+        sub(a, b)
+    }
+}
+fn negated(a: Expr) -> Expr {
+    if is_num(&a, 0.0) {
+        a
+    } else {
+        Expr::app("Negate", vec![a])
+    }
+}
+fn is_sum_of_squares(e: &Expr) -> bool {
+    let squared = |e: &Expr| matches!(e, Expr::App(head, args) if head == "Power" && args.get(1).is_some_and(|n| is_num(n, 2.0)));
+    matches!(e, Expr::App(head, args) if head == "Add" && args.len() == 2 && squared(&args[0]) && squared(&args[1]))
+}
+/// (a + bi)(c + di).
+fn complex_times(a: &Expr, b: &Expr, c: &Expr, d: &Expr) -> [Expr; 2] {
+    [
+        less(times(a, c), times(b, d)),
+        plus(times(a, d), times(b, c)),
+    ]
+}
+/// (a + bi) / (c + di), multiplying through by the conjugate.
+fn complex_over(a: &Expr, b: &Expr, c: &Expr, d: &Expr) -> [Expr; 2] {
+    let norm = add(square(c.clone()), square(d.clone()));
+    [
+        div(plus(times(a, c), times(b, d)), norm.clone()),
+        div(less(times(b, c), times(a, d)), norm),
+    ]
 }
 fn point(p: [Expr; 2]) -> Val {
     let [x, y] = p;
@@ -328,6 +407,12 @@ impl Lowerer {
                 y: field("y"),
                 r: field("r"),
             }),
+            Shape::Cycle => Some(Val::Cycle {
+                a: field("a"),
+                bx: field("bx"),
+                by: field("by"),
+                c: field("c"),
+            }),
             shape @ (Shape::Line | Shape::Ray) => Some(Val::Line {
                 a: [field("ax"), field("ay")],
                 b: [field("bx"), field("by")],
@@ -352,8 +437,16 @@ impl Lowerer {
                     || CONSTANTS.contains(&s.as_str())
                 {
                     Val::Scalar(e.clone())
+                } else if s == "i" {
+                    // Anything named `i` comes first, so a loop can still count with it.
+                    Val::Point(num(0.0), num(1.0))
                 } else if let Some((base, axis)) = s.split_once('.') {
                     match (locals.get(base), axis) {
+                        // A number is a point on the real axis.
+                        (Some(Val::Scalar(x)), "x") => Val::Scalar(x.clone()),
+                        (Some(Val::Scalar(_)), "y") => Val::Scalar(num(0.0)),
+                        (None, "x") if self.scalars.contains(base) => Val::Scalar(Expr::sym(base)),
+                        (None, "y") if self.scalars.contains(base) => Val::Scalar(num(0.0)),
                         (Some(Val::Point(x, _)), "x") | (Some(Val::Circle { x, .. }), "x") => {
                             Val::Scalar(x.clone())
                         }
@@ -361,6 +454,10 @@ impl Lowerer {
                             Val::Scalar(y.clone())
                         }
                         (Some(Val::Circle { r, .. }), "r") => Val::Scalar(r.clone()),
+                        (Some(Val::Cycle { a, .. }), "a") => Val::Scalar(a.clone()),
+                        (Some(Val::Cycle { a, bx, .. }), "x") => Val::Scalar(cycle_center(a, bx)),
+                        (Some(Val::Cycle { a, by, .. }), "y") => Val::Scalar(cycle_center(a, by)),
+                        (Some(Val::Cycle { a, .. }), "r") => Val::Scalar(cycle_radius(a)),
                         _ => return Err(Error::new(format!("unknown name `{s}`"))),
                     }
                 } else {
@@ -371,6 +468,9 @@ impl Lowerer {
                 // `intersect` takes a literal index, which picks a formula.
                 if head == "Intersect" {
                     return self.intersect(args, locals, depth);
+                }
+                if head == PUSHED {
+                    return self.pushed(args, locals, depth);
                 }
                 let mut low = Vec::with_capacity(args.len());
                 for a in args {
@@ -390,6 +490,34 @@ impl Lowerer {
                 self.builtin(head, low)?
             }
         })
+    }
+
+    /// Where a direction at a point goes through a map: the derivative of `map(at + s·direction)`
+    /// at `s` = 0, exactly.
+    fn pushed(&self, args: &[Expr], locals: &Locals, depth: usize) -> Result<Val, Error> {
+        let [Expr::Sym(map), at, direction] = args else {
+            unreachable!("`through` writes these");
+        };
+        let mut inner = locals.clone();
+        inner.insert(STEP.to_string(), Val::Scalar(Expr::sym(STEP)));
+        let moved = add(at.clone(), mul(Expr::sym(STEP), direction.clone()));
+        let image = Expr::app(map, vec![moved]);
+        let Val::Point(x, y) = self.lower(&image, &inner, depth + 1)? else {
+            return Err(Error::new(format!("`{map}` has to give a point")));
+        };
+        fn at_zero(e: &Expr) -> Expr {
+            match e {
+                Expr::Sym(s) if s == STEP => num(0.0),
+                Expr::App(head, args) => {
+                    Expr::App(head.clone(), args.iter().map(at_zero).collect())
+                }
+                other => other.clone(),
+            }
+        }
+        Ok(Val::Point(
+            at_zero(&crate::diff::derivative(&x, STEP)?),
+            at_zero(&crate::diff::derivative(&y, STEP)?),
+        ))
     }
 
     fn intersect(&self, args: &[Expr], locals: &Locals, depth: usize) -> Result<Val, Error> {
@@ -442,7 +570,21 @@ impl Lowerer {
     }
 
     fn builtin(&self, head: &str, low: Vec<Val>) -> Result<Val, Error> {
-        use Val::{Circle, Line, Point, Scalar};
+        use Val::{Circle, Cycle, Line, Point, Scalar};
+        // Where a function wants points, a number is one on the real axis.
+        let low = if matches!(
+            head,
+            "Circle" | "Line" | "Ray" | "Distance" | "Dot" | "Midpoint"
+        ) {
+            low.into_iter()
+                .map(|v| match v {
+                    Scalar(x) => Point(x, num(0.0)),
+                    other => other,
+                })
+                .collect()
+        } else {
+            low
+        };
         let reflected_circle = |x: &Expr, y: &Expr, r: &Expr, p: [Expr; 2]| {
             let _ = (x, y);
             let [cx, cy] = p;
@@ -473,18 +615,126 @@ impl Lowerer {
                 )
             }
             ("Tuple", [Scalar(x), Scalar(y)]) => Point(x.clone(), y.clone()),
-            ("Add" | "Subtract", [Point(ax, ay), Point(bx, by)]) => Point(
-                Expr::app(head, vec![ax.clone(), bx.clone()]),
-                Expr::app(head, vec![ay.clone(), by.clone()]),
-            ),
+            ("Add", [Point(ax, ay), Point(bx, by)]) => {
+                Point(plus(ax.clone(), bx.clone()), plus(ay.clone(), by.clone()))
+            }
+            ("Subtract", [Point(ax, ay), Point(bx, by)]) => {
+                Point(less(ax.clone(), bx.clone()), less(ay.clone(), by.clone()))
+            }
             ("Add" | "Subtract" | "Multiply" | "Divide", [Scalar(a), Scalar(b)]) => {
                 Scalar(Expr::app(head, vec![a.clone(), b.clone()]))
             }
-            ("Multiply", [Scalar(k), Point(x, y)]) | ("Multiply", [Point(x, y), Scalar(k)]) => {
-                Point(mul(k.clone(), x.clone()), mul(k.clone(), y.clone()))
+            // A point is a complex number, and a number is one on the real axis.
+            ("Add", [Scalar(k), Point(x, y)]) | ("Add", [Point(x, y), Scalar(k)]) => {
+                Point(plus(x.clone(), k.clone()), y.clone())
             }
+            ("Subtract", [Point(x, y), Scalar(k)]) => Point(less(x.clone(), k.clone()), y.clone()),
+            ("Subtract", [Scalar(k), Point(x, y)]) => {
+                Point(less(k.clone(), x.clone()), negated(y.clone()))
+            }
+            ("Multiply", [Scalar(k), Point(x, y)]) | ("Multiply", [Point(x, y), Scalar(k)]) => {
+                Point(times(k, x), times(k, y))
+            }
+            ("Multiply", [Point(a, b), Point(c, d)]) => point(complex_times(a, b, c, d)),
             ("Divide", [Point(x, y), Scalar(k)]) => {
                 Point(div(x.clone(), k.clone()), div(y.clone(), k.clone()))
+            }
+            ("Divide", [Point(a, b), Point(c, d)]) => point(complex_over(a, b, c, d)),
+            ("Divide", [Scalar(k), Point(c, d)]) => point(complex_over(k, &num(0.0), c, d)),
+            // abs(z)²: the root of a sum of squares, squared, is that sum.
+            ("Power", [Scalar(Expr::App(root, inner)), Scalar(Expr::Num(n))])
+                if root == "Sqrt" && *n == 2.0 && inner.first().is_some_and(is_sum_of_squares) =>
+            {
+                Scalar(inner[0].clone())
+            }
+            // Hyperbolic functions are exp and ln, for numbers and complex numbers alike, so
+            // every evaluator and shader already has them.
+            (
+                "Sinh" | "Cosh" | "Tanh" | "Coth" | "Sech" | "Csch",
+                [v @ (Scalar(_) | Point(..))],
+            ) => {
+                let up = self.builtin("Exp", vec![v.clone()])?;
+                let flipped = self.builtin("Negate", vec![v.clone()])?;
+                let down = self.builtin("Exp", vec![flipped])?;
+                let sum = self.builtin("Add", vec![up.clone(), down.clone()])?;
+                let difference = self.builtin("Subtract", vec![up, down])?;
+                let two = Scalar(num(2.0));
+                match head {
+                    "Sinh" => self.builtin("Divide", vec![difference, two])?,
+                    "Cosh" => self.builtin("Divide", vec![sum, two])?,
+                    "Tanh" => self.builtin("Divide", vec![difference, sum])?,
+                    "Coth" => self.builtin("Divide", vec![sum, difference])?,
+                    "Sech" => self.builtin("Divide", vec![two, sum])?,
+                    _ => self.builtin("Divide", vec![two, difference])?,
+                }
+            }
+            ("Arctanh", [v @ (Scalar(_) | Point(..))]) => {
+                let one = Scalar(num(1.0));
+                let above = self.builtin("Add", vec![one.clone(), v.clone()])?;
+                let below = self.builtin("Subtract", vec![one, v.clone()])?;
+                let ratio = self.builtin("Divide", vec![above, below])?;
+                let log = self.builtin("Ln", vec![ratio])?;
+                self.builtin("Divide", vec![log, Scalar(num(2.0))])?
+            }
+            ("Real", [Point(x, _)]) | ("Real", [Scalar(x)]) => Scalar(x.clone()),
+            ("Imag", [Point(_, y)]) => Scalar(y.clone()),
+            ("Imag", [Scalar(_)]) => Scalar(num(0.0)),
+            ("Conj", [Point(x, y)]) => Point(x.clone(), negated(y.clone())),
+            ("Conj", [Scalar(x)]) => Scalar(x.clone()),
+            ("Abs", [Point(x, y)]) => Scalar(length2(&[x.clone(), y.clone()])),
+            ("Arg", [Point(x, y)]) => Scalar(Expr::app("Arctan2", vec![y.clone(), x.clone()]))
+                .only_where(&sub(
+                    add(square(x.clone()), square(y.clone())),
+                    num(COINCIDENT),
+                )),
+            ("Arg", [Scalar(x)]) => Scalar(Expr::app("Arctan2", vec![num(0.0), x.clone()])),
+            ("Exp", [Point(x, y)]) => {
+                let grown = Expr::app("Exp", vec![x.clone()]);
+                Point(
+                    times(&grown, &Expr::app("Cos", vec![y.clone()])),
+                    times(&grown, &Expr::app("Sin", vec![y.clone()])),
+                )
+            }
+            // The principal value, which doesn't exist at 0.
+            ("Ln", [Point(x, y)]) => Point(
+                Expr::app("Ln", vec![length2(&[x.clone(), y.clone()])]),
+                Expr::app("Arctan2", vec![y.clone(), x.clone()]),
+            )
+            .only_where(&sub(
+                add(square(x.clone()), square(y.clone())),
+                num(COINCIDENT),
+            )),
+            // The principal root: the half with a nonnegative real part.
+            ("Sqrt", [Point(x, y)]) => {
+                let r = length2(&[x.clone(), y.clone()]);
+                let half = |e: Expr| sqrt(div(e, num(2.0)));
+                let side = Expr::app("IfNonnegative", vec![y.clone(), num(1.0), num(-1.0)]);
+                Point(
+                    half(add(r.clone(), x.clone())),
+                    mul(side, half(sub(r, x.clone()))),
+                )
+            }
+            ("Power", [Point(x, y), Scalar(Expr::Num(n))])
+                if n.fract() == 0.0 && n.abs() <= MAX_COMPLEX_POWER =>
+            {
+                let mut out = [num(1.0), num(0.0)];
+                for _ in 0..(n.abs() as usize) {
+                    out = complex_times(&out[0], &out[1], x, y);
+                }
+                if *n < 0.0 {
+                    out = complex_over(&num(1.0), &num(0.0), &out[0], &out[1]);
+                }
+                point(out)
+            }
+            // Anything else is exp(w·ln z), on the principal branch.
+            ("Power", [z, w]) if matches!(z, Point(..)) || matches!(w, Point(..)) => {
+                let base = match z {
+                    Scalar(k) => Point(k.clone(), num(0.0)),
+                    other => other.clone(),
+                };
+                let log = self.builtin("Ln", vec![base])?;
+                let product = self.builtin("Multiply", vec![w.clone(), log])?;
+                self.builtin("Exp", vec![product])?
             }
             ("Negate", [Scalar(a)]) => Scalar(Expr::app("Negate", vec![a.clone()])),
             ("Negate", [Point(x, y)]) => Point(
@@ -503,6 +753,59 @@ impl Lowerer {
                 div(add(ax.clone(), bx.clone()), num(2.0)),
                 div(add(ay.clone(), by.clone()), num(2.0)),
             ),
+            // Through three points, in order: counterclockwise has its inside negative. Worked out
+            // from the first point, so nothing is divided until it's scaled, and three points in a
+            // line are a line.
+            ("Circle", [Point(ax, ay), Point(bx, by), Point(cx, cy)]) => {
+                let u = [sub(bx.clone(), ax.clone()), sub(by.clone(), ay.clone())];
+                let v = [sub(cx.clone(), ax.clone()), sub(cy.clone(), ay.clone())];
+                let (uu, vv) = (dot2(&u, &u), dot2(&v, &v));
+                let twice = mul(
+                    num(2.0),
+                    sub(
+                        mul(u[0].clone(), v[1].clone()),
+                        mul(u[1].clone(), v[0].clone()),
+                    ),
+                );
+                // The center from the first point, over its denominator: the blog's w, before dividing.
+                let wx = sub(mul(uu.clone(), v[1].clone()), mul(vv.clone(), u[1].clone()));
+                let wy = sub(mul(vv.clone(), u[0].clone()), mul(uu.clone(), v[0].clone()));
+                let scale = sqrt(add(square(wx.clone()), square(wy.clone())));
+                let exists = sub(
+                    add(square(wx.clone()), square(wy.clone())),
+                    num(COINCIDENT * COINCIDENT),
+                );
+                let at = [ax.clone(), ay.clone()];
+                // F(p) = a|p − A|² − 2w·(p − A), written out from the origin.
+                let world_bx = add(wx.clone(), mul(twice.clone(), ax.clone()));
+                let world_by = add(wy.clone(), mul(twice.clone(), ay.clone()));
+                let world_c = add(
+                    mul(twice.clone(), dot2(&at, &at)),
+                    mul(num(2.0), add(mul(wx, ax.clone()), mul(wy, ay.clone()))),
+                );
+                Cycle {
+                    a: div(twice, scale.clone()),
+                    bx: div(world_bx, scale.clone()),
+                    by: div(world_by, scale.clone()),
+                    c: div(world_c, scale),
+                }
+                .only_where(&exists)
+            }
+            ("Flip", [Cycle { a, bx, by, c }]) => Cycle {
+                a: negated(a.clone()),
+                bx: negated(bx.clone()),
+                by: negated(by.clone()),
+                c: negated(c.clone()),
+            },
+            ("Flip", [Circle { x, y, r }]) => Cycle {
+                a: negated(div(num(1.0), r.clone())),
+                bx: negated(div(x.clone(), r.clone())),
+                by: negated(div(y.clone(), r.clone())),
+                c: negated(div(
+                    sub(add(square(x.clone()), square(y.clone())), square(r.clone())),
+                    r.clone(),
+                )),
+            },
             ("Circle", [Point(x, y), Point(tx, ty)]) => Circle {
                 x: x.clone(),
                 y: y.clone(),
@@ -579,6 +882,7 @@ impl Lowerer {
     fn point(&self, e: &Expr, locals: &Locals) -> Result<[Expr; 2], Error> {
         match self.lower(e, locals, 0)? {
             Val::Point(x, y) => Ok([x, y]),
+            Val::Scalar(x) => Ok([x, num(0.0)]),
             other => Err(Error::new(format!(
                 "expected a point, found {}",
                 other.kind()
@@ -618,6 +922,22 @@ impl Lowerer {
                 push(Some("x"), x, &mut self.scalars);
                 push(Some("y"), y, &mut self.scalars);
                 Some(Shape::Point)
+            }
+            Val::Cycle { a, bx, by, c } => {
+                let (x, y, r) = (
+                    cycle_center(&a, &bx),
+                    cycle_center(&a, &by),
+                    cycle_radius(&a),
+                );
+                push(Some("a"), a, &mut self.scalars);
+                push(Some("bx"), bx, &mut self.scalars);
+                push(Some("by"), by, &mut self.scalars);
+                push(Some("c"), c, &mut self.scalars);
+                // Only a circle has a center and a radius: a line doesn't.
+                push(Some("x"), x, &mut self.scalars);
+                push(Some("y"), y, &mut self.scalars);
+                push(Some("r"), r, &mut self.scalars);
+                Some(Shape::Cycle)
             }
             Val::Circle { x, y, r } => {
                 push(Some("x"), x, &mut self.scalars);
@@ -689,6 +1009,7 @@ fn field_form(
         field,
         grad,
         exact,
+        curvature: None,
         line: None,
     })
 }
@@ -719,12 +1040,85 @@ fn circle_form(name: &str) -> Result<Form, Error> {
         field,
         grad,
         exact: true,
+        curvature: Some(div(num(1.0), Expr::sym(format!("{name}.r")))),
         line: Some(Arc {
             var: var.to_string(),
             point: [around("x", "Cos"), around("y", "Sin")],
             range: [num(0.0), Expr::sym("tau")],
         }),
     })
+}
+
+/// An oriented circle's exact signed distance, which a line needs no special case for, since
+/// nothing here divides by `a`. Its gradient is a unit vector.
+fn cycle_form(name: &str) -> Form {
+    let f = |field: &str| Expr::sym(format!("{name}.{field}"));
+    let (x, y) = (Expr::sym("x"), Expr::sym("y"));
+    let (a, bx, by, c) = (f("a"), f("bx"), f("by"), f("c"));
+    let value = add(
+        sub(
+            mul(a.clone(), add(square(x.clone()), square(y.clone()))),
+            mul(
+                num(2.0),
+                add(mul(bx.clone(), x.clone()), mul(by.clone(), y.clone())),
+            ),
+        ),
+        c,
+    );
+    let inner = add(num(1.0), mul(a.clone(), value.clone()));
+    let field = div(
+        value,
+        add(
+            num(1.0),
+            sqrt(Expr::app("Max", vec![inner.clone(), num(0.0)])),
+        ),
+    );
+    // Its center has no direction, and this keeps that from dividing by 0.
+    let root = sqrt(Expr::app("Max", vec![inner, num(1e-12)]));
+    let grad = [
+        div(sub(mul(a.clone(), x), bx), root.clone()),
+        div(sub(mul(a.clone(), y), by), root),
+    ];
+    let var = "t";
+    let around = |center: &str, wave: &str| {
+        add(
+            f(center),
+            mul(f("r"), Expr::app(wave, vec![Expr::sym(var)])),
+        )
+    };
+    Form::Field {
+        vars: ["x".to_string(), "y".to_string()],
+        field,
+        grad,
+        exact: true,
+        curvature: Some(a),
+        line: Some(Arc {
+            var: var.to_string(),
+            point: [around("x", "Cos"), around("y", "Sin")],
+            range: [num(0.0), Expr::sym("tau")],
+        }),
+    }
+}
+
+/// Below this curvature, an oriented circle has no center or radius of its own.
+const STRAIGHT: f64 = 1e-12;
+fn cycle_center(a: &Expr, b: &Expr) -> Expr {
+    Expr::app(
+        "Where",
+        vec![
+            sub(square(a.clone()), num(STRAIGHT * STRAIGHT)),
+            div(b.clone(), a.clone()),
+        ],
+    )
+}
+fn cycle_radius(a: &Expr) -> Expr {
+    Expr::app(
+        "Where",
+        vec![
+            sub(square(a.clone()), num(STRAIGHT * STRAIGHT)),
+            div(num(1.0), Expr::app("Abs", vec![a.clone()])),
+        ],
+    )
 }
 
 /// A line as a long segment through its points, or a ray from its first.
@@ -786,6 +1180,7 @@ fn prefixed(items: &[Item], prefix: &str, out: &mut Vec<Item>, line: usize) -> R
             | Item::Segment { name, .. }
             | Item::Arrow { name, .. }
             | Item::Label { name, .. }
+            | Item::ArcSegment { name, .. }
             | Item::Many { name, .. } => vec![name],
             Item::Solve { unknowns, .. } => unknowns.iter().collect(),
             _ => Vec::new(),
@@ -915,6 +1310,7 @@ fn renamed_items(
                 text,
                 at,
                 offset,
+                away,
                 line,
             } => {
                 let tag = name.clone();
@@ -924,6 +1320,7 @@ fn renamed_items(
                         text,
                         at: rename(&at, names),
                         offset: offset.as_ref().map(|o| rename(o, names)),
+                        away: away.as_ref().map(|d| rename(d, names)),
                         line,
                     },
                     Some(tag),
@@ -933,6 +1330,7 @@ fn renamed_items(
                 name,
                 kind,
                 value,
+                param,
                 vars,
                 lets,
                 line,
@@ -940,12 +1338,20 @@ fn renamed_items(
                 let mut bound: Vec<&String> = vars.iter().map(|(v, _)| v).collect();
                 bound.extend(lets.iter().map(|(v, _)| v));
                 let local = without(&bound);
+                // A curve's parameter is only its own, in its point.
+                let param = param.map(|(var, range)| {
+                    (var, [rename(&range[0], &local), rename(&range[1], &local)])
+                });
+                let mut own = bound.clone();
+                own.extend(param.iter().map(|(var, _)| var));
+                let value = rename(&value, &without(&own));
                 let tag = name.clone();
                 (
                     Item::Many {
                         name: renamed(&name),
                         kind,
-                        value: rename(&value, &local),
+                        value,
+                        param,
                         vars: vars
                             .iter()
                             .map(|(v, r)| {
@@ -956,6 +1362,47 @@ fn renamed_items(
                             .iter()
                             .map(|(v, e)| (v.clone(), rename(e, &local)))
                             .collect(),
+                        line,
+                    },
+                    Some(tag),
+                )
+            }
+            Item::Text { name, text, line } => (
+                Item::Text {
+                    name: renamed(&name),
+                    text,
+                    line,
+                },
+                None,
+            ),
+            Item::DotAt { name, at, line } => {
+                let tag = name.clone();
+                (
+                    // A dot has its point's name, so its own name can't be renamed through `at`.
+                    Item::DotAt {
+                        name: match prefix {
+                            Some(prefix) => format!("{prefix}_{name}"),
+                            None => renamed(&name),
+                        },
+                        at: rename(&at, names),
+                        line,
+                    },
+                    Some(tag),
+                )
+            }
+            Item::ArcSegment {
+                name,
+                var,
+                point,
+                line,
+            } => {
+                let tag = name.clone();
+                let local = without(&[&var]);
+                (
+                    Item::ArcSegment {
+                        name: renamed(&name),
+                        point: rename(&point, &local),
+                        var,
                         line,
                     },
                     Some(tag),
@@ -978,23 +1425,165 @@ fn renamed_items(
     Ok(())
 }
 
-/// Replaces each `use` with its group's statements, and passes a group's parameters by
-/// defining them first: a function's name as a function, and anything else as a value.
-fn expanded(items: &[Item], doc: &Document, out: &mut Vec<Item>) -> Result<(), Error> {
-    let function_params = |name: &str| {
-        doc.items.iter().find_map(|item| match item {
-            Item::Fn {
-                name: n, params, ..
-            } if n == name => Some(params.clone()),
-            _ => None,
-        })
-    };
+/// A variable of ours, which the `#` keeps from ever meeting a name someone wrote.
+const SEGMENT_VAR: &str = "segment#t";
+/// `pushed#(map, at, direction)`: where a direction at a point goes through a map.
+const PUSHED: &str = "pushed#";
+const STEP: &str = "step#";
+
+/// What a group declares, drawn through a function. Everything is written in the group's own
+/// coordinates, and only marks move: its `let`s stay as they were written. This is what a
+/// thing being the same thing in every panel comes down to: one declaration, through a map.
+fn through(items: Vec<Item>, map: &str) -> Result<Vec<Item>, Error> {
+    let image = |e: Expr| Expr::app(map, vec![e]);
+    let mut out = Vec::with_capacity(items.len());
     for item in items {
         match item {
-            Item::Panels { .. } | Item::Panel { .. } | Item::Group { .. } => {}
+            Item::Let { .. }
+            | Item::Fn { .. }
+            | Item::Solve { .. }
+            | Item::Tag(_)
+            | Item::Text { .. } => out.push(item),
+            Item::Curve {
+                name,
+                form: CurveSyntax::Parametric { var, point, range },
+                line,
+            } => out.push(Item::Curve {
+                name,
+                form: CurveSyntax::Parametric {
+                    var,
+                    point: image(point),
+                    range,
+                },
+                line,
+            }),
+            Item::Curve { name, line, .. } => {
+                return Err(Error::at(
+                    line,
+                    1,
+                    format!(
+                        "`{name}` can't go through `{map}`: the image of a construction isn't one, so write it as a parametric curve"
+                    ),
+                ));
+            }
+            Item::Segment {
+                name,
+                points,
+                closed,
+                line,
+            } => {
+                let [a, b] = points.as_slice() else {
+                    return Err(Error::at(
+                        line,
+                        1,
+                        format!("`{name}` can't go through `{map}`: only two points can, for now"),
+                    ));
+                };
+                if closed {
+                    return Err(Error::at(
+                        line,
+                        1,
+                        format!("`{name}` can't go through `{map}` closed, for now"),
+                    ));
+                }
+                out.push(Item::ArcSegment {
+                    name,
+                    var: SEGMENT_VAR.to_string(),
+                    point: image(add(
+                        a.clone(),
+                        mul(Expr::sym(SEGMENT_VAR), sub(b.clone(), a.clone())),
+                    )),
+                    line,
+                });
+            }
+            Item::ArcSegment {
+                name,
+                var,
+                point,
+                line,
+            } => out.push(Item::ArcSegment {
+                name,
+                var,
+                point: image(point),
+                line,
+            }),
+            Item::Dots { names, line } => {
+                for name in names {
+                    let at = image(Expr::sym(&name));
+                    out.push(Item::DotAt { name, at, line });
+                }
+            }
+            Item::DotAt { name, at, line } => out.push(Item::DotAt {
+                name,
+                at: image(at),
+                line,
+            }),
+            Item::Label {
+                name,
+                text,
+                at,
+                offset,
+                away,
+                line,
+            } => out.push(Item::Label {
+                name,
+                text,
+                away: away.map(|d| Expr::app(PUSHED, vec![Expr::sym(map), at.clone(), d])),
+                at: image(at),
+                offset,
+                line,
+            }),
+            Item::Many {
+                name,
+                kind: kind @ (ManyKind::Dots | ManyKind::Curves),
+                value,
+                param,
+                vars,
+                lets,
+                line,
+            } => out.push(Item::Many {
+                name,
+                kind,
+                value: image(value),
+                param,
+                vars,
+                lets,
+                line,
+            }),
+            Item::Many {
+                name,
+                kind: ManyKind::Circles,
+                line,
+                ..
+            } => {
+                return Err(Error::at(
+                    line,
+                    1,
+                    format!(
+                        "`{name}` can't go through `{map}`: the image of a circle isn't a circle, so map its center"
+                    ),
+                ));
+            }
+            _ => {
+                return Err(Error::new(format!(
+                    "a group drawn through `{map}` can hold lets, functions, parametric curves, segments, dots, labels, and `dots` and `curves` collections for now"
+                )));
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// Replaces each `use` with its group's statements, and passes a group's parameters by
+/// defining them first.
+fn expanded(items: &[Item], doc: &Document, out: &mut Vec<Item>) -> Result<(), Error> {
+    for item in items {
+        match item {
+            Item::Panel { .. } | Item::Group { .. } => {}
             Item::Use {
                 name,
                 args,
+                through: map,
                 alias,
                 line,
             } => {
@@ -1019,32 +1608,17 @@ fn expanded(items: &[Item], doc: &Document, out: &mut Vec<Item>) -> Result<(), E
                         ),
                     ));
                 }
-                // A group's parameters are its own, so two groups can both have a `map`. The
+                // A group's parameters are its own, so two groups can both have a `k`. The
                 // `#` keeps these from ever meeting a name someone wrote.
                 let mut body = Vec::new();
                 let mut scoped = HashMap::new();
                 for (param, arg) in params.iter().zip(args) {
                     let own = format!("{param}#{}", out.len());
                     scoped.insert(param.clone(), own.clone());
-                    let target = match arg {
-                        Expr::Sym(f) => function_params(f).map(|p| (f, p)),
-                        _ => None,
-                    };
-                    body.push(match target {
-                        Some((f, inner_params)) => Item::Fn {
-                            name: own,
-                            body: Expr::app(
-                                f,
-                                inner_params.iter().map(|p| Expr::sym(p.clone())).collect(),
-                            ),
-                            params: inner_params,
-                            line: *line,
-                        },
-                        None => Item::Let {
-                            name: own,
-                            expr: arg.clone(),
-                            line: *line,
-                        },
+                    body.push(Item::Let {
+                        name: own,
+                        expr: arg.clone(),
+                        line: *line,
                     });
                 }
                 let mut statements = Vec::new();
@@ -1053,6 +1627,9 @@ fn expanded(items: &[Item], doc: &Document, out: &mut Vec<Item>) -> Result<(), E
                     body.append(&mut statements);
                 } else {
                     renamed_items(&statements, &scoped, None, &mut body, *line)?;
+                }
+                if let Some(map) = map {
+                    body = through(body, map)?;
                 }
                 match alias {
                     Some(prefix) => prefixed(&body, prefix, out, *line)?,
@@ -1063,6 +1640,63 @@ fn expanded(items: &[Item], doc: &Document, out: &mut Vec<Item>) -> Result<(), E
         }
     }
     Ok(())
+}
+
+/// Gives each label its text in this panel. One with none is a thing this space has no name
+/// for, so it isn't drawn, and the tags written after it go with it.
+fn with_texts(items: &[Item]) -> Result<Vec<Item>, Error> {
+    let texts: HashMap<&str, (&str, usize)> = items
+        .iter()
+        .filter_map(|item| match item {
+            Item::Text { name, text, line } => Some((name.as_str(), (text.as_str(), *line))),
+            _ => None,
+        })
+        .collect();
+    for (name, (_, line)) in &texts {
+        let found = items
+            .iter()
+            .any(|item| matches!(item, Item::Label { name: n, .. } if n == name));
+        if !found {
+            return Err(Error::at(*line, 1, format!("no label named `{name}`")));
+        }
+    }
+    let mut out = Vec::with_capacity(items.len());
+    let mut dropping = false;
+    for item in items {
+        match item {
+            Item::Text { .. } => continue,
+            Item::Tag(_) if dropping => continue,
+            Item::Label {
+                name,
+                text,
+                at,
+                offset,
+                away,
+                line,
+            } => {
+                let text = texts
+                    .get(name.as_str())
+                    .map(|(text, _)| text.to_string())
+                    .or_else(|| text.clone());
+                dropping = text.is_none();
+                if !dropping {
+                    out.push(Item::Label {
+                        name: name.clone(),
+                        text,
+                        at: at.clone(),
+                        offset: offset.clone(),
+                        away: away.clone(),
+                        line: *line,
+                    });
+                }
+                continue;
+            }
+            _ => {}
+        }
+        dropping = false;
+        out.push(item.clone());
+    }
+    Ok(out)
 }
 
 /// A document with no panels: one scene.
@@ -1103,13 +1737,86 @@ pub fn compile_panels(doc: &Document) -> Result<Vec<PanelScene>, Error> {
             scene,
         });
     }
-    // An outline shows another panel's view, so it can only be filled in once they all exist.
-    let views: Vec<(String, Viewport)> = scenes
+    fill_outlines(scenes.iter_mut().map(|p| (&p.id, &mut p.scene)))?;
+    Ok(scenes)
+}
+
+/// Puts bindings in the order they have to be worked out in. What's written in order stays in
+/// order, so this only moves what has to move. A name has to be written before it's read, but a
+/// `bind` runs where it's needed, not where its `param` is, so `bind b = grown` can read a
+/// `let grown` written after `param b`.
+fn in_dependency_order(scene: &mut Scene) -> Result<(), Error> {
+    let known: HashSet<String> = scene.bindings.iter().map(|b| b.id.clone()).collect();
+    let needs: Vec<Vec<String>> = scene
+        .bindings
         .iter()
-        .map(|p| (p.id.clone(), p.scene.viewport.clone()))
+        .map(|binding| {
+            let mut found = Vec::new();
+            binding.expr.visit_syms(&mut |name| {
+                if known.contains(name) && name != binding.id {
+                    found.push(name.to_string());
+                }
+            });
+            if let Expr::App(head, args) = &binding.expr
+                && head == "Solved"
+                && let Some(Expr::Num(system)) = args.first()
+            {
+                for name in &scene.systems[*system as usize].depends {
+                    if known.contains(name) {
+                        found.push(name.clone());
+                    }
+                }
+            }
+            found
+        })
         .collect();
-    for panel in &mut scenes {
-        for mark in &mut panel.scene.marks {
+    let mut done: HashSet<String> = HashSet::with_capacity(known.len());
+    let mut order = Vec::with_capacity(needs.len());
+    let mut waiting: Vec<usize> = (0..needs.len()).collect();
+    while !waiting.is_empty() {
+        let before = waiting.len();
+        waiting.retain(|&i| {
+            let ready = needs[i].iter().all(|name| done.contains(name));
+            if ready {
+                done.insert(scene.bindings[i].id.clone());
+                order.push(i);
+            }
+            !ready
+        });
+        if waiting.len() == before {
+            let names: Vec<&str> = waiting
+                .iter()
+                .map(|&i| scene.bindings[i].id.as_str())
+                .collect();
+            return Err(Error::new(format!(
+                "these are defined in terms of each other: {}",
+                names.join(", ")
+            )));
+        }
+    }
+    let mut old: Vec<Option<Binding>> = std::mem::take(&mut scene.bindings)
+        .into_iter()
+        .map(Some)
+        .collect();
+    scene.bindings = order
+        .into_iter()
+        .map(|i| old[i].take().expect("each once"))
+        .collect();
+    Ok(())
+}
+
+/// An outline shows another panel's view, so it can only be filled in once they all exist,
+/// and again once a style has settled what each shows.
+pub fn fill_outlines<'a>(
+    panels: impl Iterator<Item = (&'a String, &'a mut Scene)>,
+) -> Result<(), Error> {
+    let mut panels: Vec<_> = panels.collect();
+    let views: Vec<(String, Viewport)> = panels
+        .iter()
+        .map(|(id, scene)| ((*id).clone(), scene.viewport.clone()))
+        .collect();
+    for (_, scene) in &mut panels {
+        for mark in &mut scene.marks {
             if let Form::Outline {
                 panel: target,
                 view,
@@ -1122,10 +1829,11 @@ pub fn compile_panels(doc: &Document) -> Result<Vec<PanelScene>, Error> {
             }
         }
     }
-    Ok(scenes)
+    Ok(())
 }
 
 fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
+    let items = &with_texts(items)?;
     let mut lowerer = Lowerer::default();
     let mut scene = Scene {
         name,
@@ -1273,7 +1981,7 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
                         // A construction's value: named fields, drawn as its own form.
                         let val = lowerer.lower(expr, &none, 0).map_err(&fail)?;
                         let (form, kind) = match &val {
-                            Val::Circle { .. } => (None, "circle"),
+                            Val::Circle { .. } | Val::Cycle { .. } => (None, "circle"),
                             Val::Line { ray, .. } => (None, if *ray { "ray" } else { "line" }),
                             other => {
                                 return Err(fail(Error::new(format!(
@@ -1286,6 +1994,7 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
                         lowerer.bind(&mut scene, name, val.clone());
                         let form = match lowerer.named(name) {
                             Some(Val::Circle { .. }) => circle_form(name).map_err(&fail)?,
+                            Some(Val::Cycle { .. }) => cycle_form(name),
                             Some(Val::Line { a, b, ray }) => line_form(a, b, ray),
                             _ => unreachable!("just bound"),
                         };
@@ -1396,11 +2105,28 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
                     mark!(name.clone(), Form::Dot(p), "dot");
                 }
             }
+            Item::DotAt { name, at, line } => {
+                let p = lowerer.point(at, &none).map_err(at_line(*line))?;
+                mark!(name.clone(), Form::Dot(p), "dot");
+            }
+            Item::ArcSegment {
+                name,
+                var,
+                point,
+                line,
+            } => {
+                claim(name, *line)?;
+                let form = lowerer
+                    .arc(var, point, &[num(0.0), num(1.0)])
+                    .map_err(at_line(*line))?;
+                mark!(name.clone(), Form::Parametric(form), "segment");
+            }
             Item::Label {
                 name,
                 text,
                 at,
                 offset,
+                away,
                 line,
             } => {
                 claim(name, *line)?;
@@ -1410,10 +2136,14 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
                     Some(e) => lowerer.point(e, &none).map_err(&fail)?,
                     None => [num(0.0), num(0.0)],
                 };
+                let away = away
+                    .as_ref()
+                    .map(|e| lowerer.point(e, &none).map_err(&fail))
+                    .transpose()?;
                 // `{expr}` in the text is a value, worked out each frame.
                 let mut written = String::new();
                 let mut values = Vec::new();
-                let mut rest = text.as_str();
+                let mut rest = text.as_deref().unwrap_or_default();
                 while let Some((before, after)) = rest.split_once('{') {
                     let Some((inner, tail)) = after.split_once('}') else {
                         return Err(fail(Error::new("a `{` in a label's text isn't closed")));
@@ -1432,11 +2162,12 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
                         values,
                         at,
                         offset,
+                        away,
                     },
                     "label"
                 );
             }
-            Item::Panels { .. } | Item::Panel { .. } | Item::Group { .. } | Item::Use { .. } => {
+            Item::Text { .. } | Item::Panel { .. } | Item::Group { .. } | Item::Use { .. } => {
                 unreachable!("`expanded` took these out")
             }
             Item::Outline { name, panel, line } => {
@@ -1522,6 +2253,7 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
                 name,
                 kind,
                 value,
+                param,
                 vars,
                 lets,
                 line,
@@ -1562,10 +2294,54 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
                         }
                     }
                 }
-                let (shape, tag) = match (kind, lowerer.lower(value, &locals, 0).map_err(&fail)?) {
-                    (ManyKind::Dots, Val::Point(x, y)) => (crate::ir::Shape::Dots([x, y]), "dots"),
+                let curve = param.as_ref().map(|(var, range)| {
+                    // Its range can read what counts the curves, but not its own parameter.
+                    let range = [
+                        lowerer.scalar(&range[0], &locals)?,
+                        lowerer.scalar(&range[1], &locals)?,
+                    ];
+                    let mut own = locals.clone();
+                    own.insert(var.clone(), Val::Scalar(Expr::sym(var)));
+                    Ok::<_, Error>(Arc {
+                        var: var.clone(),
+                        point: lowerer.point(value, &own)?,
+                        range,
+                    })
+                });
+                let lowered_value = match curve {
+                    Some(_) => Val::Scalar(num(0.0)),
+                    None => lowerer.lower(value, &locals, 0).map_err(&fail)?,
+                };
+                let curve = curve.transpose().map_err(&fail)?;
+                let (shape, tag) = match (kind, lowered_value) {
+                    (ManyKind::Curves, _) => (
+                        crate::ir::Shape::Curves(
+                            curve.expect("the parser gives `curves` a parameter"),
+                        ),
+                        "curves",
+                    ),
+                    // Named, so a style can size a dot by where it is, wherever it was mapped to.
+                    (ManyKind::Dots, Val::Point(x, y)) => {
+                        named.push(("self.x".to_string(), x));
+                        named.push(("self.y".to_string(), y));
+                        (
+                            crate::ir::Shape::Dots([Expr::sym("self.x"), Expr::sym("self.y")]),
+                            "dots",
+                        )
+                    }
                     (ManyKind::Circles, Val::Circle { x, y, r }) => {
                         (crate::ir::Shape::Circles { center: [x, y], r }, "circles")
+                    }
+                    (ManyKind::Circles, Val::Cycle { a, bx, by, c }) => {
+                        (crate::ir::Shape::Cycles { a, b: [bx, by], c }, "circles")
+                    }
+                    (ManyKind::Dots, Val::Scalar(x)) => {
+                        named.push(("self.x".to_string(), x));
+                        named.push(("self.y".to_string(), num(0.0)));
+                        (
+                            crate::ir::Shape::Dots([Expr::sym("self.x"), Expr::sym("self.y")]),
+                            "dots",
+                        )
                     }
                     (ManyKind::Dots, other) => {
                         return Err(fail(Error::new(format!(
@@ -1733,6 +2509,7 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
                     design_height: optional(height, "a viewport's height")?,
                     fit: Vec::new(),
                     fit_curves: Vec::new(),
+                    fit_families: Vec::new(),
                     pad: optional(pad, "a viewport's pad")?.unwrap_or(0.1),
                 };
                 fit_names = fit.clone();
@@ -1755,8 +2532,30 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
             scene.viewport.fit_curves.push(arc);
             continue;
         }
+        let family = scene.marks.iter().find_map(|m| match &m.form {
+            Form::Many {
+                vars,
+                lets,
+                shape: crate::ir::Shape::Curves(arc),
+            } if m.id == name => Some(crate::ir::Family {
+                vars: vars.clone(),
+                lets: lets.clone(),
+                arc: arc.clone(),
+            }),
+            _ => None,
+        });
+        if let Some(family) = family {
+            scene.viewport.fit_families.push(family);
+            continue;
+        }
         let entry = match lowerer.named(&name) {
             Some(Val::Circle { x, y, r }) => [x, y, r],
+            // What doesn't exist has no bounds, so a line doesn't add any.
+            Some(Val::Cycle { .. }) => [
+                Expr::sym(format!("{name}.x")),
+                Expr::sym(format!("{name}.y")),
+                Expr::sym(format!("{name}.r")),
+            ],
             Some(Val::Point(x, y)) => [x, y, num(0.0)],
             _ => {
                 return Err(Error::new(format!(
@@ -1803,6 +2602,7 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
             )));
         }
     }
+    in_dependency_order(&mut scene)?;
     Ok(scene)
 }
 
@@ -2332,53 +3132,467 @@ mod tests {
         };
         assert_eq!(
             lets.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>(),
-            ["z.x", "z.y"]
+            ["z.x", "z.y", "self.x", "self.y"]
         );
         let err =
             scene("dots d = (0, 0) for i in 0..1 with c = circle((0, 0), (1, 0))").unwrap_err();
         assert!(err.message.contains("names a number or a point"), "{err}");
         // Variables only exist in their own collection.
-        assert!(scene("dots d = (i, 0) for i in 0..1\nlet x = i").is_err());
-        let err = scene("dots d = i for i in 0..1").unwrap_err();
+        assert!(scene("dots d = (n, 0) for n in 0..1\nlet x = n").is_err());
+        let err = scene("dots d = circle((0, 0), (1, 0)) for i in 0..1").unwrap_err();
         assert!(err.message.contains("needs a point"), "{err}");
         let err = scene("circles c = (i, 0) for i in 0..1").unwrap_err();
         assert!(err.message.contains("needs a circle"), "{err}");
     }
 
+    /// The value of `P` in a figure, as (re, im).
+    fn complex_value(expr: &str) -> (f64, f64) {
+        let s = scene(&format!(
+            "let z = (3, 4)
+             let w = (-2, 0.5)
+             let t = 0.7
+             let P = {expr}"
+        ))
+        .unwrap_or_else(|e| panic!("{expr}: {e}"));
+        let env = env_of(&s, 0.0);
+        (env.get("P.x").unwrap(), env.get("P.y").unwrap())
+    }
+
+    /// Each worked out here by hand, independently of how the compiler does it.
     #[test]
-    fn groups_take_functions_and_values() {
+    fn a_point_is_a_complex_number() {
+        let close = |expr: &str, want: (f64, f64)| {
+            let got = complex_value(expr);
+            assert!(
+                (got.0 - want.0).abs() < 1e-12 && (got.1 - want.1).abs() < 1e-12,
+                "{expr}: {got:?}, wanted {want:?}"
+            );
+        };
+        close("i", (0.0, 1.0));
+        close("i·i", (-1.0, 0.0));
+        close("i²", (-1.0, 0.0));
+        close("i·z", (-4.0, 3.0));
+        close("z·w", (3.0 * -2.0 - 4.0 * 0.5, 3.0 * 0.5 + 4.0 * -2.0));
+        close("z·w / w", (3.0, 4.0));
+        close("1 / i", (0.0, -1.0));
+        close("1 / z", (3.0 / 25.0, -4.0 / 25.0));
+        close("z / 2", (1.5, 2.0));
+        close("1 + i", (1.0, 1.0));
+        close("i + 1", (1.0, 1.0));
+        close("1 - i", (1.0, -1.0));
+        close("z - 1", (2.0, 4.0));
+        close("2 + 3·i", (2.0, 3.0));
+        close("conj(z)", (3.0, -4.0));
+        close("z·conj(z)", (25.0, 0.0));
+        close("z²", (3.0 * 3.0 - 4.0 * 4.0, 2.0 * 3.0 * 4.0));
+        close("z³", (-117.0, 44.0));
+        close("z^-1", (3.0 / 25.0, -4.0 / 25.0));
+        close("z^0", (1.0, 0.0));
+        close("exp(i·pi)", (-1.0, 0.0));
+        close("exp(i·t)", (0.7f64.cos(), 0.7f64.sin()));
+        close("exp(1 + i·pi / 2)", (0.0, std::f64::consts::E));
+        close("exp(ln(z))", (3.0, 4.0));
+        close("ln(z)", (5f64.ln(), 4f64.atan2(3.0)));
+        close("ln(i)", (0.0, std::f64::consts::FRAC_PI_2));
+        close("sqrt(i)", (0.5f64.sqrt(), 0.5f64.sqrt()));
+        close("sqrt(z)", (2.0, 1.0));
+        close("sqrt(conj(z))", (2.0, -1.0));
+        close("sqrt((-4, 0))", (0.0, 2.0));
+        close(
+            "z^2.5",
+            (
+                5f64.powf(2.5) * (2.5 * 4f64.atan2(3.0)).cos(),
+                5f64.powf(2.5) * (2.5 * 4f64.atan2(3.0)).sin(),
+            ),
+        );
+        close(
+            "z^i",
+            (
+                (-(4f64.atan2(3.0))).exp() * 5f64.ln().cos(),
+                (-(4f64.atan2(3.0))).exp() * 5f64.ln().sin(),
+            ),
+        );
+        close("2^i", (2f64.ln().cos(), 2f64.ln().sin()));
+        // Scaling and adding points still mean what they did.
+        close("z·2", (6.0, 8.0));
+        close("z + w", (1.0, 4.5));
+    }
+
+    #[test]
+    fn hyperbolic_functions_take_numbers_and_complex_numbers() {
+        let number = |expr: &str| {
+            let s = scene(&format!("let v = {expr}")).unwrap();
+            env_of(&s, 0.0).get("v").unwrap()
+        };
+        let near = |a: f64, b: f64, what: &str| assert!((a - b).abs() < 1e-12, "{what}: {a} {b}");
+        near(number("sinh(0.7)"), 0.7f64.sinh(), "sinh");
+        near(number("cosh(0.7)"), 0.7f64.cosh(), "cosh");
+        near(number("tanh(0.7)"), 0.7f64.tanh(), "tanh");
+        near(number("coth(0.7)"), 1.0 / 0.7f64.tanh(), "coth");
+        near(number("sech(0.7)"), 1.0 / 0.7f64.cosh(), "sech");
+        near(number("csch(0.7)"), 1.0 / 0.7f64.sinh(), "csch");
+        near(number("arctanh(0.7)"), 0.7f64.atanh(), "arctanh");
+        // cosh(iy) = cos y, sinh(iy) = i·sin y, and coth(iy) = −i·cot y.
+        let close = |expr: &str, want: (f64, f64)| {
+            let got = complex_value(expr);
+            assert!(
+                (got.0 - want.0).abs() < 1e-12 && (got.1 - want.1).abs() < 1e-12,
+                "{expr}: {got:?}, wanted {want:?}"
+            );
+        };
+        close("cosh(i·t)", (0.7f64.cos(), 0.0));
+        close("sinh(i·t)", (0.0, 0.7f64.sin()));
+        close("coth(i·t)", (0.0, -1.0 / 0.7f64.tan()));
+        // cosh² − sinh² = 1, and arctanh undoes tanh.
+        close("cosh(z)² - sinh(z)²", (1.0, 0.0));
+        close("tanh(arctanh(w / 9))", (-2.0 / 9.0, 0.5 / 9.0));
+    }
+
+    #[test]
+    fn real_imag_abs_and_arg_read_a_complex_number() {
+        let number = |expr: &str| {
+            let s = scene(&format!("let z = (3, 4)\nlet v = {expr}")).unwrap();
+            env_of(&s, 0.0).get("v").unwrap()
+        };
+        assert_eq!(number("real(z)"), 3.0);
+        assert_eq!(number("imag(z)"), 4.0);
+        assert_eq!(number("abs(z)"), 5.0);
+        assert_eq!(number("abs(-5)"), 5.0);
+        assert_eq!(number("arg(z)"), 4f64.atan2(3.0));
+        assert_eq!(number("real(2)"), 2.0);
+        assert_eq!(number("imag(2)"), 0.0);
+        assert_eq!(number("arg(-2)"), std::f64::consts::PI);
+    }
+
+    #[test]
+    fn i_gives_way_to_anything_named_i() {
+        let s = scene("let i = 5\nlet v = i·2").unwrap();
+        assert_eq!(env_of(&s, 0.0).get("v"), Some(10.0));
+        let s = scene("dots d = (i, 0) for i in 1..2").unwrap();
+        assert!(matches!(s.marks[0].form, Form::Many { .. }));
+        let s = scene("fn f(i) = i·2\nlet v = f(3)").unwrap();
+        assert_eq!(env_of(&s, 0.0).get("v"), Some(6.0));
+    }
+
+    #[test]
+    fn a_number_is_a_point_on_the_real_axis() {
+        let s = scene("curve c = parametric (t): -t for t in 0..1\nlabel n = \"N\" at 2").unwrap();
+        let Form::Parametric(arc) = &s.marks[0].form else {
+            panic!();
+        };
+        assert_eq!(arc.point[1], num(0.0));
+        let Form::Label { at, .. } = &s.marks[1].form else {
+            panic!();
+        };
+        assert_eq!(at, &[num(2.0), num(0.0)]);
+        // It answers as a point does, whether it's passed in or named.
+        let s = scene("fn f(w) = (w.y, w.x)\nlet k = 3\nlet P = f(2)\nlet a = k.x\nlet b = k.y")
+            .unwrap();
+        let env = env_of(&s, 0.0);
+        assert_eq!((env.get("P.x"), env.get("P.y")), (Some(0.0), Some(2.0)));
+        assert_eq!((env.get("a"), env.get("b")), (Some(3.0), Some(0.0)));
+    }
+
+    #[test]
+    fn constructions_take_numbers_as_points() {
+        let s =
+            scene("curve c = circle(0, 2)\nlet d = dist(1, 4)\nlet m = midpoint(0, 4)").unwrap();
+        let env = env_of(&s, 0.0);
+        assert_eq!(env.get("c.r"), Some(2.0));
+        assert_eq!(env.get("d"), Some(3.0));
+        assert_eq!(env.get("m.x"), Some(2.0));
+    }
+
+    #[test]
+    fn where_a_declaration_is_written_doesnt_matter() {
+        // `bind` reads a `let` written after its `param`, and another `let` reads the param.
         let s = scene(
-            "fn plain(w) = w
-             fn twice(w) = 2·w
-             group view(map, k) {
-               let P = map((k, 0))
-             }
-             use view(twice, 3)",
+            "param b = 0 in 0..9
+             let twice = b·2
+             let later = 3
+             bind b = later + 1",
         )
         .unwrap();
-        assert_eq!(env_of(&s, 0.0).get("P.x"), Some(6.0));
+        let env = env_of(&s, 0.0);
+        assert_eq!(env.get("b"), Some(4.0));
+        assert_eq!(env.get("twice"), Some(8.0));
+        // What's already in order stays in order.
+        let s = scene("let a = 1\nlet b = a + 1\nlet c = 2").unwrap();
+        let ids: Vec<&str> = s.bindings.iter().map(|b| b.id.as_str()).collect();
+        assert_eq!(ids, ["a", "b", "c"]);
+        // A solve's answers wait for what its equations read.
+        let s = scene(
+            "param q = 1 in 0..9
+             solve (u) from 1: u² = q
+             let later = 4
+             bind q = later",
+        )
+        .unwrap();
+        assert!((env_of(&s, 0.0).get("u").unwrap() - 2.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn a_circle_of_definitions_is_a_mistake_when_compiled() {
+        let err = scene(
+            "param a = 0 in 0..9
+             param b = 0 in 0..9
+             bind a = b + 1
+             bind b = a + 1",
+        )
+        .unwrap_err();
+        assert!(err.message.contains("in terms of each other"), "{err}");
+    }
+
+    #[test]
+    fn what_a_complex_number_cant_do_says_so() {
+        let err = scene("let v = sin((1, 2))").unwrap_err();
+        assert!(
+            err.message.contains("needs a number, found a point"),
+            "{err}"
+        );
+        let err = scene("let v = min((1, 2), 3)").unwrap_err();
+        assert!(err.message.contains("needs a number"), "{err}");
+    }
+
+    #[test]
+    fn logs_at_zero_dont_exist() {
+        let s = scene("let z = (0, 0)\nlet P = ln(z)\nlet Q = otherwise(P, (7, 8))").unwrap();
+        let env = env_of(&s, 0.0);
+        assert_eq!(env.get("Q.x"), Some(7.0));
+    }
+
+    /// Exact derivatives have to see through what complex arithmetic writes.
+    #[test]
+    fn complex_values_can_be_solved_and_pushed_through_maps() {
+        let s = scene(
+            "fn square(w) = w²
+             solve (u) from 1: abs(exp(i·u) + 1)² = 2
+             group g() { label n = \"N\" at (1, 1) away (1, 0) }
+             use g() through square",
+        )
+        .unwrap();
+        let env = env_of(&s, 0.0);
+        // |e^{iu} + 1|² = 2 + 2cos u, so u is π/2.
+        assert!((env.get("u").unwrap() - std::f64::consts::FRAC_PI_2).abs() < 1e-9);
+        let Form::Label { at, away, .. } = &s.marks[0].form else {
+            panic!();
+        };
+        // (1 + i)² = 2i, and the derivative of w² along 1 is 2w.
+        assert_eq!(crate::eval::real(&at[1], &env).unwrap(), 2.0);
+        let away = away.as_ref().unwrap();
+        assert_eq!(crate::eval::real(&away[0], &env).unwrap(), 2.0);
+        assert_eq!(crate::eval::real(&away[1], &env).unwrap(), 2.0);
+    }
+
+    #[test]
+    fn groups_take_values() {
+        let s = scene(
+            "group view(k) {
+               let P = (k, 0)
+             }
+             use view(3)",
+        )
+        .unwrap();
+        assert_eq!(env_of(&s, 0.0).get("P.x"), Some(3.0));
         let err = scene("use nothing()").unwrap_err();
         assert!(err.message.contains("no group named"), "{err}");
         let err = scene("group g(a) { let b = a }\nuse g()").unwrap_err();
         assert!(err.message.contains("takes 1 arguments"), "{err}");
     }
 
+    const MAPPED: &str = "fn twice(w) = 2·w
+         fn bend(w) = (w.x, w.x² + w.y)
+         let O = (1, 2)
+         group things() {
+           curve c = parametric (t): (t, 0) for t in 0..1
+           segment s = O, (3, 2)
+           dots d = (i, 0) for i in 1..2
+           dot O
+           label n = \"N\" at O away (1, 0)
+         }\n";
+
+    /// Evaluates a point of a mark, with this value for its variable.
+    fn mark_point(s: &crate::ir::Scene, id: &str, var: f64) -> (f64, f64) {
+        let mut env = env_of(s, 0.0);
+        let pair = |p: &[Expr; 2], env: &crate::eval::Env| {
+            (
+                crate::eval::real(&p[0], env).unwrap(),
+                crate::eval::real(&p[1], env).unwrap(),
+            )
+        };
+        let mark = s.marks.iter().find(|m| m.id == id).unwrap();
+        match &mark.form {
+            Form::Parametric(arc) => {
+                env.set(&arc.var, var);
+                pair(&arc.point, &env)
+            }
+            Form::Dot(at) => pair(at, &env),
+            Form::Label { at, .. } => pair(at, &env),
+            Form::Many { lets, shape, .. } => {
+                env.set("i", var);
+                for (name, e) in lets {
+                    let value = crate::eval::real(e, &env).unwrap();
+                    env.set(name, value);
+                }
+                let crate::ir::Shape::Dots(at) = shape else {
+                    panic!();
+                };
+                pair(at, &env)
+            }
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn through_sends_every_kind_of_mark_through_a_map() {
+        let s = scene(&format!("{MAPPED}use things() through twice")).unwrap();
+        assert_eq!(mark_point(&s, "c", 0.5), (1.0, 0.0));
+        assert_eq!(mark_point(&s, "s", 0.5), (4.0, 4.0));
+        assert_eq!(mark_point(&s, "d", 2.0), (4.0, 0.0));
+        assert_eq!(mark_point(&s, "O", 0.0), (2.0, 4.0));
+        assert_eq!(mark_point(&s, "n", 0.0), (2.0, 4.0));
+        // Only marks move: the point itself is still what was written.
+        assert_eq!(env_of(&s, 0.0).get("O.x"), Some(1.0));
+        // A segment keeps its type, so style for curves doesn't reach it.
+        let segment = s.marks.iter().find(|m| m.id == "s").unwrap();
+        assert!(segment.tags.contains(&"segment".to_string()));
+        assert!(!segment.tags.contains(&"curve".to_string()));
+    }
+
+    #[test]
+    fn through_bends_a_segment() {
+        let s = scene(&format!("{MAPPED}use things() through bend")).unwrap();
+        // Halfway along, from (1, 2) to (3, 2), is (2, 2): straight lines don't stay straight.
+        assert_eq!(mark_point(&s, "s", 0.5), (2.0, 6.0));
+    }
+
+    #[test]
+    fn a_direction_goes_through_a_map_exactly() {
+        let s = scene(&format!("{MAPPED}use things() through bend")).unwrap();
+        let Form::Label { away, .. } = &s.marks.iter().find(|m| m.id == "n").unwrap().form else {
+            panic!();
+        };
+        let env = env_of(&s, 0.0);
+        let away = away.as_ref().unwrap();
+        // At x = 1, a step along x moves bend's image by (1, 2x).
+        assert_eq!(crate::eval::real(&away[0], &env).unwrap(), 1.0);
+        assert_eq!(crate::eval::real(&away[1], &env).unwrap(), 2.0);
+    }
+
+    #[test]
+    fn maps_compose_when_groups_nest() {
+        let s = scene(
+            "fn twice(w) = 2·w
+             fn shift(w) = w + (1, 0)
+             group inner() {
+               label n = \"N\" at (1, 1) away (0, 1)
+               curve c = parametric (t): (t, 0) for t in 0..1
+             }
+             group outer() { use inner() through shift }
+             use outer() through twice",
+        )
+        .unwrap();
+        // twice(shift(1, 1)), not shift(twice(1, 1)).
+        assert_eq!(mark_point(&s, "n", 0.0), (4.0, 2.0));
+        assert_eq!(mark_point(&s, "c", 1.0), (4.0, 0.0));
+        let Form::Label { away, .. } = &s.marks[0].form else {
+            panic!();
+        };
+        let env = env_of(&s, 0.0);
+        assert_eq!(
+            crate::eval::real(&away.as_ref().unwrap()[1], &env).unwrap(),
+            2.0
+        );
+    }
+
+    #[test]
+    fn through_can_be_drawn_more_than_once() {
+        let s = scene(&format!(
+            "{MAPPED}use things() through twice as up
+             use things() through bend"
+        ))
+        .unwrap();
+        assert_eq!(mark_point(&s, "up_c", 1.0), (2.0, 0.0));
+        assert_eq!(mark_point(&s, "c", 1.0), (1.0, 1.0));
+        let copy = s.marks.iter().find(|m| m.id == "up_d").unwrap();
+        assert!(copy.tags.contains(&"d".to_string()) && copy.tags.contains(&"up".to_string()));
+    }
+
+    #[test]
+    fn what_has_no_image_says_so() {
+        for (group, says) in [
+            ("curve c = circle((0, 0), (1, 0))", "isn't one"),
+            (
+                "circles c = circle((i, 0), (i, 1)) for i in 0..1",
+                "isn't a circle",
+            ),
+            ("segment s = (0, 0), (1, 0), (1, 1)", "only two points"),
+        ] {
+            let err = scene(&format!(
+                "fn f(w) = w\ngroup g() {{ {group} }}\nuse g() through f"
+            ))
+            .unwrap_err();
+            assert!(err.message.contains(says), "{group}: {err}");
+        }
+        let err =
+            scene("group g() { dots d = (i, 0) for i in 0..1 }\nuse g() through nope").unwrap_err();
+        assert!(err.message.contains("nope"), "{err}");
+    }
+
+    #[test]
+    fn a_label_says_what_this_panel_calls_it() {
+        let doc = parse(
+            "group names() {
+               label n at (0, 0) tag first
+               label m at (1, 0) tag second
+             }
+             panel a {
+               viewport { x: 0..1, y: 0..1 }
+               use names()
+               text n = \"0\"
+             }
+             panel b {
+               viewport { x: 0..1, y: 0..1 }
+               use names()
+               text n = \"1\"
+               text m = \"{1 + 1}\"
+             }",
+        )
+        .unwrap();
+        let panels = compile_panels(&doc).unwrap();
+        let text = |s: &crate::ir::Scene, id: &str| {
+            s.marks.iter().find(|m| m.id == id).map(|m| match &m.form {
+                Form::Label { text, .. } => text.clone(),
+                other => panic!("{other:?}"),
+            })
+        };
+        assert_eq!(text(&panels[0].scene, "n").as_deref(), Some("0"));
+        assert_eq!(text(&panels[1].scene, "n").as_deref(), Some("1"));
+        assert_eq!(text(&panels[1].scene, "m").as_deref(), Some("{}"));
+        // This space has no name for `m`, so it isn't drawn, and its tag doesn't land on `n`.
+        assert_eq!(text(&panels[0].scene, "m"), None);
+        let n = panels[0].scene.marks.iter().find(|m| m.id == "n").unwrap();
+        assert!(n.tags.contains(&"first".to_string()));
+        assert!(!n.tags.contains(&"second".to_string()));
+
+        let err = scene("label n at (0, 0)\ntext nope = \"x\"").unwrap_err();
+        assert!(err.message.contains("no label named `nope`"), "{err}");
+    }
+
     #[test]
     fn panels_share_what_is_outside_them_and_keep_their_own_marks() {
         let doc = parse(
             "param a = 2 in 0..9
-             fn plain(w) = w
-             fn twice(w) = 2·w
-             group view(map) {
-               let P = map((a, 0))
+             group view(k) {
+               let P = (k·a, 0)
                dot P
              }
              panel one \"First\" {
-               use view(plain)
+               use view(1)
                segment extra = (0, 0), (1, 1)
              }
              panel two {
-               use view(twice)
+               use view(2)
              }",
         )
         .unwrap();
@@ -2398,16 +3612,14 @@ mod tests {
     #[test]
     fn a_group_can_be_drawn_more_than_once_under_a_prefix() {
         let s = scene(
-            "fn plain(w) = w
-             fn up(w) = w + (0, 10)
-             group edge(map) {
-               let P = map((1, 0))
-               curve side = parametric (t): map((t, 0)) for t in 0..1
-               dots steps = z for i in 0..2 with z = map((i, 0))
+            "group edge(height) {
+               let P = (1, height)
+               curve side = parametric (t): (t, height) for t in 0..1
+               dots steps = z for i in 0..2 with z = (i, height)
                label name = \"n\" at P
              }
-             use edge(plain)
-             use edge(up) as above",
+             use edge(0)
+             use edge(10) as above",
         )
         .unwrap();
         let env = env_of(&s, 0.0);
@@ -2434,12 +3646,10 @@ mod tests {
     #[test]
     fn a_groups_parameters_are_its_own() {
         let s = scene(
-            "fn twice(w) = 2·w
-             fn thrice(w) = 3·w
-             group one(map) { let P = map(1) }
-             group two(map) { let Q = map(1) }
-             use one(twice)
-             use two(thrice)",
+            "group one(k) { let P = k }
+             group two(k) { let Q = k }
+             use one(2)
+             use two(3)",
         )
         .unwrap();
         let env = env_of(&s, 0.0);
@@ -2519,9 +3729,9 @@ mod tests {
 
     #[test]
     fn wrong_construction_arguments_say_what_they_got() {
-        let err = scene("let a = circle(1, 2)").unwrap_err();
+        let err = scene("let a = circle(1, line((0, 0), (1, 1)))").unwrap_err();
         assert!(
-            err.message.contains("`Circle` can't take a number"),
+            err.message.contains("`Circle` can't take a point, a line"),
             "{err}"
         );
         let err = scene("let a = intersect((0, 0), (1, 1))").unwrap_err();

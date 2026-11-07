@@ -17,6 +17,7 @@ pub const VALUE_VEC4S: usize = 64;
 pub const GEOMETRY_VEC4S: usize = 512;
 
 pub const DEFAULT_LABEL_SIZE: f64 = 17.0;
+const DEFAULT_LABEL_DISTANCE: f64 = 16.0;
 pub const DEFAULT_DOT_RADIUS: f64 = 3.0;
 pub const DEFAULT_STROKE_WIDTH: f64 = 1.0;
 /// How many pieces a curve is cut into to fit a view around it.
@@ -60,6 +61,9 @@ pub struct Label {
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Prepared {
+    /// Texels, four floats each, for each collection of `Figure::sided`, at its fixed place.
+    /// Empty if there are none.
+    pub sides: Vec<f32>,
     /// One per binding, in order, with an absent one as zero, then one per
     /// `Figure::presence_slots`: 1 if that mark exists this frame.
     pub values: Vec<f32>,
@@ -75,6 +79,21 @@ pub struct Prepared {
     pub dpr: f64,
     /// This frame's world window, which a `fit` viewport computes.
     pub view: Viewport,
+}
+
+/// How many circles in a collection can have colored sides. At 1080² on an M1 Pro, a circle
+/// costs about 0.09 ms a frame, so this many is about 23 ms.
+pub const MAX_SIDED_CIRCLES: usize = 256;
+/// The data texture's width, in texels.
+pub const SIDE_TEXTURE_WIDTH: usize = 256;
+
+/// The data texture's height, at least one, so that there's always a texture to bind.
+pub fn side_rows(sided: &[crate::Sided]) -> usize {
+    let texels: usize = sided
+        .iter()
+        .map(|group| group.stride * MAX_SIDED_CIRCLES)
+        .sum();
+    texels.div_ceil(SIDE_TEXTURE_WIDTH).max(1)
 }
 
 /// Device pixels per style pixel, for a figure that declares a design width.
@@ -171,8 +190,9 @@ pub fn view_for(
     height: u32,
 ) -> Result<Viewport, Error> {
     let view = &figure.scene.viewport;
-    if view.fit.is_empty() && view.fit_curves.is_empty() {
-        return Ok(view.clone());
+    let aspect = height as f64 / width as f64;
+    if view.fit.is_empty() && view.fit_curves.is_empty() && view.fit_families.is_empty() {
+        return Ok(equal_scales(view, aspect));
     }
     let handles = &figure.scene.handles;
     let held = Inputs {
@@ -185,7 +205,28 @@ pub fn view_for(
             .collect(),
     };
     let env = eval::frame_env(figure, &held)?;
-    fit_window(view, &env, height as f64 / width as f64)
+    fit_window(view, &env, aspect)
+}
+
+/// A view at this shape, showing what it asks for and more, with one scale for both axes. A figure
+/// is never stretched to fit its canvas: distortion is a lot to ask of a reader, and a small one
+/// still moves a huge circle by many pixels, since its center and its radius are both scaled.
+fn equal_scales(view: &Viewport, aspect: f64) -> Viewport {
+    let (wide, tall) = (view.x[1] - view.x[0], view.y[1] - view.y[0]);
+    if (tall / wide / aspect - 1.0).abs() < 1e-12 {
+        return view.clone();
+    }
+    let (vw, vh) = if tall / wide > aspect {
+        (tall / aspect, tall)
+    } else {
+        (wide, wide * aspect)
+    };
+    let (cx, cy) = ((view.x[0] + view.x[1]) / 2.0, (view.y[0] + view.y[1]) / 2.0);
+    Viewport {
+        x: [cx - vw / 2.0, cx + vw / 2.0],
+        y: [cy - vh / 2.0, cy + vh / 2.0],
+        ..view.clone()
+    }
 }
 
 /// The window a `fit` viewport finds, with these bindings, at this shape.
@@ -215,19 +256,19 @@ pub fn fit_window(view: &Viewport, env: &Env, aspect: f64) -> Result<Viewport, E
         y0 = y0.min(y - r);
         y1 = y1.max(y + r);
     }
-    for arc in &view.fit_curves {
+    let mut bound_arc = |arc: &crate::ir::Arc, env: &Env| {
         let (Ok(lo), Ok(hi)) = (
             eval::real(&arc.range[0], env),
             eval::real(&arc.range[1], env),
         ) else {
-            continue;
+            return;
         };
         let mut slots = fast::Slots::new();
         let var = slots.variable(&arc.var);
         let x = fast::compile(&arc.point[0], &mut slots, env);
         let y = fast::compile(&arc.point[1], &mut slots, env);
         let (Some(nx), Some(ny)) = (x, y) else {
-            continue;
+            return;
         };
         for i in 0..=FIT_SAMPLES {
             slots.set(var, lo + (hi - lo) * i as f64 / FIT_SAMPLES as f64);
@@ -239,10 +280,28 @@ pub fn fit_window(view: &Viewport, env: &Env, aspect: f64) -> Result<Viewport, E
                 y1 = y1.max(y);
             }
         }
+    };
+    for arc in &view.fit_curves {
+        bound_arc(arc, env);
+    }
+    for family in &view.fit_families {
+        let mut local = env.clone();
+        let mut count = 0;
+        stroke::for_each(&family.vars, &mut local, &mut count, &mut |env| {
+            for (name, e) in &family.lets {
+                match eval::real(e, env) {
+                    Ok(value) => env.set(name, value),
+                    Err(e) if e.absent => return Ok(()),
+                    Err(e) => return Err(e),
+                }
+            }
+            bound_arc(&family.arc, env);
+            Ok(())
+        })?;
     }
     // With nothing to fit, the declared window stands.
     if x0 > x1 {
-        return Ok(view.clone());
+        return Ok(equal_scales(view, aspect));
     }
     let wide = (x1 - x0) * (1.0 + 2.0 * view.pad);
     let tall = (y1 - y0) * (1.0 + 2.0 * view.pad);
@@ -430,6 +489,25 @@ pub fn prepare_with(
             .presence_slots()
             .map(|(mark, _)| f32::from(u8::from(shown[mark]))),
     );
+    // Every pixel adds up every circle, so this grows with both.
+    let sided = figure.sided();
+    let mut sides = vec![0.0; side_rows(&sided) * SIDE_TEXTURE_WIDTH * 4];
+    if sided.is_empty() {
+        sides.clear();
+    }
+    for group in &sided {
+        let mark = &scene.marks[group.mark];
+        let found = stroke::sided_instances(mark, group, &env)?;
+        let count = found.len() / (group.stride * 4);
+        if count > MAX_SIDED_CIRCLES {
+            return Err(Error::new(format!(
+                "`{}` has {count} circles with sides, and the limit is {MAX_SIDED_CIRCLES}",
+                mark.id
+            )));
+        }
+        sides[group.base * 4..][..found.len()].copy_from_slice(&found);
+        values.push(count as f32);
+    }
     if values.len() > VALUE_VEC4S * 4 {
         return Err(Error::new(format!(
             "too many bindings and vanishing marks: {}, and the limit is {} for now",
@@ -469,6 +547,7 @@ pub fn prepare_with(
             values,
             at,
             offset,
+            away,
         } = &mark.form
         else {
             continue;
@@ -478,7 +557,25 @@ pub fn prepare_with(
         }
         let (x, y) = pair(at, &env)?;
         let (dx, dy) = device(x, y, view, width, height);
-        let (ox, oy) = pair(offset, &env)?;
+        let (ox, oy) = match away {
+            None => pair(offset, &env)?,
+            // The document says which way, in its own coordinates, and the style how far.
+            Some(direction) => {
+                let (ax, ay) = pair(direction, &env)?;
+                let (sx, sy) = device(x + ax, y + ay, view, width, height);
+                let (along_x, along_y) = (sx - dx, sy - dy);
+                let length = along_x.hypot(along_y);
+                let distance = match &style.distance {
+                    Some(d) => eval::real(d, &env)?,
+                    None => DEFAULT_LABEL_DISTANCE,
+                };
+                if length > 0.0 {
+                    (along_x / length * distance, along_y / length * distance)
+                } else {
+                    (0.0, 0.0)
+                }
+            }
+        };
         labels.push(Label {
             id: mark.id.clone(),
             text: filled(text, values, &env)?,
@@ -511,6 +608,7 @@ pub fn prepare_with(
     )?);
 
     let mut prepared = Prepared {
+        sides,
         values,
         shown,
         geometry,
@@ -528,6 +626,51 @@ pub fn prepare_with(
 mod tests {
     use super::*;
     use crate::build;
+
+    #[test]
+    fn a_label_sits_away_from_its_point_at_the_distance_its_style_sets() {
+        let doc = "viewport { x: -2..2, y: -2..2 }
+                   label n = \"P\" at (0, 0) away (3, 4)
+                   label m = \"Q\" at (0, 0) away (0, 0)";
+        let at = |sheet: &str| {
+            let figure = crate::build(doc, &[sheet]).unwrap();
+            let prepared = prepare(&figure, &Inputs::default(), 400, 400, 1.0).unwrap();
+            let n = prepared
+                .labels
+                .iter()
+                .find(|l| l.id == "n")
+                .unwrap()
+                .clone();
+            let m = prepared
+                .labels
+                .iter()
+                .find(|l| l.id == "m")
+                .unwrap()
+                .clone();
+            (
+                n.x - n.anchor[0],
+                n.y - n.anchor[1],
+                m.x - m.anchor[0],
+                m.y - m.anchor[1],
+            )
+        };
+        // Up and to the right on the screen, so y goes down. No direction means no move.
+        let (x, y, mx, my) = at("style label { distance: 10px }");
+        assert!((x - 6.0).abs() < 1e-9 && (y + 8.0).abs() < 1e-9, "{x} {y}");
+        assert_eq!((mx, my), (0.0, 0.0));
+        let (x, y, ..) = at("style label { distance: 20px }");
+        assert!(
+            (x - 12.0).abs() < 1e-9 && (y + 16.0).abs() < 1e-9,
+            "{x} {y}"
+        );
+    }
+
+    #[test]
+    fn a_label_takes_offset_or_away() {
+        let err =
+            crate::parse::parse("label n = \"P\" at (0, 0) away (1, 0) offset (2, 3)").unwrap_err();
+        assert!(err.message.contains("not both"), "{err}");
+    }
 
     #[test]
     fn labels_resolve_position_offset_and_style() {

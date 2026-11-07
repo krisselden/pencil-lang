@@ -1,3 +1,7 @@
+style panels { columns: 2; gap: 14px; title: 26px }
+style panel { width: 400px; height: 380px; pad: 0.15 }
+style panel.whole, panel.detail { pad: 0.08 }
+
 style formula { fill: muted }
 
 style grid_points { fill: muted; radius: 2.25px; opacity: 0.6 }
@@ -11,21 +15,26 @@ style curve { width: 2.5px; head: 13px; head_span: 1 }
 style .steps { radius: 3.5px }
 
 // In the spiral, a step's dot shrinks with its circle, so it never hides the detail.
-style .steps.whole, .steps.detail { radius: min(0.3·k·sqrt(z.x² + z.y²)·self.scale·1px, 3px) }
+style .steps.whole, .steps.detail { radius: min(0.3·k·sqrt(self.x² + self.y²)·self.scale·1px, 3px) }
 
 // The turns above and below, on the cylinder. Only lighter so that the triangle stands out.
-style .blue.up, .blue.down { stroke: blue_light; fill: blue_light }
-style .red.up, .red.down { stroke: red_light; fill: red_light }
-style .green.up, .green.down { stroke: green_light; fill: green_light }
-style .accent.up, .accent.down { stroke: accent_light; fill: accent_light }
+style .blue.up, .blue.down { stroke: blue_soft; fill: blue_soft }
+style .red.up, .red.down { stroke: red_soft; fill: red_soft }
+style .green.up, .green.down { stroke: green_soft; fill: green_soft }
+style .accent.up, .accent.down { stroke: accent_soft; fill: accent_soft }
 
 style .strip { stroke: muted; width: 1px; dash: 5px; gap: 4px }
 
 style period_line { stroke: ink; width: 1.5px; dash: 5px; gap: 4px }
 style zero { fill: paper_color; stroke: ink; width: 2.5px; radius: 5px }
 style end_point { fill: ink; radius: 5px }
-style ring { stroke: ink; width: 1.5px; radius: 6px }
+// In the spiral they're one point, drawn as a ring, so what meets there stays visible.
+style zero.whole, zero.detail { fill_opacity: 0; width: 1.5px; radius: 6px }
+style end_point.whole, end_point.detail { show: 0 }
 style close_up { stroke: ink; width: 1.25px; dash: 4px; gap: 4px; radius: 9px }
+
+// 2πi is wide, so it needs more room to clear the line it sits beside.
+style name_end.log { distance: 24px }
 
 // An edge with no steps has nothing to count.
 style count_up { show: q - p }

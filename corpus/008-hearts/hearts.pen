@@ -1,0 +1,34 @@
+// Two hearts in bipolar coordinates, from Kris's Desmos graph "Bipolar Hearts". Every point is
+// z = coth((τ − σi)/2), where σ is the angle the foci ±1 subtend at z, and τ = ln(|z + 1| / |z − 1|).
+// A heart ties them together through one angle, so as σ goes around, τ runs out to a focus and back.
+doc hearts
+duration 8
+
+viewport { x: -4..4, y: -3.4..3.4 }
+
+param theta in 0..tau
+bind theta = mod(time, 8) / 8·tau
+param shift = 0 in 0..tau
+
+fn bipolar(σ, τ) = coth((τ - σ·i) / 2)
+// Just short of 1, so that τ stays finite at the foci.
+fn tau_of(a) = arctanh(cos(a - pi)·0.999999)
+fn sigma_of(a) = a + shift
+
+// The circles through the moving points: one of constant τ, and two arcs of constant σ.
+curve level_tau = parametric (t): bipolar(sigma_of(t), tau_of(theta)) for t in 0..tau tag first, coordinate
+curve level_sigma_a = parametric (t): bipolar(sigma_of(theta), tau_of(t)) for t in 0..tau tag second, coordinate
+curve level_sigma_b = parametric (t): bipolar(sigma_of(theta + pi), tau_of(t)) for t in 0..tau tag second, coordinate
+
+curve heart_a = parametric (t): bipolar(sigma_of(t), tau_of(t)) for t in 0..tau tag first, heart
+curve heart_b = parametric (t): bipolar(sigma_of(t), tau_of(t + pi)) for t in 0..tau tag second, heart
+
+let z_a = bipolar(sigma_of(theta), tau_of(theta))
+let z_b = bipolar(sigma_of(theta + pi), tau_of(theta))
+
+// What σ is: the angle at z between the two foci.
+segment ties_a = -1, z_a, 1 tag first, ties
+segment ties_b = -1, z_b, 1 tag second, ties
+
+dot z_a tag first
+dot z_b tag second

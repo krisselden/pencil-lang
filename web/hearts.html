@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bipolar Hearts</title>
+<style>
+  :root { color-scheme: light dark; --ink: rgb(18 17 15); --paper: rgb(242 240 235); --muted: rgb(110 106 99); --bad: #b5443c; }
+  @media (prefers-color-scheme: dark) { :root { --ink: rgb(243 240 234); --paper: rgb(23 22 20); --muted: rgb(148 143 134); } }
+  body { margin: 0; padding: 24px 16px; background: var(--paper); color: var(--ink); font: 15px/1.45 ui-sans-serif, system-ui, sans-serif; }
+  main { max-width: 760px; margin: 0 auto; }
+  h1 { font-size: 16px; font-weight: 600; margin: 0 0 12px; }
+  canvas { display: block; width: 100%; }
+  .controls { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; margin: 12px 0; }
+  .controls input[type=range] { flex: 1; min-width: 10rem; }
+  output { font-variant-numeric: tabular-nums; }
+  button { font: inherit; }
+  p { margin: 4px 0; color: var(--muted); }
+  #formula { color: var(--ink); font: italic 17px Charter, 'Bitstream Charter', Cambria, serif; }
+  #error { color: var(--bad); white-space: pre-wrap; font-family: ui-monospace, monospace; font-size: 13px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Bipolar hearts</h1>
+  <canvas id="figure" aria-label="Two hearts in bipolar coordinates around the foci at plus and minus 1, with the coordinate circles through a moving point on each."></canvas>
+  <p id="formula">z = coth((τ − σi) / 2)</p>
+  <div class="controls">
+    <button id="play" type="button">Pause</button>
+    <label>θ <input id="theta" type="range" min="0" max="6.2832" step="0.001" value="0"></label>
+    <output id="theta-value" for="theta"></output>
+  </div>
+  <div class="controls">
+    <label>σ shift <input id="shift" type="range" min="0" max="6.2832" step="0.001" value="0"></label>
+    <output id="shift-value" for="shift"></output>
+    <button type="button" data-shift="0">0</button>
+    <button type="button" data-shift="1.5707963267948966">π/2</button>
+    <button type="button" data-shift="4.71238898038469">3π/2</button>
+  </div>
+  <p id="status">Starting…</p>
+  <p id="error" role="alert"></p>
+</main>
+<script type="module">
+  import init, { Player, figure_size } from './pkg/pencil_web.js';
+  const $ = (id) => document.getElementById(id);
+  const get = async (path) => {
+    const response = await fetch(path, { cache: 'no-store' });
+    if (!response.ok) throw new Error(`${path}: ${response.status}`);
+    return response.text();
+  };
+  const canvas = $('figure');
+  const doc = await get('../corpus/008-hearts/hearts.pen');
+  const [theme, plain, dark] = await Promise.all(['theme.style', '008-hearts/plain.style', 'dark.style'].map((f) => get(`../corpus/${f}`)));
+  const sheets = matchMedia('(prefers-color-scheme: dark)').matches ? [theme, plain, dark] : [theme, plain];
+  await init();
+  const dpr = window.devicePixelRatio || 1;
+  canvas.style.aspectRatio = '8 / 6.8';
+  canvas.width = Math.round(canvas.clientWidth * dpr);
+  canvas.height = Math.round((canvas.clientWidth * 6.8) / 8 * dpr);
+  const player = await Player.create(canvas, new URLSearchParams(location.search).has('gl'));
+  const PERIOD = 8;
+  let time = 0, last = 0, playing = !matchMedia('(prefers-reduced-motion: reduce)').matches, dirty = true;
+  $('play').textContent = playing ? 'Pause' : 'Play';
+  const setShift = (value) => {
+    player.set_param('shift', value);
+    $('shift').value = value;
+    $('shift-value').textContent = value.toFixed(3);
+    dirty = true;
+  };
+  try {
+    player.load(doc, sheets);
+    setShift(0);
+    $('status').textContent = `${player.backend}, ${canvas.width}×${canvas.height}`;
+  } catch (e) {
+    $('error').textContent = e.message;
+  }
+  $('play').addEventListener('click', () => {
+    playing = !playing;
+    $('play').textContent = playing ? 'Pause' : 'Play';
+    // Handing θ back to the clock, at the time that gives it the same value.
+    if (playing) { time = (Number($('theta').value) / (2 * Math.PI)) * PERIOD; player.release_param('theta'); }
+  });
+  $('theta').addEventListener('input', () => {
+    playing = false;
+    $('play').textContent = 'Play';
+    player.set_param('theta', Number($('theta').value));
+    $('theta-value').textContent = Number($('theta').value).toFixed(3);
+    dirty = true;
+  });
+  $('shift').addEventListener('input', () => setShift(Number($('shift').value)));
+  document.querySelectorAll('[data-shift]').forEach((b) => b.addEventListener('click', () => setShift(Number(b.dataset.shift))));
+  const frame = (now) => {
+    if (playing) {
+      time = (time + (now - last) / 1000) % PERIOD;
+      const theta = (time / PERIOD) * 2 * Math.PI;
+      $('theta').value = theta;
+      $('theta-value').textContent = theta.toFixed(3);
+      dirty = true;
+    }
+    last = now;
+    if (dirty) {
+      dirty = false;
+      try { player.draw(time, dpr); } catch (e) { $('error').textContent = e.message; playing = false; }
+    }
+    requestAnimationFrame(frame);
+  };
+  requestAnimationFrame((now) => { last = now; frame(now); });
+  window.pencil = { player, stop() { playing = false; $('play').textContent = 'Play'; }, setTime(t) { time = t; dirty = true; } };
+</script>
+</body>
+</html>
