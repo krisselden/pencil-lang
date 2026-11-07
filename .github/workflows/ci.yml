@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # A fixed version, so that a new release's lints don't fail a commit that didn't change.
+      - uses: dtolnay/rust-toolchain@1.96.0
+        with:
+          components: rustfmt, clippy
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      # A software Vulkan driver, so that the GPU path really runs here.
+      - name: Install a software GPU
+        run: sudo apt-get update && sudo apt-get install -y mesa-vulkan-drivers
+      - name: Format
+        run: cargo fmt --all --check
+      - name: Lint
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: Test
+        run: cargo test --workspace --locked
+      - name: Build for the web
+        run: cargo build -p pencil-web --target wasm32-unknown-unknown --release --locked
+      # Unlike the test that uses a GPU, this fails if there isn't one.
+      - name: Compare the GPU with the CPU oracle
+        run: |
+          cargo build -p pencil-cli --release --locked
+          check() {
+            ./target/release/pencil check "corpus/$1" --style corpus/theme.style --style "corpus/$2" --t 1 --size 320
+          }
+          check 009-squaring/squaring.pen 009-squaring/plain.style
+          check 010-mobius/mobius.pen 010-mobius/plain.style
+          check 011-circumcircle/circumcircle.pen 011-circumcircle/plain.style
+          check 012-limacon/limacon.pen 012-limacon/plain.style

@@ -2,7 +2,7 @@
 
 Pencil: a declarative artifact for mathematical visualization that can carry style,
 decorations, highlights and composition, and renders to both interactive figures and
-video. No code yet.
+video.
 
 Read in this order, with earlier files winning where they disagree:
 
