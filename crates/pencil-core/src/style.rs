@@ -26,9 +26,13 @@ pub const SELF_CURVATURE: &str = "self.curvature";
 pub const SELF_SCALE: &str = "self.scale";
 /// How many beats ago this mark's beat was: negative before it, 0 during it.
 pub const SELF_AGE: &str = "self.age";
+/// How present a mark is, as beats with lengths show and drop it: 0 to 1.
+pub const SELF_LIFE: &str = "self.life";
+/// How much the current beat is about this mark: 0 to 1.
+pub const SELF_FOCUS: &str = "self.focus";
 /// Every property a style can set. `docs/language.md` must describe each one, and a test
 /// holds it to that.
-pub const PROPERTIES: [&str; 19] = [
+pub const PROPERTIES: [&str; 20] = [
     "fill",
     "fill_opacity",
     "stroke",
@@ -48,6 +52,7 @@ pub const PROPERTIES: [&str; 19] = [
     "head",
     "head_span",
     "distance",
+    "trim",
 ];
 pub const COLORS: [&str; 2] = ["white", "black"];
 /// The tags that say what kind of mark something is.
@@ -165,6 +170,9 @@ pub struct MarkStyle {
     pub head: Option<Expr>,
     /// How much of a curve's parameter its head may cover, at most: 60% of that length.
     pub head_span: Option<Expr>,
+    /// How much of a stroke is drawn, from its start: 0 to 1 of its parameter, or of its length
+    /// for a straight line.
+    pub trim: Option<Expr>,
 }
 
 impl MarkStyle {
@@ -247,7 +255,8 @@ impl MarkStyle {
 
     /// Dashes and tapers depend on position along the curve, which a field can't give.
     pub fn needs_arc_length(&self) -> bool {
-        self.dash.is_some()
+        self.trim.is_some()
+            || self.dash.is_some()
             || self.gap.is_some()
             || self.width.as_ref().is_some_and(|w| uses(w, SELF_T))
     }
@@ -262,6 +271,8 @@ pub struct Styled {
     /// A panel title's color and size, and the color of the formula beside it.
     pub title_fill: Option<Expr>,
     pub title_size: Option<Expr>,
+    /// Beat captions, drawn in the figure only when a sheet asks: a page can show them as text.
+    pub caption: Option<CaptionStyle>,
     pub formula_fill: Option<Expr>,
     pub panels: PanelStyle,
 }
@@ -364,18 +375,31 @@ fn with_names(e: &Expr, names: &HashMap<String, Expr>) -> Expr {
     }
 }
 
-/// Replaces `self.age` with this mark's own expression: `beat` minus its beat's index.
-/// A mark outside any beat is always current. Done symbolically, so the runtime needs
-/// nothing new.
-fn with_age(e: &Expr, beat: Option<usize>) -> Expr {
+/// How a beat's caption looks, when a sheet asks for it with `style caption { … }`.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct CaptionStyle {
+    pub fill: Option<Expr>,
+    pub size: Option<Expr>,
+    pub halo: Option<Expr>,
+    /// How far its center sits from the bottom of the canvas, in `px`.
+    pub distance: Option<Expr>,
+    pub font: Font,
+}
+
+/// Replaces `self.age`, `self.life` and `self.focus` with this mark's own expressions in
+/// `beat`. `self.age` is `beat` minus its beat's index, and a mark outside any beat is always
+/// current. Done symbolically, so the runtime needs nothing new.
+fn with_story(e: &Expr, mark: &crate::ir::Mark) -> Expr {
     match e {
-        Expr::Sym(s) if s == SELF_AGE => match beat {
+        Expr::Sym(s) if s == SELF_AGE => match mark.beat {
             Some(k) => Expr::app("Subtract", vec![Expr::sym(BEAT_PARAM), Expr::Num(k as f64)]),
             None => Expr::Num(0.0),
         },
+        Expr::Sym(s) if s == SELF_LIFE => mark.life.clone().unwrap_or(Expr::Num(1.0)),
+        Expr::Sym(s) if s == SELF_FOCUS => mark.focus.clone().unwrap_or(Expr::Num(1.0)),
         Expr::App(head, args) => Expr::App(
             head.clone(),
-            args.iter().map(|a| with_age(a, beat)).collect(),
+            args.iter().map(|a| with_story(a, mark)).collect(),
         ),
         other => other.clone(),
     }
@@ -511,6 +535,30 @@ pub fn resolve_keeping(
                     }
                     continue;
                 }
+                if selector.target == "caption" && selector.tags.is_empty() {
+                    let caption = styled.caption.get_or_insert_with(CaptionStyle::default);
+                    for (prop, value) in &decls {
+                        match (prop.as_str(), value) {
+                            ("fill", _) => {
+                                if type_of(value, &names, false).map_err(&at)? != Ty::Color {
+                                    return Err(at("`fill` needs a Color".into()));
+                                }
+                                caption.fill = Some(value.clone());
+                            }
+                            ("size", _) => caption.size = Some(value.clone()),
+                            ("halo", _) => caption.halo = Some(value.clone()),
+                            ("distance", _) => caption.distance = Some(value.clone()),
+                            ("font", Expr::Sym(w)) if w == "sans" => caption.font = Font::Sans,
+                            ("font", Expr::Sym(w)) if w == "math" => caption.font = Font::Math,
+                            (other, _) => {
+                                return Err(at(format!(
+                                    "`caption` takes `fill`, `size`, `halo`, `distance` and `font`, not `{other}`"
+                                )));
+                            }
+                        }
+                    }
+                    continue;
+                }
                 if selector.target == "title" && selector.tags.is_empty() {
                     for (prop, value) in &decls {
                         match prop.as_str() {
@@ -581,8 +629,7 @@ pub fn resolve_keeping(
                     let mark = &scene.marks[index];
                     apply(
                         &mut styled.marks[index],
-                        &mark.form,
-                        mark.beat,
+                        mark,
                         &mark.id,
                         selector.facet.as_deref(),
                         &decls,
@@ -591,6 +638,24 @@ pub fn resolve_keeping(
                     .map_err(&at)?;
                 }
             }
+        }
+    }
+    for (mark, style) in scene.marks.iter().zip(&styled.marks) {
+        if style.trim.is_some() && style.draw == Draw::Field {
+            return Err(Error::new(format!(
+                "`{}` is drawn per pixel, with `draw: field`, so it can't use `trim`",
+                mark.id
+            )));
+        }
+    }
+    // A mark that a beat hasn't shown yet, or has dropped, isn't there at all: how it arrives
+    // and leaves is the sheet's, but whether it's there is the document's.
+    for (mark, style) in scene.marks.iter().zip(&mut styled.marks) {
+        if let Some(life) = &mark.life {
+            style.show = Some(match style.show.take() {
+                Some(show) => Expr::app("Min", vec![show, life.clone()]),
+                None => life.clone(),
+            });
         }
     }
     // A dot in a collection is drawn by its stroke, in the color a dot is filled with.
@@ -634,13 +699,13 @@ fn set_layout(
 /// Applies a rule's declarations to one mark.
 fn apply(
     target: &mut MarkStyle,
-    form: &Form,
-    beat: Option<usize>,
+    mark: &crate::ir::Mark,
     id: &str,
     facet: Option<&str>,
     decls: &[(String, Expr)],
     names: &[&str],
 ) -> Result<(), String> {
+    let form = &mark.form;
     // A collection of circles has sides, one instance at a time.
     let many_circles = matches!(
         form,
@@ -711,7 +776,7 @@ fn apply(
             }
             continue;
         }
-        let value = &with_age(value, beat);
+        let value = &with_story(value, mark);
         let measure = matches!(
             prop.as_str(),
             "width"
@@ -726,6 +791,7 @@ fn apply(
                 | "head"
                 | "head_span"
                 | "distance"
+                | "trim"
         );
         let mut scope = names.to_vec();
         if prop == "width" {
@@ -736,7 +802,8 @@ fn apply(
         }
         // A collection's sizes are worked out per instance, so they can use its variables,
         // and how big a world unit is, to size something in the figure's own terms.
-        if let (Form::Many { vars, lets, .. }, "radius" | "width") = (form, prop.as_str()) {
+        if let (Form::Many { vars, lets, .. }, "radius" | "width" | "trim") = (form, prop.as_str())
+        {
             scope.extend(vars.iter().map(|(name, _)| name.as_str()));
             scope.extend(lets.iter().map(|(name, _)| name.as_str()));
             scope.push(SELF_SCALE);
@@ -782,7 +849,23 @@ fn apply(
                 "`{id}`'s `{prop}` is the same along all its circles, so it can't use `self`: only a side's `fill` and `fill_opacity` can"
             ));
         }
+        // Drawing part of a stroke needs a start: a parameter, or the first of its points.
+        if prop == "trim" {
+            let has_start = match form {
+                Form::Parametric(_) | Form::Polyline { .. } | Form::Arrow { .. } => true,
+                Form::Field { line, .. } => line.is_some(),
+                Form::Many { shape, .. } => matches!(shape, Shape::Curves(_)),
+                _ => false,
+            };
+            if !has_start {
+                return Err(format!(
+                    "`{id}` has no start to draw from, so it can't use `trim`: it's traced, a \
+                     region, a collection of circles or dots, or not a line"
+                ));
+            }
+        }
         let slot = match (facet, prop.as_str()) {
+            (None, "trim") => &mut target.trim,
             (Some("inside"), "fill") if round => &mut target.inside,
             (Some("outside"), "fill") if round => &mut target.outside,
             (Some("inside" | "negative"), "fill") => &mut target.negative,

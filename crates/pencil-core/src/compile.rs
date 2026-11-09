@@ -961,6 +961,194 @@ impl Lowerer {
     }
 }
 
+/// The beats with lengths, and the pauses between them, as the document tells them.
+#[derive(Default)]
+struct Story {
+    steps: Vec<Step>,
+    moves: Vec<crate::parse::Move>,
+    /// Each block's beat, and the marks it made.
+    blocks: Vec<(usize, std::ops::Range<usize>)>,
+    /// The block being read: its beat, and where its marks start.
+    open: Option<(usize, usize)>,
+    caption: String,
+}
+
+enum Step {
+    Move(f64),
+    Pause(f64),
+}
+
+fn declare_beat(scene: &mut Scene, lowerer: &mut Lowerer) {
+    scene.params.push(Param {
+        id: BEAT_PARAM.to_string(),
+        range: [0.0, 0.0],
+    });
+    scene.bindings.push(Binding {
+        id: BEAT_PARAM.to_string(),
+        expr: num(0.0),
+    });
+    lowerer.scalars.insert(BEAT_PARAM.to_string());
+}
+
+/// How far through its move beat `k` is, from 0 to 1. `beat` is whole while a figure holds,
+/// so a pause changes nothing, and between two whole numbers while it moves.
+fn progress(k: usize) -> Expr {
+    Expr::app(
+        "Clamp",
+        vec![
+            sub(Expr::sym(BEAT_PARAM), num(k as f64)),
+            num(0.0),
+            num(1.0),
+        ],
+    )
+}
+
+/// Times the beats from their lengths, and works out from them when each mark is there and how
+/// much it's in focus. Everything is in terms of `beat`, so a reader stepping through and a
+/// video playing it see the same thing.
+fn finish_story(scene: &mut Scene, story: &Story) -> Result<(), Error> {
+    let count = story.moves.len();
+    if let Some(param) = scene.params.iter_mut().find(|p| p.id == BEAT_PARAM) {
+        param.range = [0.0, count as f64];
+    }
+    let mut now = 0.0;
+    let mut windows = vec![Expr::sym("time")];
+    for step in &story.steps {
+        match step {
+            Step::Pause(length) => now += length,
+            Step::Move(length) => {
+                windows.push(num(now));
+                now += length;
+                windows.push(num(now));
+                scene.beat_lengths.push(*length);
+            }
+        }
+    }
+    if let Some(binding) = scene.bindings.iter_mut().find(|b| b.id == BEAT_PARAM) {
+        binding.expr = Expr::app("Timeline", windows);
+    }
+    match scene.duration {
+        None => scene.duration = Some(now),
+        Some(d) if d + 1e-9 < now => {
+            return Err(Error::new(format!(
+                "the beats and pauses take {now} seconds, more than the `duration` of {d}"
+            )));
+        }
+        Some(_) => {}
+    }
+
+    let marks = &scene.marks;
+    let find = |word: &str, clause: &str, line: usize| -> Result<Vec<usize>, Error> {
+        let found: Vec<usize> = match word.strip_prefix('.') {
+            Some(tag) => (0..marks.len())
+                .filter(|&i| marks[i].tags.iter().any(|t| t == tag))
+                .collect(),
+            None => (0..marks.len()).filter(|&i| marks[i].id == word).collect(),
+        };
+        if found.is_empty() {
+            let what = match word.strip_prefix('.') {
+                Some(tag) => format!("no mark is tagged `{tag}`"),
+                None => format!("no mark is named `{word}`"),
+            };
+            return Err(Error::at(line, 1, format!("`{clause} {word}`: {what}")));
+        }
+        Ok(found)
+    };
+
+    // When each mark arrives and leaves, in beat order.
+    let mut events: Vec<Vec<(usize, bool, usize)>> = vec![Vec::new(); marks.len()];
+    for (k, range) in &story.blocks {
+        for i in range.clone() {
+            events[i].push((*k, true, story.moves[*k].line));
+        }
+    }
+    for (k, written) in story.moves.iter().enumerate() {
+        for word in &written.show {
+            for i in find(word, "show", written.line)? {
+                events[i].push((k, true, written.line));
+            }
+        }
+        for word in &written.drop {
+            for i in find(word, "drop", written.line)? {
+                events[i].push((k, false, written.line));
+            }
+        }
+    }
+    let mut lives = Vec::with_capacity(marks.len());
+    for (i, mut list) in events.into_iter().enumerate() {
+        if list.is_empty() {
+            lives.push(None);
+            continue;
+        }
+        list.sort_by_key(|e| e.0);
+        // A mark that's ever shown isn't there until it is.
+        let mut there = !list.iter().any(|e| e.1);
+        let mut life = num(if there { 1.0 } else { 0.0 });
+        let mut last = None;
+        for (k, show, line) in list {
+            let id = &marks[i].id;
+            if last == Some(k) {
+                return Err(Error::at(
+                    line,
+                    1,
+                    format!("`{id}` arrives or leaves twice in one beat"),
+                ));
+            }
+            if show == there {
+                let doing = if show {
+                    "shows `{id}`, which is already there"
+                } else {
+                    "drops `{id}`, which isn't there"
+                };
+                return Err(Error::at(
+                    line,
+                    1,
+                    format!("this beat {}", doing.replace("{id}", id)),
+                ));
+            }
+            life = if show {
+                add(life, progress(k))
+            } else {
+                sub(life, progress(k))
+            };
+            there = show;
+            last = Some(k);
+        }
+        lives.push(Some(life));
+    }
+
+    // Focus holds until a beat names another, and starts on everything.
+    let mut focuses: Vec<Option<Expr>> = vec![None; marks.len()];
+    let mut was = vec![1.0; marks.len()];
+    for (k, written) in story.moves.iter().enumerate() {
+        if written.focus.is_empty() {
+            continue;
+        }
+        let mut now = vec![0.0; marks.len()];
+        for word in &written.focus {
+            for i in find(word, "focus", written.line)? {
+                now[i] = 1.0;
+            }
+        }
+        for i in 0..marks.len() {
+            if now[i] != was[i] {
+                let change = mul(num(now[i] - was[i]), progress(k));
+                focuses[i] = Some(match focuses[i].take() {
+                    Some(f) => add(f, change),
+                    None => add(num(1.0), change),
+                });
+            }
+        }
+        was = now;
+    }
+
+    for ((mark, life), focus) in scene.marks.iter_mut().zip(lives).zip(focuses) {
+        mark.life = life;
+        mark.focus = focus;
+    }
+    Ok(())
+}
+
 /// A value that holds for the whole figure. Evaluating it at time 0 would quietly freeze
 /// anything that reads a signal, so that's an error instead.
 pub fn constant(e: &Expr, what: &str) -> Result<f64, Error> {
@@ -1856,6 +2044,7 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
         viewport: Viewport::default(),
         duration: None,
         beats: Vec::new(),
+        beat_lengths: Vec::new(),
         handles: Vec::new(),
         spots: Vec::new(),
         expressions: Vec::new(),
@@ -1872,6 +2061,8 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
     let mut binds: Vec<(String, Expr, usize)> = Vec::new();
     let mut beat: Option<usize> = None;
     let mut beat_tags: Vec<String> = Vec::new();
+    // Beats with lengths, in order with the pauses between them.
+    let mut story = Story::default();
     // The marks the latest statement made, for a trailing `tag`.
     let mut last_marks = 0..0;
     // Fit names resolve at the end, since a viewport comes before what it fits.
@@ -1886,6 +2077,8 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
                 form: $form,
                 tags,
                 beat,
+                life: None,
+                focus: None,
             });
         }};
     }
@@ -1899,18 +2092,69 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
                 }
                 continue;
             }
-            Item::Beat { caption, tags } => {
+            Item::Move(written) => {
+                if !scene.beats.is_empty() && story.moves.is_empty() {
+                    return Err(Error::at(
+                        written.line,
+                        1,
+                        "a beat with a length can't follow one without: give them all lengths",
+                    ));
+                }
                 if scene.beats.is_empty() {
                     claim(BEAT_PARAM, 0)?;
-                    scene.params.push(Param {
-                        id: BEAT_PARAM.to_string(),
-                        range: [0.0, 0.0],
-                    });
-                    scene.bindings.push(Binding {
-                        id: BEAT_PARAM.to_string(),
-                        expr: num(0.0),
-                    });
-                    lowerer.scalars.insert(BEAT_PARAM.to_string());
+                    declare_beat(&mut scene, &mut lowerer);
+                }
+                let k = story.moves.len();
+                let length =
+                    constant(&written.length, "a beat's length").map_err(at_line(written.line))?;
+                if length < 0.0 {
+                    return Err(Error::at(
+                        written.line,
+                        1,
+                        "a beat can't take less than no time",
+                    ));
+                }
+                if let Some(name) = &written.name {
+                    claim(name, written.line)?;
+                    lowerer.bind(&mut scene, name, Val::Scalar(progress(k)));
+                }
+                // A beat with no caption keeps the one before it, and `""` clears it.
+                if let Some(caption) = &written.caption {
+                    story.caption = caption.clone();
+                }
+                scene.beats.push(story.caption.clone());
+                story.steps.push(Step::Move(length));
+                story.moves.push(written.clone());
+                if written.block {
+                    beat = Some(k);
+                    beat_tags = written.tags.clone();
+                    story.open = Some((k, scene.marks.len()));
+                } else if !written.tags.is_empty() {
+                    return Err(Error::at(
+                        written.line,
+                        1,
+                        "a beat's `tag` is for the marks in its block, and it has none",
+                    ));
+                }
+                continue;
+            }
+            Item::Pause(e) => {
+                let length = constant(e, "a pause")?;
+                if length < 0.0 {
+                    return Err(Error::new("a pause can't take less than no time"));
+                }
+                story.steps.push(Step::Pause(length));
+                continue;
+            }
+            Item::Beat { caption, tags } => {
+                if !story.moves.is_empty() {
+                    return Err(Error::new(
+                        "a beat without a length can't follow one with: give them all lengths",
+                    ));
+                }
+                if scene.beats.is_empty() {
+                    claim(BEAT_PARAM, 0)?;
+                    declare_beat(&mut scene, &mut lowerer);
                 }
                 beat = Some(scene.beats.len());
                 scene.beats.push(caption.clone());
@@ -1918,6 +2162,9 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
                 continue;
             }
             Item::EndBeat => {
+                if let Some((k, start)) = story.open.take() {
+                    story.blocks.push((k, start..scene.marks.len()));
+                }
                 beat = None;
                 beat_tags.clear();
                 continue;
@@ -2484,6 +2731,8 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
                         },
                         tags,
                         beat,
+                        life: None,
+                        focus: None,
                     });
                 }
             }
@@ -2610,7 +2859,9 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
         };
         scene.viewport.fit.push(entry);
     }
-    if !scene.beats.is_empty() {
+    if !story.moves.is_empty() {
+        finish_story(&mut scene, &story)?;
+    } else if !scene.beats.is_empty() {
         let last = scene.beats.len() as f64 - 1.0;
         scene.params[0].range = [0.0, last];
     }
@@ -3823,6 +4074,132 @@ mod tests {
         assert_eq!(s.marks[1].beat, Some(1));
         assert!(s.marks[1].tags.contains(&"aux".to_string()));
         assert!(!s.marks[1].tags.contains(&"blue".to_string()));
+    }
+
+    /// A scene's value for `name` at a time, with every binding worked out in order.
+    fn at_time(s: &Scene, time: f64, e: &Expr) -> f64 {
+        let mut env = Env::new(time);
+        for binding in &s.bindings {
+            if let Ok(v) = eval::real(&binding.expr, &env) {
+                env.set(&binding.id, v);
+            }
+        }
+        eval::real(e, &env).unwrap()
+    }
+
+    const STORY: &str = "
+        pause 0.5
+        beat grow \"A circle.\" for 1 show c
+        beat spin for 2 show P focus P
+        pause 1
+        beat gone \"\" for 0.5 drop c, P
+        let P = (cos(tau·spin), sin(tau·spin))
+        curve c = circle((0, 0), (grow, 0))
+        dot P
+        segment axis = (-1, 0), (1, 0)";
+
+    #[test]
+    fn beats_with_lengths_are_timed_from_them() {
+        let s = scene(STORY).unwrap();
+        assert_eq!(s.duration, Some(5.0));
+        assert_eq!(s.params[0].range, [0.0, 3.0]);
+        assert_eq!(s.beat_lengths, [1.0, 2.0, 0.5]);
+        // No caption keeps the one before, and `""` clears it.
+        assert_eq!(s.beats, ["A circle.", "A circle.", ""]);
+        let beat = Expr::sym(BEAT_PARAM);
+        let cases = [
+            (0.0, 0.0),
+            (0.5, 0.0),
+            (1.0, 0.5),
+            (1.5, 1.0),
+            (2.5, 1.5),
+            (4.0, 2.0),
+            (4.25, 2.0),
+            (4.75, 2.5),
+            (5.0, 3.0),
+        ];
+        for (time, want) in cases {
+            assert!((at_time(&s, time, &beat) - want).abs() < 1e-12, "at {time}");
+        }
+        // A beat's name is its progress, which holds at 1 once it's done.
+        let spin = Expr::sym("spin");
+        assert_eq!(at_time(&s, 1.0, &spin), 0.0);
+        assert!((at_time(&s, 2.5, &spin) - 0.5).abs() < 1e-12);
+        assert_eq!(at_time(&s, 4.0, &spin), 1.0);
+    }
+
+    #[test]
+    fn beats_show_and_drop_marks_and_say_what_they_are_about() {
+        let s = scene(STORY).unwrap();
+        let mark = |id: &str| s.marks.iter().find(|m| m.id == id).unwrap();
+        let life = |id: &str, t: f64| at_time(&s, t, mark(id).life.as_ref().unwrap());
+        // Not there until shown, arriving as its beat moves, and leaving as the dropping one does.
+        assert_eq!(life("c", 0.0), 0.0);
+        assert!((life("c", 1.0) - 0.5).abs() < 1e-12);
+        assert_eq!(life("c", 3.0), 1.0);
+        assert_eq!(life("c", 4.25), 1.0);
+        assert!((life("c", 4.75) - 0.5).abs() < 1e-12);
+        assert_eq!(life("c", 5.0), 0.0);
+        assert_eq!(life("P", 1.5), 0.0);
+        assert_eq!(life("P", 4.0), 1.0);
+        // A mark no beat names is always there.
+        assert!(mark("axis").life.is_none());
+        // Focus starts on everything and holds once a beat names it.
+        let focus = |id: &str, t: f64| at_time(&s, t, mark(id).focus.as_ref().unwrap());
+        assert_eq!(focus("c", 1.5), 1.0);
+        assert!((focus("c", 2.5) - 0.5).abs() < 1e-12);
+        assert_eq!(focus("c", 5.0), 0.0);
+        assert_eq!(focus("axis", 5.0), 0.0);
+        assert!(mark("P").focus.is_none());
+    }
+
+    #[test]
+    fn a_beats_block_shows_its_marks() {
+        let s = scene(
+            "beat first for 1
+             beat second for 1 tag late {
+               segment s = (0, 0), (1, 0)
+             }",
+        )
+        .unwrap();
+        let m = &s.marks[0];
+        assert_eq!(m.beat, Some(1));
+        assert!(m.tags.contains(&"late".to_string()));
+        let life = m.life.as_ref().unwrap();
+        assert_eq!(at_time(&s, 1.0, life), 0.0);
+        assert!((at_time(&s, 1.5, life) - 0.5).abs() < 1e-12);
+        assert_eq!(at_time(&s, 2.0, life), 1.0);
+    }
+
+    #[test]
+    fn a_story_that_cannot_be_told_is_an_error() {
+        let cases = [
+            ("beat a for 1 show nothing", "no mark is named `nothing`"),
+            ("beat a for 1 focus .nothing", "no mark is tagged `nothing`"),
+            (
+                "let P = (0, 0)\ndot P\nbeat a for 1 show P\nbeat b for 1 show P",
+                "already there",
+            ),
+            (
+                "let P = (0, 0)\ndot P\nbeat a for 1 drop P\nbeat b for 1 drop P",
+                "isn't there",
+            ),
+            (
+                "let P = (0, 0)\ndot P\nbeat a for 1 show P drop P",
+                "twice in one beat",
+            ),
+            ("duration 1\nbeat a for 2", "more than the `duration`"),
+            ("beat a for -1", "less than no time"),
+            ("beat a for time", "uses `time`"),
+            ("beat a for 1 tag t", "has none"),
+            ("beat \"old\" { }\nbeat a for 1", "give them all lengths"),
+            ("beat a for 1\nbeat \"old\" { }", "give them all lengths"),
+            ("let a = 1\nbeat a for 1", "already defined"),
+        ];
+        for (src, want) in cases {
+            let err = scene(src).unwrap_err();
+            assert!(err.message.contains(want), "{src}: {err}");
+        }
     }
 
     #[test]

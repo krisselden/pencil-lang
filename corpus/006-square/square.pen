@@ -8,16 +8,43 @@ duration 19
 
 viewport { x: -0.7..2.7, y: -0.35..2.0, width: 340, height: 235 }
 
+// One beat per move, with a pause where the figure holds. A reader or a clock can drive it.
+pause 0.4
+beat build_a for 0.8
+pause 0.3
+beat build_b for 0.7
+pause 0.3
+beat join for 0.7
+pause 0.3
+beat name for 0.6 show hypotenuse
+pause 0.9
+beat shorten for 0.5
+pause 0.2
+beat measure for 0.5 show arg_first, length_z
+pause 0.8
+beat unmeasure for 0.5 drop arg_first, length_z
+pause 0.3
+// Once z is built, its parts step back so the multiply reads.
+beat scale_a for 1.1 show fo focus fo
+pause 0.3
+beat scale_b for 1.0 show il
+pause 0.3
+beat rotate for 1.0 show turning
+pause 0.3
+beat slide for 0.8 drop turning
+pause 0.4
+beat add for 0.7 show square
+pause 0.7
+beat factor for 0.4
+pause 0.6
+beat squared for 0.4
+pause 0.1
+beat result for 0.6 show first_angle, second_angle, arg_first, arg_second, length_z2
+pause 1.7
+beat clear for 0.6 drop leg_a, leg_b, hypotenuse, fo, il, square, first_angle, second_angle, arg_first, arg_second, length_z2
+
 fn turned(p, t) = p·exp(i·t)
 fn between(p, q, s) = p + (q - p)·s
-
-// One step per state of the expression. A reader or a clock can drive it.
-param step in 0..13
-bind step = timeline(time,
-  0.4, 1.2,   1.5, 2.2,   2.5, 3.2,   3.5, 4.1,   5.0, 5.5,   // build z
-  7.8, 8.9,   9.2, 10.2,  10.5, 11.5, 11.8, 12.6,             // scale, scale, turn, slide
-  13.0, 13.7, 14.4, 14.8, 15.4, 15.8,                         // add, factor, square
-  18.2, 18.8)
 
 let a = 1.5
 let b = 0.55
@@ -29,36 +56,19 @@ let BIZ = i·BZ
 let Z2 = AZ + BIZ
 let angle = atan2(b, a)
 
-// How far along each state's move is.
-let built_a = snap(step - 0)
-let built_b = snap(step - 1)
-let named = snap(step - 3)
-let scaled_a = snap(step - 5)
-let scaled_b = snap(step - 6)
-let rotated = snap(step - 7)
-let slid = snap(step - 8)
-let added = snap(step - 9)
-let gone = snap(step - 12)
-
-let tip_a = between(Z, AZ, scaled_a)
-let along = turned(between(Z, BZ, scaled_b), rotated·pi / 2)
-let from = between(O, AZ, slid)
+let tip_a = between(Z, AZ, snap(scale_a))
+let along = turned(between(Z, BZ, snap(scale_b)), snap(rotate)·pi / 2)
+let from = between(O, AZ, snap(slide))
 let tip_b = from + along
-
-// Once z is built, its parts step back so the multiply reads.
-let parts = (1 - gone)·(1 - 0.7·smoothstep(7.8, 8.4, time))
-let fade = 1 - gone
-let length_shown = smoothstep(5.7, 6.2, time)·(1 - smoothstep(7.0, 7.5, time))
-let result_shown = smoothstep(15.9, 16.5, time)·fade
 
 segment axis_x = (-0.7, 0), (2.7, 0)
 segment axis_y = (0, -0.35), (0, 2.0)
 
-arrow leg_a = O, (a·built_a, 0)
-arrow leg_b = (a, 0), (a, b·built_b)
+arrow leg_a = O, (a·snap(build_a), 0)
+arrow leg_b = (a, 0), (a, b·snap(build_b))
 arrow hypotenuse = O, Z
 arrow fo = O, tip_a
-curve turning = parametric (t): (cos(t)·length(BZ), sin(t)·length(BZ)) for t in angle..angle + rotated·pi / 2
+curve turning = parametric (t): (cos(t)·length(BZ), sin(t)·length(BZ)) for t in angle..angle + snap(rotate)·pi / 2
 arrow il = from, tip_b
 arrow square = O, Z2
 
@@ -77,11 +87,14 @@ place at_tip_b = tip_b offset (-28, -12)
 place beside_b = from + along·0.5 offset (4, 6)
 place at_sum = Z2 offset (-8, -12) hang end
 
-expression work by step {
+// A state per beat. Measuring and the result don't change it, so it's written again.
+expression work by beat {
   "a" at at_a
   "a" at at_a, "+ b i" at at_b
   "a + b i" at at_z
   "z = a + b i" at at_z
+  "z" at at_z
+  "z" at at_z
   "z" at at_z
   "z" at at_z, "z.1 a" at at_tip_a
   "z" at at_z, "z.1 a" at at_tip_a, "z.2 b" at at_tip_b
@@ -89,6 +102,7 @@ expression work by step {
   "z" at at_z, "z.1 a" at at_tip_a, "+ z.2 b i" at beside_b
   "z" at at_z, "z.1 a + z.2 b i" at at_sum
   "z" at at_z, "z.1 ( a + b i )" at at_sum
+  "z" at at_z, "z.1 ²" at at_sum
   "z" at at_z, "z.1 ²" at at_sum
   empty
 }

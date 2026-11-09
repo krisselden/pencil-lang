@@ -23,6 +23,8 @@ rules can sit in the document or in separate style files.
 | `solve (x, y) from 0, 1: f(x, y) = 0, g(x, y) = 2` | Unknowns defined by equations (see below). |
 | `bind a = expr` | What drives a param when no reader has taken it over. |
 | `beat "caption" tag t { … }` | A discrete step of a construction (see below). |
+| `beat spin "caption" for 2 show P drop c focus P, .arms` | One move of a figure's story, with a length (see below). |
+| `pause 0.4` | A hold between moves, in seconds. |
 | `curve c = …` | A drawn curve, in one of the forms below. |
 | `segment s = A, B` | A straight line between points. |
 | `path p = A, B, C` | An open line through points. |
@@ -75,6 +77,33 @@ Each form keeps its own representation (`goals.md`).
 A `beat` block groups marks into a discrete step. Any `beat` block declares the param `beat`,
 ranging over the beats, and its marks get the block's tags. A `self.age` in a style is that
 mark's own `beat − index`, so one rule can fade every earlier beat.
+
+**A beat can have a length,** which makes it one move of a figure's story. Beats and pauses run in
+the order they're written, and their lengths add up to the `duration`, so making one longer moves
+everything after it instead of everything having to be retimed:
+
+```
+pause 0.4
+beat grow "A circle." for 1 show c
+beat spin "A point goes round." for 2 show P focus P
+pause 1
+beat gone for 0.5 drop c, P
+```
+
+- **`beat` is a number,** whole while the figure holds and between two whole numbers while a beat
+  moves: 1.5 is halfway through the second beat. Time drives it, and a reader stepping through
+  or a `bind beat` can drive it instead, and everything below follows.
+- **A beat's name is its progress,** 0 until it starts, 1 once it's done, and moving evenly in
+  between. So `let r = grow` grows with that beat, and `snap(grow)` eases it.
+- **`show` and `drop` say when marks are there,** by name or `.tag`, and a beat's block shows
+  what it declares. A mark that's ever shown isn't there before it, a dropped one isn't there
+  after, and while it isn't there it isn't drawn at all. A mark no beat names is always there.
+  How it arrives and leaves is the sheet's, with `self.life`.
+- **`focus` says what a beat is about,** by name or `.tag`. It holds until a later beat names
+  something else, and before any does, everything is in focus. A sheet reads it as `self.focus`.
+- **A caption holds until a beat has another,** and `""` clears it. Captions are drawn in the
+  figure only when a sheet asks, with `style caption { … }`, since a page can show them as text.
+- Beats with lengths and beats without can't be mixed in one figure.
 
 ### Equations
 
@@ -341,6 +370,8 @@ the color stays with the disk. A style can tell which it is from `self.curvature
 | `self.curvature` | A circle's signed curvature: above 0 counterclockwise, below 0 clockwise, and 0 on a line. |
 | `self.t` | Position along a stroke, 0 to 1, in `width`. |
 | `self.age` | See Beats. |
+| `self.life` | How present the mark is, from 0 before a beat shows it to 1, and back to 0 as one drops it, moving with those beats. 1 for a mark no beat names. |
+| `self.focus` | How much the beats are about the mark, from 0 to 1, changing as a beat that names something moves. 1 until a beat names anything. |
 
 **Colors can be scaled and added:** `white·4`, `mix(a, b, t) + c / 3`. They aren't clipped until the end, and `rgb` can go past 255. `sinh`, `cosh` and `tanh` also work in a style. So a glow reads
 `fill_opacity: tanh(2·self.pixel / abs(self.dist))`.
@@ -366,6 +397,7 @@ the color stays with the disk. A style can tell which it is from `self.curvature
 | `head` | Arrows | The head's length in `px`. Defaults to 14. |
 | `distance` | Labels | In `px`. How far a label written with `away` sits from its point. Defaults to 16. |
 | `show` | Any mark | Draws it only while this is above 0, decided per frame. Can also read `view.width`, the view's width in world units, for zoom levels. |
+| `trim` | Curves, lines, arrows, circles | How much of the stroke is drawn, from its start: 0 to 1 of a curve's parameter, or of a straight line's length. An arrow grows from its tail. A circle starts due east of its center and runs counterclockwise, and is drawn as a line to be trimmed. A collection of curves can trim each one with its variables. A traced curve, a region, dots and circles in a collection have no start, so they can't. |
 
 **Panels are laid out by two rules.** Their values hold for the whole figure, so they can't read a param, and a rule for a panel
 that doesn't exist is a mistake. A panel's `width` and `height` also win over its viewport's, and all panels have to be one size, for now.
@@ -376,6 +408,16 @@ that doesn't exist is a mistake. A panel's `width` and `height` also win over it
 | | `gap` | In `px`, between panels. |
 | | `title` | In `px`, the band above each panel for its title. |
 | `style panel`, `style panel.whole` | `width`, `height` | In `px`, a panel's design size. Defaults to 400. |
+
+**A beat's caption is drawn by one more rule,** and only when a sheet has it, centered along the bottom of the canvas. As a beat
+with a new caption starts to move, the old one fades out and then the new one fades in, each over a fifth of a second, or less if
+the move is shorter.
+
+| Rule | Property | Meaning |
+|---|---|---|
+| `style caption` | `fill`, `size`, `halo` | As a label's. `size` defaults to 18 px. |
+| | `font` | `sans` (default) or `math`. |
+| | `distance` | In `px`, from the bottom of the canvas to the caption's center. Defaults to 28. |
 | | `pad` | How much room a `fit` leaves around what it fits, as a fraction of its size. Defaults to 0.1. |
 
 ## Decisions
@@ -384,6 +426,8 @@ Newest first. "Why" is the reason at the time, so these can be revisited.
 
 | Date | Decision | Why |
 |---|---|---|
+| 2026-11-08 | `trim` cuts a stroke where it becomes segments, and a circle with one is drawn as a line | The GPU and the CPU oracle share those segments, so they can't disagree, and the shader needs nothing new. A curve is cut along its parameter, since that's the order its math goes in, and fully drawn it's the curve as it was, so a loop's dashes don't jump as it closes. A circle keeps only its center and radius, so it can't start at the point it was drawn through yet: a compass circle can be written as a parametric curve that does |
+| 2026-11-08 | Beats can have lengths, and `show`, `drop`, `focus` and captions all follow `beat` | `006-square` kept absolute times in two places, and its sheet had to know the document's own names for its fades. Lengths compose, so one change moves what follows, and narration can retime them later. Working everything out from `beat`, not seconds, means a reader stepping, a video and a pause all agree: nothing moves while the figure holds (`docs/plan-explainer.md`) |
 | 2026-11-08 | A value that holds for the whole figure can't read `time`, and a state can't write a term twice | Both used to fail without a word. A viewport bound was worked out once, at time 0, so `x: -time..time` sat still, and a second `+` took the first's place, so `a + b + c` drew `a b + c` (`docs/plan-explainer.md`) |
 | 2026-11-06 | A view keeps equal scales, showing more rather than stretching | Kris: distortion spends a reader's budget fast. A 0.07% stretch also moved a near-straight circle by tens of pixels, since its center and radius were scaled differently. Unequal axes would have to be asked for, and nothing asks yet |
 | 2026-11-06 | Bindings run in dependency order, not the order they're written | `bind b = grown` failed at runtime, since a bound param ran at its `param` line, before a later `let`. A real cycle is now an error when compiled. A name still has to be written before it's read |

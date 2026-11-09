@@ -147,6 +147,11 @@ pub struct Mark {
     pub tags: Vec<String>,
     /// Which beat this mark belongs to, if any.
     pub beat: Option<usize>,
+    /// How present it is, from 0 to 1, as beats with lengths show and drop it: an expression in
+    /// `beat`. None is always there.
+    pub life: Option<Expr>,
+    /// How much the beats with lengths are about it, from 0 to 1, in `beat`. None is always 1.
+    pub focus: Option<Expr>,
 }
 
 /// Unknowns defined by equations, each a binding `["Solved", system, k]`. Newton's method runs
@@ -274,6 +279,8 @@ pub struct Scene {
     /// How long one pass of the time bindings takes, for looping and video.
     pub duration: Option<f64>,
     pub beats: Vec<String>,
+    /// Each beat's move in seconds, when beats have lengths, and empty when they don't.
+    pub beat_lengths: Vec<f64>,
     pub handles: Vec<Handle>,
     pub spots: Vec<Spot>,
     pub expressions: Vec<Expression>,
@@ -387,7 +394,14 @@ impl Scene {
                 }
                 Form::Outline { panel, .. } => json!({ "kind": "outline", "panel": panel }),
             };
-            json!({ "id": m.id, "form": form, "tags": m.tags, "beat": m.beat })
+            let mut mark = json!({ "id": m.id, "form": form, "tags": m.tags, "beat": m.beat });
+            if let Some(life) = &m.life {
+                mark["life"] = life.to_mathjson();
+            }
+            if let Some(focus) = &m.focus {
+                mark["focus"] = focus.to_mathjson();
+            }
+            mark
         };
         json!({
             "doc": self.name,

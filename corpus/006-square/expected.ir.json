@@ -1,9 +1,73 @@
 {
-  "beats": [],
+  "beats": ["","","","","","","","","","","","","","","",""],
   "bindings": [
     {
-      "expr": ["Timeline","time",0.4,1.2,1.5,2.2,2.5,3.2,3.5,4.1,5.0,5.5,7.8,8.9,9.2,10.2,10.5,11.5,11.8,12.6,13.0,13.7,14.4,14.8,15.4,15.8,18.2,18.8],
-      "id": "step"
+      "expr": ["Timeline","time",0.4,1.2000000000000002,1.5000000000000002,2.2,2.5,3.2,3.5,4.1,5.0,5.5,5.7,6.2,7.0,7.5,7.8,8.9,9.200000000000001,10.200000000000001,10.500000000000002,11.500000000000002,11.800000000000002,12.600000000000003,13.000000000000004,13.700000000000003,14.400000000000002,14.800000000000002,15.400000000000002,15.800000000000002,15.900000000000002,16.500000000000004,18.200000000000003,18.800000000000004],
+      "id": "beat"
+    },
+    {
+      "expr": ["Clamp",["Subtract","beat",0.0],0.0,1.0],
+      "id": "build_a"
+    },
+    {
+      "expr": ["Clamp",["Subtract","beat",1.0],0.0,1.0],
+      "id": "build_b"
+    },
+    {
+      "expr": ["Clamp",["Subtract","beat",2.0],0.0,1.0],
+      "id": "join"
+    },
+    {
+      "expr": ["Clamp",["Subtract","beat",3.0],0.0,1.0],
+      "id": "name"
+    },
+    {
+      "expr": ["Clamp",["Subtract","beat",4.0],0.0,1.0],
+      "id": "shorten"
+    },
+    {
+      "expr": ["Clamp",["Subtract","beat",5.0],0.0,1.0],
+      "id": "measure"
+    },
+    {
+      "expr": ["Clamp",["Subtract","beat",6.0],0.0,1.0],
+      "id": "unmeasure"
+    },
+    {
+      "expr": ["Clamp",["Subtract","beat",7.0],0.0,1.0],
+      "id": "scale_a"
+    },
+    {
+      "expr": ["Clamp",["Subtract","beat",8.0],0.0,1.0],
+      "id": "scale_b"
+    },
+    {
+      "expr": ["Clamp",["Subtract","beat",9.0],0.0,1.0],
+      "id": "rotate"
+    },
+    {
+      "expr": ["Clamp",["Subtract","beat",10.0],0.0,1.0],
+      "id": "slide"
+    },
+    {
+      "expr": ["Clamp",["Subtract","beat",11.0],0.0,1.0],
+      "id": "add"
+    },
+    {
+      "expr": ["Clamp",["Subtract","beat",12.0],0.0,1.0],
+      "id": "factor"
+    },
+    {
+      "expr": ["Clamp",["Subtract","beat",13.0],0.0,1.0],
+      "id": "squared"
+    },
+    {
+      "expr": ["Clamp",["Subtract","beat",14.0],0.0,1.0],
+      "id": "result"
+    },
+    {
+      "expr": ["Clamp",["Subtract","beat",15.0],0.0,1.0],
+      "id": "clear"
     },
     {
       "expr": 1.5,
@@ -66,63 +130,27 @@
       "id": "angle"
     },
     {
-      "expr": ["Snap",["Subtract","step",0.0]],
-      "id": "built_a"
-    },
-    {
-      "expr": ["Snap",["Subtract","step",1.0]],
-      "id": "built_b"
-    },
-    {
-      "expr": ["Snap",["Subtract","step",3.0]],
-      "id": "named"
-    },
-    {
-      "expr": ["Snap",["Subtract","step",5.0]],
-      "id": "scaled_a"
-    },
-    {
-      "expr": ["Snap",["Subtract","step",6.0]],
-      "id": "scaled_b"
-    },
-    {
-      "expr": ["Snap",["Subtract","step",7.0]],
-      "id": "rotated"
-    },
-    {
-      "expr": ["Snap",["Subtract","step",8.0]],
-      "id": "slid"
-    },
-    {
-      "expr": ["Snap",["Subtract","step",9.0]],
-      "id": "added"
-    },
-    {
-      "expr": ["Snap",["Subtract","step",12.0]],
-      "id": "gone"
-    },
-    {
-      "expr": ["Add","Z.x",["Multiply","scaled_a",["Subtract","AZ.x","Z.x"]]],
+      "expr": ["Add","Z.x",["Multiply",["Snap","scale_a"],["Subtract","AZ.x","Z.x"]]],
       "id": "tip_a.x"
     },
     {
-      "expr": ["Add","Z.y",["Multiply","scaled_a",["Subtract","AZ.y","Z.y"]]],
+      "expr": ["Add","Z.y",["Multiply",["Snap","scale_a"],["Subtract","AZ.y","Z.y"]]],
       "id": "tip_a.y"
     },
     {
-      "expr": ["Subtract",["Multiply",["Add","Z.x",["Multiply","scaled_b",["Subtract","BZ.x","Z.x"]]],["Multiply",["Exp",0.0],["Cos",["Divide",["Multiply","rotated","pi"],2.0]]]],["Multiply",["Add","Z.y",["Multiply","scaled_b",["Subtract","BZ.y","Z.y"]]],["Multiply",["Exp",0.0],["Sin",["Divide",["Multiply","rotated","pi"],2.0]]]]],
+      "expr": ["Subtract",["Multiply",["Add","Z.x",["Multiply",["Snap","scale_b"],["Subtract","BZ.x","Z.x"]]],["Multiply",["Exp",0.0],["Cos",["Divide",["Multiply",["Snap","rotate"],"pi"],2.0]]]],["Multiply",["Add","Z.y",["Multiply",["Snap","scale_b"],["Subtract","BZ.y","Z.y"]]],["Multiply",["Exp",0.0],["Sin",["Divide",["Multiply",["Snap","rotate"],"pi"],2.0]]]]],
       "id": "along.x"
     },
     {
-      "expr": ["Add",["Multiply",["Add","Z.x",["Multiply","scaled_b",["Subtract","BZ.x","Z.x"]]],["Multiply",["Exp",0.0],["Sin",["Divide",["Multiply","rotated","pi"],2.0]]]],["Multiply",["Add","Z.y",["Multiply","scaled_b",["Subtract","BZ.y","Z.y"]]],["Multiply",["Exp",0.0],["Cos",["Divide",["Multiply","rotated","pi"],2.0]]]]],
+      "expr": ["Add",["Multiply",["Add","Z.x",["Multiply",["Snap","scale_b"],["Subtract","BZ.x","Z.x"]]],["Multiply",["Exp",0.0],["Sin",["Divide",["Multiply",["Snap","rotate"],"pi"],2.0]]]],["Multiply",["Add","Z.y",["Multiply",["Snap","scale_b"],["Subtract","BZ.y","Z.y"]]],["Multiply",["Exp",0.0],["Cos",["Divide",["Multiply",["Snap","rotate"],"pi"],2.0]]]]],
       "id": "along.y"
     },
     {
-      "expr": ["Add","O.x",["Multiply","slid",["Subtract","AZ.x","O.x"]]],
+      "expr": ["Add","O.x",["Multiply",["Snap","slide"],["Subtract","AZ.x","O.x"]]],
       "id": "from.x"
     },
     {
-      "expr": ["Add","O.y",["Multiply","slid",["Subtract","AZ.y","O.y"]]],
+      "expr": ["Add","O.y",["Multiply",["Snap","slide"],["Subtract","AZ.y","O.y"]]],
       "id": "from.y"
     },
     {
@@ -132,29 +160,13 @@
     {
       "expr": ["Add","from.y","along.y"],
       "id": "tip_b.y"
-    },
-    {
-      "expr": ["Multiply",["Subtract",1.0,"gone"],["Subtract",1.0,["Multiply",0.7,["Smoothstep",7.8,8.4,"time"]]]],
-      "id": "parts"
-    },
-    {
-      "expr": ["Subtract",1.0,"gone"],
-      "id": "fade"
-    },
-    {
-      "expr": ["Multiply",["Smoothstep",5.7,6.2,"time"],["Subtract",1.0,["Smoothstep",7.0,7.5,"time"]]],
-      "id": "length_shown"
-    },
-    {
-      "expr": ["Multiply",["Smoothstep",15.9,16.5,"time"],"fade"],
-      "id": "result_shown"
     }
   ],
   "doc": "square",
   "duration": 19.0,
   "expressions": [
     {
-      "by": "step",
+      "by": "beat",
       "id": "work",
       "states": [
         [
@@ -183,6 +195,18 @@
           {
             "place": "at_z",
             "terms": ["z","=","a","+","b","i"]
+          }
+        ],
+        [
+          {
+            "place": "at_z",
+            "terms": ["z"]
+          }
+        ],
+        [
+          {
+            "place": "at_z",
+            "terms": ["z"]
           }
         ],
         [
@@ -273,6 +297,16 @@
             "terms": ["z.1","²"]
           }
         ],
+        [
+          {
+            "place": "at_z",
+            "terms": ["z"]
+          },
+          {
+            "place": "at_sum",
+            "terms": ["z.1","²"]
+          }
+        ],
         []
       ]
     }
@@ -281,6 +315,7 @@
   "marks": [
     {
       "beat": null,
+      "focus": ["Add",1.0,["Multiply",-1.0,["Clamp",["Subtract","beat",7.0],0.0,1.0]]],
       "form": {
         "closed": false,
         "kind": "polyline",
@@ -291,6 +326,7 @@
     },
     {
       "beat": null,
+      "focus": ["Add",1.0,["Multiply",-1.0,["Clamp",["Subtract","beat",7.0],0.0,1.0]]],
       "form": {
         "closed": false,
         "kind": "polyline",
@@ -301,32 +337,38 @@
     },
     {
       "beat": null,
+      "focus": ["Add",1.0,["Multiply",-1.0,["Clamp",["Subtract","beat",7.0],0.0,1.0]]],
       "form": {
         "from": ["O.x","O.y"],
         "kind": "arrow",
-        "to": [["Multiply","a","built_a"],0.0]
+        "to": [["Multiply","a",["Snap","build_a"]],0.0]
       },
       "id": "leg_a",
+      "life": ["Subtract",1.0,["Clamp",["Subtract","beat",15.0],0.0,1.0]],
       "tags": ["arrow"]
     },
     {
       "beat": null,
+      "focus": ["Add",1.0,["Multiply",-1.0,["Clamp",["Subtract","beat",7.0],0.0,1.0]]],
       "form": {
         "from": ["a",0.0],
         "kind": "arrow",
-        "to": ["a",["Multiply","b","built_b"]]
+        "to": ["a",["Multiply","b",["Snap","build_b"]]]
       },
       "id": "leg_b",
+      "life": ["Subtract",1.0,["Clamp",["Subtract","beat",15.0],0.0,1.0]],
       "tags": ["arrow"]
     },
     {
       "beat": null,
+      "focus": ["Add",1.0,["Multiply",-1.0,["Clamp",["Subtract","beat",7.0],0.0,1.0]]],
       "form": {
         "from": ["O.x","O.y"],
         "kind": "arrow",
         "to": ["Z.x","Z.y"]
       },
       "id": "hypotenuse",
+      "life": ["Subtract",["Add",0.0,["Clamp",["Subtract","beat",3.0],0.0,1.0]],["Clamp",["Subtract","beat",15.0],0.0,1.0]],
       "tags": ["arrow"]
     },
     {
@@ -337,43 +379,51 @@
         "to": ["tip_a.x","tip_a.y"]
       },
       "id": "fo",
+      "life": ["Subtract",["Add",0.0,["Clamp",["Subtract","beat",7.0],0.0,1.0]],["Clamp",["Subtract","beat",15.0],0.0,1.0]],
       "tags": ["arrow"]
     },
     {
       "beat": null,
+      "focus": ["Add",1.0,["Multiply",-1.0,["Clamp",["Subtract","beat",7.0],0.0,1.0]]],
       "form": {
         "arc": {
           "point": [["Multiply",["Cos","t"],["Sqrt",["Add",["Power","BZ.x",2.0],["Power","BZ.y",2.0]]]],["Multiply",["Sin","t"],["Sqrt",["Add",["Power","BZ.x",2.0],["Power","BZ.y",2.0]]]]],
-          "range": ["angle",["Add","angle",["Divide",["Multiply","rotated","pi"],2.0]]],
+          "range": ["angle",["Add","angle",["Divide",["Multiply",["Snap","rotate"],"pi"],2.0]]],
           "var": "t"
         },
         "kind": "parametric"
       },
       "id": "turning",
+      "life": ["Subtract",["Add",0.0,["Clamp",["Subtract","beat",9.0],0.0,1.0]],["Clamp",["Subtract","beat",10.0],0.0,1.0]],
       "tags": ["curve"]
     },
     {
       "beat": null,
+      "focus": ["Add",1.0,["Multiply",-1.0,["Clamp",["Subtract","beat",7.0],0.0,1.0]]],
       "form": {
         "from": ["from.x","from.y"],
         "kind": "arrow",
         "to": ["tip_b.x","tip_b.y"]
       },
       "id": "il",
+      "life": ["Subtract",["Add",0.0,["Clamp",["Subtract","beat",8.0],0.0,1.0]],["Clamp",["Subtract","beat",15.0],0.0,1.0]],
       "tags": ["arrow"]
     },
     {
       "beat": null,
+      "focus": ["Add",1.0,["Multiply",-1.0,["Clamp",["Subtract","beat",7.0],0.0,1.0]]],
       "form": {
         "from": ["O.x","O.y"],
         "kind": "arrow",
         "to": ["Z2.x","Z2.y"]
       },
       "id": "square",
+      "life": ["Subtract",["Add",0.0,["Clamp",["Subtract","beat",11.0],0.0,1.0]],["Clamp",["Subtract","beat",15.0],0.0,1.0]],
       "tags": ["arrow"]
     },
     {
       "beat": null,
+      "focus": ["Add",1.0,["Multiply",-1.0,["Clamp",["Subtract","beat",7.0],0.0,1.0]]],
       "form": {
         "arc": {
           "point": [["Multiply",0.42,["Cos","t"]],["Multiply",0.42,["Sin","t"]]],
@@ -383,10 +433,12 @@
         "kind": "parametric"
       },
       "id": "first_angle",
+      "life": ["Subtract",["Add",0.0,["Clamp",["Subtract","beat",14.0],0.0,1.0]],["Clamp",["Subtract","beat",15.0],0.0,1.0]],
       "tags": ["curve"]
     },
     {
       "beat": null,
+      "focus": ["Add",1.0,["Multiply",-1.0,["Clamp",["Subtract","beat",7.0],0.0,1.0]]],
       "form": {
         "arc": {
           "point": [["Multiply",0.62,["Cos","t"]],["Multiply",0.62,["Sin","t"]]],
@@ -396,10 +448,12 @@
         "kind": "parametric"
       },
       "id": "second_angle",
+      "life": ["Subtract",["Add",0.0,["Clamp",["Subtract","beat",14.0],0.0,1.0]],["Clamp",["Subtract","beat",15.0],0.0,1.0]],
       "tags": ["curve"]
     },
     {
       "beat": null,
+      "focus": ["Add",1.0,["Multiply",-1.0,["Clamp",["Subtract","beat",7.0],0.0,1.0]]],
       "form": {
         "at": [["Multiply",0.5,["Cos",["Divide","angle",2.0]]],["Multiply",0.5,["Sin",["Divide","angle",2.0]]]],
         "kind": "label",
@@ -408,10 +462,12 @@
         "values": []
       },
       "id": "arg_first",
+      "life": ["Subtract",["Add",["Subtract",["Add",0.0,["Clamp",["Subtract","beat",5.0],0.0,1.0]],["Clamp",["Subtract","beat",6.0],0.0,1.0]],["Clamp",["Subtract","beat",14.0],0.0,1.0]],["Clamp",["Subtract","beat",15.0],0.0,1.0]],
       "tags": ["label","note"]
     },
     {
       "beat": null,
+      "focus": ["Add",1.0,["Multiply",-1.0,["Clamp",["Subtract","beat",7.0],0.0,1.0]]],
       "form": {
         "at": [["Multiply",0.7,["Cos",["Multiply",1.5,"angle"]]],["Multiply",0.7,["Sin",["Multiply",1.5,"angle"]]]],
         "kind": "label",
@@ -420,10 +476,12 @@
         "values": []
       },
       "id": "arg_second",
+      "life": ["Subtract",["Add",0.0,["Clamp",["Subtract","beat",14.0],0.0,1.0]],["Clamp",["Subtract","beat",15.0],0.0,1.0]],
       "tags": ["label","note"]
     },
     {
       "beat": null,
+      "focus": ["Add",1.0,["Multiply",-1.0,["Clamp",["Subtract","beat",7.0],0.0,1.0]]],
       "form": {
         "at": [["Multiply",0.5,"Z.x"],["Multiply",0.5,"Z.y"]],
         "kind": "label",
@@ -432,10 +490,12 @@
         "values": []
       },
       "id": "length_z",
+      "life": ["Subtract",["Add",0.0,["Clamp",["Subtract","beat",5.0],0.0,1.0]],["Clamp",["Subtract","beat",6.0],0.0,1.0]],
       "tags": ["label","note"]
     },
     {
       "beat": null,
+      "focus": ["Add",1.0,["Multiply",-1.0,["Clamp",["Subtract","beat",7.0],0.0,1.0]]],
       "form": {
         "at": [["Multiply",0.55,"Z2.x"],["Multiply",0.55,"Z2.y"]],
         "kind": "label",
@@ -444,10 +504,12 @@
         "values": []
       },
       "id": "length_z2",
+      "life": ["Subtract",["Add",0.0,["Clamp",["Subtract","beat",14.0],0.0,1.0]],["Clamp",["Subtract","beat",15.0],0.0,1.0]],
       "tags": ["label","note"]
     },
     {
       "beat": null,
+      "focus": ["Add",1.0,["Multiply",-1.0,["Clamp",["Subtract","beat",7.0],0.0,1.0]]],
       "form": {
         "expression": 0,
         "key": "a",
@@ -459,6 +521,7 @@
     },
     {
       "beat": null,
+      "focus": ["Add",1.0,["Multiply",-1.0,["Clamp",["Subtract","beat",7.0],0.0,1.0]]],
       "form": {
         "expression": 0,
         "key": "+",
@@ -470,6 +533,7 @@
     },
     {
       "beat": null,
+      "focus": ["Add",1.0,["Multiply",-1.0,["Clamp",["Subtract","beat",7.0],0.0,1.0]]],
       "form": {
         "expression": 0,
         "key": "b",
@@ -481,6 +545,7 @@
     },
     {
       "beat": null,
+      "focus": ["Add",1.0,["Multiply",-1.0,["Clamp",["Subtract","beat",7.0],0.0,1.0]]],
       "form": {
         "expression": 0,
         "key": "i",
@@ -492,6 +557,7 @@
     },
     {
       "beat": null,
+      "focus": ["Add",1.0,["Multiply",-1.0,["Clamp",["Subtract","beat",7.0],0.0,1.0]]],
       "form": {
         "expression": 0,
         "key": "z",
@@ -503,6 +569,7 @@
     },
     {
       "beat": null,
+      "focus": ["Add",1.0,["Multiply",-1.0,["Clamp",["Subtract","beat",7.0],0.0,1.0]]],
       "form": {
         "expression": 0,
         "key": "=",
@@ -514,6 +581,7 @@
     },
     {
       "beat": null,
+      "focus": ["Add",1.0,["Multiply",-1.0,["Clamp",["Subtract","beat",7.0],0.0,1.0]]],
       "form": {
         "expression": 0,
         "key": "z.1",
@@ -525,6 +593,7 @@
     },
     {
       "beat": null,
+      "focus": ["Add",1.0,["Multiply",-1.0,["Clamp",["Subtract","beat",7.0],0.0,1.0]]],
       "form": {
         "expression": 0,
         "key": "z.2",
@@ -536,6 +605,7 @@
     },
     {
       "beat": null,
+      "focus": ["Add",1.0,["Multiply",-1.0,["Clamp",["Subtract","beat",7.0],0.0,1.0]]],
       "form": {
         "expression": 0,
         "key": "(",
@@ -547,6 +617,7 @@
     },
     {
       "beat": null,
+      "focus": ["Add",1.0,["Multiply",-1.0,["Clamp",["Subtract","beat",7.0],0.0,1.0]]],
       "form": {
         "expression": 0,
         "key": ")",
@@ -558,6 +629,7 @@
     },
     {
       "beat": null,
+      "focus": ["Add",1.0,["Multiply",-1.0,["Clamp",["Subtract","beat",7.0],0.0,1.0]]],
       "form": {
         "expression": 0,
         "key": "²",
@@ -570,8 +642,8 @@
   ],
   "params": [
     {
-      "id": "step",
-      "range": [0.0,13.0]
+      "id": "beat",
+      "range": [0.0,16.0]
     }
   ],
   "places": [

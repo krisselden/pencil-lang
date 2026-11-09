@@ -18,6 +18,21 @@ pub struct Document {
     pub items: Vec<Item>,
 }
 
+/// A beat with a length, as written.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Move {
+    pub name: Option<String>,
+    pub caption: Option<String>,
+    pub length: Expr,
+    pub show: Vec<String>,
+    pub drop: Vec<String>,
+    pub focus: Vec<String>,
+    pub tags: Vec<String>,
+    /// Whether it has a block, closed by an `EndBeat`.
+    pub block: bool,
+    pub line: usize,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum Item {
     Let {
@@ -171,6 +186,11 @@ pub enum Item {
         tags: Vec<String>,
     },
     EndBeat,
+    /// A beat with a length: one move of a figure's story. Its marks are the block's, if it has
+    /// one, and `show`, `drop` and `focus` name marks declared anywhere, by name or `.tag`.
+    Move(Move),
+    /// A hold between moves, in seconds.
+    Pause(Expr),
     /// Tags the marks the statement before it made.
     Tag(Vec<String>),
     /// Dragging a mark sets a param. The expression is the explicit inverse from the
@@ -454,7 +474,24 @@ pub const FUNCTIONS: [(&str, &str); 47] = [
     ("flip", "Flip"),
 ];
 
+/// Words that can follow `beat` in a beat with a length, so none of them can be its name.
+const MOVE_WORDS: [&str; 5] = ["for", "show", "drop", "focus", "tag"];
+
 impl Parser {
+    /// Whether the `beat` just read has a length: `beat name "caption" for 2`, with the name
+    /// and caption optional. The older `beat "caption" { … }` is a step with no length.
+    fn is_move(&self) -> bool {
+        let mut at = self.pos;
+        let tok = |i: usize| self.toks.get(i).map(|t| &t.tok);
+        if matches!(tok(at), Some(Tok::Ident(w)) if !MOVE_WORDS.contains(&w.as_str())) {
+            at += 1;
+        }
+        if matches!(tok(at), Some(Tok::Str(_))) {
+            at += 1;
+        }
+        matches!(tok(at), Some(Tok::Ident(w)) if w == "for")
+    }
+
     fn peek(&self) -> &Tok {
         &self.toks[self.pos].tok
     }
@@ -792,6 +829,63 @@ impl Parser {
                     line,
                 });
             }
+            "beat" if self.is_move() => {
+                let beat_name = match self.peek() {
+                    Tok::Ident(w) if !MOVE_WORDS.contains(&w.as_str()) => {
+                        Some(self.ident("a name")?)
+                    }
+                    _ => None,
+                };
+                let caption = self.optional_string();
+                self.keyword("for")?;
+                let length = self.expr()?;
+                let (mut show, mut drop, mut focus, mut tags) = (vec![], vec![], vec![], vec![]);
+                loop {
+                    let list = match self.peek() {
+                        Tok::Ident(w) if w == "show" => &mut show,
+                        Tok::Ident(w) if w == "drop" => &mut drop,
+                        Tok::Ident(w) if w == "focus" => &mut focus,
+                        Tok::Ident(w) if w == "tag" => &mut tags,
+                        _ => break,
+                    };
+                    self.bump();
+                    loop {
+                        // A tag is written `.tag`, as in a selector.
+                        let dotted = self.eat(".");
+                        let word = self.ident("a mark or `.tag`")?;
+                        list.push(if dotted { format!(".{word}") } else { word });
+                        if !self.eat(",") {
+                            break;
+                        }
+                    }
+                }
+                if tags.iter().any(|t| t.starts_with('.')) {
+                    return Err(Error::at(line, 1, "a beat's `tag` takes plain words"));
+                }
+                let block = self.eat("{");
+                items.push(Item::Move(Move {
+                    name: beat_name,
+                    caption,
+                    length,
+                    show,
+                    drop,
+                    focus,
+                    tags,
+                    block,
+                    line,
+                }));
+                if block {
+                    while !self.eat("}") {
+                        if *self.peek() == Tok::Eof {
+                            return Err(self.error("this `beat` isn't closed"));
+                        }
+                        self.statement(name, items)?;
+                    }
+                    items.push(Item::EndBeat);
+                }
+                return Ok(());
+            }
+            "pause" => items.push(Item::Pause(self.expr()?)),
             "beat" => {
                 let caption = match self.bump() {
                     Tok::Str(text) => text,

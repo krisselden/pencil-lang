@@ -364,6 +364,7 @@ impl Composition {
         widths: &dyn terms::TextWidths,
     ) -> Result<Vec<frame::Label>, Error> {
         let mut out = Vec::new();
+        self.captions(frames, inputs, &mut out)?;
         for (panel, frame) in self.panels.iter().zip(frames) {
             let (ox, oy) = (frame.origin[0] as f64, frame.origin[1] as f64);
             if panel.title.is_some() || panel.formula.is_some() {
@@ -423,6 +424,106 @@ impl Composition {
     }
 }
 
+impl Composition {
+    /// The beat's caption, centered along the bottom of the canvas, when a sheet asks for it.
+    /// As a beat with a new caption starts to move, the old one fades out and then the new one
+    /// fades in, each over a fifth of a second, or less if the move is short. A beat with the
+    /// caption before it keeps it, without fading.
+    fn captions(
+        &self,
+        frames: &[PanelFrame],
+        inputs: &frame::Inputs,
+        out: &mut Vec<frame::Label>,
+    ) -> Result<(), Error> {
+        let (Some(panel), Some(first)) = (self.panels.first(), frames.first()) else {
+            return Ok(());
+        };
+        let figure = &panel.figure;
+        let Some(style) = &figure.styles.caption else {
+            return Ok(());
+        };
+        let beats = &figure.scene.beats;
+        if beats.is_empty() {
+            return Ok(());
+        }
+        let env = eval::frame_env(figure, inputs)?;
+        let beat = eval::real(&ir::Expr::sym(compile::BEAT_PARAM), &env)?;
+        let dpr = first.prepared.dpr;
+        let real = |e: &Option<ir::Expr>, fallback: f64| -> Result<f64, Error> {
+            Ok(match e {
+                Some(e) => eval::real(e, &env)?,
+                None => fallback,
+            })
+        };
+        let size = real(&style.size, CAPTION_SIZE)? * dpr;
+        let halo = real(&style.halo, 0.0)? * dpr;
+        let distance = real(&style.distance, CAPTION_DISTANCE)? * dpr;
+        let color = match &style.fill {
+            Some(c) => eval::color(c, &env)?,
+            None => [0.0; 3],
+        };
+        let width = frames
+            .iter()
+            .map(|f| f.origin[0] as f64 + f.width as f64)
+            .fold(0.0, f64::max);
+        let height = frames
+            .iter()
+            .map(|f| f.origin[1] as f64 + f.height as f64)
+            .fold(0.0, f64::max);
+        let at = [width / 2.0, height - distance];
+        // Runs of beats that share a caption, each from its first beat to the next run's.
+        let mut start = 0;
+        while start < beats.len() {
+            let mut end = start + 1;
+            while end < beats.len() && beats[end] == beats[start] {
+                end += 1;
+            }
+            let lengths = &figure.scene.beat_lengths;
+            // How far into beat k's move, in fifths of a second.
+            let into = |k: usize| {
+                let length = lengths.get(k).copied().unwrap_or(1.0).max(1e-9);
+                let fade = CAPTION_FADE.min(length / 2.0);
+                (beat - k as f64) * length / fade
+            };
+            let coming = (into(start) - 1.0).clamp(0.0, 1.0);
+            let going = if end < beats.len() {
+                1.0 - into(end).clamp(0.0, 1.0)
+            } else {
+                1.0
+            };
+            // The first caption has nothing to wait for.
+            let coming = if start == 0 {
+                into(0).clamp(0.0, 1.0)
+            } else {
+                coming
+            };
+            let opacity = coming * going;
+            // Rounding can leave a caption a hair above nothing, as one fade hands over to the next.
+            if opacity > 1e-9 && !beats[start].is_empty() {
+                out.push(frame::Label {
+                    id: format!("caption/{start}"),
+                    text: beats[start].clone(),
+                    x: at[0],
+                    y: at[1],
+                    size,
+                    color,
+                    halo,
+                    opacity,
+                    font: style.font,
+                    anchor: at,
+                    place: style::Place::Fixed,
+                });
+            }
+            start = end;
+        }
+        Ok(())
+    }
+}
+
 const TITLE_SIZE: f64 = 14.0;
+const CAPTION_SIZE: f64 = 18.0;
+const CAPTION_DISTANCE: f64 = 28.0;
+/// How long a caption takes to fade out, and the next to fade in, in seconds.
+const CAPTION_FADE: f64 = 0.2;
 /// A panel's width and height until a sheet says otherwise, so a document draws on its own.
 const PANEL_SIZE: f64 = 400.0;

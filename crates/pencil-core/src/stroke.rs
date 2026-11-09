@@ -349,7 +349,10 @@ pub fn build(
                         Err(e) => return Err(e),
                     }
                 }
-                push_arc(arc, style, env, view, width, height, dpr, &mut segments)
+                let Some(arc) = trimmed(arc, style, env)? else {
+                    return Ok(());
+                };
+                push_arc(&arc, style, env, view, width, height, dpr, &mut segments)
             })?;
             layers.push(segments);
             continue;
@@ -380,9 +383,20 @@ pub fn build(
             layers.push(segments);
             continue;
         }
+        // How much of it to draw, from its start.
+        let trim = match &style.trim {
+            Some(t) => eval::real(t, env)?.clamp(0.0, 1.0),
+            None => 1.0,
+        };
+        if trim <= 0.0 {
+            layers.push(segments);
+            continue;
+        }
         if let Form::Arrow { from, to } = &mark.form {
             let a = to_device([eval::real(&from[0], env)?, eval::real(&from[1], env)?]);
             let b = to_device([eval::real(&to[0], env)?, eval::real(&to[1], env)?]);
+            // It grows from its tail, head first.
+            let b = [a[0] + (b[0] - a[0]) * trim, a[1] + (b[1] - a[1]) * trim];
             push_arrow(a, b, style, env, dpr, &mut segments)?;
             layers.push(segments);
             continue;
@@ -395,19 +409,82 @@ pub fn build(
             layers.push(segments);
             continue;
         }
-        if let Form::Parametric(arc) = &mark.form {
-            push_arc(arc, style, env, view, width, height, dpr, &mut segments)?;
+        // A curve that knows its own path, such as a circle drawn as a line, is trimmed along it.
+        let path = match &mark.form {
+            Form::Parametric(arc) => Some(arc),
+            Form::Field {
+                line: Some(arc), ..
+            } if style.trim.is_some() => Some(arc),
+            _ => None,
+        };
+        if let Some(arc) = path {
+            if let Some(arc) = trimmed(arc, style, env)? {
+                push_arc(&arc, style, env, view, width, height, dpr, &mut segments)?;
+            }
             layers.push(segments);
             continue;
         }
         // Dashes and tapers measure along the line, so they need all of it.
         let frame_only = !style.needs_arc_length();
         for line in lines(&mark.form, env, view, width, height, frame_only)? {
+            let line = if trim < 1.0 {
+                trim_line(&line, trim)
+            } else {
+                line
+            };
             push_line(&line, style, env, dpr, &to_device, &mut segments)?;
         }
         layers.push(segments);
     }
     Ok(layers)
+}
+
+/// The part of a curve a style's `trim` draws: from the start of its parameter, that fraction of
+/// the way to its end. Fully drawn, it's the curve as it was, so a loop stays a loop. None if
+/// nothing of it is drawn.
+fn trimmed(arc: &Arc, style: &MarkStyle, env: &Env) -> Result<Option<Arc>, Error> {
+    let Some(trim) = &style.trim else {
+        return Ok(Some(arc.clone()));
+    };
+    let trim = eval::real(trim, env)?.clamp(0.0, 1.0);
+    if trim <= 0.0 {
+        return Ok(None);
+    }
+    if trim >= 1.0 {
+        return Ok(Some(arc.clone()));
+    }
+    let lo = eval::real(&arc.range[0], env)?;
+    let hi = eval::real(&arc.range[1], env)?;
+    Ok(Some(Arc {
+        var: arc.var.clone(),
+        point: arc.point.clone(),
+        range: [Expr::Num(lo), Expr::Num(lo + (hi - lo) * trim)],
+    }))
+}
+
+/// The first `fraction` of a line by its length. It isn't a loop any more unless it's all there.
+fn trim_line(line: &Polyline, fraction: f64) -> Polyline {
+    let length = |a: [f64; 2], b: [f64; 2]| (b[0] - a[0]).hypot(b[1] - a[1]);
+    let total: f64 = line.points.windows(2).map(|w| length(w[0], w[1])).sum();
+    let mut left = total * fraction;
+    let mut points = vec![line.points[0]];
+    for w in line.points.windows(2) {
+        let step = length(w[0], w[1]);
+        if step >= left {
+            let k = if step > 0.0 { left / step } else { 0.0 };
+            points.push([
+                w[0][0] + (w[1][0] - w[0][0]) * k,
+                w[0][1] + (w[1][1] - w[0][1]) * k,
+            ]);
+            break;
+        }
+        left -= step;
+        points.push(w[1]);
+    }
+    Polyline {
+        points,
+        closed: false,
+    }
 }
 
 /// A parametric curve as lines, in world units.
@@ -1453,6 +1530,113 @@ mod tests {
 
     fn layer(sheet: &str, size: u32) -> Vec<f32> {
         layer_of(CIRCLE, sheet, size)
+    }
+
+    /// Where a layer's segments start and end, in device pixels, in order.
+    fn ends(s: &[f32]) -> ([f64; 2], [f64; 2]) {
+        let first = &s[..FLOATS_PER_SEGMENT];
+        let last = &s[s.len() - FLOATS_PER_SEGMENT..];
+        (
+            [first[0] as f64, first[1] as f64],
+            [last[2] as f64, last[3] as f64],
+        )
+    }
+
+    #[test]
+    fn trim_draws_from_a_strokes_start() {
+        // A circle starts due east of its center and runs counterclockwise, so a quarter of it
+        // ends due north. The view is 4 units across 400 pixels, with y down.
+        let layer =
+            |sheet: &str, size: u32| layer_of("curve c = circle((0, 0), (1, 0))", sheet, size);
+        let quarter = layer("style c { stroke: black; width: 2px; trim: 0.25 }", 400);
+        let (start, end) = ends(&quarter);
+        assert!(
+            (start[0] - 300.0).abs() < 0.5 && (start[1] - 200.0).abs() < 0.5,
+            "{start:?}"
+        );
+        assert!(
+            (end[0] - 200.0).abs() < 0.5 && (end[1] - 100.0).abs() < 0.5,
+            "{end:?}"
+        );
+        let length = |s: &[f32]| s[s.len() - FLOATS_PER_SEGMENT + 7] as f64;
+        let whole = layer("style c { stroke: black; width: 2px; draw: line }", 400);
+        assert!((length(&quarter) / length(&whole) - 0.25).abs() < 0.01);
+        // All of it is the circle as it was, and none of it is nothing.
+        assert_eq!(
+            layer("style c { stroke: black; width: 2px; trim: 1 }", 400),
+            whole
+        );
+        assert!(layer("style c { stroke: black; width: 2px; trim: 0 }", 400).is_empty());
+        assert!(layer("style c { stroke: black; width: 2px; trim: -1 }", 400).is_empty());
+
+        // A segment by its length, and an arrow from its tail, with its head at the new tip.
+        let doc =
+            "viewport { x: 0..4, y: 0..4 }\nsegment s = (0, 2), (4, 2)\narrow a = (0, 1), (4, 1)";
+        let figure = build_figure(
+            doc,
+            &["style s, a { stroke: black; width: 2px; trim: 0.5 }"],
+        )
+        .unwrap();
+        let strokes = prepare(&figure, &Inputs::at(0.0), 400, 400, 1.0)
+            .unwrap()
+            .strokes;
+        let (start, end) = ends(&strokes[0]);
+        assert_eq!((start, end), ([0.0, 200.0], [200.0, 200.0]));
+        let (_, tip) = ends(&strokes[1]);
+        assert_eq!(tip, [200.0, 300.0]);
+    }
+
+    #[test]
+    fn trim_a_polygon_by_its_length() {
+        let line = Polyline {
+            points: vec![[0.0, 0.0], [2.0, 0.0], [2.0, 2.0], [0.0, 0.0]],
+            closed: true,
+        };
+        let half = trim_line(&line, 0.4);
+        assert!(!half.closed);
+        let total = 4.0 + 8f64.sqrt();
+        let want = 0.4 * total - 2.0;
+        assert_eq!(half.points.len(), 3);
+        assert!(
+            (half.points[2][1] - want).abs() < 1e-12,
+            "{:?}",
+            half.points
+        );
+    }
+
+    #[test]
+    fn only_a_stroke_with_a_start_can_be_trimmed() {
+        let cases = [
+            (
+                "let P = (0, 0)\ndot P",
+                "style P { fill: black; trim: 0.5 }",
+                "no start",
+            ),
+            (
+                "curve c = implicit (x, y): x² + y² = 1",
+                "style c { stroke: black; trim: 0.5 }",
+                "no start",
+            ),
+            (
+                "region r = (0, 0), (1, 0), (0, 1)",
+                "style r { stroke: black; trim: 0.5 }",
+                "no start",
+            ),
+            (
+                "circles cs = circle((k, 0), (k + 1, 0)) for k in 0..2",
+                "style cs { stroke: black; trim: 0.5 }",
+                "no start",
+            ),
+            (
+                "curve c = circle((0, 0), (1, 0))",
+                "style c { stroke: black; draw: field; trim: 0.5 }",
+                "per pixel",
+            ),
+        ];
+        for (doc, sheet, want) in cases {
+            let err = build_figure(doc, &[sheet]).unwrap_err();
+            assert!(err.message.contains(want), "{doc}: {err}");
+        }
     }
 
     #[test]
