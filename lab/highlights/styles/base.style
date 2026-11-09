@@ -1,0 +1,9 @@
+style whole { stroke: red; width: 2.5px }
+style image_whole { stroke: accent; width: 2.5px }
+style part, image_part { show: 0 }
+style unit { stroke: muted; width: 1px; opacity: 0.5 }
+style hub, slow, fast { show: 0 }
+style touching, spot, leader { show: 0 }
+style Z, W, H, Ring { show: 0 }
+style note_dimple, note_z, note_w { show: 0 }
+style term { show: 0 }

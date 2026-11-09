@@ -961,7 +961,20 @@ impl Lowerer {
     }
 }
 
-fn constant(e: &Expr, what: &str) -> Result<f64, Error> {
+/// A value that holds for the whole figure. Evaluating it at time 0 would quietly freeze
+/// anything that reads a signal, so that's an error instead.
+pub fn constant(e: &Expr, what: &str) -> Result<f64, Error> {
+    let mut signal = None;
+    e.visit_syms(&mut |s| {
+        if SIGNALS.contains(&s) {
+            signal = Some(s.to_string());
+        }
+    });
+    if let Some(s) = signal {
+        return Err(Error::new(format!(
+            "{what} must be constant, and it uses `{s}`"
+        )));
+    }
     eval::real(e, &Env::new(0.0))
         .map_err(|err| Error::new(format!("{what} must be constant: {err}")))
 }
@@ -2411,6 +2424,7 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
                 let mut seen: Vec<String> = Vec::new();
                 for state in states {
                     let mut pieces = Vec::with_capacity(state.len());
+                    let mut in_state: Vec<&str> = Vec::new();
                     for (text, place) in state {
                         let Some(spot) = scene.spots.iter().position(|s| s.id == *place) else {
                             return Err(fail(Error::new(format!(
@@ -2418,6 +2432,31 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
                             ))));
                         };
                         let keys: Vec<String> = text.split_whitespace().map(String::from).collect();
+                        for key in text.split_whitespace() {
+                            // A term is one thing, so a second one in a state would take the
+                            // first's place, and one of them would quietly vanish.
+                            if in_state.contains(&key) {
+                                let written = |c: &str| {
+                                    in_state.contains(&c) || text.split_whitespace().any(|k| k == c)
+                                };
+                                let copy = (1..)
+                                    .map(|k| format!("{}.{k}", crate::terms::base(key)))
+                                    .find(|c| !written(c))
+                                    .expect("an unused copy");
+                                let fix = if crate::terms::base(&copy) == copy {
+                                    format!(
+                                        ", and `{copy}` would be a number, so a number can't have a copy yet"
+                                    )
+                                } else {
+                                    format!(". Write the second as `{copy}`")
+                                };
+                                return Err(fail(Error::new(format!(
+                                    "`{key}` is written twice in one state of `{name}`, and a term \
+                                     can only be in one place{fix}"
+                                ))));
+                            }
+                            in_state.push(key);
+                        }
                         for key in &keys {
                             if !seen.contains(key) {
                                 seen.push(key.clone());
@@ -2492,10 +2531,16 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
                 let bound =
                     |range: &Option<[Expr; 2]>, fallback: [f64; 2]| -> Result<[f64; 2], Error> {
                         match range {
-                            Some(r) => Ok([
-                                constant(&r[0], "a viewport bound")?,
-                                constant(&r[1], "a viewport bound")?,
-                            ]),
+                            Some(r) => {
+                                // A fixed window can't follow anything, and `fit` can.
+                                let bound = |e| {
+                                    constant(e, "a viewport bound").map_err(|mut err| {
+                                        err.message += ". To follow something that moves, `fit` it";
+                                        err
+                                    })
+                                };
+                                Ok([bound(&r[0])?, bound(&r[1])?])
+                            }
                             None => Ok(fallback),
                         }
                     };
@@ -2669,6 +2714,21 @@ mod tests {
         // Coordinates aren't ambient: they only exist in their curve.
         let err = scene("let a = x").unwrap_err();
         assert!(err.message.contains("unknown name `x`"), "{err}");
+    }
+
+    #[test]
+    fn a_whole_figure_value_cannot_read_time() {
+        // Evaluated once, at time 0, it would stay there without a word.
+        let err = scene("viewport { x: -2 - time..2 + time, y: -2..2 }").unwrap_err();
+        assert!(err.message.contains("uses `time`"), "{err}");
+        assert!(err.message.contains("`fit` it"), "{err}");
+        let err = scene("let zoom = 2 + time\nviewport { x: -zoom..zoom, y: -2..2 }").unwrap_err();
+        assert!(err.message.contains("must be constant"), "{err}");
+        let err = scene("duration time").unwrap_err();
+        assert!(err.message.contains("uses `time`"), "{err}");
+        let err = scene("param a in 0..time").unwrap_err();
+        assert!(err.message.contains("uses `time`"), "{err}");
+        assert!(scene("viewport { x: -2·pi..2·pi, y: -2..2, width: 640 }").is_ok());
     }
 
     #[test]

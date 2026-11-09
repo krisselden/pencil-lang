@@ -228,7 +228,7 @@ pub fn compose(doc: &str, sheets: &[&str]) -> Result<Composition, Error> {
     // Where panels sit and how much they show is the style's, and it wins over the viewport.
     let constant = |e: &Option<ir::Expr>| {
         e.as_ref()
-            .map(|e| eval::real(e, &eval::Env::new(0.0)))
+            .map(|e| compile::constant(e, "a panel's layout"))
             .transpose()
     };
     for (_, figure) in &mut figures {

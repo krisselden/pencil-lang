@@ -1,0 +1,7 @@
+style whole, image_whole { opacity: 0.3 }
+style hub { show: 1; stroke: ink; width: 3px }
+style slow { show: 1; stroke: blue; width: 3px }
+style fast { show: 1; stroke: green; width: 3px }
+style term { show: 1 }
+style Z, W { show: 1; fill: ink; radius: 4px }
+style note_z, note_w { show: 1 }

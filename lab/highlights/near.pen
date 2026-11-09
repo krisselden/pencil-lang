@@ -1,0 +1,27 @@
+// The circle with its far edge held at n, so one number moves it through flat, cusp and loop.
+doc near
+duration 6
+viewport { x: -3.6..9.6, y: -6.6..6.6, width: 640, height: 640 }
+let n = sqrt(8)
+param near = 0.354 in -2..2
+bind near = 0.943·(1 - smoothstep(0.5, 1.5, time)) + -1·smoothstep(1.5, 2.5, time)
+let x0 = (n + near) / 2
+let r = (n - near) / 2
+fn on_circle(t) = x0 + r·exp(i·t)
+fn squared(z) = z²
+let y = sqrt(max(-n·near, 0))
+let Upper = (0, y)
+let Lower = (0, -y)
+let Meet = (n·near, 0)
+let Ring = (near², 0)
+let Near = Ring + (-1.6, 2.6)
+group shape() {
+  curve whole = parametric (t): on_circle(t) for t in 0..tau
+}
+use shape()
+use shape() through squared as image
+curve unit = circle(0, 1)
+segment leader = Ring, Near
+segment to_upper = Upper, Meet
+segment to_lower = Lower, Meet
+dot Ring, Upper, Lower, Meet

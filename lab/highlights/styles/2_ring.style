@@ -1,0 +1,3 @@
+style Ring { show: 1; radius: 26px; fill_opacity: 0; stroke: ink; width: 1.5px }
+style leader { show: 1; stroke: ink; width: 1px }
+style note_dimple { show: 1 }

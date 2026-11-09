@@ -1,0 +1,2 @@
+style whole { opacity: 0.35 }
+style image_whole { width: 0.5px + 1px·sqrt(x0² + r² + 2·x0·r·cos(tau·self.t)) }

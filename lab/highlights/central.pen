@@ -1,0 +1,52 @@
+// The limaçon from its central circle, after Kris's GeoGebra construction, with 0 and 1 in place.
+doc central
+duration 6.2831853
+viewport { x: -1.4..9.2, y: -5.2..5.2, width: 640, height: 640 }
+
+param s = 1.0397 in 0.2..2
+param t = 1.1 in 0..6.2831853
+bind t = time
+
+let zero = (0, 0)
+let one = (1, 0)
+let A = (cosh(s)², 0)
+let R = sinh(s)·cosh(s)
+let central_point = A + (R, 0)
+curve central = circle(A, central_point)
+
+// The tangent from 0 touches the central circle above 1.
+let B = (1, sqrt(R² - (1 - cosh(s)²)²))
+segment from_zero = zero, B
+segment above_one = one, B
+
+let C = A + R·(cos(t), sin(t))
+curve through_one = circle(C, one)
+let tangent_at_C = perpendicular(C, line(A, C))
+let E = mirror(one, tangent_at_C)
+segment normal = C, E
+segment chord = one, C
+segment mirror_line = C + 3·(-sin(t), cos(t)), C - 3·(-sin(t), cos(t))
+
+// Pedal: E is the foot from 1 on a tangent of the circle about cosh 2s with radius sinh 2s.
+let D2 = mirror(one, A)
+let pedal_point = D2 + (sinh(2·s), 0)
+curve pedal_circle = circle(D2, pedal_point)
+let pedal_touch = D2 + sinh(2·s)·(cos(t), sin(t))
+segment pedal_tangent = pedal_touch, E
+segment pedal_foot = one, E
+
+// Roulette: hub A, slow arm to A' = A mirrored in C, fast arm to E, turning twice.
+let A2 = mirror(A, C)
+arrow slow = A, A2
+arrow fast = A2, E
+
+// Conchoid: Pascal's circle from 1 to cosh 2s. L is the fast arm's tip from A, at twice
+// the angle that the line from 1 makes, and E is L plus the slow arm's length.
+let pascal_point = D2
+curve pascal = circle(A, pascal_point)
+let L = A + sinh(s)²·(cos(2·t), sin(2·t))
+arrow fast_from_hub = A, L
+segment conchoid = L - sinh(2·s)·(cos(t), sin(t)), E
+
+curve limacon = parametric (u): (1, 0) + (sinh(2·s) + 2·sinh(s)²·cos(u))·(cos(u), sin(u)) for u in 0..tau
+dot zero, one, A, B, C, E, A2, L

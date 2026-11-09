@@ -63,6 +63,7 @@ Each form keeps its own representation (`goals.md`).
 `viewport { x: -2..2, y: -2..2, width: 640, height: 400 }`
 
 - `x`, `y`: a fixed world window. It always has one scale for both axes, so at a different shape it shows more, rather than stretching.
+  Its bounds are constant, so they can't read `time` or a param. To follow something that moves, `fit` it.
 - `width`, `height`: the design size. With `width`, `px` sizes scale with the output, as an
   SVG's do with its `viewBox`. Without it, a `px` is a CSS pixel.
 - `fit: a b c`: bounds these points and circles each frame instead of a fixed window, ignoring
@@ -195,6 +196,7 @@ Terms are separated by spaces. Nothing is diffed: identity is what's written.
 - The same term in the next state moves to its new spot, and stays solid.
 - A new term fades in, and a term that's gone fades out, riding along with its neighbors.
 - A copy is written `z.1`, and prints as `z`. When it's new, it starts on `z`.
+- A term is in one place, so a state can't write the same one twice: `a + b +.1 c` has two plus signs. A number can't have a copy yet, since `2.1` is a number.
 - When a copy goes, it moves into a term of the same name at the same place: factoring.
 
 Each term is a mark named `work.z.1`, with the tags `term`, `work` and `z`, so `style term.a { fill: blue }`
@@ -382,6 +384,7 @@ Newest first. "Why" is the reason at the time, so these can be revisited.
 
 | Date | Decision | Why |
 |---|---|---|
+| 2026-11-08 | A value that holds for the whole figure can't read `time`, and a state can't write a term twice | Both used to fail without a word. A viewport bound was worked out once, at time 0, so `x: -time..time` sat still, and a second `+` took the first's place, so `a + b + c` drew `a b + c` (`docs/plan-explainer.md`) |
 | 2026-11-06 | A view keeps equal scales, showing more rather than stretching | Kris: distortion spends a reader's budget fast. A 0.07% stretch also moved a near-straight circle by tens of pixels, since its center and radius were scaled differently. Unequal axes would have to be asked for, and nothing asks yet |
 | 2026-11-06 | Bindings run in dependency order, not the order they're written | `bind b = grown` failed at runtime, since a bound param ran at its `param` line, before a later `let`. A real cycle is now an error when compiled. A name still has to be written before it's read |
 | 2026-11-06 | `fast.rs` works out a repeated piece once per sample | Inlining copies arguments, so a complex figure repeats itself many times over, and Bipolar Hearts took 18 ms a frame. It's 2.4 ms now. Setting any value starts a new generation, so nothing stale can be read |

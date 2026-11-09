@@ -1,0 +1,8 @@
+style whole { stroke: red; width: 2.5px }
+style image_whole { stroke: accent; width: 0.35px + 0.95px·sqrt(x0² + r² + 2·x0·r·cos(tau·self.t)) }
+style unit { stroke: muted; width: 1px; opacity: 0.5 }
+style leader { stroke: ink; width: 1px; show: near - 0.01 }
+style Ring { radius: 22px; fill_opacity: 0; stroke: ink; width: 1.5px; show: near + 0.01 }
+style to_upper, to_lower { stroke: muted; width: 1px; dash: 3px; gap: 3px; show: -near }
+style Upper, Lower { fill: red; radius: 4px; show: -near }
+style Meet { fill: accent; radius: 4.5px; show: -near }

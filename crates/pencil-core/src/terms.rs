@@ -586,6 +586,44 @@ mod tests {
     }
 
     #[test]
+    fn a_term_written_twice_in_a_state_is_an_error() {
+        // The second `+` would take the first's place, and the sum would lose a sign.
+        let doc = |state: &str| {
+            build(
+                &format!(
+                    "param step in 0..1\nplace p = (0, 0)\nplace q = (1, 0)\nexpression e by step {{\n  {state}\n}}"
+                ),
+                &[],
+            )
+        };
+        let err = doc("\"a + b + c\" at p").unwrap_err();
+        assert!(err.message.contains("`+` is written twice"), "{err}");
+        assert!(err.message.contains("Write the second as `+.1`"), "{err}");
+        assert_eq!(err.line, 4);
+        // Across the pieces of one state, too, and the suggestion skips copies already written.
+        let err = doc("\"z +.1\" at p, \"+ z\" at q").unwrap_err();
+        assert!(err.message.contains("`z` is written twice"), "{err}");
+        let err = doc("\"a + b +.1 c + d\" at p").unwrap_err();
+        assert!(err.message.contains("as `+.2`"), "{err}");
+        // A number can't have a copy, since `2.1` is a number.
+        let err = doc("\"2 + 2\" at p").unwrap_err();
+        assert!(err.message.contains("a number can't have a copy"), "{err}");
+        // With a copy, both signs are drawn, in order.
+        let f = doc("\"a + b +.1 c\" at p\n  \"a + b\" at p").unwrap();
+        let inputs = Inputs {
+            time: 0.0,
+            params: vec![("step".to_string(), 1.0)],
+        };
+        let labels = frame::prepare_with(&f, &inputs, 400, 400, 1.0, &Ten)
+            .unwrap()
+            .labels;
+        let (first, second) = (find(&labels, "e.+"), find(&labels, "e.+.1"));
+        assert_eq!((first.text.as_str(), second.text.as_str()), ("+", "+"));
+        assert!(first.x < second.x);
+        assert_eq!((first.opacity, second.opacity), (1.0, 1.0));
+    }
+
+    #[test]
     fn copies_print_as_what_they_copy() {
         assert_eq!(base("z.1"), "z");
         assert_eq!(base("z"), "z");

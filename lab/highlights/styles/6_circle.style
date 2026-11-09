@@ -1,0 +1,5 @@
+style whole, image_whole { opacity: 0.4 }
+style slow, fast, hub { show: 1; stroke: muted; width: 1.5px }
+style touching { show: 1; stroke: blue; width: 2.5px; fill_opacity: 0.12 }
+style touching::inside { fill: blue }
+style H, W { show: 1; fill: ink; radius: 4px }

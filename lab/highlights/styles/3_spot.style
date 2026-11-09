@@ -1,0 +1,2 @@
+style spot { show: 1; stroke: ink; width: 1.5px; fill_opacity: 0.8 }
+style spot::outside { fill: paper_color }

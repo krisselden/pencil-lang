@@ -1,0 +1,15 @@
+style limacon { stroke: ink; width: 2px }
+style central { stroke: accent; width: 2.5px }
+style through_one { stroke: red; width: 1.5px }
+style normal, chord { stroke: red; width: 1.5px }
+style mirror_line { stroke: muted; width: 1px; dash: 4px; gap: 3px }
+style from_zero, above_one { stroke: muted; width: 1px }
+style pedal_circle { stroke: green; width: 1.25px; opacity: 0.7 }
+style pedal_tangent, pedal_foot { stroke: green; width: 1.25px }
+style slow { stroke: blue; width: 2.5px }
+style fast { stroke: blue; width: 2.5px; opacity: 0.6 }
+style pascal { stroke: muted; width: 1.25px }
+style fast_from_hub { stroke: blue; width: 1.5px; opacity: 0.6 }
+style conchoid { stroke: rgb(224, 116, 21); width: 2px }
+style zero, one, A, B, C, E, A2, L { fill: ink; radius: 3px }
+style C, E { radius: 4.5px }
