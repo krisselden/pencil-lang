@@ -1,6 +1,6 @@
 # Plan: oriented circles, and drawing both sides
 
-Written 2026-11-06, and built the same day. See "Which side is inside" in `goals.md` for why. What was built differs from this in two places, marked below, and "What it found" is at the end.
+Written 2026-11-06, and built the same day, so nothing here is left to do. Its known limits are in `goals.md`, under "Open". See "Which side is inside" in `goals.md` for why. What was built differs from this in two places, marked below, and "What it found" is at the end.
 
 ## The idea
 

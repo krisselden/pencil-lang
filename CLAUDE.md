@@ -6,7 +6,8 @@ video.
 
 Read in this order, with earlier files winning where they disagree:
 
-1. `docs/goals.md`: current goals, the changes from the July design, the first milestone.
+1. `docs/goals.md`: current goals, everything still open (one list, under "Open"), the changes from
+   the July design, and how each figure went.
 2. `docs/spec/`: the July plan and specs, unmodified. Their TypeScript, Three.js and TSL
    references are superseded as `goals.md` describes.
 3. `docs/design-notes.md`: background, including the overlap with the site.

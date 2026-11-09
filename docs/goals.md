@@ -35,6 +35,106 @@ These hold from the plan and were reconfirmed:
 
 Blog figures are where this starts, and they must not foreclose on animation or video.
 
+## Open
+
+Everything still open, from every doc, gathered on 2026-11-09. The sections below are the record of how each figure went,
+and this is the one list to read for what's left. When something here is settled, remove it and write the decision where it
+belongs: `language.md` for the language, the section below for a figure.
+
+### Now
+
+- **The explainer, phases 5 and 6** (`plan-explainer.md`): narration over the drafted cut, then a write-up here and in the
+  language reference.
+
+### Proposed order after that
+
+Proposed by Claude on 2026-11-09, not yet agreed:
+
+1. **A custom element**, `<pencil-figure src style>`, built from `web/fit.js`. It's how Pencil gets onto the site, it can take its
+   aspect ratio from an Astro build so nothing shifts, and it replaces the setup each page in `web/` repeats.
+2. **A highlighting grammar** for `.pen` and `.style`. Cheap, and it doesn't fix the syntax in place.
+3. **A playground with an editor:** the element, an editor, and the WASM check, for people who want to try it.
+4. **A syntax pass,** before anything hardens the syntax. Split `compile_flat` first (below).
+5. **A language server,** diagnostics first, since errors already carry a line and column. Hover and completion once the syntax
+   settles.
+6. **MCP:** not until someone needs it. The CLI already renders and checks.
+
+### Questions
+
+- **Is WebGPU needed?** Not for strokes or fields: both ran the same on WebGL2. Text is the untested part. Vello relies on compute
+  shaders, which wgpu's WebGL2 backend lacks, and the winding integral as written needs storage buffers.
+- **How should a `.pen` file name fonts?** `font: math | sans` are roles. Video uses system fonts, which can't be redistributed,
+  so someone else's render looks different. The math font also has `ᵗ` but not `ⁱ`, with no fallback.
+- **What should `self.dist` mean?** It's still the first-order estimate `f / |∇f|`, which shows moiré where the gradient shrinks.
+  Tracing could give a true distance near the curve, at a cost.
+- **How should a moving loop's dashes behave?** A loop gets a whole number of dashes, so they jump as it grows: about 25 times a
+  cycle on the breathing circle, by arithmetic, not watched. The blog's hysteresis depends on history, which breaks seeking. A
+  related one: dashes on a moving range ride with its start, and a real string's would stay put as it unwinds.
+- **Should still labels snap?** Chrome's crisper text comes mostly from whole-pixel baselines. The IR can tell which labels never
+  move. Not built.
+- **How far should MathJSON go?** It stays, since open expressions are the point. But the IR only goes one way and is the compiled
+  form, so what's truly open today is the `.pen` text.
+- **Should a `fit` view ease** when something it fits vanishes? It jumps, which is correct.
+- **Where do easing and themes live?** The power in moves is a language default, and a theme is where it belongs. Sheets are
+  picked by the page, since the language has no media query.
+- **Does Cloudflare Workers static assets take a `_headers` file** for cross-origin `.pen` embeds? Unconfirmed
+  (`design-notes.md`, "Hosting").
+- **Where is `SPEC/18`?** The July 9 chat mentions it, and the plan's list stops at 17.
+- **The specs' own open questions** (SPEC/16 §8, SPEC/50 §7) are about relations, rigs and extensions, none of which a figure has
+  needed yet.
+
+### Known limits
+
+Built, and wrong or short in a known way. None has blocked a figure.
+
+- **Copies drawn early:** in `006-square`, a copy of `z` was drawn on top of `z` a state early, so it was darker. A bug in how
+  copies are drawn, not fixed.
+- **Roots can swap** if a construction reverses its line's direction, as `line(A, B)` does when A passes through B. Branch labels and
+  a tracker would fix it.
+- **Marks pop in and out:** no `:appearing`, `:vanishing` or `on appear: fade`. Rim-only disks also pop a half-plane on as a circle
+  straightens.
+- **Dashes:** a straight line through exactly three points has none for that moment, and a collection's dashed rims are chords on
+  enormous circles.
+- **Sides on collections** cost about 0.09 ms a circle, so they're capped at 256. Instanced quads with culling are the way past it.
+- **Regions** assume one straight edge per pixel, so sharp tips are approximate, and the 512-entry uniform array caps their vertices.
+- **Tracing** uses a fixed 6-pixel cell, so it misses fine detail and is the least accurate path at small sizes. It still evaluates
+  through `eval`, about 6 ms a frame for one curve in WASM, since `fast.rs` only serves curves and collections.
+- **Terms:** a term that isn't an operator sets tight (`cosh s` printed as `coshs`), and a label is always centered on its point.
+- **A trimmed circle starts due east,** since circles keep only a center and radius.
+- **A Möbius pole exactly on one of the three points** loses that circle for the frame.
+- **Panels** all have to be one size, and a sheet can't hide or move one.
+- **Older figures:** those before the lattice still use `offset`, which a sheet can't move, and their pages keep their own palettes.
+  `lab/explainer/proof.style` sizes its labels in `px`, so they shrink with the figure.
+- **`sin`, `cos` and the rest** take numbers only.
+- **A font names only a role,** so the lattice's bold title isn't there.
+
+### Not built
+
+What a figure has pointed at but not needed yet. `language.md` lists what the specs have that isn't built.
+
+- Statements like `zbi = zb · i` that drive an arrow and its label from one line.
+- Pointing at a thing in one panel and seeing it in the others.
+- Moving a point with the keyboard, which the blog's bounds figure has.
+- Lists as general values (39% of Kris's Desmos graphs), and piecewise values beyond `where` and `otherwise` (26%).
+- `polar` and function graphs as forms. Both reduce to parametric.
+- Dashes anchored at a range's far end.
+
+### Not checked
+
+- **Phones:** a touch drag, the sides benchmark (`lab/sides`), and label springs.
+- **Other browsers and devices.** Everything has been measured on one M1 Pro, mostly in Chrome.
+- **GPU time,** anywhere. Every timing is CPU.
+- **Label springs on a Doyle figure,** and an in-between spot in a video that holds still while its label is still gliding.
+- **Against SVG:** text, arrowheads, sharp corners, zooming, self-intersections and high curvature.
+- **The explainer in a browser.** It was only rendered natively.
+
+### Code
+
+- **`compile.rs` is 4,257 lines, and `compile_flat` alone is 889.** Every language feature has gone through it. It's the one place
+  where changes cost more than they should, so split it before the syntax pass. The parser's `statement` (360 lines) is next.
+- The pairs that must agree are each held by tests: `eval` and the WGSL emitter, stroke coverage and its shader, and `eval` and
+  `fast.rs`, to the bit.
+
 ## Quality bar
 
 **SVG's line and text quality on the blog is the bar.** Kris expected implicit rendering
@@ -387,33 +487,15 @@ Proposed by Claude and not contested so far. Change them freely.
 - Pencil is open source under the MIT license, and it isn't being built as a product.
 - Third-party embeds and the attribution footer are deferred.
 
-## Open questions
+## Notes on the open questions
 
-- **Is WebGPU needed?** Not for strokes or fields: both ran identically on WebGL2. Text is
-  the untested part, and it's the likelier reason. Vello relies on compute shaders, which
-  wgpu's WebGL2 backend lacks. Windfoil's README describes a fragment shader with CPU-built
-  bands, and it needs a WebGPU-capable GPU today. It takes quadratic Bézier contours and
-  gives winding and coverage, not the distance `self.dist` needs.
-- **How should a moving loop's dashes behave?** A loop gets a whole number of dashes, and
-  that number changes as the loop grows, so dashes jump. On the breathing circle that would
-  be about 25 jumps a cycle by arithmetic; it hasn't been watched in motion. The blog hides
-  this with hysteresis, which depends on history and so breaks seeking.
-- **What should `self.dist` mean?** It's still the first-order estimate. Tracing could give
-  a true distance to the curve near it, at a cost.
-- **How far should MathJSON go?** It stays: open expressions are the point (Kris, 2026-11-06). Today the IR's expressions are about
-  99.5% MathJSON-style heads, and the rest are Pencil's (`Where`, `Exists`, `Solved`, `Snap`, `Timeline`, `Smoothstep`, `Mix`,
-  `IfNonnegative`). But it only goes one way, since nothing reads the IR back, and it's the compiled form: functions are inlined and
-  points are split into scalars, so the lattice's IR is about 930 KB from a 150-line file, most of it the exact derivatives its `solve` needs. What's
-  truly open today is the `.pen` text.
-- **What do `px` mean without a design width?** With `style figure { width: 640px }` sizes scale with
-  the output, like an SVG's viewBox, and without one a `px` is a CSS pixel. Text is in `em`, the
-  reader's text size, so labels stay the page's size while lines scale, as the blog's do.
-- **How should a `.pen` file name fonts?** `font: math | sans` are roles, and each renderer maps
-  them to whatever it has. Video currently uses system fonts, which can't be redistributed.
-- **Should still labels snap?** Chrome's crisper text comes mostly from whole-pixel baselines.
-  Video could snap a label whose position can't change, which the IR can tell symbolically, and
-  keep fractions for moving ones. Not built.
-- **Where is `SPEC/18`?** The July 9 chat mentions it, but the plan's list stops at 17.
+The questions themselves are under "Open" above. Detail that didn't fit there:
+
+- **WebGPU and text:** Windfoil's README describes a fragment shader with CPU-built bands, and it needs a WebGPU-capable GPU today.
+  It takes quadratic Bézier contours and gives winding and coverage, not the distance `self.dist` needs.
+- **MathJSON:** today the IR's expressions are about 99.5% MathJSON-style heads, and the rest are Pencil's (`Where`, `Exists`,
+  `Solved`, `Snap`, `Timeline`, `Smoothstep`, `Mix`, `IfNonnegative`). Functions are inlined and points are split into scalars, so
+  the lattice's IR is about 930 KB from a 150-line file, most of it the exact derivatives its `solve` needs.
 
 ## First milestone
 

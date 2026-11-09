@@ -196,22 +196,32 @@ curves, which in Pencil would be one attribute on one curve.
 - The krisselden_com site has since landed on Cloudflare Workers static assets rather
   than Pages, so confirm this mechanism applies there.
 
-## Open questions
+## Open questions, as they stood
+
+Written before anything was built. What's still open is in `goals.md`, under "Open". Where each of these went:
 
 - Do any Desmos pieces need to display the tangential configuration itself, or is the
-  solve always done before anything is drawn? (from the chat)
+  solve always done before anything is drawn? (from the chat) **Solved before drawing so far:** `solve` in
+  `007-lattice` is declared and pure, and no figure has drawn the configuration mid-solve.
 - What is the smallest Rust IR that can describe a curve, now that it replaces closures?
+  **Answered by building it:** forms in `ir.rs`, with MathJSON-style expressions.
 - What does crossing the WASM boundary cost on each drag tick, against the site's budget
-  of well under 10 ms on an older Mac and an iPhone? Measure this in a trace.
+  of well under 10 ms on an older Mac and an iPhone? Measure this in a trace. **Measured as whole frames,** from
+  0.2 ms to about 12 ms in WASM on an M1 Pro (`goals.md`). The boundary alone wasn't separated, and no phone was tried.
 - How much of an imperative figure's logic (linking, drag constraints, animation) can
-  move into a description, and which of the 28 figures would resist it?
+  move into a description, and which of the 28 figures would resist it? **All of it so far,** in the four site
+  figures ported: `Unroll`, `BoundsConstruction`, `SquareZ` and `LatticeMapping`. The rest haven't been tried.
 - Which math properties can each renderer honor? The July 8 chat has path and tag
   selectors, `::inside` / `::outside` facets, and `self.dist` in fill expressions. SVG can fill the inside of a closed curve
   by winding, but anything that varies with signed distance needs a field shader. What
-  should a renderer do with a property it can't draw?
+  should a renderer do with a property it can't draw? **Moot for now:** there's one renderer, wgpu, on the web and
+  natively, and only labels are drawn by the page.
 - Can a style value depend on a param? Highlights over time need it. `Unroll` pops labels
-  in at `a > 0.3`, and constructions fade older beats.
+  in at `a > 0.3`, and constructions fade older beats. **Yes:** style values are expressions, with `show`,
+  `self.life` and `self.focus`.
 - Is the IR interpreted or compiled to a fast evaluator? Symbolic form also makes
-  derivatives available for tangents and normals. The drag budget decides how far to go.
+  derivatives available for tangents and normals. The drag budget decides how far to go. **Both:** `eval` is the
+  definition, `fast.rs` compiles curves and collections, and the GPU gets WGSL.
 - How are constrained params expressed, and who maps a pointer back onto the constraint?
-  The site does this with a hand-written `constrain` on each handle.
+  The site does this with a hand-written `constrain` on each handle. **A `handle` takes an explicit inverse,**
+  and the param's range is the constraint (`language.md`, 2026-11-05).

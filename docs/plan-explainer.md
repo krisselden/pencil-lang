@@ -1,7 +1,7 @@
 # Plan: a first explainer, the limaçon from its central circle
 
 Written 2026-11-06, and reworked 2026-11-08 around Kris's GeoGebra construction, after a first draft built it up from squaring a circle.
-Nothing here is built yet, apart from the sketches in `lab/highlights`. The storyboard and "Decisions for Kris" are what to correct first.
+Phases 1 to 4 are built, and the cut is drafted in `lab/explainer`. Narration and the write-up are open, and "Phases" says what each found.
 
 ## Why this one
 
