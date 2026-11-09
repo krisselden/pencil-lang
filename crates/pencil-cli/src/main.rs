@@ -184,7 +184,7 @@ fn render(args: &Args) -> Result<(), Box<dyn Error>> {
         Some(fonts) => fonts,
         None => &Estimate,
     };
-    let mut frames = composition.prepare(&inputs, width, height, 1.0, widths)?;
+    let mut frames = composition.prepare(&inputs, width, height, 1.0, None, widths)?;
     let mut caches: Vec<_> = composition
         .panels
         .iter()
@@ -283,7 +283,7 @@ fn video(args: &Args) -> Result<(), Box<dyn Error>> {
         // Every frame is computed from its own time alone, so frames could be rendered
         // in any order. Nothing carries over from the frame before.
         let inputs = Inputs::at(n as f64 / args.fps as f64);
-        let mut panels = composition.prepare(&inputs, width, height, 1.0, &fonts)?;
+        let mut panels = composition.prepare(&inputs, width, height, 1.0, None, &fonts)?;
         spring_all(&composition, &mut panels, &inputs, &mut springs)?;
         let mut rgba = gpu.render_panels(
             &mut pipelines,
@@ -387,7 +387,7 @@ fn check(args: &Args) -> Result<(), Box<dyn Error>> {
             time,
             params: args.params.clone(),
         };
-        let frames = composition.prepare(&inputs, width, height, 1.0, &Estimate)?;
+        let frames = composition.prepare(&inputs, width, height, 1.0, None, &Estimate)?;
         let canvas = gpu.render_panels(
             &mut pipelines,
             &on_canvas(&frames),

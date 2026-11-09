@@ -1,7 +1,7 @@
 // The limaçon from its central circle, after Kris's GeoGebra construction, with 0 and 1 in place.
 doc central
 duration 6.2831853
-viewport { x: -1.4..9.2, y: -5.2..5.2, width: 640, height: 640 }
+viewport { x: -1.4..9.2, y: -5.2..5.2 }
 
 param s = 1.0397 in 0.2..2
 param t = 1.1 in 0..6.2831853

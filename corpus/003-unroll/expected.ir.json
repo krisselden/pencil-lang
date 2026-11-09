@@ -252,9 +252,7 @@
   "systems": [],
   "viewport": {
     "fit": 0,
-    "height": null,
     "pad": 0.1,
-    "width": 640.0,
     "x": [-3.8,6.9],
     "y": [-5.3,2.1]
   }

@@ -116,13 +116,22 @@ impl Figure {
 /// The document's own `style` rules come last, as the `document` layer of SPEC/15.
 pub fn build(doc: &str, sheets: &[&str]) -> Result<Figure, Error> {
     let document = parse::parse(doc)?;
-    let scene = compile::compile(&document)?;
+    let mut scene = compile::compile(&document)?;
     let mut parsed = Vec::with_capacity(sheets.len() + 1);
     for sheet in sheets {
         parsed.push(parse::parse(sheet)?);
     }
     parsed.push(document);
     let styles = style::resolve(&scene, &parsed)?;
+    // How big the figure is drawn is the sheet's, and what it shows is the document's.
+    let size = |e: &Option<ir::Expr>| {
+        e.as_ref()
+            .map(|e| compile::constant(e, "a figure's size"))
+            .transpose()
+    };
+    scene.viewport.design_width = size(&styles.panels.width)?;
+    scene.viewport.design_height = size(&styles.panels.height)?;
+    scene.viewport.em = size(&styles.panels.em)?.unwrap_or(ir::DEFAULT_EM);
     let conditional = presence::conditional_marks(&scene, &styles)?;
     Ok(Figure {
         scene,
@@ -225,7 +234,7 @@ pub fn compose(doc: &str, sheets: &[&str]) -> Result<Composition, Error> {
         return Err(error);
     }
 
-    // Where panels sit and how much they show is the style's, and it wins over the viewport.
+    // Where panels sit and how big each is are the sheet's, and its pad wins over the viewport's.
     let constant = |e: &Option<ir::Expr>| {
         e.as_ref()
             .map(|e| compile::constant(e, "a panel's layout"))
@@ -233,15 +242,17 @@ pub fn compose(doc: &str, sheets: &[&str]) -> Result<Composition, Error> {
     };
     for (_, figure) in &mut figures {
         let style = &figure.styles.panels;
-        let (width, height, pad) = (
+        let (width, height, pad, em) = (
             constant(&style.width)?,
             constant(&style.height)?,
             constant(&style.pad)?,
+            constant(&style.em)?,
         );
         let view = &mut figure.scene.viewport;
-        view.design_width = width.or(view.design_width).or(Some(PANEL_SIZE));
-        view.design_height = height.or(view.design_height).or(Some(PANEL_SIZE));
+        view.design_width = Some(width.unwrap_or(PANEL_SIZE));
+        view.design_height = Some(height.unwrap_or(PANEL_SIZE));
         view.pad = pad.unwrap_or(view.pad);
+        view.em = em.unwrap_or(ir::DEFAULT_EM);
     }
     compile::fill_outlines(
         figures
@@ -331,13 +342,16 @@ impl Composition {
         ]
     }
 
-    /// Computes every panel's CPU side. `dpr` is for a figure with no design width.
+    /// Computes every panel's CPU side. `dpr` is device pixels per CSS pixel, for a figure with
+    /// no design width and for the reader's text. `em` is the reader's text size in CSS pixels,
+    /// on a page. Without one, as in a video, it's the sheet's, and scales with the figure.
     pub fn prepare(
         &self,
         inputs: &frame::Inputs,
         width: u32,
         height: u32,
         dpr: f64,
+        em: Option<f64>,
         widths: &dyn terms::TextWidths,
     ) -> Result<Vec<PanelFrame>, Error> {
         (0..self.panels.len())
@@ -345,11 +359,15 @@ impl Composition {
                 let [x, y, w, h] = self.rect_px(i, width, height);
                 let figure = &self.panels[i].figure;
                 let scale = frame::design_scale(figure, w).unwrap_or(dpr);
+                let em = match em {
+                    Some(css) => css * dpr,
+                    None => figure.scene.viewport.em * scale,
+                };
                 Ok(PanelFrame {
                     origin: [x, y],
                     width: w,
                     height: h,
-                    prepared: frame::prepare_with(figure, inputs, w, h, scale, widths)?,
+                    prepared: frame::prepare_with(figure, inputs, w, h, scale, em, widths)?,
                 })
             })
             .collect()
@@ -368,13 +386,10 @@ impl Composition {
         for (panel, frame) in self.panels.iter().zip(frames) {
             let (ox, oy) = (frame.origin[0] as f64, frame.origin[1] as f64);
             if panel.title.is_some() || panel.formula.is_some() {
-                let env = eval::frame_env(&panel.figure, inputs)?;
+                let mut env = eval::frame_env(&panel.figure, inputs)?;
+                frame.prepared.units(&mut env);
                 let styles = &panel.figure.styles;
-                let dpr = frame.prepared.dpr;
-                let size = match &styles.title_size {
-                    Some(s) => eval::real(s, &env)?,
-                    None => TITLE_SIZE,
-                } * dpr;
+                let size = frame::length_or(&styles.title_size, TITLE_SIZE, &env)?;
                 let y = oy - size * 0.75;
                 let mut x = ox;
                 let parts = [
@@ -447,18 +462,12 @@ impl Composition {
         if beats.is_empty() {
             return Ok(());
         }
-        let env = eval::frame_env(figure, inputs)?;
+        let mut env = eval::frame_env(figure, inputs)?;
+        first.prepared.units(&mut env);
         let beat = eval::real(&ir::Expr::sym(compile::BEAT_PARAM), &env)?;
-        let dpr = first.prepared.dpr;
-        let real = |e: &Option<ir::Expr>, fallback: f64| -> Result<f64, Error> {
-            Ok(match e {
-                Some(e) => eval::real(e, &env)?,
-                None => fallback,
-            })
-        };
-        let size = real(&style.size, CAPTION_SIZE)? * dpr;
-        let halo = real(&style.halo, 0.0)? * dpr;
-        let distance = real(&style.distance, CAPTION_DISTANCE)? * dpr;
+        let size = frame::length_or(&style.size, CAPTION_SIZE, &env)?;
+        let halo = frame::length_or(&style.halo, 0.0, &env)?;
+        let distance = frame::length_or(&style.distance, CAPTION_DISTANCE, &env)?;
         let color = match &style.fill {
             Some(c) => eval::color(c, &env)?,
             None => [0.0; 3],

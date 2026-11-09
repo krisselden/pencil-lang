@@ -1,5 +1,7 @@
-// The blog's construction style, in its 560-wide drawing units. Results take their beat's
+// The blog's construction style, in its 560-wide drawing units, and its labels in ems. Results take their beat's
 // color and stay. Scaffolding is thin and muted, and fades once its beat has passed.
+style figure { width: 560px; height: 400px }
+
 style paper      { fill: rgb(242, 240, 235) }
 
 style circle     { width: 2px; opacity: reveal(self.age, 1, 0.75); fill_opacity: reveal(self.age, 0.14, 0.08) }
@@ -23,4 +25,4 @@ style dot.pink   { fill: oklch(0.51, 0.15, 345) }
 style .named     { opacity: reveal(self.age, 1, 1) }
 style P          { fill: rgb(242, 240, 235); stroke: rgb(18, 17, 15); width: 4px; radius: 9px; opacity: 1 }
 
-style one, name_p { fill: rgb(18, 17, 15); size: 12.45px; halo: 2.56px; font: math }
+style one, name_p { fill: rgb(18, 17, 15); size: 1em; halo: 0.2em; font: math }

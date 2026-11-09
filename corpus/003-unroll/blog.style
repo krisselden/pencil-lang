@@ -1,6 +1,9 @@
-// The blog's palette and sizes, in its 640-wide drawing units. Blue is the area, in one
+// The blog's palette and sizes, in its 640-wide drawing units, and its labels in ems, as the
+// blog keeps them a screen size whatever the figure's size. Blue is the area, in one
 // color so triangle and wedge read as one circle's worth. The string, wound and unwound,
 // is ink, and the involute is accent. A dot's radius includes the blog's 3.5-unit outline.
+style figure { width: 640px }
+
 style paper            { fill: rgb(242, 240, 235) }
 style wedge, triangle  { fill: oklch(0.51, 0.145, 250); opacity: 0.22 }
 style circle           { stroke: rgb(110, 106, 99); width: 1.5px }
@@ -11,7 +14,7 @@ style corner           { stroke: rgb(18, 17, 15); width: 1.25px; cap: round; opa
 style O                { fill: rgb(18, 17, 15); radius: 5.25px }
 style P                { fill: rgb(18, 17, 15); radius: 6.25px }
 style Q                { fill: rgb(96, 66, 166); radius: 6.75px }
-style name_o, name_p   { fill: rgb(18, 17, 15); size: 14.22px; halo: 2.93px; font: math }
-style name_q           { fill: rgb(96, 66, 166); size: 14.22px; halo: 2.93px; font: math; opacity: smoothstep(0.2, 0.4, a) }
-style one              { fill: rgb(18, 17, 15); size: 12.55px; halo: 2.93px; font: math }
-style length_a         { fill: rgb(18, 17, 15); size: 12.55px; halo: 2.93px; font: math; opacity: smoothstep(0.4, 0.6, a) }
+style name_o, name_p   { fill: rgb(18, 17, 15); size: 1em; halo: 0.2em; font: math }
+style name_q           { fill: rgb(96, 66, 166); size: 1em; halo: 0.2em; font: math; opacity: smoothstep(0.2, 0.4, a) }
+style one              { fill: rgb(18, 17, 15); size: 0.88em; halo: 0.2em; font: math }
+style length_a         { fill: rgb(18, 17, 15); size: 0.88em; halo: 0.2em; font: math; opacity: smoothstep(0.4, 0.6, a) }

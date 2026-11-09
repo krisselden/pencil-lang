@@ -3,7 +3,7 @@
 doc limacon
 duration 6.2831853
 
-viewport { x: -1.5..10.5, y: -6..6, width: 640, height: 640 }
+viewport { x: -1.5..10.5, y: -6..6 }
 
 let a = 8
 let x0 = (a + 1 / a) / 2

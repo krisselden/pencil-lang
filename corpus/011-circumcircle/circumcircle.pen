@@ -4,7 +4,7 @@
 doc circumcircle
 duration 17.95
 
-viewport { x: -2.4..2.4, y: -1.5..1.5, width: 640, height: 400 }
+viewport { x: -2.4..2.4, y: -1.5..1.5 }
 
 fn route(t) = (cos(3·t + 4), sin(2·t + 5.88))
 

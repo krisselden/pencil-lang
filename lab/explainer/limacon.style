@@ -1,5 +1,7 @@
 // On dark paper from the start, with the circles through 1 in the warm they'll glow in at the end,
 // and the central circle in the cool. Goes after theme.style and dark.style.
+style figure { width: 1280px; height: 720px }
+
 let warm = rgb(255, 128, 176)
 let cool = rgb(150, 132, 255)
 let gold = rgb(255, 196, 92)

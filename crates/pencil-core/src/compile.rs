@@ -2794,14 +2794,7 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
                     inverse,
                 });
             }
-            Item::Viewport {
-                x,
-                y,
-                width,
-                height,
-                fit,
-                pad,
-            } => {
+            Item::Viewport { x, y, fit, pad } => {
                 let bound =
                     |range: &Option<[Expr; 2]>, fallback: [f64; 2]| -> Result<[f64; 2], Error> {
                         match range {
@@ -2824,8 +2817,10 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
                 scene.viewport = Viewport {
                     x: bound(x, [-2.0, 2.0])?,
                     y: bound(y, [-2.0, 2.0])?,
-                    design_width: optional(width, "a viewport's width")?,
-                    design_height: optional(height, "a viewport's height")?,
+                    // A sheet's `style figure` sets these, or a `style panel`.
+                    design_width: None,
+                    design_height: None,
+                    em: crate::ir::DEFAULT_EM,
                     fit: Vec::new(),
                     fit_curves: Vec::new(),
                     fit_families: Vec::new(),
@@ -3004,7 +2999,9 @@ mod tests {
         assert!(err.message.contains("uses `time`"), "{err}");
         let err = scene("param a in 0..time").unwrap_err();
         assert!(err.message.contains("uses `time`"), "{err}");
-        assert!(scene("viewport { x: -2·pi..2·pi, y: -2..2, width: 640 }").is_ok());
+        assert!(
+            scene("viewport { x: -2·pi..2·pi, y: -2..2 } style figure { width: 640px }").is_ok()
+        );
     }
 
     #[test]
@@ -4014,8 +4011,8 @@ mod tests {
     #[test]
     fn an_outline_needs_a_panel_that_exists() {
         let doc = parse(
-            "panel a { viewport { x: 0..1, y: 0..1, width: 10, height: 10 } outline o = b }
-             panel b { viewport { x: 1..2, y: 3..4, width: 10, height: 10 } }",
+            "panel a { viewport { x: 0..1, y: 0..1 } style figure { width: 10px; height: 10px } outline o = b }
+             panel b { viewport { x: 1..2, y: 3..4 } style figure { width: 10px; height: 10px } }",
         )
         .unwrap();
         let panels = compile_panels(&doc).unwrap();
@@ -4247,14 +4244,13 @@ mod tests {
     #[test]
     fn a_fit_viewport_resolves_later_names() {
         let s = scene(
-            "viewport { fit: c P, pad: 0.05, width: 560, height: 400 }
+            "viewport { fit: c P, pad: 0.05 }
              let P = (5, 5)
              curve c = circle((0, 0), (1, 0))",
         )
         .unwrap();
         assert_eq!(s.viewport.fit.len(), 2);
         assert_eq!(s.viewport.pad, 0.05);
-        assert_eq!(s.viewport.design_height, Some(400.0));
         let err = scene("viewport { fit: nope }").unwrap_err();
         assert!(err.message.contains("needs a point, circle"), "{err}");
     }

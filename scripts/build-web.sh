@@ -1,6 +1,6 @@
 #!/bin/sh
 # Builds the browser host into web/pkg. Serve the repo root, then open /web/:
-#   python3 -m http.server 8741
+#   scripts/serve.py
 set -e
 cd "$(dirname "$0")/.."
 

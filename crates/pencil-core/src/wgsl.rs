@@ -290,7 +290,9 @@ pub fn emit_expr(e: &Expr) -> String {
             ("Mix", _) => call("mix", args),
             ("Snap", [x]) => format!("snap({}, {})", emit_expr(x), literal(SNAP_POWER)),
             ("Snap", [x, power]) => format!("snap({}, {})", emit_expr(x), emit_expr(power)),
-            ("Pixels", [a]) => emit_expr(a),
+            // Lengths are in world units, as on the CPU: `pixel` is world units per device pixel.
+            ("Pixels", [a]) => format!("({} * u.dpr * pixel)", emit_expr(a)),
+            ("Ems", [a]) => format!("({} * u.em * pixel)", emit_expr(a)),
             _ => panic!(
                 "the type checker admitted `{head}` with {} arguments",
                 args.len()
@@ -308,7 +310,7 @@ fn opacity_of(style: &MarkStyle) -> String {
 
 pub fn emit(figure: &Figure) -> String {
     let mut out = format!(
-        "struct Uniforms {{ time: f32, width: f32, height: f32, dpr: f32, view: vec4<f32>, origin: vec2<f32>, values: array<vec4<f32>, {VALUE_VEC4S}> }}\n\
+        "struct Uniforms {{ time: f32, width: f32, height: f32, dpr: f32, view: vec4<f32>, origin: vec2<f32>, em: f32, values: array<vec4<f32>, {VALUE_VEC4S}> }}\n\
          @group(0) @binding(0) var<uniform> u: Uniforms;\n\
          @group(0) @binding(1) var coverage: texture_2d_array<f32>;\n\
          @group(0) @binding(2) var<uniform> geometry: array<vec4<f32>, {GEOMETRY_VEC4S}>;\n\
@@ -428,10 +430,10 @@ pub fn emit(figure: &Figure) -> String {
                     emit_expr(&at[1]),
                 ));
                 let radius = match &style.radius {
-                    Some(r) => emit_expr(r),
-                    None => literal(DEFAULT_DOT_RADIUS),
+                    Some(r) => format!("{} / pixel", emit_expr(r)),
+                    None => format!("{} * u.dpr", literal(DEFAULT_DOT_RADIUS)),
                 };
-                out.push_str(&format!("        let radius = {radius} * u.dpr;\n"));
+                out.push_str(&format!("        let radius = {radius};\n"));
                 out.push_str("        let offset = local - center;\n");
                 out.push_str("        let rho = length(offset);\n");
                 out.push_str(
@@ -570,12 +572,10 @@ pub fn emit(figure: &Figure) -> String {
                 layer += 1;
             } else if measured {
                 let width = match &style.width {
-                    Some(w) => emit_expr(w),
-                    None => literal(DEFAULT_STROKE_WIDTH),
+                    Some(w) => format!("{} / pixel", emit_expr(w)),
+                    None => format!("{} * u.dpr", literal(DEFAULT_STROKE_WIDTH)),
                 };
-                out.push_str(&format!(
-                    "        let half_width = {width} * u.dpr / 2.0;\n"
-                ));
+                out.push_str(&format!("        let half_width = {width} / 2.0;\n"));
                 out.push_str(
                     "        let stroke_coverage = box_coverage(half_width - abs(dist_px), normal) - box_coverage(-half_width - abs(dist_px), normal);\n",
                 );

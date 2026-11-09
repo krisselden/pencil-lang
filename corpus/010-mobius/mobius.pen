@@ -24,7 +24,7 @@ let w = i - 1 - sqrt(-1 - 2·i)
 
 fn f(z) = (a·z - b) / (c·z + d)
 
-viewport { x: -10..10, y: -14..14, width: 640, height: 896 }
+viewport { x: -10..10, y: -14..14 }
 
 // A Möbius map keeps circles and which way round they run, so three points of each circle, sent
 // through it in order, are its image, with the image of its disk on the negative side. That's what's

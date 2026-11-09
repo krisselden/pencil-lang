@@ -1,3 +1,5 @@
+style figure { width: 640px; height: 520px }
+
 style curves { stroke: red; width: 1px; opacity: 0.5 }
 style curves.square { stroke: accent }
 style curves.moving { stroke: red; width: 1.5px; opacity: 0.8 }

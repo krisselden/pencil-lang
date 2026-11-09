@@ -7,7 +7,7 @@ duration 30
 
 viewport {
   fit: c d t c_1 d_1 t_m e_1 g_1 e p r q_1 s p_m r_m p_1 near_zero,
-  pad: 0.04, width: 560, height: 400
+  pad: 0.04
 }
 
 fn dir(t) = (cos(t), sin(t))

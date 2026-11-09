@@ -6,7 +6,7 @@ use pencil_core::terms::Estimate;
 use pencil_core::{build, compose, eval};
 
 const STORY: &str = "
-    viewport { x: -2..2, y: -2..2, width: 200, height: 200 }
+    viewport { x: -2..2, y: -2..2 } style figure { width: 200px; height: 200px }
     pause 0.5
     beat grow \"A circle.\" for 1 show c
     beat spin \"A point goes round.\" for 2 show P focus P
@@ -34,9 +34,17 @@ fn what_a_beat_has_not_shown_is_not_drawn() {
     let f = build(STORY, &[SHEET]).unwrap();
     let id = |name: &str| f.scene.marks.iter().position(|m| m.id == name).unwrap();
     let shown = |time: f64| {
-        prepare_with(&f, &at(time), 200, 200, 1.0, &Estimate)
-            .unwrap()
-            .shown
+        prepare_with(
+            &f,
+            &at(time),
+            200,
+            200,
+            1.0,
+            pencil_core::ir::DEFAULT_EM,
+            &Estimate,
+        )
+        .unwrap()
+        .shown
     };
     let (c, p, axis) = (id("c"), id("P"), id("axis"));
     // Before it's shown, and after it's dropped, a mark isn't there at all.
@@ -70,7 +78,9 @@ fn a_sheet_reads_each_marks_life_and_focus() {
 fn captions_are_drawn_only_when_a_sheet_asks() {
     let captions = |sheets: &[&str], time: f64| {
         let c = compose(STORY, sheets).unwrap();
-        let frames = c.prepare(&at(time), 200, 200, 1.0, &Estimate).unwrap();
+        let frames = c
+            .prepare(&at(time), 200, 200, 1.0, None, &Estimate)
+            .unwrap();
         c.labels(&frames, &at(time), &Estimate)
             .unwrap()
             .into_iter()
@@ -99,7 +109,9 @@ fn captions_are_drawn_only_when_a_sheet_asks() {
     assert!(captions(&asked, 5.0).is_empty());
     let label = |time: f64| {
         let c = compose(STORY, &asked).unwrap();
-        let frames = c.prepare(&at(time), 200, 200, 1.0, &Estimate).unwrap();
+        let frames = c
+            .prepare(&at(time), 200, 200, 1.0, None, &Estimate)
+            .unwrap();
         c.labels(&frames, &at(time), &Estimate).unwrap()
     };
     let caption = label(1.2)

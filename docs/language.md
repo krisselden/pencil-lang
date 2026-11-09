@@ -66,15 +66,17 @@ direction. A collection's `for i in a..b` counts up, and is empty when `b` is be
 
 ### Viewport
 
-`viewport { x: -2..2, y: -2..2, width: 640, height: 400 }`
+`viewport { x: -2..2, y: -2..2 }`
 
 - `x`, `y`: a fixed world window. It always has one scale for both axes, so at a different shape it shows more, rather than stretching.
   Its bounds are constant, so they can't read `time` or a param. To follow something that moves, `fit` it.
-- `width`, `height`: the design size. With `width`, `px` sizes scale with the output, as an
-  SVG's do with its `viewBox`. Without it, a `px` is a CSS pixel.
 - `fit: a b c`: bounds these points and circles each frame instead of a fixed window, ignoring
   any param a handle has taken over, so a drag doesn't rescale the figure under the pointer.
 - `pad: 0.04`: extra space around a `fit`, as a fraction of its size.
+
+A viewport says what part of the plane the figure shows, and not how big it's drawn. That depends on where it's drawn, so it's
+a sheet's: `style figure { width: 640px; height: 400px }` (see Styles). The same figure can be 16:9 in a video's sheet and fit a
+page's column in another's.
 
 ### Beats
 
@@ -371,12 +373,24 @@ the color stays with the disk. A style can tell which it is from `self.curvature
 | Name | Meaning |
 |---|---|
 | `self.dist` | Distance to the mark, in `fill`, `stroke` and `fill_opacity`, on marks that have one. |
-| `self.pixel` | How big a device pixel is in world units, wherever `self.dist` is, so that a glow can be a number of pixels across. |
+| `self.pixel` | How big a device pixel is in world units, wherever `self.dist` is, so that a glow can be a number of the screen's pixels across. It's what the screen can resolve, not the design: `1px` is a device pixel only at the design size on a 1× screen. |
 | `self.curvature` | A circle's signed curvature: above 0 counterclockwise, below 0 clockwise, and 0 on a line. |
 | `self.t` | Position along a stroke, 0 to 1, in `width`. |
 | `self.age` | See Beats. |
 | `self.life` | How present the mark is, from 0 before a beat shows it to 1, and back to 0 as one drops it, moving with those beats. 1 for a mark no beat names. |
 | `self.focus` | How much the beats are about the mark, from 0 to 1, changing as a beat that names something moves. 1 until a beat names anything. |
+
+**A length is in one of three units,** and they're all lengths, so they mix: `width: 1px + 0.01`, and `self.dist / 1px` is
+a distance in design pixels.
+
+| Unit | Is | Scales with |
+|---|---|---|
+| a bare number | The figure's own units, as in the document. `width: 0.02` is that wide in the plane, so it grows as a `fit` zooms in. | The math |
+| `px` | A design pixel, as SVG's `px` is inside a `viewBox`. `style figure { width }` says how many there are across. | The figure as it's drawn |
+| `em` | The reader's text size. On a page, the page's font size where the figure is, so text matches the text around it at any size the figure is drawn. In a video, `style figure { em }`, 17 px by default. | The reader's text |
+
+Text goes in `em`, as the theme's does, and strokes, dots and arrows in `px`. A figure's own size and a panel's are design
+pixels, so they can't be in `em`.
 
 **Colors can be scaled and added:** `white·4`, `mix(a, b, t) + c / 3`. They aren't clipped until the end, and `rgb` can go past 255. `sinh`, `cosh` and `tanh` also work in a style. So a glow reads
 `fill_opacity: tanh(2·self.pixel / abs(self.dist))`.
@@ -386,31 +400,33 @@ the color stays with the disk. A style can tell which it is from `self.curvature
 | `fill` | Regions, dots, labels, facets | A color. A field's `fill` needs a facet. |
 | `fill_opacity` | Anything filled | Scales only the fill, on top of `opacity`. |
 | `stroke` | Curves, lines, regions, dots | A color. |
-| `width` | Strokes | In `px`. Can vary along the stroke with `self.t`. |
+| `width` | Strokes | A length. Can vary along the stroke with `self.t`. |
 | `head`, `head_span` | Curves | With `head: 13px`, a curve ends in an arrowhead. `head_span: 1` holds it to 60% of the last 1 of the curve's parameter, so it can't dwarf a spiral's tight turns. |
-| `dash`, `gap` | Lines | In `px`. A loop gets a whole number of dashes, stretched to fit. |
+| `dash`, `gap` | Lines | Lengths. A loop gets a whole number of dashes, stretched to fit. |
 | `cap` | Lines | `butt` (default) or `round`. |
 | `draw` | Strokes | A hint: `auto` (default), `line` or `field`. |
 | `blend` | Edges, sides | `gamma` (default, as SVG does), `linear`, or `add`, which adds to what's there in display values and never covers it. |
 | `tone` | `paper` | `clip` (default) or `tanh`, which runs the finished picture through `tanh` in display values, so that what `blend: add` piles up stays in range. Or a number from 0 to 1 between them, which can change, so a figure can turn into one that adds light: `tone: glow` with a beat named `glow`. |
 | `opacity` | Any mark | Scales the whole mark. |
-| `ticks`, `tick` | Segments | How many short marks cross its middle, saying it's as long as another with as many, and how long each is, in `px`, 10 by default. Drawn in its stroke without its dashes, once a trimmed segment reaches its middle. |
-| `leader`, `leader_gap` | Labels | A line from its point to its text, this wide, in `px`, in the text's color. It starts `leader_gap` from the point, so it can meet a ring, and stops a little short of the text, wherever the label settles. |
-| `radius` | Dots, circles, outlines | In `px`. A dot's size, a cap on a collection's circles, or an outline's least half-size. |
-| `size` | Labels | In `px`. |
-| `halo` | Labels | Full width in `px`, in the paper's color. |
+| `ticks`, `tick` | Segments | How many short marks cross its middle, saying it's as long as another with as many, and how long each is, 10 px by default. Drawn in its stroke without its dashes, once a trimmed segment reaches its middle. |
+| `leader`, `leader_gap` | Labels | A line from its point to its text, this wide, in the text's color. It starts `leader_gap` from the point, so it can meet a ring, and stops a little short of the text, wherever the label settles. |
+| `radius` | Dots, circles, outlines | A length. A dot's size, a cap on a collection's circles, or an outline's least half-size. |
+| `size` | Labels | A length, usually in `em`. Defaults to 1 em. |
+| `halo` | Labels | Its full width, in the paper's color. |
 | `font` | Labels | A role: `sans` (default) or `math`. |
 | `place` | Labels | `fixed` (default) at its `offset`, or `settle`, tied there by a spring and pushed off what's drawn and other labels. |
-| `head` | Arrows | The head's length in `px`. Defaults to 14. |
-| `distance` | Labels | In `px`. How far a label written with `away` sits from its point. Defaults to 16. |
+| `head` | Arrows | The head's length. Defaults to 14 px. |
+| `distance` | Labels | How far a label written with `away` sits from its point. Defaults to 16/17 em. |
 | `show` | Any mark | Draws it only while this is above 0, decided per frame. Can also read `view.width`, the view's width in world units, for zoom levels. |
 | `trim` | Curves, lines, arrows, circles | How much of the stroke is drawn, from its start: 0 to 1 of a curve's parameter, or of a straight line's length. An arrow grows from its tail. A circle starts due east of its center and runs counterclockwise, and is drawn as a line to be trimmed. A collection of curves can trim each one with its variables. A traced curve, a region, dots and circles in a collection have no start, so they can't. |
 
-**Panels are laid out by two rules.** Their values hold for the whole figure, so they can't read a param, and a rule for a panel
-that doesn't exist is a mistake. A panel's `width` and `height` also win over its viewport's, and all panels have to be one size, for now.
+**A figure's size is a sheet's, and so is how panels are laid out.** These values hold for the whole figure, so they can't read a
+param, and a rule for a panel that doesn't exist is a mistake. All panels have to be one size, for now.
 
 | Rule | Property | Meaning |
 |---|---|---|
+| `style figure` | `width`, `height` | In `px`, a figure's design size, for one without panels. With `width`, `px` sizes scale with the output, as an SVG's do with its `viewBox`, and without it a `px` is a CSS pixel. With both, they give its shape, and without `height` the shape is its viewport's. A page sizes the figure's canvas to its column, keeping that shape. |
+| | `em` | In `px`, how big an `em` is where there's no page to say, as in a video. Defaults to 17. |
 | `style panels` | `columns` | How many columns. Defaults to 1. |
 | | `gap` | In `px`, between panels. |
 | | `title` | In `px`, the band above each panel for its title. |
@@ -424,7 +440,7 @@ the move is shorter.
 |---|---|---|
 | `style caption` | `fill`, `size`, `halo` | As a label's. `size` defaults to 18 px. |
 | | `font` | `sans` (default) or `math`. |
-| | `distance` | In `px`, from the bottom of the canvas to the caption's center. Defaults to 28. |
+| | `distance` | From the bottom of the canvas to the caption's center. Defaults to 28 px. |
 | | `pad` | How much room a `fit` leaves around what it fits, as a fraction of its size. Defaults to 0.1. |
 
 ## Decisions
@@ -433,6 +449,8 @@ Newest first. "Why" is the reason at the time, so these can be revisited.
 
 | Date | Decision | Why |
 |---|---|---|
+| 2026-11-09 | Lengths have units: a bare number is the figure's own, `px` a design pixel and `em` the reader's text size | Pages shrink a figure to fit, and its strokes thin with it as an SVG's do, which reads fine. Its labels shrinking too is what made it hard to read, and the blog keeps them a screen size. Saying which frame a length is in, rather than a hidden rule that labels are different, keeps a title that should scale and a hairline that shouldn't expressible. And all three are lengths, so they mix |
+| 2026-11-09 | A figure's design size is a sheet's `style figure`, not its viewport's | How big a figure is drawn isn't its math: a video wants 16:9 and a page wants its column. Panels already took theirs from a sheet. A page can work out the shape when it's built, from the document and its sheets, and write it into its markup, so nothing moves as the figure loads |
 | 2026-11-08 | A leader is drawn with its label, by each renderer, not by the shader | Only the renderer knows where a settling label ends up and how wide its text really is, and the shader and the oracle both skip labels. `frame::leader_ends` is the geometry, and the page repeats it in a few lines |
 | 2026-11-08 | A term's name is its identity and a tag, and what it prints is separate | The roulette's arms and their terms have to share a color and a focus, and `term.2ab` can't be a selector. A name says which term it is, and the text can be anything |
 | 2026-11-08 | `trim` cuts a stroke where it becomes segments, and a circle with one is drawn as a line | The GPU and the CPU oracle share those segments, so they can't disagree, and the shader needs nothing new. A curve is cut along its parameter, since that's the order its math goes in, and fully drawn it's the curve as it was, so a loop's dashes don't jump as it closes. A circle keeps only its center and radius, so it can't start at the point it was drawn through yet: a compass circle can be written as a parametric curve that does |

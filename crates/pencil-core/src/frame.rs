@@ -16,8 +16,9 @@ use crate::terms;
 pub const VALUE_VEC4S: usize = 64;
 pub const GEOMETRY_VEC4S: usize = 512;
 
-pub const DEFAULT_LABEL_SIZE: f64 = 17.0;
-const DEFAULT_LABEL_DISTANCE: f64 = 16.0;
+/// A label's size and distance when its style doesn't say, in ems: the reader's text size.
+pub const DEFAULT_LABEL_SIZE: f64 = 1.0;
+const DEFAULT_LABEL_DISTANCE: f64 = 16.0 / 17.0;
 pub const DEFAULT_DOT_RADIUS: f64 = 3.0;
 pub const DEFAULT_STROKE_WIDTH: f64 = 1.0;
 /// How many pieces a curve is cut into to fit a view around it.
@@ -111,8 +112,12 @@ pub struct Prepared {
     pub strokes: Vec<Vec<f32>>,
     pub labels: Vec<Label>,
     pub paper: [f64; 3],
-    /// Device pixels per style pixel.
+    /// Device pixels per `px`, a design pixel.
     pub dpr: f64,
+    /// Device pixels per `em`, the reader's text size.
+    pub em: f64,
+    /// World units per device pixel.
+    pub pixel: f64,
     /// This frame's world window, which a `fit` viewport computes.
     pub view: Viewport,
 }
@@ -148,18 +153,54 @@ pub fn device(x: f64, y: f64, view: &Viewport, width: u32, height: u32) -> (f64,
     )
 }
 
-pub fn dot_radius(style: &MarkStyle, env: &Env) -> Result<f64, Error> {
-    match &style.radius {
-        Some(r) => eval::real(r, env),
-        None => Ok(DEFAULT_DOT_RADIUS),
+/// Puts a frame's units in an env, so that a style's lengths can be worked out there: world
+/// units per device pixel, and so per `px` and per `em` as well.
+pub fn set_units(env: &mut Env, pixel: f64, dpr: f64, em: f64) {
+    env.set(eval::UNIT_DEVICE, pixel);
+    env.set(eval::UNIT_PX, pixel * dpr);
+    env.set(eval::UNIT_EM, pixel * em);
+}
+
+impl Prepared {
+    /// Puts this frame's units in an env, as `set_units`.
+    pub fn units(&self, env: &mut Env) {
+        set_units(env, self.pixel, self.dpr, self.em);
     }
 }
 
-pub fn stroke_width(style: &MarkStyle, env: &Env) -> Result<f64, Error> {
-    match &style.width {
-        Some(w) => eval::real(w, env),
-        None => Ok(DEFAULT_STROKE_WIDTH),
+/// A style's length, in device pixels. It's worked out in world units, as a bare number is in
+/// the figure's own, and `px` and `em` convert.
+pub fn length(e: &Expr, env: &Env) -> Result<f64, Error> {
+    let pixel = env
+        .get(eval::UNIT_DEVICE)
+        .ok_or_else(|| Error::new("a length needs a frame to be measured in"))?;
+    Ok(eval::real(e, env)? / pixel)
+}
+
+/// A style's length, or a default in design pixels, in device pixels.
+pub fn length_or(e: &Option<Expr>, px: f64, env: &Env) -> Result<f64, Error> {
+    match e {
+        Some(e) => length(e, env),
+        None => length(&Expr::app("Pixels", vec![Expr::Num(px)]), env),
     }
+}
+
+/// A style's length, or a default in ems, in device pixels.
+pub fn length_or_em(e: &Option<Expr>, ems: f64, env: &Env) -> Result<f64, Error> {
+    match e {
+        Some(e) => length(e, env),
+        None => length(&Expr::app("Ems", vec![Expr::Num(ems)]), env),
+    }
+}
+
+/// A dot's radius, in device pixels.
+pub fn dot_radius(style: &MarkStyle, env: &Env) -> Result<f64, Error> {
+    length_or(&style.radius, DEFAULT_DOT_RADIUS, env)
+}
+
+/// A stroke's width, in device pixels.
+pub fn stroke_width(style: &MarkStyle, env: &Env) -> Result<f64, Error> {
+    length_or(&style.width, DEFAULT_STROKE_WIDTH, env)
 }
 
 fn pair(p: &[Expr; 2], env: &Env) -> Result<(f64, f64), Error> {
@@ -445,7 +486,7 @@ fn filled(text: &str, values: &[Expr], env: &Env) -> Result<String, Error> {
 
 /// Computes a frame's CPU side, with labels where they settle. For motion that doesn't
 /// jump, a caller then applies a spring: `place::spring`, or a page's own over its clock.
-/// `dpr` is device pixels per style pixel.
+/// `dpr` is device pixels per `px`, and an `em` is the sheet's, as in a video.
 pub fn prepare(
     figure: &Figure,
     inputs: &Inputs,
@@ -453,7 +494,8 @@ pub fn prepare(
     height: u32,
     dpr: f64,
 ) -> Result<Prepared, Error> {
-    prepare_with(figure, inputs, width, height, dpr, &terms::Estimate)
+    let em = figure.scene.viewport.em * dpr;
+    prepare_with(figure, inputs, width, height, dpr, em, &terms::Estimate)
 }
 
 /// `prepare`, with a renderer's own text widths, for laying out expressions.
@@ -463,12 +505,16 @@ pub fn prepare_with(
     width: u32,
     height: u32,
     dpr: f64,
+    em: f64,
     widths: &dyn terms::TextWidths,
 ) -> Result<Prepared, Error> {
-    let env = eval::frame_env(figure, inputs)?;
+    let mut env = eval::frame_env(figure, inputs)?;
     let scene = &figure.scene;
     let view_now = view_for(figure, inputs, width, height)?;
     let view = &view_now;
+    // The view keeps one scale for both axes.
+    let pixel = (view.x[1] - view.x[0]) / width as f64;
+    set_units(&mut env, pixel, dpr, em);
 
     // `show` can ask about the view, and nothing else can.
     let mut seen = env.clone();
@@ -594,17 +640,18 @@ pub fn prepare_with(
         let (x, y) = pair(at, &env)?;
         let (dx, dy) = device(x, y, view, width, height);
         let (ox, oy) = match away {
-            None => pair(offset, &env)?,
+            // An offset is in design pixels.
+            None => {
+                let (ox, oy) = pair(offset, &env)?;
+                (ox * dpr, oy * dpr)
+            }
             // The document says which way, in its own coordinates, and the style how far.
             Some(direction) => {
                 let (ax, ay) = pair(direction, &env)?;
                 let (sx, sy) = device(x + ax, y + ay, view, width, height);
                 let (along_x, along_y) = (sx - dx, sy - dy);
                 let length = along_x.hypot(along_y);
-                let distance = match &style.distance {
-                    Some(d) => eval::real(d, &env)?,
-                    None => DEFAULT_LABEL_DISTANCE,
-                };
+                let distance = length_or_em(&style.distance, DEFAULT_LABEL_DISTANCE, &env)?;
                 if length > 0.0 {
                     (along_x / length * distance, along_y / length * distance)
                 } else {
@@ -615,20 +662,14 @@ pub fn prepare_with(
         labels.push(Label {
             id: mark.id.clone(),
             text: filled(text, values, &env)?,
-            x: dx + ox * dpr,
-            y: dy + oy * dpr,
-            size: match &style.size {
-                Some(s) => eval::real(s, &env)?,
-                None => DEFAULT_LABEL_SIZE,
-            } * dpr,
+            x: dx + ox,
+            y: dy + oy,
+            size: length_or_em(&style.size, DEFAULT_LABEL_SIZE, &env)?,
             color: match &style.negative {
                 Some(c) => eval::color(c, &env)?,
                 None => [0.0; 3],
             },
-            halo: match &style.halo {
-                Some(h) => eval::real(h, &env)?,
-                None => 0.0,
-            } * dpr,
+            halo: length_or(&style.halo, 0.0, &env)?,
             opacity: match &style.opacity {
                 Some(o) => eval::real(o, &env)?.clamp(0.0, 1.0),
                 None => 1.0,
@@ -638,11 +679,8 @@ pub fn prepare_with(
             place: style.place,
             leader: match &style.leader {
                 Some(w) => Some(Leader {
-                    width: eval::real(w, &env)? * dpr,
-                    gap: match &style.leader_gap {
-                        Some(g) => eval::real(g, &env)?,
-                        None => 0.0,
-                    } * dpr,
+                    width: length(w, &env)?,
+                    gap: length_or(&style.leader_gap, 0.0, &env)?,
                 }),
                 None => None,
             },
@@ -662,6 +700,8 @@ pub fn prepare_with(
         labels,
         paper,
         dpr,
+        em,
+        pixel,
         view: view_now,
     };
     place::settle(figure, &env, &mut prepared, width, height)?;
@@ -674,7 +714,7 @@ mod tests {
     #[test]
     fn a_leader_runs_from_its_gap_to_short_of_its_text() {
         let figure = crate::build(
-            "viewport { x: -2..2, y: -2..2, width: 400 }\nlabel n = \"P\" at (0, 0) away (1, 0)",
+            "viewport { x: -2..2, y: -2..2 } style figure { width: 400px }\nlabel n = \"P\" at (0, 0) away (1, 0)",
             &["style n { size: 20px; distance: 60px; leader: 1px; leader_gap: 8px; place: fixed }"],
         )
         .unwrap();
@@ -784,7 +824,7 @@ mod tests {
 
     #[test]
     fn a_design_width_scales_sizes_with_the_output() {
-        let doc = "viewport { x: 0..4, y: 0..4, width: 200 }
+        let doc = "viewport { x: 0..4, y: 0..4 } style figure { width: 200px }
                    label n = \"P\" at (2, 2)";
         let f = build(doc, &["style n { size: 10px }"]).unwrap();
         let scale = design_scale(&f, 400).unwrap();
@@ -792,6 +832,73 @@ mod tests {
         let p = prepare(&f, &Inputs::at(0.0), 400, 400, scale).unwrap();
         assert_eq!(p.labels[0].size, 20.0);
         assert_eq!(p.dpr, 2.0);
+    }
+
+    #[test]
+    fn a_sheet_sizes_the_figure_and_another_sheet_can_size_it_again() {
+        let doc = "viewport { x: 0..4, y: 0..2 }
+                   let P = (1, 1)
+                   dot P";
+        let size = |sheets: &[&str]| crate::compose(doc, sheets).unwrap().size;
+        // Without a size, the shape is the window's.
+        assert_eq!(size(&[]), [4.0, 2.0]);
+        let page = "style figure { width: 640px; height: 320px }";
+        let video = "style figure { width: 1280px; height: 720px }";
+        assert_eq!(size(&[page]), [640.0, 320.0]);
+        assert_eq!(size(&[page, video]), [1280.0, 720.0]);
+        assert_eq!(design_scale(&build(doc, &[video]).unwrap(), 640), Some(0.5));
+
+        let err = |sheet: &str| build(doc, &[sheet]).unwrap_err().message;
+        assert!(err("style figure { width: 640 }").contains("needs a unit"));
+        assert!(err("style figure { pad: 0.1 }").contains("not `pad`"));
+        let panels = "panel a { viewport { x: 0..1, y: 0..1 } }
+                      panel b { viewport { x: 0..1, y: 0..1 } }";
+        let err = crate::compose(panels, &["style figure { width: 300px }"]).unwrap_err();
+        assert!(err.message.contains("`style panel`"), "{err}");
+    }
+
+    #[test]
+    fn a_length_is_in_the_figure_s_units_unless_it_says_px_or_em() {
+        let doc = "viewport { x: 0..4, y: 0..4 }
+                   let P = (2, 2)
+                   dot P
+                   label n = \"P\" at P
+                   curve c = circle(P, (3, 2))";
+        let sheet = "style figure { width: 200px; em: 10px }";
+        let f = build(doc, &[sheet]).unwrap();
+        // 400 device pixels across 4 units, and drawn at twice its design width.
+        let p = prepare(&f, &Inputs::at(0.0), 400, 400, 2.0).unwrap();
+        assert_eq!((p.pixel, p.dpr, p.em), (0.01, 2.0, 20.0));
+        let mut env = crate::eval::Env::new(0.0);
+        p.units(&mut env);
+        let device = |text: &str| {
+            let f = build(doc, &[sheet, &format!("style c {{ width: {text} }}")]).unwrap();
+            let c = f.scene.marks.iter().position(|m| m.id == "c").unwrap();
+            (stroke_width(&f.styles.marks[c], &env).unwrap() * 1e9).round() / 1e9
+        };
+        assert_eq!(device("0.1"), 10.0);
+        assert_eq!(device("2px"), 4.0);
+        assert_eq!(device("1.5em"), 30.0);
+        assert_eq!(device("0.05 + 1px"), 7.0);
+        assert_eq!(device("2·(1em - 1px)"), 36.0);
+
+        // A label's size in ems follows the reader's text size, and not the figure's.
+        let sized = |em: f64| {
+            let f = build(doc, &[sheet, "style n { size: 1em }"]).unwrap();
+            prepare_with(&f, &Inputs::at(0.0), 400, 400, 2.0, em, &terms::Estimate)
+                .unwrap()
+                .labels
+                .iter()
+                .find(|l| l.id == "n")
+                .unwrap()
+                .size
+        };
+        assert_eq!(sized(32.0), 32.0);
+        assert_eq!(sized(24.0), 24.0);
+
+        // A figure's own size can't be in ems: they're the reader's, and the figure is the design.
+        let err = build(doc, &["style figure { width: 40em }"]).unwrap_err();
+        assert!(err.message.contains("can't size a figure"), "{err}");
     }
 
     const DRAG: &str = "

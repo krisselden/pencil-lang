@@ -49,7 +49,7 @@ fn passes(output: Option<Output>) {
 fn a_thin_line_through_a_pixel_center_has_the_same_coverage() {
     passes(check(
         "thin-lines",
-        "viewport { x: 0..320, y: 0..320, width: 320, height: 320 }
+        "viewport { x: 0..320, y: 0..320 } style figure { width: 320px; height: 320px }
          curves c = parametric (t): (9·s + 4.5 + 0.9·t, 9·r + 4.5 + 0.4359·t) for t in -3.3..3.7 for s in 0..34, r in 0..34",
         "style paper { fill: white }
          style c { stroke: black; width: 1px }",
@@ -65,5 +65,25 @@ fn a_value_made_only_of_numbers_compiles() {
         "curve c = circle((0, 0), (1, 0))",
         "style paper { fill: white }
          style c { stroke: black; width: 2px; opacity: mix(0.45, 1, self.focus) }",
+    ));
+}
+
+/// Lengths in all three units, in the shader as on the CPU: a field stroke a world unit wide plus
+/// some pixels, a dot sized in ems, and a glow measured in `px`.
+#[test]
+fn lengths_in_every_unit_agree() {
+    passes(check(
+        "units",
+        "viewport { x: -4..4, y: -3..3 } style figure { width: 320px; height: 240px; em: 12px }
+         curve c = circle((0, 0), (2, 0))
+         curve g = circle((1, 1), (1.5, 1))
+         let P = (-2, -2)
+         dot P",
+        "style paper { fill: white }
+         style c { stroke: black; width: 0.1 + 1px; draw: field }
+         style g { blend: add; fill_opacity: tanh(4px / abs(self.dist)) }
+         style g::inside { fill: rgb(255, 40, 40) }
+         style g::outside { fill: rgb(40, 40, 255) }
+         style P { fill: black; radius: 0.5em }",
     ));
 }

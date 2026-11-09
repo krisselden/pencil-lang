@@ -12,8 +12,10 @@ pub struct FrameInputs {
     pub time: f32,
     pub width: u32,
     pub height: u32,
-    /// Device pixels per style pixel, so `width: 3px` looks the same on any screen.
+    /// Device pixels per `px`, so `width: 3px` looks the same on any screen.
     pub dpr: f32,
+    /// Device pixels per `em`, the reader's text size.
+    pub em: f32,
     /// Where this panel's corner is on the canvas. `width` and `height` are the panel's.
     pub origin: [u32; 2],
 }
@@ -29,8 +31,8 @@ impl FrameInputs {
         for v in [view.x[0], view.x[1], view.y[0], view.y[1]] {
             bytes.extend_from_slice(&(v as f32).to_le_bytes());
         }
-        // A vec2, then padding, since the array after it starts on a vec4.
-        for v in [self.origin[0] as f32, self.origin[1] as f32, 0.0, 0.0] {
+        // A vec2 and the em, then padding, since the array after it starts on a vec4.
+        for v in [self.origin[0] as f32, self.origin[1] as f32, self.em, 0.0] {
             bytes.extend_from_slice(&v.to_le_bytes());
         }
         for v in &prepared.values {
@@ -546,6 +548,7 @@ mod native {
                     width: *w,
                     height: *h,
                     dpr: prepared.dpr as f32,
+                    em: prepared.em as f32,
                     origin: *origin,
                 };
                 pipeline.draw(

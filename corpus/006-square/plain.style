@@ -1,3 +1,5 @@
+style figure { width: 340px; height: 235px }
+
 style axis_x, axis_y { stroke: muted; width: 1px; opacity: 0.6 }
 
 // What the beats show arrives and leaves by fading, and what they aren't about steps back.

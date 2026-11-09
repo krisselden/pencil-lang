@@ -489,7 +489,7 @@ fn push_ticks(
     }
     let (ux, uy) = (dx / length, dy / length);
     let long = match &style.tick {
-        Some(t) => pixels(t, env, dpr)?,
+        Some(t) => pixels(t, env)?,
         None => DEFAULT_TICK * dpr,
     };
     let apart = long * 0.4;
@@ -591,7 +591,7 @@ fn push_arc(
         }
         return Ok(());
     };
-    let wanted = pixels(head, env, dpr)?;
+    let wanted = pixels(head, env)?;
     for line in arc_lines(arc, env, view, width, height, false)? {
         let points: Vec<[f64; 2]> = line.points.iter().map(|p| to_device(*p)).collect();
         // The head is no longer than 60% of the curve's last stretch, if it's told how
@@ -641,7 +641,7 @@ fn push_outline(
     };
     let window = frame::fit_window(other, env, aspect)?;
     let least = match &style.radius {
-        Some(r) => pixels(r, env, dpr)?,
+        Some(r) => pixels(r, env)?,
         None => 0.0,
     };
     let grow = |a: (f64, f64)| {
@@ -875,7 +875,7 @@ struct FastInstances {
     /// The numbers `Instance::from_numbers` takes, if all of them compile.
     numbers: Option<Vec<fast::Node>>,
     found: Vec<f64>,
-    /// A size that's the same for every instance, worked out once.
+    /// A size that's the same for every instance, worked out once, in device pixels.
     radius: Option<f64>,
     half: Option<f64>,
 }
@@ -909,7 +909,7 @@ impl FastInstances {
             found
         };
         let constant = |e: &Option<Expr>| match e {
-            Some(e) if !local(e) => eval::real(e, env).ok(),
+            Some(e) if !local(e) => frame::length(e, env).ok(),
             _ => None,
         };
         Self {
@@ -1013,10 +1013,10 @@ fn push_instance(
     // A size that reads the instance needs its `with` names, which only `eval` looks at.
     let mut size = |e: &Option<Expr>, known: Option<f64>, default: f64| -> Result<f64, Error> {
         match (known, e) {
-            (Some(value), _) => Ok(value * frame.dpr),
+            (Some(value), _) => Ok(value),
             (None, Some(e)) => {
                 instance(lets, shape, env)?;
-                pixels(e, env, frame.dpr)
+                pixels(e, env)
             }
             (None, None) => Ok(default * frame.dpr),
         }
@@ -1122,7 +1122,7 @@ fn push_arrow(
     }
     let (ux, uy) = (dx / len, dy / len);
     let wanted = match &style.head {
-        Some(h) => pixels(h, env, dpr)?,
+        Some(h) => pixels(h, env)?,
         None => DEFAULT_ARROW_HEAD * dpr,
     };
     let head = wanted.min(len / 2.0);
@@ -1151,8 +1151,9 @@ fn push_arrow(
 /// How long a tick across a segment is, in style pixels.
 const DEFAULT_TICK: f64 = 10.0;
 
-fn pixels(e: &Expr, env: &Env, dpr: f64) -> Result<f64, Error> {
-    Ok(eval::real(e, env)? * dpr)
+/// A style's length in device pixels, through the frame's units.
+fn pixels(e: &Expr, env: &Env) -> Result<f64, Error> {
+    frame::length(e, env)
 }
 
 fn push_line(
@@ -1180,7 +1181,7 @@ fn push_line(
     for s in &lengths {
         env.set(SELF_T, s / total);
         let width = match &style.width {
-            Some(w) => pixels(w, &env, dpr)?,
+            Some(w) => pixels(w, &env)?,
             None => DEFAULT_STROKE_WIDTH * dpr,
         };
         radii.push((width / 2.0).max(0.0));
@@ -1188,9 +1189,9 @@ fn push_line(
 
     let (mut on, mut period) = (0.0, 0.0);
     if let Some(dash) = &style.dash {
-        let dash = pixels(dash, &env, dpr)?;
+        let dash = pixels(dash, &env)?;
         let gap = match &style.gap {
-            Some(gap) => pixels(gap, &env, dpr)?,
+            Some(gap) => pixels(gap, &env)?,
             None => dash,
         };
         (on, period) = (dash, dash + gap);
@@ -1314,7 +1315,7 @@ mod tests {
         }
 
         const DOTS: &str = "
-            viewport { x: 0..10, y: 0..10, width: 100 }
+            viewport { x: 0..10, y: 0..10 } style figure { width: 100px }
             param n = 3 in 0..9
             dots d = (i, 5) for i in 1..n";
 
@@ -1388,7 +1389,7 @@ mod tests {
 
         #[test]
         fn circles_follow_their_radius_within_flatness() {
-            let doc = "viewport { x: -2..2, y: -2..2, width: 400 }
+            let doc = "viewport { x: -2..2, y: -2..2 } style figure { width: 400px }
                        circles c = circle((0, 0), (1 + i, 0)) for i in 0..0";
             let f = build(doc, &["style c { stroke: black; width: 2px }"]).unwrap();
             let p = prepare(&f, &Inputs::at(0.0), 400, 400, 1.0).unwrap();
@@ -1406,7 +1407,7 @@ mod tests {
 
         #[test]
         fn what_cannot_be_seen_costs_nothing() {
-            let doc = "viewport { x: -2..2, y: -2..2, width: 400 }
+            let doc = "viewport { x: -2..2, y: -2..2 } style figure { width: 400px }
                        circles far = circle((50, 50), (51, 50)) for i in 0..9
                        circles tiny = circle((0, 0), (0.0001, 0)) for i in 0..9
                        dots away = (50, 50) for i in 0..9";
@@ -1423,7 +1424,7 @@ mod tests {
         /// Only the instances that don't exist go, not the whole collection.
         #[test]
         fn an_absent_instance_leaves_a_gap() {
-            let doc = "viewport { x: -5..5, y: -5..5, width: 100 }
+            let doc = "viewport { x: -5..5, y: -5..5 } style figure { width: 100px }
                        curve c = circle((0, 0), (2, 0))
                        dots d = intersect(c, line((i, 0), (i, 1)), 1) for i in -4..4";
             let f = build(doc, &["style d { fill: black }"]).unwrap();
@@ -1433,7 +1434,7 @@ mod tests {
 
         #[test]
         fn a_with_name_is_worked_out_per_instance_and_styles_can_read_it() {
-            let doc = "viewport { x: 0..10, y: 0..10, width: 100 }
+            let doc = "viewport { x: 0..10, y: 0..10 } style figure { width: 100px }
                        dots d = (z.x, 5) for i in 1..3 with z = (i·2, i), s = z.y";
             let f = build(doc, &["style d { fill: black; radius: s·1px }"]).unwrap();
             let p = prepare(&f, &Inputs::at(0.0), 100, 100, 1.0).unwrap();
@@ -1447,7 +1448,7 @@ mod tests {
         /// A circle far bigger than the frame stays true to the flatness where it's seen.
         #[test]
         fn a_huge_circle_is_only_sampled_where_it_can_be_seen() {
-            let doc = "viewport { x: -2..2, y: -2..2, width: 400 }
+            let doc = "viewport { x: -2..2, y: -2..2 } style figure { width: 400px }
                        circles c = circle((0, -1000), (0, 0)) for i in 0..0";
             let f = build(doc, &["style c { stroke: black; width: 2px }"]).unwrap();
             let p = prepare(&f, &Inputs::at(0.0), 400, 400, 1.0).unwrap();
@@ -1473,7 +1474,7 @@ mod tests {
 
         #[test]
         fn a_radius_caps_a_circle_in_pixels() {
-            let doc = "viewport { x: -2..2, y: -2..2, width: 400 }
+            let doc = "viewport { x: -2..2, y: -2..2 } style figure { width: 400px }
                        circles c = circle((0, 0), (1, 0)) for i in 0..0";
             let f = build(doc, &["style c { stroke: black; width: 1px; radius: 6px }"]).unwrap();
             let p = prepare(&f, &Inputs::at(0.0), 400, 400, 1.0).unwrap();
@@ -1483,7 +1484,7 @@ mod tests {
 
         #[test]
         fn a_curve_can_end_in_a_head() {
-            let doc = "viewport { x: 0..100, y: 0..100, width: 100 }
+            let doc = "viewport { x: 0..100, y: 0..100 } style figure { width: 100px }
                        curve c = parametric (t): (t, 50) for t in 10..90";
             let f = build(doc, &["style c { stroke: black; width: 2px; head: 10px }"]).unwrap();
             let p = prepare(&f, &Inputs::at(0.0), 100, 100, 1.0).unwrap();
@@ -1504,7 +1505,7 @@ mod tests {
 
         #[test]
         fn a_head_is_held_to_its_curves_last_stretch() {
-            let doc = "viewport { x: 0..100, y: 0..100, width: 100 }
+            let doc = "viewport { x: 0..100, y: 0..100 } style figure { width: 100px }
                        curve c = parametric (t): (10 + 80·t / 4, 50) for t in 0..4";
             let f = build(
                 doc,
@@ -1517,7 +1518,7 @@ mod tests {
             assert!((last[7] - 12.0).abs() < 1e-3, "{}", last[7]);
             // When the range runs the other way, its last stretch is toward its start. Here
             // that's t = 1, 20 px back, and not t = -1, which is only 10.
-            let doc = "viewport { x: 0..100, y: 0..100, width: 100 }
+            let doc = "viewport { x: 0..100, y: 0..100 } style figure { width: 100px }
                        curve c = parametric (t): (20·exp(t·ln(2)), 50) for t in 2..0";
             let f = build(
                 doc,
@@ -1539,7 +1540,7 @@ mod tests {
 
         #[test]
         fn a_collection_is_not_in_a_labels_way() {
-            let doc = "viewport { x: -2..2, y: -2..2, width: 400 }
+            let doc = "viewport { x: -2..2, y: -2..2 } style figure { width: 400px }
                        dots d = (i, 0) for i in -2..2
                        label n = \"P\" at (0, 0)";
             let f = build(

@@ -170,7 +170,7 @@ fn each_curve_gets_its_own_dashes_and_head() {
 
 #[test]
 fn a_view_can_fit_all_of_them() {
-    let doc = "viewport { fit: c, pad: 0, width: 100, height: 100 }
+    let doc = "viewport { fit: c, pad: 0 } style figure { width: 100px; height: 100px }
                param n = 3 in 1..9
                curves c = parametric (t): (t, s) for t in 0..10 for s in 1..n";
     let figure = build(doc, &[]).unwrap();

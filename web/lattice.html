@@ -46,6 +46,7 @@
 <script type="module">
   import init, { Player, figure_size, named_colors } from './pkg/pencil_web.js';
   import { LabelLayer } from './labels.js';
+  import { fit, follow } from './fit.js';
 
   const $ = (id) => document.getElementById(id);
   const get = async (path) => {
@@ -71,12 +72,8 @@
     const isNarrow = query.has('narrow') || (!query.has('wide') && wantsNarrow.matches);
     return { isDark, list: [theme, plain, ...(isNarrow ? [narrow] : []), ...(isDark ? [dark] : [])] };
   };
-  const shape = (list) => {
-    const [width, height] = JSON.parse(figure_size(doc, list));
-    canvas.style.aspectRatio = `${width} / ${height}`;
-    canvas.width = Math.round(canvas.clientWidth * dpr);
-    canvas.height = Math.round((canvas.clientWidth * height / width) * dpr);
-  };
+  // The narrow sheet gives the figure another shape, and the player follows the canvas to it.
+  const shape = (list) => fit(canvas, JSON.parse(figure_size(doc, list)));
   const colors = (list, isDark) => {
     document.documentElement.style.colorScheme = isDark ? 'dark' : 'light';
     for (const [name, color] of Object.entries(JSON.parse(named_colors(list)))) {
@@ -136,16 +133,19 @@
     const route = (text, color) => `<span style="color: var(--${color})">${text}</span>`;
     $('readout').innerHTML = `${route(`(${signed(q, '−')})·1`, 'blue')} + ${route(`(${signed(q - p, '+')})·(1 + ω)`, 'green')} = ${route(`(${signed(q, '+')})·ω`, 'red')} + ${route(`(${signed(p, '−')})·(1 + ω)`, 'accent')} = A = ${p ? `−${p}` : '0'} + ${q - p}ω`;
   };
+  // Draws now: a resize calls it too, so the cleared canvas is never shown.
+  const paint = () => {
+    dirty = false;
+    try { layer.update(JSON.parse(player.draw(0, dpr))); readout(); } catch (e) { $('error').textContent = e.message; }
+  };
   const frame = (now) => {
-    if (dirty) {
-      dirty = false;
-      try { layer.update(JSON.parse(player.draw(0, dpr))); readout(); } catch (e) { $('error').textContent = e.message; }
-    }
+    if (dirty) paint();
     layer.tick(now);
     requestAnimationFrame(frame);
   };
   requestAnimationFrame(frame);
   window.pencil = { player, layer, set, restyle, redraw() { dirty = true; } };
+  follow(canvas, player, paint);
 </script>
 </body>
 </html>

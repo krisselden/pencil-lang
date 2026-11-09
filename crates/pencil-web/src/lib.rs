@@ -30,6 +30,8 @@ pub struct Player {
     /// real widths, and only the page knows its fonts.
     measure: Option<js_sys::Function>,
     measured: RefCell<HashMap<(String, u64, bool), f64>>,
+    /// The page's text size where the figure is, in CSS pixels: an `em`.
+    em: Option<f64>,
 }
 
 /// A page's own text widths, asking it once for each.
@@ -136,6 +138,7 @@ impl Player {
             grabbed: None,
             measure: None,
             measured: RefCell::new(HashMap::new()),
+            em: None,
         })
     }
 
@@ -320,6 +323,7 @@ impl Player {
                 self.config.width,
                 self.config.height,
                 dpr as f64,
+                self.em,
                 &Estimate,
             )
             .map_err(js_error)?;
@@ -328,6 +332,23 @@ impl Player {
             .flat_map(|f| &f.prepared.strokes)
             .map(|s| s.len() / pencil_core::stroke::FLOATS_PER_SEGMENT)
             .sum())
+    }
+
+    /// The page's text size where the figure is, in CSS pixels, which an `em` is.
+    pub fn set_em(&mut self, em: f64) {
+        self.em = (em > 0.0).then_some(em);
+    }
+
+    /// Follows the canvas to a new size in device pixels, as the page lays it out again. What
+    /// depends on the size is made again on the next draw.
+    pub fn resize(&mut self, width: u32, height: u32) {
+        let most = self.device.limits().max_texture_dimension_2d;
+        let (width, height) = (width.clamp(1, most), height.clamp(1, most));
+        if (width, height) != (self.config.width, self.config.height) {
+            self.config.width = width;
+            self.config.height = height;
+            self.surface.configure(&self.device, &self.config);
+        }
     }
 
     /// Draws a frame, and returns its labels as JSON, for the page's text overlay.
@@ -346,6 +367,7 @@ impl Player {
                 self.config.width,
                 self.config.height,
                 dpr as f64,
+                self.em,
                 &widths,
             )
             .map_err(js_error)?;
@@ -365,6 +387,7 @@ impl Player {
                 width: panel.width,
                 height: panel.height,
                 dpr: panel.prepared.dpr as f32,
+                em: panel.prepared.em as f32,
                 origin: panel.origin,
             };
             pipeline.draw(

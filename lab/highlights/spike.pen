@@ -1,7 +1,7 @@
 // Highlights tried on the squaring story: see docs/plan-explainer.md, and render.sh here.
 doc spike
 duration 12
-viewport { x: -2.4..9.6, y: -6..6, width: 640, height: 640 }
+viewport { x: -2.4..9.6, y: -6..6 }
 
 let n = sqrt(8)
 let x0 = (n + 1 / n) / 2

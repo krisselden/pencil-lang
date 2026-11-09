@@ -15,12 +15,14 @@ let green_soft = rgb(130, 176, 127)
 
 style paper { fill: paper_color }
 
-style title { fill: ink; size: 14px }
+// Text is sized in ems, the reader's text size, so it matches the page around the figure
+// whatever size the figure is drawn at. In a video, an em is 17 design pixels.
+style title { fill: ink; size: 0.82em }
 
-style label { size: 17px; font: math; halo: 3px; fill: ink; place: settle; distance: 16px }
-style label.note { size: 15px; font: math }
-style label.tick { size: 12px; font: sans; fill: muted }
-style label.display { size: 64px; font: math; place: fixed }
+style label { size: 1em; font: math; halo: 0.18em; fill: ink; place: settle; distance: 0.94em }
+style label.note { size: 0.88em; font: math }
+style label.tick { size: 0.7em; font: sans; fill: muted }
+style label.display { size: 3.75em; font: math; place: fixed }
 
 // The parts of an expression: a name's size, and they move by `snap`, not by settling.
-style term { size: 17px; font: math; halo: 3px; fill: ink }
+style term { size: 1em; font: math; halo: 0.18em; fill: ink }

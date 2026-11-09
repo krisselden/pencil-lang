@@ -204,8 +204,6 @@ pub enum Item {
     Viewport {
         x: Option<[Expr; 2]>,
         y: Option<[Expr; 2]>,
-        width: Option<Expr>,
-        height: Option<Expr>,
         fit: Vec<String>,
         pad: Option<Expr>,
     },
@@ -263,6 +261,7 @@ enum Tok {
     Ident(String),
     Num(f64),
     Px,
+    Em,
     Punct(&'static str),
     /// A superscript digit such as `²`.
     Sup(f64),
@@ -336,17 +335,19 @@ fn lex(src: &str) -> Result<Vec<Lexed>, Error> {
                 line: start_line,
                 col: start_col,
             });
-            let unit = chars.get(i) == Some(&'p')
-                && chars.get(i + 1) == Some(&'x')
-                && !chars
+            // A unit right after a number: `px` or `em`, and not the start of a longer name.
+            let unit = match (chars.get(i), chars.get(i + 1)) {
+                (Some('p'), Some('x')) => Some(Tok::Px),
+                (Some('e'), Some('m')) => Some(Tok::Em),
+                _ => None,
+            }
+            .filter(|_| {
+                !chars
                     .get(i + 2)
-                    .is_some_and(|c| c.is_alphanumeric() || *c == '_');
-            if unit {
-                out.push(Lexed {
-                    tok: Tok::Px,
-                    line,
-                    col,
-                });
+                    .is_some_and(|c| c.is_alphanumeric() || *c == '_')
+            });
+            if let Some(tok) = unit {
+                out.push(Lexed { tok, line, col });
                 advance(2, &mut i, &mut col);
             }
         } else if c.is_alphabetic() || c == '_' {
@@ -1183,7 +1184,7 @@ impl Parser {
             self.bump();
         }
         self.expect("{")?;
-        let (mut x, mut y, mut width, mut height, mut pad) = (None, None, None, None, None);
+        let (mut x, mut y, mut pad) = (None, None, None);
         let mut fit = Vec::new();
         while !self.eat("}") {
             let prop = self.ident("a viewport property")?;
@@ -1191,8 +1192,12 @@ impl Parser {
             match prop.as_str() {
                 "x" => x = Some(self.range()?),
                 "y" => y = Some(self.range()?),
-                "width" => width = Some(self.expr()?),
-                "height" => height = Some(self.expr()?),
+                // How big the figure is drawn depends on where, so it's a sheet's.
+                "width" | "height" => {
+                    return Err(self.error(format!(
+                        "a figure's size is a sheet's, as `style figure {{ {prop}: 640px }}`"
+                    )));
+                }
                 "pad" => pad = Some(self.expr()?),
                 "fit" => {
                     while matches!(self.peek(), Tok::Ident(_)) {
@@ -1208,14 +1213,7 @@ impl Parser {
         if fit.is_empty() && (x.is_none() || y.is_none()) {
             return Err(self.error("a viewport needs both `x` and `y`, or `fit`"));
         }
-        Ok(Item::Viewport {
-            x,
-            y,
-            width,
-            height,
-            fit,
-            pad,
-        })
+        Ok(Item::Viewport { x, y, fit, pad })
     }
 
     fn style(&mut self, line: usize) -> Result<StyleRule, Error> {
@@ -1321,6 +1319,10 @@ impl Parser {
                     self.bump();
                     return Ok(Expr::app("Pixels", vec![Expr::Num(n)]));
                 }
+                if *self.peek() == Tok::Em {
+                    self.bump();
+                    return Ok(Expr::app("Ems", vec![Expr::Num(n)]));
+                }
                 Ok(Expr::Num(n))
             }
             Tok::Ident(_) => {
@@ -1423,12 +1425,19 @@ mod tests {
             Item::Viewport {
                 x: Some([Expr::Num(-2.0), Expr::Num(2.0)]),
                 y: Some([Expr::Num(-1.5), Expr::Num(1.5)]),
-                width: None,
-                height: None,
                 fit: Vec::new(),
                 pad: None,
             }
         );
+    }
+
+    #[test]
+    fn a_viewport_says_what_it_shows_and_not_how_big() {
+        for prop in ["width", "height"] {
+            let err =
+                parse(&format!("viewport {{ x: -2..2, y: -2..2, {prop}: 640 }}")).unwrap_err();
+            assert!(err.message.contains("`style figure"), "{err}");
+        }
     }
 
     #[test]
@@ -1468,7 +1477,7 @@ mod tests {
     #[test]
     fn beats_tags_and_handles_parse() {
         let doc = parse(
-            "viewport { fit: a b, pad: 0.1, width: 560, height: 400 }
+            "viewport { fit: a b, pad: 0.1 }
              beat \"Start\" tag blue {
                let O = (0, 0)
                curve c = circle(O, (1, 0)) tag aux, thin

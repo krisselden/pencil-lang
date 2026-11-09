@@ -1,5 +1,7 @@
 // A restyle of the same document: dark paper, a dashed wound string, a tapered involute,
 // and the triangle's fill banded by its true distance. No line of the document changes.
+style figure { width: 640px }
+
 style paper            { fill: rgb(23, 22, 20) }
 style wedge            { fill: oklch(0.75, 0.11, 250); opacity: 0.2 }
 style triangle         { fill: mix(oklch(0.75, 0.12, 200), oklch(0.8, 0.12, 320), 0.5 + 0.5·cos(30·self.dist)); opacity: 0.35 }
@@ -11,7 +13,7 @@ style string           { stroke: rgb(243, 240, 234); width: 2.5px }
 style corner           { stroke: rgb(243, 240, 234); width: 1px; opacity: smoothstep(0.2, 0.4, a) }
 style O, P             { fill: rgb(243, 240, 234); radius: 4px }
 style Q                { fill: oklch(0.8, 0.15, 320); radius: 5.5px }
-style name_o, name_p   { fill: rgb(243, 240, 234); size: 17px; halo: 3px }
-style name_q           { fill: oklch(0.8, 0.15, 320); size: 17px; halo: 3px; opacity: smoothstep(0.2, 0.4, a) }
-style one              { fill: rgb(243, 240, 234); size: 15px; halo: 3px }
-style length_a         { fill: rgb(243, 240, 234); size: 15px; halo: 3px; opacity: smoothstep(0.4, 0.6, a) }
+style name_o, name_p   { fill: rgb(243, 240, 234); size: 1em; halo: 0.18em }
+style name_q           { fill: oklch(0.8, 0.15, 320); size: 1em; halo: 0.18em; opacity: smoothstep(0.2, 0.4, a) }
+style one              { fill: rgb(243, 240, 234); size: 0.88em; halo: 0.18em }
+style length_a         { fill: rgb(243, 240, 234); size: 0.88em; halo: 0.18em; opacity: smoothstep(0.4, 0.6, a) }

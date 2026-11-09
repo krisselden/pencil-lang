@@ -97,14 +97,14 @@ impl Scope<'_> {
 
     fn size_and_font(&self, key: &str) -> Result<(f64, Font), Error> {
         let Some(mark) = self.marks.get(key) else {
-            return Ok((DEFAULT_LABEL_SIZE * self.dpr, Font::default()));
+            return Ok((
+                frame::length_or_em(&None, DEFAULT_LABEL_SIZE, self.env)?,
+                Font::default(),
+            ));
         };
         let style = &self.figure.styles.marks[*mark];
-        let size = match &style.size {
-            Some(s) => eval::real(s, self.env)?,
-            None => DEFAULT_LABEL_SIZE,
-        };
-        Ok((size * self.dpr, style.font))
+        let size = frame::length_or_em(&style.size, DEFAULT_LABEL_SIZE, self.env)?;
+        Ok((size, style.font))
     }
 
     fn layout(&self, pieces: &[Piece]) -> Result<HashMap<String, Laid>, Error> {
@@ -305,10 +305,7 @@ pub fn labels(
                     Some(c) => eval::color(c, env)?,
                     None => [0.0; 3],
                 },
-                halo: match &style.halo {
-                    Some(h) => eval::real(h, env)?,
-                    None => 0.0,
-                } * dpr,
+                halo: frame::length_or(&style.halo, 0.0, env)?,
                 opacity: opacity * strength,
                 font: style.font,
                 anchor: *at,
@@ -355,7 +352,7 @@ mod tests {
     use crate::frame::{Inputs, prepare};
 
     const DOC: &str = "
-        viewport { x: 0..400, y: 0..400, width: 400 }
+        viewport { x: 0..400, y: 0..400 } style figure { width: 400px }
         param step = 0 in 0..9
         place left = (100, 200)
         place right = (300, 200)
@@ -391,7 +388,7 @@ mod tests {
             time: 0.0,
             params: vec![("step".to_string(), step)],
         };
-        frame::prepare_with(&f, &inputs, 400, 400, 1.0, &Ten)
+        frame::prepare_with(&f, &inputs, 400, 400, 1.0, crate::ir::DEFAULT_EM, &Ten)
             .unwrap()
             .labels
     }
@@ -448,7 +445,7 @@ mod tests {
     /// A term fading in travels with the rest, not ahead of it at its final spot.
     #[test]
     fn a_new_term_rides_with_its_neighbors() {
-        let doc = "viewport { x: 0..400, y: 0..400, width: 400 }
+        let doc = "viewport { x: 0..400, y: 0..400 } style figure { width: 400px }
             param step = 0 in 0..3
             place one = (100, 100)
             place two = (300, 300)
@@ -461,7 +458,7 @@ mod tests {
             time: 0.0,
             params: vec![("step".to_string(), 1.3)],
         };
-        let labels = frame::prepare_with(&f, &inputs, 400, 400, 1.0, &Ten)
+        let labels = frame::prepare_with(&f, &inputs, 400, 400, 1.0, crate::ir::DEFAULT_EM, &Ten)
             .unwrap()
             .labels;
         let (a, b) = (find(&labels, "e.a"), find(&labels, "e.b"));
@@ -472,7 +469,7 @@ mod tests {
 
     #[test]
     fn a_new_copy_starts_on_what_it_copies() {
-        let doc = "viewport { x: 0..400, y: 0..400, width: 400 }
+        let doc = "viewport { x: 0..400, y: 0..400 } style figure { width: 400px }
             param step = 0 in 0..3
             place one = (100, 100)
             place two = (300, 300)
@@ -486,7 +483,7 @@ mod tests {
                 time: 0.0,
                 params: vec![("step".to_string(), step)],
             };
-            frame::prepare_with(&f, &inputs, 400, 400, 1.0, &Ten)
+            frame::prepare_with(&f, &inputs, 400, 400, 1.0, crate::ir::DEFAULT_EM, &Ten)
                 .unwrap()
                 .labels
         };
@@ -503,7 +500,7 @@ mod tests {
     /// Factoring: z.2 moves into z.1, and z at another place has nothing to do with it.
     #[test]
     fn a_copy_that_goes_moves_into_its_namesake_at_that_place() {
-        let doc = "viewport { x: 0..400, y: 0..400, width: 400 }
+        let doc = "viewport { x: 0..400, y: 0..400 } style figure { width: 400px }
             param step = 0 in 0..3
             place far = (50, 50)
             place sum = (200, 200)
@@ -517,7 +514,7 @@ mod tests {
                 time: 0.0,
                 params: vec![("step".to_string(), step)],
             };
-            frame::prepare_with(&f, &inputs, 400, 400, 1.0, &Ten)
+            frame::prepare_with(&f, &inputs, 400, 400, 1.0, crate::ir::DEFAULT_EM, &Ten)
                 .unwrap()
                 .labels
         };
@@ -556,7 +553,7 @@ mod tests {
             time: 0.0,
             params: vec![("step".to_string(), 2.0)],
         };
-        let labels = frame::prepare_with(&f, &inputs, 400, 400, 1.0, &Ten)
+        let labels = frame::prepare_with(&f, &inputs, 400, 400, 1.0, crate::ir::DEFAULT_EM, &Ten)
             .unwrap()
             .labels;
         assert_eq!(find(&labels, "e.a").color, [1.0; 3]);
@@ -627,7 +624,7 @@ mod tests {
             time: 0.0,
             params: vec![("step".to_string(), 1.0)],
         };
-        let labels = frame::prepare_with(&f, &inputs, 400, 400, 1.0, &Ten)
+        let labels = frame::prepare_with(&f, &inputs, 400, 400, 1.0, crate::ir::DEFAULT_EM, &Ten)
             .unwrap()
             .labels;
         let (first, second) = (find(&labels, "e.+"), find(&labels, "e.+.1"));
@@ -639,7 +636,7 @@ mod tests {
     #[test]
     fn a_named_term_prints_its_text_and_answers_to_its_name() {
         let doc = "
-            viewport { x: 0..400, y: 0..400, width: 400 }
+            viewport { x: 0..400, y: 0..400 } style figure { width: 400px }
             param step = 0 in 0..2
             place left = (100, 200)
             place right = (300, 200)
@@ -657,7 +654,7 @@ mod tests {
                 time: 0.0,
                 params: vec![("step".to_string(), step)],
             };
-            frame::prepare_with(&f, &inputs, 400, 400, 1.0, &Ten)
+            frame::prepare_with(&f, &inputs, 400, 400, 1.0, crate::ir::DEFAULT_EM, &Ten)
                 .unwrap()
                 .labels
         };

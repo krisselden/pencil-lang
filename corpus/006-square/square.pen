@@ -6,7 +6,7 @@
 doc square
 duration 19
 
-viewport { x: -0.7..2.7, y: -0.35..2.0, width: 340, height: 235 }
+viewport { x: -0.7..2.7, y: -0.35..2.0 }
 
 // One beat per move, with a pause where the figure holds. A reader or a clock can drive it.
 pause 0.4

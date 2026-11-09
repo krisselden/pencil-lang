@@ -4,7 +4,7 @@
 doc unroll
 duration 13
 
-viewport { x: -3.8..6.9, y: -5.3..2.1, width: 640 }
+viewport { x: -3.8..6.9, y: -5.3..2.1 }
 
 fn on_circle(t) = (-sin(t), cos(t))
 fn string_end(p, t) = p + t·(p.y, -p.x)

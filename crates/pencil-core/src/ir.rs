@@ -236,14 +236,20 @@ pub struct Family {
     pub arc: Arc,
 }
 
+/// `1em` where nothing says otherwise: the site's size for naming a point.
+pub const DEFAULT_EM: f64 = 17.0;
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Viewport {
     pub x: [f64; 2],
     pub y: [f64; 2],
-    /// The width the figure's `px` sizes were designed at. With one, sizes scale with
-    /// the output, as an SVG's do with its viewBox. Without one, a `px` is a CSS pixel.
+    /// The width the figure's `px` sizes were designed at, from a sheet's `style figure` or
+    /// `style panel`, so it's set after styling and isn't part of the scene's IR. With one, sizes
+    /// scale with the output, as an SVG's do with its viewBox. Without one, a `px` is a CSS pixel.
     pub design_width: Option<f64>,
     pub design_height: Option<f64>,
+    /// The reader's text size in design pixels, for a video, where no page says it.
+    pub em: f64,
     /// Centers and radii the view fits each frame, ignoring any param a handle has
     /// taken over, so a drag doesn't refit it. Empty for a fixed view.
     pub fit: Vec<[Expr; 3]>,
@@ -261,6 +267,7 @@ impl Default for Viewport {
             y: [-2.0, 2.0],
             design_width: None,
             design_height: None,
+            em: DEFAULT_EM,
             fit: Vec::new(),
             fit_curves: Vec::new(),
             fit_families: Vec::new(),
@@ -441,8 +448,6 @@ impl Scene {
             "viewport": {
                 "x": self.viewport.x,
                 "y": self.viewport.y,
-                "width": self.viewport.design_width,
-                "height": self.viewport.design_height,
                 "fit": self.viewport.fit.len()
                     + self.viewport.fit_curves.len()
                     + self.viewport.fit_families.len(),

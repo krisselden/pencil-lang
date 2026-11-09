@@ -12,7 +12,7 @@ That's this figure, which is all of it:
 doc limacon
 duration 6.2831853
 
-viewport { x: -1.5..10.5, y: -6..6, width: 640, height: 640 }
+viewport { x: -1.5..10.5, y: -6..6 }
 
 let a = 8
 let x0 = (a + 1 / a) / 2
@@ -27,6 +27,7 @@ circles rings = circle(c, focus) for i in 0..23 with angle = time - i·tau / 24,
 And its style, which is kept apart from it:
 
 ```
+style figure { width: 640px; height: 640px }
 style paper { fill: black; tone: tanh }
 style rings { blend: add; fill_opacity: 0.9^i·tanh(self.pixel / 2 / abs(self.dist)) }
 style rings::inside { fill: rgb(1275, 255, 510) }
@@ -64,7 +65,7 @@ To see the figures live in a browser, which also needs the `wasm32-unknown-unkno
 ```bash
 rustup target add wasm32-unknown-unknown
 scripts/build-web.sh
-python3 -m http.server 8741
+scripts/serve.py
 ```
 
 Then open <http://localhost:8741/web/limacon.html>. `web/` has the other figures too, and adding `?gl` to a page uses WebGL2.

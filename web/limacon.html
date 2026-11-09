@@ -36,6 +36,7 @@
 <script type="module">
   import init, { Player, figure_size, named_colors } from './pkg/pencil_web.js';
   import { LabelLayer } from './labels.js';
+  import { fit, follow } from './fit.js';
   const $ = (id) => document.getElementById(id);
   const get = async (path) => {
     const response = await fetch(path, { cache: 'no-store' });
@@ -47,10 +48,7 @@
   const sheets = [await get('../corpus/012-limacon/plain.style')];
   await init();
   const dpr = window.devicePixelRatio || 1;
-  const [width, height] = JSON.parse(figure_size(doc, sheets));
-  canvas.style.aspectRatio = `${width} / ${height}`;
-  canvas.width = Math.round(canvas.clientWidth * dpr);
-  canvas.height = Math.round((canvas.clientWidth * height) / width * dpr);
+  fit(canvas, JSON.parse(figure_size(doc, sheets)));
   const player = await Player.create(canvas, new URLSearchParams(location.search).has('gl'));
   const layer = new LabelLayer($('stage'), dpr);
   player.set_measure(layer.measure);
@@ -67,18 +65,21 @@
     $('play').textContent = playing ? 'Pause' : 'Play';
     dirty = true;
   });
+  // Draws now: a resize calls it too, so the cleared canvas is never shown.
+  const paint = () => {
+    dirty = false;
+    try { layer.update(JSON.parse(player.draw(time, dpr))); } catch (e) { $('error').textContent = e.message; playing = false; }
+  };
   const frame = (now) => {
     if (playing) { time = (time + (now - last) / 1000) % PERIOD; dirty = true; }
     last = now;
-    if (dirty) {
-      dirty = false;
-      try { layer.update(JSON.parse(player.draw(time, dpr))); } catch (e) { $('error').textContent = e.message; playing = false; }
-    }
+    if (dirty) paint();
     layer.tick(now);
     requestAnimationFrame(frame);
   };
   requestAnimationFrame((now) => { last = now; frame(now); });
   window.pencil = { player, layer, redraw() { dirty = true; } };
+  follow(canvas, player, paint);
 </script>
 </body>
 </html>

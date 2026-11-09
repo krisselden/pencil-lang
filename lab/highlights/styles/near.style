@@ -1,3 +1,5 @@
+style figure { width: 640px; height: 640px }
+
 style whole { stroke: red; width: 2.5px }
 style image_whole { stroke: accent; width: 0.35px + 0.95px·sqrt(x0² + r² + 2·x0·r·cos(tau·self.t)) }
 style unit { stroke: muted; width: 1px; opacity: 0.5 }

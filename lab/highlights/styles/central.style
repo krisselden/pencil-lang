@@ -1,3 +1,5 @@
+style figure { width: 640px; height: 640px }
+
 style limacon { stroke: ink; width: 2px }
 style central { stroke: accent; width: 2.5px }
 style through_one { stroke: red; width: 1.5px }

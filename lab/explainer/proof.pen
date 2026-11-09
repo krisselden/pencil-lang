@@ -1,7 +1,7 @@
 // Three beats of docs/plan-explainer.md, as the proof of phase 3: the mirror, the roulette and
 // the glow. Not the video yet: just enough of it to see the language's new pieces together.
 doc proof
-viewport { x: -1.6..9.4, y: -5.5..5.5, width: 640, height: 640 }
+viewport { x: -1.6..9.4, y: -5.5..5.5 }
 
 pause 0.5
 beat mirror "Reflect 1 across the tangent at C." for 1.5 show tangent_at_C, chord, normal, E, name_e focus .mirror

@@ -4,7 +4,7 @@ doc limacon
 
 // 16:9, with the whole limaçon in view from the start, so the camera never moves, and room below
 // it for the caption.
-viewport { x: -6.5..14.5, y: -6.4..5.4, width: 1280, height: 720 }
+viewport { x: -6.5..14.5, y: -6.4..5.4 }
 
 // 1. Where 0 comes from.
 pause 0.3

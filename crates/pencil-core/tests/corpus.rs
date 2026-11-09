@@ -608,7 +608,7 @@ fn lattice_labels(composition: &pencil_core::Composition) -> Vec<pencil_core::fr
     };
     let [w, h] = composition.size;
     let frames = composition
-        .prepare(&inputs, w as u32, h as u32, 1.0, &Estimate)
+        .prepare(&inputs, w as u32, h as u32, 1.0, None, &Estimate)
         .unwrap();
     composition.labels(&frames, &inputs, &Estimate).unwrap()
 }
@@ -659,7 +659,7 @@ fn a_later_sheet_changes_what_the_colors_mean_for_the_whole_figure() {
             ..Default::default()
         };
         let frames = composition
-            .prepare(&inputs, 800, 780, 1.0, &Estimate)
+            .prepare(&inputs, 800, 780, 1.0, None, &Estimate)
             .unwrap();
         for frame in &frames {
             let paper = frame.prepared.paper;
@@ -1521,7 +1521,7 @@ fn a_pole_on_a_circle_draws_nothing_it_cant() {
                 .collect(),
         };
         let frames = composition
-            .prepare(&inputs, 720, 590, 1.0, &Estimate)
+            .prepare(&inputs, 720, 590, 1.0, None, &Estimate)
             .unwrap();
         for frame in &frames {
             for (layer, floats) in frame.prepared.strokes.iter().enumerate() {
@@ -1583,7 +1583,9 @@ fn nearly_straight_circles_are_drawn_where_they_are() {
             .collect(),
     };
     let (w, h) = (900u32, 1400u32);
-    let frames = composition.prepare(&inputs, w, h, 1.0, &Estimate).unwrap();
+    let frames = composition
+        .prepare(&inputs, w, h, 1.0, None, &Estimate)
+        .unwrap();
     let prepared = &frames[0].prepared;
     let view = &prepared.view;
     let (sx, sy) = (
@@ -2028,7 +2030,7 @@ fn the_lattice_count_follows_q() {
             params: vec![("q".to_string(), q)],
         };
         let frames = composition
-            .prepare(&inputs, 814, 826, 1.0, &pencil_core::terms::Estimate)
+            .prepare(&inputs, 814, 826, 1.0, None, &pencil_core::terms::Estimate)
             .unwrap();
         frames[0].prepared.strokes[0].len() / FLOATS_PER_SEGMENT
     };
@@ -2052,6 +2054,7 @@ fn each_panel_names_things_for_its_own_space() {
             814,
             826,
             1.0,
+            None,
             &pencil_core::terms::Estimate,
         )
         .unwrap();
@@ -2123,6 +2126,7 @@ fn the_same_points_are_in_every_panel() {
             814,
             826,
             1.0,
+            None,
             &pencil_core::terms::Estimate,
         )
         .unwrap();
@@ -2164,7 +2168,7 @@ fn an_edge_with_no_steps_draws_nothing() {
         params: vec![("p".to_string(), 0.0)],
     };
     let frames = composition
-        .prepare(&inputs, 814, 826, 1.0, &pencil_core::terms::Estimate)
+        .prepare(&inputs, 814, 826, 1.0, None, &pencil_core::terms::Estimate)
         .unwrap();
     assert!(
         !frames[0]

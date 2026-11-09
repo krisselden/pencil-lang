@@ -4,7 +4,7 @@
 doc squaring
 duration 8
 
-viewport { fit: orbit square_across, pad: 0.06, width: 640, height: 520 }
+viewport { fit: orbit square_across, pad: 0.06 }
 
 param n = 3.3 in 1.1..6
 param p in 1..2

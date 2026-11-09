@@ -42,6 +42,7 @@
 </main>
 <script type="module">
   import init, { Player, figure_size } from './pkg/pencil_web.js';
+  import { fit, follow } from './fit.js';
   const $ = (id) => document.getElementById(id);
   const get = async (path) => {
     const response = await fetch(path, { cache: 'no-store' });
@@ -54,9 +55,7 @@
   const sheets = matchMedia('(prefers-color-scheme: dark)').matches ? [theme, plain, dark] : [theme, plain];
   await init();
   const dpr = window.devicePixelRatio || 1;
-  canvas.style.aspectRatio = '8 / 6.8';
-  canvas.width = Math.round(canvas.clientWidth * dpr);
-  canvas.height = Math.round((canvas.clientWidth * 6.8) / 8 * dpr);
+  fit(canvas, JSON.parse(figure_size(doc, sheets)));
   const player = await Player.create(canvas, new URLSearchParams(location.search).has('gl'));
   const PERIOD = 8;
   let time = 0, last = 0, playing = !matchMedia('(prefers-reduced-motion: reduce)').matches, dirty = true;
@@ -89,6 +88,11 @@
   });
   $('shift').addEventListener('input', () => setShift(Number($('shift').value)));
   document.querySelectorAll('[data-shift]').forEach((b) => b.addEventListener('click', () => setShift(Number(b.dataset.shift))));
+  // Draws now: a resize calls it too, so the cleared canvas is never shown.
+  const paint = () => {
+    dirty = false;
+    try { player.draw(time, dpr); } catch (e) { $('error').textContent = e.message; playing = false; }
+  };
   const frame = (now) => {
     if (playing) {
       time = (time + (now - last) / 1000) % PERIOD;
@@ -98,14 +102,12 @@
       dirty = true;
     }
     last = now;
-    if (dirty) {
-      dirty = false;
-      try { player.draw(time, dpr); } catch (e) { $('error').textContent = e.message; playing = false; }
-    }
+    if (dirty) paint();
     requestAnimationFrame(frame);
   };
   requestAnimationFrame((now) => { last = now; frame(now); });
   window.pencil = { player, stop() { playing = false; $('play').textContent = 'Play'; }, setTime(t) { time = t; dirty = true; } };
+  follow(canvas, player, paint);
 </script>
 </body>
 </html>

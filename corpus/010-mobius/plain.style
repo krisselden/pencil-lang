@@ -1,4 +1,6 @@
 // The image of each disk, but only while it's a disk. One that's turned inside out is just its rim.
+style figure { width: 640px; height: 896px }
+
 style rims::negative { fill: ink }
 style rims { fill_opacity: 0.22·max(sign(self.curvature), 0); stroke: ink; width: 1.75px }
 style loxodrome { stroke: red; width: 2px }

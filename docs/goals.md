@@ -405,9 +405,9 @@ Proposed by Claude and not contested so far. Change them freely.
   `IfNonnegative`). But it only goes one way, since nothing reads the IR back, and it's the compiled form: functions are inlined and
   points are split into scalars, so the lattice's IR is about 930 KB from a 150-line file, most of it the exact derivatives its `solve` needs. What's
   truly open today is the `.pen` text.
-- **What do `px` mean without a design width?** With `viewport { width: 640 }` sizes scale with
-  the output, like an SVG's viewBox. The blog keeps its labels a fixed screen size while lines
-  scale, which this can't express yet.
+- **What do `px` mean without a design width?** With `style figure { width: 640px }` sizes scale with
+  the output, like an SVG's viewBox, and without one a `px` is a CSS pixel. Text is in `em`, the
+  reader's text size, so labels stay the page's size while lines scale, as the blog's do.
 - **How should a `.pen` file name fonts?** `font: math | sans` are roles, and each renderer maps
   them to whatever it has. Video currently uses system fonts, which can't be redistributed.
 - **Should still labels snap?** Chrome's crisper text comes mostly from whole-pixel baselines.

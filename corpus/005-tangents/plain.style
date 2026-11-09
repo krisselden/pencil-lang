@@ -1,3 +1,5 @@
+style figure { width: 640px; height: 400px }
+
 style c { stroke: ink; width: 1.75px }
 style thales { stroke: muted; width: 1px; dash: 3px; gap: 4px; opacity: 0.2 + 0.6·outside }
 

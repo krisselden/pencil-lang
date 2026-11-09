@@ -39,7 +39,8 @@
   <p id="error" role="alert"></p>
 </main>
 <script type="module">
-  import init, { Player } from './pkg/pencil_web.js';
+  import init, { Player, figure_size } from './pkg/pencil_web.js';
+  import { fit, follow } from './fit.js';
   import { LabelLayer } from './labels.js';
 
   const BASE = '../corpus/005-tangents/';
@@ -57,17 +58,9 @@
   const doc = await read('tangents.pen');
   const theme = await (await fetch('../corpus/theme.style', { cache: 'no-store' })).text();
   const style = await read('plain.style');
-  const design = {
-    width: Number(/width:\s*([\d.]+)/.exec(doc)[1]),
-    height: Number(/height:\s*([\d.]+)/.exec(doc)[1]),
-  };
   const dpr = window.devicePixelRatio || 1;
-  canvas.style.aspectRatio = `${design.width} / ${design.height}`;
-  canvas.width = Math.round(canvas.clientWidth * dpr);
-  canvas.height = Math.round((canvas.clientWidth * design.height / design.width) * dpr);
-  const scale = canvas.width / design.width;
-
   await init();
+  fit(canvas, JSON.parse(figure_size(doc, [theme, style])));
   const player = await Player.create(canvas, params.has('gl'));
   const TIME = 0;
   let dirty = true;
@@ -119,7 +112,7 @@
   const layer = new LabelLayer(stage, dpr);
 
   const draw = () => {
-    layer.update(JSON.parse(player.draw(TIME, scale)));
+    layer.update(JSON.parse(player.draw(TIME, dpr)));
     const v = (name) => player.value(name, TIME);
     const d = v('d');
     $('d').value = d;
@@ -129,21 +122,24 @@
       : `P is inside the circle: it has no tangents, and the chord reaches ${v('half_chord').toFixed(3)} each way.`;
   };
 
-  const frame = (now) => {
-    if (dirty) {
-      dirty = false;
-      try {
-        draw();
-      } catch (e) {
-        $('error').textContent = e.message;
-      }
+  // Draws now: a resize calls it too, so the cleared canvas is never shown.
+  const paint = () => {
+    dirty = false;
+    try {
+      draw();
+    } catch (e) {
+      $('error').textContent = e.message;
     }
+  };
+  const frame = (now) => {
+    if (dirty) paint();
     layer.tick(now);
     requestAnimationFrame(frame);
   };
   requestAnimationFrame(frame);
 
-  window.pencil = { layer, player, scale, dpr, draw, setDistance, redraw() { dirty = true; } };
+  window.pencil = { layer, player, dpr, draw, setDistance, redraw() { dirty = true; } };
+  follow(canvas, player, paint);
 </script>
 </body>
 </html>

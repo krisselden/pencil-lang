@@ -1,5 +1,7 @@
 // Warm on the negative side and cool on the positive, added up as the shader does, so the sign
 // stays where it is as the circle turns inside out through a line.
+style figure { width: 640px; height: 400px }
+
 style paper { fill: black; tone: tanh }
 style around { blend: add; fill_opacity: 0.05 + tanh(2·self.pixel / abs(self.dist)) }
 style around::negative { fill: rgb(1275, 255, 510) }

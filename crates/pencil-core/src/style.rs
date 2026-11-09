@@ -293,7 +293,8 @@ pub struct Styled {
 }
 
 /// How panels sit on the canvas, in design pixels: `style panels` for the whole, and
-/// `style panel` for each.
+/// `style panel` for each. A figure without panels takes its `width` and `height` from
+/// `style figure`.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct PanelStyle {
     pub columns: Option<Expr>,
@@ -302,6 +303,8 @@ pub struct PanelStyle {
     pub width: Option<Expr>,
     pub height: Option<Expr>,
     pub pad: Option<Expr>,
+    /// The reader's text size where there's no page to say, as in a video, in design pixels.
+    pub em: Option<Expr>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -310,9 +313,9 @@ pub enum Ty {
     Color,
 }
 
-fn has_pixels(e: &Expr) -> bool {
+fn has_head(e: &Expr, name: &str) -> bool {
     match e {
-        Expr::App(head, args) => head == "Pixels" || args.iter().any(has_pixels),
+        Expr::App(head, args) => head == name || args.iter().any(|a| has_head(a, name)),
         _ => false,
     }
 }
@@ -368,7 +371,7 @@ pub fn type_of(e: &Expr, names: &[&str], spatial: bool) -> Result<Ty, String> {
                 ) => Ok(Real),
                 (
                     "Negate" | "Sqrt" | "Sin" | "Cos" | "Tan" | "Arccos" | "Exp" | "Ln" | "Abs"
-                    | "Sign" | "Floor" | "Pixels" | "Sinh" | "Cosh" | "Tanh",
+                    | "Sign" | "Floor" | "Pixels" | "Ems" | "Sinh" | "Cosh" | "Tanh",
                     [Real],
                 ) => Ok(Real),
                 _ => Err(format!("`{head}` doesn't take {tys:?}")),
@@ -516,6 +519,27 @@ pub fn resolve_keeping(
                             }
                         };
                         set_layout(prop, value, prop != "columns", slot).map_err(&at)?;
+                    }
+                    continue;
+                }
+                if selector.target == "figure" && selector.tags.is_empty() {
+                    for (prop, value) in &decls {
+                        let slot = match prop.as_str() {
+                            "width" | "height" if panel.is_some() => {
+                                return Err(at(format!(
+                                    "a figure with panels is sized by `style panel`, not `style figure {{ {prop} }}`"
+                                )));
+                            }
+                            "width" => &mut styled.panels.width,
+                            "height" => &mut styled.panels.height,
+                            "em" => &mut styled.panels.em,
+                            other => {
+                                return Err(at(format!(
+                                    "`figure` takes `width`, `height` and `em`, not `{other}`"
+                                )));
+                            }
+                        };
+                        set_layout(prop, value, true, slot).map_err(&at)?;
                     }
                     continue;
                 }
@@ -711,7 +735,12 @@ fn set_layout(
     if type_of(value, &[], false)? != Ty::Real {
         return Err(format!("`{prop}` needs a number"));
     }
-    if needs_unit && !has_pixels(value) {
+    if has_head(value, "Ems") {
+        return Err(format!(
+            "`{prop}` is in `em`, the reader's text size, so it can't size a figure"
+        ));
+    }
+    if needs_unit && !has_head(value, "Pixels") {
         return Err(format!("`{prop}` needs a unit, such as `2px`"));
     }
     *slot = Some(value.clone());
@@ -915,9 +944,7 @@ fn apply(
                 "width" | "dash" | "gap" | "radius" | "size" | "halo" | "head" | "distance"
                 | "tick" | "leader" | "leader_gap",
             ) => {
-                if !has_pixels(value) {
-                    return Err(format!("`{prop}` needs a unit, such as `2px`"));
-                }
+                // A length: a bare number is in the figure's own units, and `px` and `em` convert.
                 match prop.as_str() {
                     "width" => &mut target.width,
                     "dash" => &mut target.dash,
@@ -1136,7 +1163,6 @@ mod tests {
                 "style c { width: 1px + 2px * self.t; draw: field }",
                 "can't use `draw: field`",
             ),
-            ("style c { dash: 4 }", "needs a unit"),
             ("style c { dash: self.t * 1px }", "unknown name `self.t`"),
             ("style c { draw: sketchy }", "can't be `sketchy`"),
             ("style c { cap: wobbly }", "can't be `wobbly`"),
@@ -1144,7 +1170,6 @@ mod tests {
             ("style nope { stroke: white }", "no mark named"),
             ("style c::sideways { fill: white }", "unknown facet"),
             ("style c { fill: white }", "needs a facet"),
-            ("style c { width: 2 }", "needs a unit"),
             ("style c::inside { fill: 2 }", "needs a Color"),
             ("style c::inside { fill: oklch(1, 2) }", "doesn't take"),
             ("style c { glow: white }", "unknown property"),

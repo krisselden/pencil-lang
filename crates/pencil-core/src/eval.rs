@@ -31,6 +31,12 @@ pub enum Value {
     Color([f64; 3]),
 }
 
+/// World units per figure pixel (`1px`), per reader's em (`1em`), and per device pixel, set for a
+/// frame. Style lengths are worked out in world units and turned into device pixels with these.
+pub const UNIT_PX: &str = "unit.px";
+pub const UNIT_EM: &str = "unit.em";
+pub const UNIT_DEVICE: &str = "unit.device";
+
 #[derive(Clone, Debug)]
 pub struct Env {
     /// `None` is a binding that doesn't exist this frame.
@@ -225,7 +231,17 @@ pub fn eval(e: &Expr, env: &Env) -> Result<Value, Error> {
                 }
                 Real(step)
             }
-            ("Pixels", [a]) => Real(real(a)?),
+            // Lengths are in world units, and a frame says how big its units are there. Where no
+            // frame does, as for a figure's own size, a `px` is just a design pixel.
+            ("Pixels", [a]) => Real(real(a)? * env.get(UNIT_PX).unwrap_or(1.0)),
+            ("Ems", [a]) => match env.get(UNIT_EM) {
+                Some(em) => Real(real(a)? * em),
+                None => {
+                    return Err(Error::new(
+                        "an `em` is the reader's text size, so it can't size a figure",
+                    ));
+                }
+            },
             ("Oklch", [l, c, h]) => Color(oklch(real(l)?, real(c)?, real(h)?)),
             ("Rgb", [r, g, b]) => Color([
                 srgb_decode(real(r)? / 255.0),
@@ -481,7 +497,6 @@ pub struct Frame<'a> {
     sided: Vec<crate::Sided>,
     /// One coverage buffer per line stroke, in mark order.
     coverage: Vec<Vec<f64>>,
-    dpr: f64,
 }
 
 impl<'a> Frame<'a> {
@@ -498,15 +513,16 @@ impl<'a> Frame<'a> {
             .iter()
             .map(|segments| stroke::rasterize(segments, width, height))
             .collect();
+        let mut env = frame_env(figure, inputs)?;
+        prepared.units(&mut env);
         Ok(Self {
             figure,
-            env: frame_env(figure, inputs)?,
+            env,
             width,
             height,
             sided: figure.sided(),
             prepared,
             coverage,
-            dpr,
         })
     }
 
@@ -593,7 +609,7 @@ impl<'a> Frame<'a> {
                         self.width,
                         self.height,
                     );
-                    let radius = frame::dot_radius(style, &env)? * self.dpr;
+                    let radius = frame::dot_radius(style, &env)?;
                     let (dx, dy) = (px - cx, py - cy);
                     let rho = dx.hypot(dy);
                     let n = if rho > 1e-6 {
@@ -661,7 +677,7 @@ impl<'a> Frame<'a> {
                 layer += 1;
                 c
             } else if let Some((dist_px, n)) = measured {
-                let half = frame::stroke_width(style, &env)? * self.dpr / 2.0;
+                let half = frame::stroke_width(style, &env)? / 2.0;
                 let d = dist_px.abs();
                 box_coverage(half - d, n.0, n.1) - box_coverage(-half - d, n.0, n.1)
             } else {

@@ -343,7 +343,15 @@ pub fn spring(
                 time: *index as f64 / SPRING_SAMPLES_PER_SECOND,
                 params: inputs.params.clone(),
             };
-            let settled = frame::prepare(figure, &past, width, height, prepared.dpr)?;
+            let settled = frame::prepare_with(
+                figure,
+                &past,
+                width,
+                height,
+                prepared.dpr,
+                prepared.em,
+                &crate::terms::Estimate,
+            )?;
             slot.insert(
                 settled
                     .labels
@@ -391,7 +399,7 @@ mod tests {
 
     /// A line sweeps across a label's home as `a` goes from −1 to 1.
     const SWEEP: &str = "
-        viewport { x: -2..2, y: -2..2, width: 400, height: 400 }
+        viewport { x: -2..2, y: -2..2 } style figure { width: 400px; height: 400px }
         param a = 0 in -2..2
         bind a = time - 2
         let P = (0, 0)
@@ -432,7 +440,7 @@ mod tests {
     fn labels_avoid_each_other_and_do_not_depend_on_their_order() {
         let doc = |first: &str, second: &str| {
             format!(
-                "viewport {{ x: -2..2, y: -2..2, width: 400, height: 400 }}
+                "viewport {{ x: -2..2, y: -2..2 }} style figure {{ width: 400px; height: 400px }}
                  let P = (0, 0)
                  label {first} = \"A\" at P offset (-1, 0)
                  label {second} = \"B\" at P offset (1, 0)"
@@ -450,7 +458,7 @@ mod tests {
 
     #[test]
     fn a_label_stays_in_frame() {
-        let doc = "viewport { x: -2..2, y: -2..2, width: 400, height: 400 }
+        let doc = "viewport { x: -2..2, y: -2..2 } style figure { width: 400px; height: 400px }
                    let P = (1.99, 0)
                    label n = \"Long\" at P";
         let f = build(doc, &["style n { place: settle; size: 16px }"]).unwrap();
@@ -460,7 +468,7 @@ mod tests {
 
     #[test]
     fn it_avoids_a_curve_drawn_per_pixel() {
-        let doc = "viewport { x: -2..2, y: -2..2, width: 400, height: 400 }
+        let doc = "viewport { x: -2..2, y: -2..2 } style figure { width: 400px; height: 400px }
                    let P = (1, 0)
                    curve c = circle((0, 0), (1, 0))
                    label n = \"P\" at P offset (3, 0)";

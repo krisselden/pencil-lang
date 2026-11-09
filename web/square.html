@@ -35,7 +35,8 @@
   <p id="error" role="alert"></p>
 </main>
 <script type="module">
-  import init, { Player } from './pkg/pencil_web.js';
+  import init, { Player, figure_size } from './pkg/pencil_web.js';
+  import { fit, follow } from './fit.js';
   import { LabelLayer } from './labels.js';
 
   const $ = (id) => document.getElementById(id);
@@ -47,14 +48,9 @@
   const canvas = $('figure');
   const doc = await get('../corpus/006-square/square.pen');
   const sheets = await Promise.all([get('../corpus/theme.style'), get('../corpus/006-square/plain.style')]);
-  const design = { width: 340, height: 235 };
   const dpr = window.devicePixelRatio || 1;
-  canvas.style.aspectRatio = `${design.width} / ${design.height}`;
-  canvas.width = Math.round(canvas.clientWidth * dpr);
-  canvas.height = Math.round((canvas.clientWidth * design.height / design.width) * dpr);
-  const scale = canvas.width / design.width;
-
   await init();
+  fit(canvas, JSON.parse(figure_size(doc, sheets)));
   const player = await Player.create(canvas, new URLSearchParams(location.search).has('gl'));
   const layer = new LabelLayer($('stage'), dpr);
   player.set_measure(layer.measure);
@@ -69,7 +65,7 @@
   let time = 0, playing = !matchMedia('(prefers-reduced-motion: reduce)').matches, last = 0;
   $('play').textContent = playing ? 'Pause' : 'Play';
   const draw = (t) => {
-    layer.update(JSON.parse(player.draw(t, scale)));
+    layer.update(JSON.parse(player.draw(t, dpr)));
     $('time').value = t;
     $('clock').textContent = `${t.toFixed(2)} s`;
   };
@@ -87,6 +83,10 @@
   draw(time);
   requestAnimationFrame((now) => { last = now; frame(now); });
   window.pencil = { player, layer, draw, stop() { playing = false; $('play').textContent = 'Play'; } };
+  // A resize clears the canvas, so it draws at once, before the cleared canvas can be shown.
+  follow(canvas, player, () => {
+    try { draw(time); } catch (e) { $('error').textContent = e.message; }
+  });
 </script>
 </body>
 </html>
