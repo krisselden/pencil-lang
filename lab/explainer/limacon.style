@@ -1,0 +1,84 @@
+// On dark paper from the start, with the circles through 1 in the warm they'll glow in at the end,
+// and the central circle in the cool. Goes after theme.style and dark.style.
+let warm = rgb(255, 128, 176)
+let cool = rgb(150, 132, 255)
+let gold = rgb(255, 196, 92)
+
+// Arrivals get most of the way at once and then settle, so they read as a stroke of the pen and
+// not a slow reveal.
+let pen = snap(self.life, 3)
+let pop = snap(self.life, 4)
+// What no beat shows leaves with the quiet before the glow, on the same ease as what one drops.
+let fade = snap(1 - quiet, 3)
+
+style caption { fill: ink; size: 26px; distance: 40px }
+style label.tick { size: 18px; distance: 18px; place: fixed; opacity: fade }
+
+style axis { stroke: muted; width: 1px; opacity: 0.45·fade }
+style central { stroke: cool; width: 3px; trim: pen; opacity: mix(0.45, 1, self.focus) }
+style center { fill: cool; radius: 3.5px·pop; opacity: mix(0.45, 1, self.focus) }
+style O, one { fill: ink; radius: 4px; opacity: fade }
+style B { fill: ink; radius: 4px·pop; opacity: self.life·mix(0.4, 1, self.focus) }
+style from_zero { stroke: ink; width: 1.75px; trim: pen; opacity: self.life·mix(0.35, 1, self.focus) }
+style above_one { stroke: muted; width: 1.5px; dash: 5px; gap: 4px; trim: pen; opacity: self.life·mix(0.35, 1, self.focus) }
+style at_B { stroke: ink; width: 1.25px; opacity: pop }
+
+style through_one { stroke: warm; width: 2.5px; trim: pen; opacity: mix(0.5, 1, self.focus) }
+style C { fill: warm; radius: 5px·pop; opacity: mix(0.5, 1, self.focus) }
+style trail { stroke: warm; width: 1px; opacity: mix(0.2, 0.35, self.focus)·(1 - glow) }
+
+// The mirror: the tangent at C, dashed in the central circle's color, and 1 and E the same
+// distance from C on either side of it.
+style .mirror { stroke: cool; width: 1.75px; dash: 7px; gap: 5px; trim: pen; opacity: mix(0.35, 1, self.focus) }
+style to_one, to_E { stroke: ink; width: 1.5px; ticks: 1; tick: 11px; opacity: mix(0.3, 0.9, self.focus) }
+style to_one { trim: pen }
+style to_E { opacity: snap(4·self.life, 3)·mix(0.3, 0.9, self.focus) }
+style E { fill: ink; radius: 5px; opacity: snap(4·self.life, 3) }
+
+style normal { stroke: muted; width: 1.5px; dash: 5px; gap: 4px; trim: pen; opacity: mix(0.35, 1, self.focus) }
+style tangent_E { stroke: ink; width: 2px; trim: pen; opacity: mix(0.35, 1, self.focus) }
+style at_E { stroke: ink; width: 1.25px; opacity: pop·mix(0.35, 1, self.focus) }
+
+style limacon { stroke: ink; width: 2.5px; opacity: fade }
+
+// The pedal: the central circle doubled from 1, in its color, with the halves of 1P marked equal.
+style pedal { stroke: cool; width: 2.5px; opacity: snap(5·self.life)·mix(0.4, 1, self.focus) }
+style scaling { stroke: muted; width: 1.25px; opacity: snap(5·self.life) }
+style half_in, half_out { stroke: cool; width: 1.5px; ticks: 2; tick: 11px; opacity: pop·mix(0.3, 0.9, self.focus) }
+style P { fill: cool; radius: 5px·pop; opacity: mix(0.5, 1, self.focus) }
+style pedal_tangent { stroke: cool; width: 2px; trim: pen; opacity: mix(0.35, 1, self.focus) }
+style foot { stroke: ink; width: 1.5px; dash: 5px; gap: 4px; trim: pen; opacity: mix(0.35, 1, self.focus) }
+style at_foot { stroke: ink; width: 1.25px; opacity: pop·mix(0.35, 1, self.focus) }
+
+// The conchoid. Pascal's circle and its radius to L in gold, since that radius is the fast arm of
+// beat 6, and the two reaches in the central circle's color, since each is the slow arm moved.
+style pascal { stroke: gold; width: 2.5px; trim: pen; opacity: mix(0.4, 1, self.focus) }
+style pascal_radius { stroke: gold; width: 2.5px; trim: pen; opacity: mix(0.4, 1, self.focus) }
+style L { fill: gold; radius: 5px·pop; opacity: mix(0.5, 1, self.focus) }
+style from_one { stroke: ink; width: 1.5px; trim: pen; opacity: mix(0.35, 0.9, self.focus) }
+style arc_t { stroke: ink; width: 1.5px; trim: pen }
+style arc_2t { stroke: gold; width: 1.5px; trim: pen }
+style label.angle { size: 22px; place: fixed; distance: 0px; opacity: pop }
+style name_t { fill: ink }
+style name_2t { fill: gold }
+style reach_out, reach_back { stroke: cool; width: 2.5px; ticks: 1; tick: 12px; trim: pen; opacity: mix(0.4, 1, self.focus) }
+style E_back { fill: ink; radius: 5px·pop }
+
+// The roulette: each arm and its term share a color, the hub in ink, the slow arm in the central
+// circle's color, and the fast arm in Pascal's gold.
+style .hub { stroke: ink; fill: ink }
+style .slow { stroke: cool; fill: cool }
+style .fast { stroke: gold; fill: gold }
+style arrow { width: 2.75px; trim: pen; opacity: mix(0.4, 1, self.focus) }
+style A2 { fill: cool; radius: 4.5px·pop; opacity: mix(0.5, 1, self.focus) }
+style term { font: math; size: 32px; opacity: mix(0.45, 1, self.focus) }
+style term.defs { size: 22px; fill: muted }
+style name_E { font: math; size: 26px; fill: ink; leader: 1px; leader_gap: 7px; distance: 44px; place: fixed; opacity: pop·mix(0.5, 1, self.focus) }
+
+// The glow, as in Kris's shader: each circle warm on its disk and cool outside, by the Moffat
+// profile, half as bright a device pixel out. The circles are evenly spaced, so they're weighted
+// alike, and the tone rolls off from clipping to tanh as the light adds up.
+style paper { fill: mix(paper_color, black, glow); tone: glow }
+style rings { blend: add; fill_opacity: self.life·0.5·(1 + 15·(self.dist / self.pixel)^4)^(-1 / 4) }
+style rings::inside { fill: rgb(1275, 255, 510) }
+style rings::outside { fill: rgb(510, 255, 1530) }

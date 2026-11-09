@@ -43,7 +43,7 @@ Run on 2026-11-08, by rebuilding the GeoGebra construction step by step, at four
 | That circle touches the limaçon at E | 1.8e-15 |
 | `K = |z²|`, so O, E and K make an isosceles triangle | 4.3e-14 |
 | E′E is `2 sinh 2s` long and parallel to AC, and its midpoint L is on Pascal's circle | 1.5e-14 |
-| The pedal: the line through E square to the normal touches the circle about `cosh 2s` with radius `sinh 2s`, and the foot from 1 onto it is E | 8.9e-15 |
+| The pedal: the line through E square to 1E, so parallel to the mirror, touches the circle about `cosh 2s` with radius `sinh 2s` at `2C − 1`, and the foot from 1 onto it is E. (The line square to the normal CE doesn't: it misses by up to 2.7.) | 3.6e-15 |
 | The roulette: A′ is the hub plus the slow arm, and `|A′E|` is `sinh² s` | 2.6e-14 |
 | Pascal's circle about 1 is `r = 2 sinh² s · cos θ` | 3.6e-15 |
 | About 1, `E − 1 = (sinh 2s + 2 sinh² s · cos t) · e^(it)` | 1.1e-14 |
@@ -207,8 +207,17 @@ Each ends with everything passing, and the GPU matching the oracle.
 
 1. **Traps 8 and 10.** Small, and they stand alone. Trap 9 goes with named terms. **Done 2026-11-08:** both are errors now, with what to write instead. The same check covers `duration`, a param's range and a panel's layout, which read `time` the same way. Two things it found: this plan's own sketch had written `+` twice, and a number can't have a copy, since `2.1` is a number, so a repeated number can only be an error for now.
 2. **Beats with lengths, progress and focus, `self.life`, `trim` and `drop`, and captions in video.** Proof: `006-square` rewritten with no absolute times, compared with the original frame by frame, and with its sheet no longer naming `parts` or `fade`. **Done 2026-11-08, except `trim`:** `pause`, beats with `for`, `show`, `drop` and `focus`, a beat's name as its progress, `self.life`, `self.focus`, and `style caption`. Everything is worked out from `beat`, so nothing moves during a pause. `006-square` matches the original exactly at 13 of its 16 holds, and the three others differ only because the original drew a copy of `z` on top of `z` a state early, which made it a little darker. That's a bug of its own in how copies are drawn. During moves, the differences are only easing. `trim` came after, the same day: a stroke is cut where it becomes segments, which the GPU and the oracle share, and a trimmed circle is drawn as a line. A circle starts due east of its center for now, since circles only keep their center and radius. Beat 2's circles through 1 can be written as parametric curves starting at 1 until circles remember a start.
-3. **Named terms, ticks and leaders,** and `tone` as a value that can change. Proof: still frames of beats 3, 6 and 7.
-4. **The video, one beat at a time,** with Kris watching each before the next. Timing can only be judged in motion, so this is where most of the work will be.
+3. **Named terms, ticks and leaders,** and `tone` as a value that can change. Proof: still frames of beats 3, 6 and 7. **Done 2026-11-08:** `slow:2ab`, `ticks`, `leader` and `leader_gap`, and `tone` from 0 to 1. The proof is `lab/explainer/proof.pen` and `web/proof.html`, three beats on dark paper that light up into the glow, and the GPU matches the oracle within 1/255 throughout, with the tone halfway. Leaders were planned for fixed labels only, but they're drawn by each renderer once a label has settled, so they work for settling labels too. What it found:
+   - **A selector's name matches tags too,** so `style slow` reached the term tagged `slow` as well as the arrow, and `trim` on a term is an error. `style arrow.arm` says which.
+   - **The paper is clipped before the tone,** so a paper brighter than white doesn't glow.
+   - **The glow needs a narrow profile.** At 3 device pixels to half brightness, the 1/d tail of 24 circles washed the picture out. At 0.75 it's about as bright as `012-limacon`'s `tanh`.
+4. **The video, one beat at a time,** with Kris watching each before the next. Timing can only be judged in motion, so this is where most of the work will be. **Drafted 2026-11-08:** all seven beats, in `lab/explainer/limacon.pen`, 65 seconds, and the GPU matches the oracle within 1/255 at every moment checked. Kris's one note on the first cut was to make it punchier, so arrivals `snap` and beats are shorter than the table above. What it found:
+   - **A parametric range that ran down drew nothing,** without a word, so `for u in 0..t` vanished for a negative angle. It's drawn from its first bound now, and `trim` and a head follow that direction.
+   - **This plan's pedal claim was misworded.** The line through E that touches the pedal circle is square to 1E, so parallel to the mirror, not square to the normal CE. It touches at `2C − 1`. The table above is corrected.
+   - **The math font has `ᵗ` but not `ⁱ`,** and the renderer has no fallback, so `e^(it)` became u, a unit number at angle t. That reads better anyway, since u² at 2t is beat 5's doubling.
+   - **Terms that aren't operators set tight,** so `cosh s` printed as `coshs`, and a label is always centered on its point. The definitions under the sum are short expressions of their own, written `cosh(s)`.
+   - **A dropped mark leaves only as its sheet says,** so each rule needs `self.life` in it to fade. What no beat ever shows has no life to read, and the sheet fades it by the `quiet` beat's progress instead.
+   - **The 24 circles are weighted alike in the glow,** unlike `012-limacon`'s `0.9^i`, since here they're an evenly spaced family and not a trail behind a moving point.
 5. **Narration,** once there's a cut worth recording over.
 6. **Write up what it found** in `goals.md` and the language reference.
 

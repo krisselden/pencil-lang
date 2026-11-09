@@ -60,6 +60,10 @@ Each form keeps its own representation (`goals.md`).
 | Parametric | `curve c = parametric (t): (cos(t), sin(t)) for t in 0..tau` | Sampled to a line |
 | Construction | `curve c = circle(O, A)`, `curve g = ray(O, B)` | A circle per pixel, a line or ray as a line |
 
+A parametric range can run down as well as up, and the curve is drawn from its first bound, so
+`for u in 0..t` sweeps an angle from 0 to `t` whichever sign `t` has. `trim` and a `head` follow that
+direction. A collection's `for i in a..b` counts up, and is empty when `b` is below `a`.
+
 ### Viewport
 
 `viewport { x: -2..2, y: -2..2, width: 640, height: 400 }`
@@ -226,6 +230,7 @@ Terms are separated by spaces. Nothing is diffed: identity is what's written.
 - A new term fades in, and a term that's gone fades out, riding along with its neighbors.
 - A copy is written `z.1`, and prints as `z`. When it's new, it starts on `z`.
 - A term is in one place, so a state can't write the same one twice: `a + b +.1 c` has two plus signs. A number can't have a copy yet, since `2.1` is a number.
+- **A term can have a name:** `slow:2ab` prints `2ab`, and is the term `slow`. The name is what moves between states and what a copy is written from, `slow.1:2ab`, and it's a tag, so `style .slow { … }` and `focus .slow` reach the term together with an arrow tagged `slow`. One name ties a symbol to its geometry. A name prints one text, so `slow:2ba` in another state is an error.
 - When a copy goes, it moves into a term of the same name at the same place: factoring.
 
 Each term is a mark named `work.z.1`, with the tags `term`, `work` and `z`, so `style term.a { fill: blue }`
@@ -387,8 +392,10 @@ the color stays with the disk. A style can tell which it is from `self.curvature
 | `cap` | Lines | `butt` (default) or `round`. |
 | `draw` | Strokes | A hint: `auto` (default), `line` or `field`. |
 | `blend` | Edges, sides | `gamma` (default, as SVG does), `linear`, or `add`, which adds to what's there in display values and never covers it. |
-| `tone` | `paper` | `clip` (default) or `tanh`, which runs the finished picture through `tanh` in display values, so that what `blend: add` piles up stays in range. |
+| `tone` | `paper` | `clip` (default) or `tanh`, which runs the finished picture through `tanh` in display values, so that what `blend: add` piles up stays in range. Or a number from 0 to 1 between them, which can change, so a figure can turn into one that adds light: `tone: glow` with a beat named `glow`. |
 | `opacity` | Any mark | Scales the whole mark. |
+| `ticks`, `tick` | Segments | How many short marks cross its middle, saying it's as long as another with as many, and how long each is, in `px`, 10 by default. Drawn in its stroke without its dashes, once a trimmed segment reaches its middle. |
+| `leader`, `leader_gap` | Labels | A line from its point to its text, this wide, in `px`, in the text's color. It starts `leader_gap` from the point, so it can meet a ring, and stops a little short of the text, wherever the label settles. |
 | `radius` | Dots, circles, outlines | In `px`. A dot's size, a cap on a collection's circles, or an outline's least half-size. |
 | `size` | Labels | In `px`. |
 | `halo` | Labels | Full width in `px`, in the paper's color. |
@@ -426,8 +433,11 @@ Newest first. "Why" is the reason at the time, so these can be revisited.
 
 | Date | Decision | Why |
 |---|---|---|
+| 2026-11-08 | A leader is drawn with its label, by each renderer, not by the shader | Only the renderer knows where a settling label ends up and how wide its text really is, and the shader and the oracle both skip labels. `frame::leader_ends` is the geometry, and the page repeats it in a few lines |
+| 2026-11-08 | A term's name is its identity and a tag, and what it prints is separate | The roulette's arms and their terms have to share a color and a focus, and `term.2ab` can't be a selector. A name says which term it is, and the text can be anything |
 | 2026-11-08 | `trim` cuts a stroke where it becomes segments, and a circle with one is drawn as a line | The GPU and the CPU oracle share those segments, so they can't disagree, and the shader needs nothing new. A curve is cut along its parameter, since that's the order its math goes in, and fully drawn it's the curve as it was, so a loop's dashes don't jump as it closes. A circle keeps only its center and radius, so it can't start at the point it was drawn through yet: a compass circle can be written as a parametric curve that does |
 | 2026-11-08 | Beats can have lengths, and `show`, `drop`, `focus` and captions all follow `beat` | `006-square` kept absolute times in two places, and its sheet had to know the document's own names for its fades. Lengths compose, so one change moves what follows, and narration can retime them later. Working everything out from `beat`, not seconds, means a reader stepping, a video and a pause all agree: nothing moves while the figure holds (`docs/plan-explainer.md`) |
+| 2026-11-08 | A parametric range can run down | An angle's arc is `0..t`, and `t` is negative half the time. Such a range used to draw nothing, without a word. Running from the first bound to the second keeps the order `trim` draws in, so an arc grows from the side it's measured from |
 | 2026-11-08 | A value that holds for the whole figure can't read `time`, and a state can't write a term twice | Both used to fail without a word. A viewport bound was worked out once, at time 0, so `x: -time..time` sat still, and a second `+` took the first's place, so `a + b + c` drew `a b + c` (`docs/plan-explainer.md`) |
 | 2026-11-06 | A view keeps equal scales, showing more rather than stretching | Kris: distortion spends a reader's budget fast. A 0.07% stretch also moved a near-straight circle by tens of pixels, since its center and radius were scaled differently. Unequal axes would have to be asked for, and nothing asks yet |
 | 2026-11-06 | Bindings run in dependency order, not the order they're written | `bind b = grown` failed at runtime, since a bound param ran at its `param` line, before a later `let`. A real cycle is now an error when compiled. A name still has to be written before it's read |

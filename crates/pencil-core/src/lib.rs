@@ -405,6 +405,7 @@ impl Composition {
                         font,
                         anchor: at,
                         place: style::Place::Fixed,
+                        leader: None,
                     });
                     x += wide + size * 0.6;
                 }
@@ -512,6 +513,7 @@ impl Composition {
                     font: style.font,
                     anchor: at,
                     place: style::Place::Fixed,
+                    leader: None,
                 });
             }
             start = end;

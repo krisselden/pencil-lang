@@ -1,0 +1,23 @@
+// Dark paper, so the figure lights up into the glow instead of changing scene.
+style paper { fill: mix(paper_color, black, glow); tone: glow }
+
+style central { stroke: accent; width: 2.5px }
+style limacon { stroke: ink; width: 2px; opacity: 0.35 + 0.65·self.focus }
+style one, C, E { fill: ink; radius: 3.5px; opacity: mix(0.4, 1, self.focus) }
+
+style tangent_at_C { stroke: muted; width: 1.25px; dash: 6px; gap: 4px; opacity: self.life·mix(0.3, 1, self.focus) }
+style chord, normal { stroke: red; width: 2px; ticks: 1; trim: self.life; opacity: mix(0.3, 1, self.focus) }
+style name_e { leader: 1px; leader_gap: 7px; distance: 46px; place: fixed; opacity: self.life }
+
+style .hub { stroke: ink; fill: ink }
+style .slow { stroke: blue; fill: blue }
+style .fast { stroke: green; fill: green }
+style arrow.arm { width: 2.5px; trim: self.life }
+style term { opacity: self.life }
+
+// The glow: each circle warm on its disk and cool outside, by Kris's Moffat profile, half as
+// bright three quarters of a device pixel out, about as bright as `012-limacon`'s, and the tone
+// rolling off as the light adds up.
+style rings { blend: add; fill_opacity: self.life·0.9^i·(1 + 15·(self.dist / (0.75·self.pixel))^4)^(-1 / 4) }
+style rings::inside { fill: rgb(1275, 255, 510) }
+style rings::outside { fill: rgb(510, 255, 1530) }

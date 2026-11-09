@@ -4,6 +4,11 @@
 const RATE = 12;
 const REST = 0.01;
 
+// As `frame::LEADER_MARGIN` and `frame::TEXT_HALF_HEIGHT`, which video uses.
+const LEADER_MARGIN = 0.25;
+const TEXT_HALF_HEIGHT = 0.35;
+const SVG = 'http://www.w3.org/2000/svg';
+
 const FAMILY = {
   math: "Charter, 'Bitstream Charter', 'Sitka Text', Cambria, serif",
   sans: 'system-ui, -apple-system, sans-serif',
@@ -13,7 +18,11 @@ export class LabelLayer {
   constructor(stage, dpr) {
     this.stage = stage;
     this.dpr = dpr;
-    // Every halo under every glyph, so one term's can't eat into its neighbor.
+    // Leaders under everything, then every halo under every glyph, so one term's can't eat
+    // into its neighbor.
+    this.leaders = document.createElementNS(SVG, 'svg');
+    this.leaders.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;pointer-events:none;overflow:visible';
+    this.stage.append(this.leaders);
     this.halos = this.makeLayer();
     this.glyphs = this.makeLayer();
     this.ruler = document.createElement('canvas').getContext('2d');
@@ -48,7 +57,9 @@ export class LabelLayer {
         const halo = span.cloneNode();
         this.halos.append(halo);
         this.glyphs.append(span);
-        item = { span, halo, offset: target.slice(), velocity: [0, 0], shown: false };
+        const line = document.createElementNS(SVG, 'line');
+        this.leaders.append(line);
+        item = { span, halo, line, offset: target.slice(), velocity: [0, 0], shown: false };
         this.items.set(label.id, item);
       }
       const { span, halo } = item;
@@ -61,6 +72,12 @@ export class LabelLayer {
       item.target = target;
       item.anchor = [label.anchorX, label.anchorY];
       item.settles = label.settles;
+      item.leader = label.leader;
+      item.text = label.text;
+      item.size = label.size;
+      item.math = label.math;
+      item.line.style.stroke = label.color;
+      item.line.style.opacity = label.opacity;
       for (const part of [span, halo]) {
         if (part.textContent !== label.text) part.textContent = label.text;
         part.hidden = false;
@@ -77,6 +94,7 @@ export class LabelLayer {
       if (!present.has(id)) {
         item.span.hidden = true;
         item.halo.hidden = true;
+        item.line.style.display = 'none';
         item.shown = false;
       }
     }
@@ -90,7 +108,32 @@ export class LabelLayer {
       const transform = `translate(${x / this.dpr}px, ${y / this.dpr}px) translate(-50%, -50%)`;
       item.span.style.transform = transform;
       item.halo.style.transform = transform;
+      this.placeLeader(item, x, y);
     }
+  }
+
+  /** As `frame::leader_ends`: from its gap off the point to a little short of the text's box. */
+  placeLeader(item, x, y) {
+    const { line, leader, anchor } = item;
+    const [dx, dy] = [x - anchor[0], y - anchor[1]];
+    const apart = Math.hypot(dx, dy);
+    let end = -Infinity;
+    if (leader && apart > 0) {
+      const [ux, uy] = [dx / apart, dy / apart];
+      const half = [this.measure(item.text, item.size, item.math) / 2, item.size * TEXT_HALF_HEIGHT];
+      const toEdge = Math.min(half[0] / Math.max(Math.abs(ux), 1e-9), half[1] / Math.max(Math.abs(uy), 1e-9));
+      end = apart - toEdge - LEADER_MARGIN * item.size;
+      if (end > leader.gap) {
+        const at = (d) => [(anchor[0] + ux * d) / this.dpr, (anchor[1] + uy * d) / this.dpr];
+        const [a, b] = [at(leader.gap), at(end)];
+        line.setAttribute('x1', a[0]);
+        line.setAttribute('y1', a[1]);
+        line.setAttribute('x2', b[0]);
+        line.setAttribute('y2', b[1]);
+        line.style.strokeWidth = `${leader.width / this.dpr}px`;
+      }
+    }
+    line.style.display = leader && end > (leader?.gap ?? 0) ? '' : 'none';
   }
 
   /** Moves labels along by the clock. Needs no redraw of the figure. */

@@ -32,7 +32,7 @@ pub const SELF_LIFE: &str = "self.life";
 pub const SELF_FOCUS: &str = "self.focus";
 /// Every property a style can set. `docs/language.md` must describe each one, and a test
 /// holds it to that.
-pub const PROPERTIES: [&str; 20] = [
+pub const PROPERTIES: [&str; 24] = [
     "fill",
     "fill_opacity",
     "stroke",
@@ -53,6 +53,10 @@ pub const PROPERTIES: [&str; 20] = [
     "head_span",
     "distance",
     "trim",
+    "ticks",
+    "tick",
+    "leader",
+    "leader_gap",
 ];
 pub const COLORS: [&str; 2] = ["white", "black"];
 /// The tags that say what kind of mark something is.
@@ -87,13 +91,16 @@ pub enum Blend {
 }
 
 /// What a figure does with its finished color, for a figure that adds light.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub enum Tone {
     /// Past 1 is white.
     #[default]
     Clip,
     /// tanh of each channel, in display space, which rolls off smoothly.
     Tanh,
+    /// Between the two, in display space: 0 clips and 1 is `tanh`, so a figure can change
+    /// over as what it draws starts adding light.
+    Mix(Expr),
 }
 
 /// A rendering hint. It chooses how a stroke is drawn, never what it means, so every
@@ -173,6 +180,14 @@ pub struct MarkStyle {
     /// How much of a stroke is drawn, from its start: 0 to 1 of its parameter, or of its length
     /// for a straight line.
     pub trim: Option<Expr>,
+    /// How many marks across a segment's middle say it's as long as another with as many.
+    pub ticks: Option<Expr>,
+    /// How long each of those marks is, in style pixels.
+    pub tick: Option<Expr>,
+    /// A label's leader: how wide its line is, in style pixels.
+    pub leader: Option<Expr>,
+    /// How far from its point a label's leader stops, in style pixels.
+    pub leader_gap: Option<Expr>,
 }
 
 impl MarkStyle {
@@ -584,7 +599,14 @@ pub fn resolve_keeping(
                             styled.tone = match value {
                                 Expr::Sym(word) if word == "clip" => Tone::Clip,
                                 Expr::Sym(word) if word == "tanh" => Tone::Tanh,
-                                _ => return Err(at("`tone` is `clip` or `tanh`".to_string())),
+                                _ if type_of(value, &names, false) == Ok(Ty::Real) => {
+                                    Tone::Mix(value.clone())
+                                }
+                                _ => {
+                                    return Err(at("`tone` is `clip`, `tanh`, or a number from \
+                                        0 to 1 between them"
+                                        .to_string()));
+                                }
                             };
                             continue;
                         }
@@ -792,6 +814,10 @@ fn apply(
                 | "head_span"
                 | "distance"
                 | "trim"
+                | "ticks"
+                | "tick"
+                | "leader"
+                | "leader_gap"
         );
         let mut scope = names.to_vec();
         if prop == "width" {
@@ -864,8 +890,17 @@ fn apply(
                 ));
             }
         }
+        if matches!(prop.as_str(), "ticks" | "tick")
+            && !matches!(form, Form::Polyline { points, closed: false } if points.len() == 2)
+        {
+            return Err(format!("`{id}` isn't a segment, so it can't use `{prop}`"));
+        }
+        if matches!(prop.as_str(), "leader" | "leader_gap") && !matches!(form, Form::Label { .. }) {
+            return Err(format!("`{id}` isn't a label, so it can't use `{prop}`"));
+        }
         let slot = match (facet, prop.as_str()) {
             (None, "trim") => &mut target.trim,
+            (None, "ticks") => &mut target.ticks,
             (Some("inside"), "fill") if round => &mut target.inside,
             (Some("outside"), "fill") if round => &mut target.outside,
             (Some("inside" | "negative"), "fill") => &mut target.negative,
@@ -875,7 +910,11 @@ fn apply(
             (None, "fill_opacity") => &mut target.fill_opacity,
             (None, "show") => &mut target.show,
             (None, "head_span") => &mut target.head_span,
-            (None, "width" | "dash" | "gap" | "radius" | "size" | "halo" | "head" | "distance") => {
+            (
+                None,
+                "width" | "dash" | "gap" | "radius" | "size" | "halo" | "head" | "distance"
+                | "tick" | "leader" | "leader_gap",
+            ) => {
                 if !has_pixels(value) {
                     return Err(format!("`{prop}` needs a unit, such as `2px`"));
                 }
@@ -887,6 +926,9 @@ fn apply(
                     "size" => &mut target.size,
                     "head" => &mut target.head,
                     "distance" => &mut target.distance,
+                    "tick" => &mut target.tick,
+                    "leader" => &mut target.leader,
+                    "leader_gap" => &mut target.leader_gap,
                     _ => &mut target.halo,
                 }
             }

@@ -1,46 +1,69 @@
 //! The GPU against the CPU oracle, where they're easiest to tell apart.
 
-use std::process::Command;
+use std::process::{Command, Output};
+
+/// Runs `pencil check` on a document and a sheet at 320 wide, at time 0. None on a machine with no
+/// GPU, which can't say either way.
+fn check(name: &str, doc: &str, sheet: &str) -> Option<Output> {
+    let dir = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join(name);
+    std::fs::create_dir_all(&dir).unwrap();
+    let (doc_path, sheet_path) = (dir.join("doc.pen"), dir.join("sheet.style"));
+    std::fs::write(&doc_path, doc).unwrap();
+    std::fs::write(&sheet_path, sheet).unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_pencil"))
+        .args([
+            "check",
+            doc_path.to_str().unwrap(),
+            "--style",
+            sheet_path.to_str().unwrap(),
+        ])
+        .args(["--t", "0", "--size", "320"])
+        .output()
+        .unwrap();
+    let out = String::from_utf8_lossy(&output.stdout);
+    if !out.contains("gpu:") {
+        eprintln!(
+            "skipped, with no GPU: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        return None;
+    }
+    Some(output)
+}
+
+fn passes(output: Option<Output>) {
+    if let Some(output) = output {
+        assert!(
+            output.status.success(),
+            "{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+}
 
 /// A pixel center almost exactly on a thin diagonal line. In single precision, the shader's
 /// distance to the line there is only rounding error, so its direction is too, and a thin stroke's
 /// coverage depends on that direction. Every line here runs through a pixel center, far enough from the next not to be hidden by it.
 #[test]
 fn a_thin_line_through_a_pixel_center_has_the_same_coverage() {
-    let dir = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("thin-lines");
-    std::fs::create_dir_all(&dir).unwrap();
-    let doc = dir.join("thin.pen");
-    let style = dir.join("thin.style");
-    std::fs::write(
-        &doc,
+    passes(check(
+        "thin-lines",
         "viewport { x: 0..320, y: 0..320, width: 320, height: 320 }
          curves c = parametric (t): (9·s + 4.5 + 0.9·t, 9·r + 4.5 + 0.4359·t) for t in -3.3..3.7 for s in 0..34, r in 0..34",
-    )
-    .unwrap();
-    std::fs::write(
-        &style,
         "style paper { fill: white }
          style c { stroke: black; width: 1px }",
-    )
-    .unwrap();
-    let output = Command::new(env!("CARGO_BIN_EXE_pencil"))
-        .args([
-            "check",
-            doc.to_str().unwrap(),
-            "--style",
-            style.to_str().unwrap(),
-        ])
-        .args(["--t", "0", "--size", "320"])
-        .output()
-        .unwrap();
-    let (out, err) = (
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr),
-    );
-    // A machine with no GPU can't say either way.
-    if !out.contains("gpu:") {
-        eprintln!("skipped, with no GPU: {err}");
-        return;
-    }
-    assert!(output.status.success(), "{out}\n{err}");
+    ));
+}
+
+/// A rule whose `self.focus` is always 1 leaves an opacity made of nothing but numbers, which the
+/// shader has to be able to give a type.
+#[test]
+fn a_value_made_only_of_numbers_compiles() {
+    passes(check(
+        "only-numbers",
+        "curve c = circle((0, 0), (1, 0))",
+        "style paper { fill: white }
+         style c { stroke: black; width: 2px; opacity: mix(0.45, 1, self.focus) }",
+    ));
 }

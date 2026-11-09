@@ -220,6 +220,48 @@ fn blend(
     }
 }
 
+/// A label's leader, by the same exact coverage as every other line, in its text's color.
+fn draw_leader(frame: &mut [u8], width: u32, height: u32, label: &Label, ends: [[f64; 2]; 2]) {
+    let Some(leader) = label.leader else { return };
+    let [a, b] = ends;
+    let length = (b[0] - a[0]).hypot(b[1] - a[1]);
+    let r = (leader.width / 2.0) as f32;
+    let segment = [
+        a[0] as f32,
+        a[1] as f32,
+        b[0] as f32,
+        b[1] as f32,
+        r,
+        r,
+        0.0,
+        length as f32,
+        0.0,
+        0.0,
+        length as f32,
+        0.0,
+    ];
+    let color = label.color.map(|c| srgb_encode(c) * 255.0);
+    let pad = leader.width / 2.0 + 2.0;
+    let x0 = (a[0].min(b[0]) - pad).floor().max(0.0) as u32;
+    let y0 = (a[1].min(b[1]) - pad).floor().max(0.0) as u32;
+    let x1 = ((a[0].max(b[0]) + pad).ceil().max(0.0) as u32).min(width);
+    let y1 = ((a[1].max(b[1]) + pad).ceil().max(0.0) as u32).min(height);
+    for y in y0..y1 {
+        for x in x0..x1 {
+            let c = pencil_core::stroke::segment_coverage(&segment, x as f64 + 0.5, y as f64 + 0.5)
+                * label.opacity;
+            if c <= 0.0 {
+                continue;
+            }
+            let at = ((y * width + x) * 4) as usize;
+            for (i, v) in color.iter().enumerate() {
+                let under = frame[at + i] as f64;
+                frame[at + i] = (under + (v - under) * c).round() as u8;
+            }
+        }
+    }
+}
+
 pub fn draw_labels(
     frame: &mut [u8],
     width: u32,
@@ -229,6 +271,16 @@ pub fn draw_labels(
     fonts: &Fonts,
 ) {
     let visible: Vec<&Label> = labels.iter().filter(|l| l.opacity > 0.0).collect();
+    // Leaders under everything, since they stop short of their text anyway.
+    for label in &visible {
+        let half = [
+            fonts.width(&label.text, label.size, label.font) / 2.0,
+            label.size * pencil_core::frame::TEXT_HALF_HEIGHT,
+        ];
+        if let Some(ends) = pencil_core::frame::leader_ends(label, half) {
+            draw_leader(frame, width, height, label, ends);
+        }
+    }
     let bitmaps: Vec<_> = visible
         .iter()
         .map(|label| rasterize(label, fonts.of(label.font)))
@@ -271,6 +323,7 @@ mod tests {
             font: FontRole::Sans,
             anchor: [x, y],
             place: Default::default(),
+            leader: None,
         }
     }
 

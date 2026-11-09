@@ -57,7 +57,43 @@ pub struct Label {
     /// The point it labels, in device pixels. `x` and `y` are its offset from this.
     pub anchor: [f64; 2],
     pub place: Place,
+    /// A line from near its point to near its text, in its color, where it finally sits.
+    pub leader: Option<Leader>,
 }
+
+/// A label's leader, in device pixels.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Leader {
+    pub width: f64,
+    /// How far from the point it stops, so it can meet a ring around it.
+    pub gap: f64,
+}
+
+/// Where a label's leader runs, given where the label ended up and half its text's width and
+/// height: from `gap` off its point to a little short of the text's box, along the line between
+/// them. None if there's no room for one.
+pub fn leader_ends(label: &Label, half: [f64; 2]) -> Option<[[f64; 2]; 2]> {
+    let leader = label.leader?;
+    let (dx, dy) = (label.x - label.anchor[0], label.y - label.anchor[1]);
+    let apart = dx.hypot(dy);
+    if apart <= 0.0 || !apart.is_finite() {
+        return None;
+    }
+    let (ux, uy) = (dx / apart, dy / apart);
+    // How far from the text's center its box reaches, back toward the point.
+    let to_edge = (half[0] / ux.abs().max(1e-9)).min(half[1] / uy.abs().max(1e-9));
+    let end = apart - to_edge - LEADER_MARGIN * label.size;
+    if end <= leader.gap {
+        return None;
+    }
+    let at = |d: f64| [label.anchor[0] + ux * d, label.anchor[1] + uy * d];
+    Some([at(leader.gap), at(end)])
+}
+
+/// How far short of a label's text its leader stops, as a fraction of the text's size.
+pub const LEADER_MARGIN: f64 = 0.25;
+/// Half a line of text's height, for its box, as a fraction of its size: about half a capital.
+pub const TEXT_HALF_HEIGHT: f64 = 0.35;
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Prepared {
@@ -600,6 +636,16 @@ pub fn prepare_with(
             font: style.font,
             anchor: [dx, dy],
             place: style.place,
+            leader: match &style.leader {
+                Some(w) => Some(Leader {
+                    width: eval::real(w, &env)? * dpr,
+                    gap: match &style.leader_gap {
+                        Some(g) => eval::real(g, &env)?,
+                        None => 0.0,
+                    } * dpr,
+                }),
+                None => None,
+            },
         });
     }
 
@@ -624,6 +670,56 @@ pub fn prepare_with(
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn a_leader_runs_from_its_gap_to_short_of_its_text() {
+        let figure = crate::build(
+            "viewport { x: -2..2, y: -2..2, width: 400 }\nlabel n = \"P\" at (0, 0) away (1, 0)",
+            &["style n { size: 20px; distance: 60px; leader: 1px; leader_gap: 8px; place: fixed }"],
+        )
+        .unwrap();
+        let labels = prepare(&figure, &Inputs::at(0.0), 400, 400, 1.0)
+            .unwrap()
+            .labels;
+        let label = &labels[0];
+        assert_eq!(
+            label.leader,
+            Some(Leader {
+                width: 1.0,
+                gap: 8.0
+            })
+        );
+        // Along +x from (200, 200): 8 px out, to 60 − 10 (half the text's width) − 5 (a quarter
+        // of its size).
+        let ends = leader_ends(label, [10.0, 7.0]).unwrap();
+        assert_eq!(ends, [[208.0, 200.0], [245.0, 200.0]]);
+        // Straight up, the text's height decides where it stops.
+        let up = Label {
+            x: 200.0,
+            y: 140.0,
+            ..label.clone()
+        };
+        assert_eq!(leader_ends(&up, [10.0, 7.0]).unwrap()[1], [200.0, 152.0]);
+        // Too close for one, and none asked for.
+        let near = Label {
+            x: 215.0,
+            ..label.clone()
+        };
+        assert!(leader_ends(&near, [10.0, 7.0]).is_none());
+        assert!(
+            leader_ends(
+                &Label {
+                    leader: None,
+                    ..label.clone()
+                },
+                [10.0, 7.0]
+            )
+            .is_none()
+        );
+        let err =
+            crate::build("segment s = (0, 0), (1, 0)", &["style s { leader: 1px }"]).unwrap_err();
+        assert!(err.message.contains("isn't a label"), "{err}");
+    }
     use super::*;
     use crate::build;
 

@@ -2669,22 +2669,42 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
                 let index = scene.expressions.len();
                 let mut written = Vec::with_capacity(states.len());
                 let mut seen: Vec<String> = Vec::new();
+                // `slow:2ab` is a term named `slow` that prints `2ab`. The name is what it is,
+                // so it's what moves between states and what a style or a beat can name.
+                let mut printed: HashMap<String, String> = HashMap::new();
                 for state in states {
                     let mut pieces = Vec::with_capacity(state.len());
-                    let mut in_state: Vec<&str> = Vec::new();
+                    let mut in_state: Vec<String> = Vec::new();
                     for (text, place) in state {
                         let Some(spot) = scene.spots.iter().position(|s| s.id == *place) else {
                             return Err(fail(Error::new(format!(
                                 "no place named `{place}`. Places come first"
                             ))));
                         };
-                        let keys: Vec<String> = text.split_whitespace().map(String::from).collect();
-                        for key in text.split_whitespace() {
+                        let mut keys: Vec<String> = Vec::new();
+                        for word in text.split_whitespace() {
+                            let (key, shown) = match word.split_once(':') {
+                                Some((key, shown)) if !key.is_empty() && !shown.is_empty() => {
+                                    (key, shown)
+                                }
+                                _ => (word, crate::terms::base(word)),
+                            };
+                            if let Some(before) = printed.get(key)
+                                && before != shown
+                            {
+                                return Err(fail(Error::new(format!(
+                                    "the term `{key}` prints `{before}` in one state of `{name}` and `{shown}` in another. A term is one thing, so give the other a name of its own"
+                                ))));
+                            }
+                            printed.insert(key.to_string(), shown.to_string());
+                            keys.push(key.to_string());
+                        }
+                        for key in keys.iter().map(String::as_str) {
                             // A term is one thing, so a second one in a state would take the
                             // first's place, and one of them would quietly vanish.
-                            if in_state.contains(&key) {
+                            if in_state.iter().any(|k| k == key) {
                                 let written = |c: &str| {
-                                    in_state.contains(&c) || text.split_whitespace().any(|k| k == c)
+                                    in_state.iter().any(|k| k == c) || keys.iter().any(|k| k == c)
                                 };
                                 let copy = (1..)
                                     .map(|k| format!("{}.{k}", crate::terms::base(key)))
@@ -2702,7 +2722,7 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
                                      can only be in one place{fix}"
                                 ))));
                             }
-                            in_state.push(key);
+                            in_state.push(key.to_string());
                         }
                         for key in &keys {
                             if !seen.contains(key) {
@@ -2719,8 +2739,13 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
                     states: written,
                 });
                 for key in seen {
-                    let text = crate::terms::base(&key).to_string();
+                    let text = printed[&key].clone();
                     let mut tags = vec!["term".to_string(), name.clone(), text.clone()];
+                    // A named term can be styled and focused by its name, with what it names.
+                    let named = crate::terms::base(&key);
+                    if named != text {
+                        tags.push(named.to_string());
+                    }
                     tags.extend(beat_tags.iter().cloned());
                     scene.marks.push(Mark {
                         id: format!("{name}.{key}"),

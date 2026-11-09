@@ -89,7 +89,9 @@ fn sample_within(
         eval::real(&arc.range[0], env)?,
         eval::real(&arc.range[1], env)?,
     );
-    if hi <= lo {
+    // A range can run down as well as up, as `0..t` does for an angle that's negative, and
+    // it's drawn from its first bound either way.
+    if hi == lo {
         return Ok(Sampled {
             pieces: Vec::new(),
             complete: true,
@@ -427,6 +429,11 @@ pub fn build(
         // Dashes and tapers measure along the line, so they need all of it.
         let frame_only = !style.needs_arc_length();
         for line in lines(&mark.form, env, view, width, height, frame_only)? {
+            // Ticks say two lengths are equal, so they wait for the stroke to reach its middle.
+            if style.ticks.is_some() && trim >= 0.5 && line.points.len() == 2 {
+                let ends = [to_device(line.points[0]), to_device(line.points[1])];
+                push_ticks(ends, style, env, dpr, &mut segments)?;
+            }
             let line = if trim < 1.0 {
                 trim_line(&line, trim)
             } else {
@@ -460,6 +467,55 @@ fn trimmed(arc: &Arc, style: &MarkStyle, env: &Env) -> Result<Option<Arc>, Error
         point: arc.point.clone(),
         range: [Expr::Num(lo), Expr::Num(lo + (hi - lo) * trim)],
     }))
+}
+
+/// Short marks across a segment's middle, square to it and evenly spaced along it, drawn in
+/// its own stroke without its dashes.
+fn push_ticks(
+    ends: [[f64; 2]; 2],
+    style: &MarkStyle,
+    env: &Env,
+    dpr: f64,
+    segments: &mut Vec<f32>,
+) -> Result<(), Error> {
+    let count = match &style.ticks {
+        Some(n) => eval::real(n, env)?.round().max(0.0) as usize,
+        None => 0,
+    };
+    let (dx, dy) = (ends[1][0] - ends[0][0], ends[1][1] - ends[0][1]);
+    let length = dx.hypot(dy);
+    if count == 0 || length.is_nan() || length <= 1e-9 {
+        return Ok(());
+    }
+    let (ux, uy) = (dx / length, dy / length);
+    let long = match &style.tick {
+        Some(t) => pixels(t, env, dpr)?,
+        None => DEFAULT_TICK * dpr,
+    };
+    let apart = long * 0.4;
+    let middle = [
+        (ends[0][0] + ends[1][0]) / 2.0,
+        (ends[0][1] + ends[1][1]) / 2.0,
+    ];
+    let plain = MarkStyle {
+        dash: None,
+        gap: None,
+        trim: None,
+        ..style.clone()
+    };
+    for i in 0..count {
+        let along = (i as f64 - (count as f64 - 1.0) / 2.0) * apart;
+        let c = [middle[0] + ux * along, middle[1] + uy * along];
+        let tick = Polyline {
+            points: vec![
+                [c[0] - uy * long / 2.0, c[1] + ux * long / 2.0],
+                [c[0] + uy * long / 2.0, c[1] - ux * long / 2.0],
+            ],
+            closed: false,
+        };
+        push_line(&tick, &plain, env, dpr, &|p| p, segments)?;
+    }
+    Ok(())
 }
 
 /// The first `fraction` of a line by its length. It isn't a loop any more unless it's all there.
@@ -543,9 +599,11 @@ fn push_arc(
         let limit = match &style.head_span {
             Some(span) => {
                 let span = eval::real(span, env)?;
+                let lo = eval::real(&arc.range[0], env)?;
                 let hi = eval::real(&arc.range[1], env)?;
                 let mut local = env.clone();
-                local.set(&arc.var, hi - span);
+                // Back from the end toward the start, whichever way the range runs.
+                local.set(&arc.var, hi - span * (hi - lo).signum());
                 match (
                     eval::real(&arc.point[0], &local),
                     eval::real(&arc.point[1], &local),
@@ -1090,6 +1148,9 @@ fn push_arrow(
     Ok(())
 }
 
+/// How long a tick across a segment is, in style pixels.
+const DEFAULT_TICK: f64 = 10.0;
+
 fn pixels(e: &Expr, env: &Env, dpr: f64) -> Result<f64, Error> {
     Ok(eval::real(e, env)? * dpr)
 }
@@ -1454,6 +1515,18 @@ mod tests {
             let last = p.strokes[0].chunks(FLOATS_PER_SEGMENT).last().unwrap();
             // One unit of t is 20 px, and 60% of that is 12.
             assert!((last[7] - 12.0).abs() < 1e-3, "{}", last[7]);
+            // When the range runs the other way, its last stretch is toward its start. Here
+            // that's t = 1, 20 px back, and not t = -1, which is only 10.
+            let doc = "viewport { x: 0..100, y: 0..100, width: 100 }
+                       curve c = parametric (t): (20·exp(t·ln(2)), 50) for t in 2..0";
+            let f = build(
+                doc,
+                &["style c { stroke: black; width: 2px; head: 50px; head_span: 1 }"],
+            )
+            .unwrap();
+            let p = prepare(&f, &Inputs::at(0.0), 100, 100, 1.0).unwrap();
+            let last = p.strokes[0].chunks(FLOATS_PER_SEGMENT).last().unwrap();
+            assert!((last[7] - 12.0).abs() < 1e-3, "{}", last[7]);
         }
 
         #[test]
@@ -1584,6 +1657,45 @@ mod tests {
         assert_eq!((start, end), ([0.0, 200.0], [200.0, 200.0]));
         let (_, tip) = ends(&strokes[1]);
         assert_eq!(tip, [200.0, 300.0]);
+    }
+
+    #[test]
+    fn ticks_cross_a_segments_middle() {
+        let doc = "viewport { x: 0..4, y: 0..4 }\nsegment s = (0, 2), (4, 2)";
+        let sheet = |extra: &str| {
+            format!(
+                "style s {{ stroke: black; width: 2px; dash: 5px; ticks: 2; tick: 10px; {extra} }}"
+            )
+        };
+        let figure = build_figure(doc, &[&sheet("")]).unwrap();
+        let s = prepare(&figure, &Inputs::at(0.0), 400, 400, 1.0)
+            .unwrap()
+            .strokes
+            .remove(0);
+        let segments: Vec<&[f32]> = s.chunks(FLOATS_PER_SEGMENT).collect();
+        // Two ticks first, square to the line and 4 px apart about its middle, and not dashed.
+        let ticks: Vec<&&[f32]> = segments.iter().filter(|g| g[0] == g[2]).collect();
+        assert_eq!(ticks.len(), 2);
+        let mut xs: Vec<f32> = ticks.iter().map(|g| g[0]).collect();
+        xs.sort_by(f32::total_cmp);
+        assert_eq!(xs, [198.0, 202.0]);
+        for g in &ticks {
+            assert_eq!(((g[1] - g[3]).abs(), g[8], g[9]), (10.0, 0.0, 0.0));
+        }
+        // They wait for a trimmed line to reach its middle.
+        let count = |extra: &str| {
+            let figure = build_figure(doc, &[&sheet(extra)]).unwrap();
+            let s = prepare(&figure, &Inputs::at(0.0), 400, 400, 1.0)
+                .unwrap()
+                .strokes
+                .remove(0);
+            s.chunks(FLOATS_PER_SEGMENT)
+                .filter(|g| g[0] == g[2])
+                .count()
+        };
+        assert_eq!((count("trim: 0.4"), count("trim: 0.5")), (0, 2));
+        let err = build_figure("let P = (0, 0)\ndot P", &["style P { ticks: 1 }"]).unwrap_err();
+        assert!(err.message.contains("isn't a segment"), "{err}");
     }
 
     #[test]
@@ -1749,6 +1861,38 @@ mod tests {
         let doc = "curve p = parametric (t): (t, 0) for t in -1..1";
         let s = layer_of(doc, "style p { stroke: black; width: 1px }", 400);
         assert_eq!(s.len() / FLOATS_PER_SEGMENT, INITIAL_INTERVALS);
+    }
+
+    #[test]
+    fn a_range_that_runs_down_draws_the_same_curve_from_its_first_bound() {
+        let up = layer_of(
+            "curve p = parametric (t): (cos(t), sin(t)) for t in -2..0",
+            "style p { stroke: black; width: 2px }",
+            400,
+        );
+        let down = layer_of(
+            "curve p = parametric (t): (cos(t), sin(t)) for t in 0..-2",
+            "style p { stroke: black; width: 2px }",
+            400,
+        );
+        assert!(!down.is_empty());
+        let (a, b) = (rasterize(&up, 400, 400), rasterize(&down, 400, 400));
+        let moved: f64 = a.iter().zip(&b).map(|(x, y)| (x - y).abs()).sum();
+        assert!(moved < 1e-3, "coverage moved by {moved}");
+        // Drawn from 0, at (1, 0), which is pixel (300, 200).
+        assert!((down[0] - 300.0).abs() < 1e-3 && (down[1] - 200.0).abs() < 1e-3);
+        // Half drawn, it's the half nearest 0, so it ends at t = -1.
+        let half = layer_of(
+            "curve p = parametric (t): (cos(t), sin(t)) for t in 0..-2",
+            "style p { stroke: black; width: 2px; trim: 0.5 }",
+            400,
+        );
+        let last = half.chunks(FLOATS_PER_SEGMENT).last().unwrap();
+        let end = (100.0 * 1f64.cos() + 200.0, 200.0 + 100.0 * 1f64.sin());
+        assert!(
+            (last[2] as f64 - end.0).abs() < 1e-2 && (last[3] as f64 - end.1).abs() < 1e-2,
+            "{last:?}"
+        );
     }
 
     #[test]

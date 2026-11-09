@@ -676,8 +676,18 @@ impl<'a> Frame<'a> {
             };
             out = from_blend(mixed, style.blend);
         }
-        if self.figure.styles.tone == Tone::Tanh {
-            out = out.map(|c| srgb_decode(srgb_lift(c).tanh()));
+        let rolled = |c: f64, k: f64| {
+            let shown = srgb_lift(c);
+            let clipped = shown.min(1.0);
+            srgb_decode(clipped + (shown.tanh() - clipped) * k)
+        };
+        match &self.figure.styles.tone {
+            Tone::Clip => {}
+            Tone::Tanh => out = out.map(|c| rolled(c, 1.0)),
+            Tone::Mix(k) => {
+                let k = real(k, &self.env)?.clamp(0.0, 1.0);
+                out = out.map(|c| rolled(c, k));
+            }
         }
         Ok(out)
     }
@@ -798,6 +808,44 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// A tone between clip and `tanh` mixes the two in display values, so a figure can turn into
+    /// one that adds light, and its value can follow a beat.
+    #[test]
+    fn a_tone_can_be_between_clip_and_tanh() {
+        let doc = "viewport { x: -2..2, y: -2..2 }
+                   param k = 0 in 0..1
+                   curve c = sdf (x, y): sqrt(x² + y²) - 1";
+        let sheet = "style paper { fill: white; tone: k }
+                     style c::inside { fill: white·0.5 }";
+        let figure = build(doc, &[sheet]).unwrap();
+        let at = |k: f64, px: f64| {
+            let inputs = crate::frame::Inputs {
+                time: 0.0,
+                params: vec![("k".to_string(), k)],
+            };
+            let frame = Frame::new(&figure, &inputs, 101, 101).unwrap();
+            frame.shade(px, 50.5).unwrap().map(srgb_encode)[0]
+        };
+        // Whatever clipping gives, a tone of k moves it k of the way to its tanh, in display
+        // values: on the paper and on the disk, which are different values.
+        for px in [1.5, 50.5] {
+            let clipped = at(0.0, px);
+            for k in [0.25, 0.5, 1.0] {
+                let want = clipped + (clipped.tanh() - clipped) * k;
+                assert!(
+                    (at(k, px) - want).abs() < 1e-9,
+                    "{px} {k}: {} {want}",
+                    at(k, px)
+                );
+            }
+            // Past either end is the end.
+            assert!((at(2.0, px) - clipped.tanh()).abs() < 1e-9);
+        }
+        assert!((at(0.0, 1.5) - at(0.0, 50.5)).abs() > 0.1);
+        let err = build(doc, &["style paper { tone: white }"]).unwrap_err();
+        assert!(err.message.contains("a number from 0 to 1"), "{err}");
     }
 
     #[test]

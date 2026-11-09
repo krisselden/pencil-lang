@@ -393,6 +393,7 @@ impl Player {
                     "math": l.font == pencil_core::style::Font::Math,
                     "anchorX": l.anchor[0], "anchorY": l.anchor[1],
                     "settles": l.place == pencil_core::style::Place::Settle,
+                    "leader": l.leader.map(|d| serde_json::json!({ "width": d.width, "gap": d.gap })),
                 })
             })
             .collect();

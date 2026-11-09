@@ -1,0 +1,220 @@
+// The first explainer: the limaçon from its central circle. See docs/plan-explainer.md for the
+// story and the checked math. Built a beat at a time, so this holds the beats so far.
+doc limacon
+
+// 16:9, with the whole limaçon in view from the start, so the camera never moves, and room below
+// it for the caption.
+viewport { x: -6.5..14.5, y: -6.4..5.4, width: 1280, height: 720 }
+
+// 1. Where 0 comes from.
+pause 0.3
+beat draw_central "The tangent from 0 touches this circle right above 1." for 0.9 show central, center
+pause 0.15
+beat draw_tangent for 0.6 show from_zero, B
+beat draw_drop for 0.5 show above_one, at_B
+pause 1
+
+// 2. The circles through 1.
+beat circles "A circle about any point of it, through 1." for 0.8 show C, through_one drop at_B focus C, through_one, central, .trail
+// The trail starts under the finished circle, so its first copy has nothing to show by arriving.
+beat sweep for 5 show trail
+pause 0.8
+
+// 3. The mirror. C moves on to where the reflection is easy to see, the tangent there is a
+// mirror, and 1 turns over it in 3D to land on E.
+beat place "Reflect 1 across the tangent at C." for 1.1 drop from_zero, above_one, B focus C, through_one, central
+beat mirror for 0.6 show .mirror, to_one focus .mirror, to_one, C, one
+pause 0.3
+beat flip for 1.3 show E, to_E focus .mirror, to_one, to_E, E, C, one
+pause 0.6
+beat touches "That's where its circle touches the curve." for 0.7 show normal, tangent_E, at_E focus E, to_E, normal, tangent_E, at_E, through_one
+pause 0.9
+// E traces the limaçon as C goes round again, with everything that made it following along.
+beat trace for 4.5 show limacon focus E, limacon, through_one, .trail
+pause 1.2
+
+// 4. The pedal. The central circle scales by 2 about 1, taking C to P, and the mirror goes with
+// it to the pedal circle's tangent at P. E is the foot from 1 onto that tangent.
+beat clear for 0.35 drop normal, tangent_E, at_E, to_one, to_E
+beat double "Double the central circle from 1." for 1.4 show pedal, scaling focus pedal, scaling, central, C, one
+pause 0.2
+beat halves for 0.5 show half_in, half_out, P drop scaling focus pedal, half_in, half_out, C, P, one
+pause 0.8
+beat touching "The curve is where 1's perpendiculars meet its tangents." for 0.8 show pedal_tangent, foot, at_foot focus pedal, P, pedal_tangent, foot, at_foot, E, limacon, one
+pause 0.8
+// C goes round once more, so P runs round the pedal circle, its tangent turns, and the foot from 1
+// rides the limaçon.
+beat pedal_round for 4
+pause 1
+
+// 5. The conchoid. From 1, the line at angle t meets Pascal's circle at L, which sits at 2t from
+// the circle's center, and E is sinh 2s farther along it. E′, as far back, is the curve too.
+beat clear_pedal for 0.35 drop pedal, pedal_tangent, at_foot, half_in, half_out, P, .mirror, foot
+beat meet "Pascal's circle." for 0.8 show pascal focus pascal, center, one, limacon
+pause 0.4
+beat seen "Seen from 1 its angle is t," for 0.8 show from_one, L, arc_t, name_t focus pascal, from_one, L, arc_t, name_t, one
+pause 0.5
+beat doubled "and from its center it's 2t." for 0.8 show pascal_radius, arc_2t, name_2t focus pascal, from_one, L, arc_t, name_t, pascal_radius, arc_2t, name_2t, center, one
+pause 1
+beat farther "Go sinh 2s farther, both ways." for 0.9 show reach_out, reach_back, E_back focus pascal, from_one, L, pascal_radius, center, one, reach_out, reach_back, E, E_back, limacon
+pause 0.8
+// The angles go before C moves, since t passes from -π to π on the way round.
+beat unmark for 0.3 drop arc_t, name_t, arc_2t, name_2t
+beat conchoid_round for 4.5
+pause 1
+
+// 6. The roulette. The conchoid went hub, fast arm, slow arm, through L. The other way round,
+// through A′, it's the same E, so A, L, E and A′ are a parallelogram, and the sum is z².
+beat clear_conchoid for 0.35 drop from_one, reach_back, E_back
+beat around "Or add the arms the other way around." for 1 show slow_arm, fast_arm, A2 focus slow_arm, fast_arm, A2, pascal_radius, reach_out, L, E, center
+pause 0.8
+beat name_hub "The hub, the slow arm, the fast arm." for 0.6 show hub_arm focus .hub
+pause 0.3
+beat name_slow for 0.6 focus .slow
+pause 0.3
+beat name_fast for 0.6 focus .fast
+pause 0.6
+beat squaring "That's squaring." for 0.8 show name_E focus .hub, .slow, .fast, E, name_E, .term
+pause 1
+// The arms run, with E riding on the end: the slow one turns at t, the fast one at 2t.
+beat roll "u turns at t, and u² at 2t." for 5 focus .hub, .slow, .fast, E, name_E, .term, limacon
+pause 1.2
+
+// 7. The glow. Everything goes but the 24 circles, the paper goes black, and they light up on both
+// sides, so the curve they all touch is there without being drawn.
+beat quiet "" for 0.8 drop hub_arm, slow_arm, fast_arm, A2, name_E, pascal, pascal_radius, L, reach_out, E, C, through_one, center, central, limacon, axis, O, one, name_zero, name_one
+beat glow for 3 show rings
+pause 5
+
+let s = ln(sqrt(8))
+let O = (0, 0)
+let one = (1, 0)
+let A = (cosh(s)², 0)
+let R = sinh(s)·cosh(s)
+
+segment axis = (-1.2, 0), (9.4, 0)
+curve central = circle(A, A + (R, 0))
+let center = A
+dot center
+
+// The tangent from 0 touches the central circle at B, right above 1.
+let B = (1, sqrt(R² - (1 - cosh(s)²)²))
+segment from_zero = O, B
+segment above_one = one, B
+rightangle at_B = O, B, A size 0.32
+dot O, one, B
+label name_zero = "0" at O away (0, -1) tag tick
+label name_one = "1" at one away (0, -1) tag tick
+
+// C goes once round the central circle, starting at B, and the circle about it through 1 leaves
+// a faint copy every 24th of the way. Then it moves on, and goes round once more as E traces.
+let start = atan2(B.y, B.x - A.x)
+let phi0 = 320·π / 180
+let phi = start + tau·smoothstep(0, 1, sweep) + (phi0 - start)·smoothstep(0, 1, place) + tau·smoothstep(0, 1, trace) + tau·smoothstep(0, 1, pedal_round) + tau·smoothstep(0, 1, conchoid_round) + tau·smoothstep(0, 1, roll)
+let n = (cos(phi), sin(phi))
+let C = A + R·n
+// Drawn from 1, as a compass would.
+curve through_one = parametric (u): C + (one - C)·exp(i·u) for u in 0..tau
+dot C
+let passed = min(floor(24·smoothstep(0, 1, sweep)), 23)
+circles trail = circle(A + R·(cos(start + tau·k / 24), sin(start + tau·k / 24)), one) for k in 0..passed tag trail
+
+// The tangent at C is the mirror, drawn out from C both ways.
+let along = (-sin(phi), cos(phi))
+segment mirror_ahead = C, C + 5·along tag mirror
+segment mirror_behind = C, C - 5·along tag mirror
+segment to_one = C, one
+
+// 1 turns over the mirror about its foot f, at even angles: edge-on halfway, and on E at the end.
+let f = one + dot(C - one, n)·n
+let E = f + (one - f)·cos(π·flip)
+segment to_E = C, E
+dot E
+
+// CE is the limaçon's normal at E, since the circle about C through 1 touches it there, so the
+// curve's tangent is square to CE.
+let out = (E - C) / dist(C, E)
+segment normal = E, E + 1.4·out
+let across = (-out.y, out.x)
+segment tangent_E = E - 1.6·across, E + 1.6·across
+rightangle at_E = C, E, E + across size 0.28
+
+// E for every place of C, from where it starts tracing to where C is now: 1 reflected across the
+// tangent at angle u, worked out as above.
+let traced = phi0 + tau·smoothstep(0, 1, trace)
+curve limacon = parametric (u): one + 2·((A.x - 1)·cos(u) + R)·(cos(u), sin(u)) for u in phi0..traced
+
+// The central circle scaled by k about 1, from 1 to 2: the pedal circle, about cosh 2s with radius
+// sinh 2s. The scaling eases as a move does, so it gets there fast and then settles.
+let k = 1 + snap(double, 3)
+let scaled = one + k·(A - one)
+curve pedal = circle(scaled, scaled + (k·R, 0))
+let P = one + k·(C - one)
+segment scaling = one, P
+// C is halfway from 1 to P.
+segment half_in = one, C
+segment half_out = C, P
+dot P
+
+// The pedal circle's tangent at P is the mirror, twice as far from 1, so the foot from 1 onto it
+// is E. Drawn from P to past E, whichever side E is on.
+let reach = dot(E - P, along)
+segment pedal_tangent = P + (min(reach, 0) - 1.2)·along, P + (max(reach, 0) + 1.2)·along
+segment foot = one, E
+rightangle at_foot = one, E, E + along size 0.28
+
+// Pascal's circle: about A, through 1 and cosh 2s, so its radius is sinh² s. Drawn from 1.
+curve pascal = parametric (u): A + (one - A)·exp(i·u) for u in 0..tau
+// t is C's angle, as seen from 1 along the line to E. The circle's center sees L at twice it.
+let t = atan2(n.y, n.x)
+let L = A + sinh(s)²·(cos(2·t), sin(2·t))
+dot L
+segment from_one = one, L
+segment pascal_radius = A, L
+curve arc_t = parametric (u): one + 0.9·(cos(u), sin(u)) for u in 0..t
+curve arc_2t = parametric (u): A + 0.55·(cos(u), sin(u)) for u in 0..2·t
+label name_t = "t" at one + 1.25·(cos(t / 2), sin(t / 2)) tag angle
+label name_2t = "2t" at A + 0.9·(cos(t), sin(t)) tag angle
+
+// sinh 2s either way along the line from 1. Out it's E, the same point the mirror made, and back
+// it's E′, the curve's point for t + π.
+let E_out = L + sinh(2·s)·n
+let E_back = L - sinh(2·s)·n
+segment reach_out = L, E_out
+segment reach_back = L, E_back
+dot E_back
+
+// The roulette: z = a + b·u, with a = cosh s, b = sinh s and u at angle t, so
+// z² = a² + 2ab·u + b²·u². The hub is a², from 0 to A. The slow arm is 2ab·u, from A to A′,
+// which is A mirrored in C. The fast arm is b²·u², at 2t, from A′ to E.
+let A2 = A + 2·R·n
+arrow hub_arm = O, A tag hub
+arrow slow_arm = A, A2 tag slow
+arrow fast_arm = A2, E tag fast
+dot A2
+label name_E = "z²" at E away E - C tag callout
+
+let said = name_hub + name_slow + name_fast + squaring + quiet
+place at_z = (-6.1, 4.3)
+place at_sum = (-6.1, 3.3)
+expression work by said {
+  "hub:a²" at at_sum
+  "hub:a² + slow:2ab·u" at at_sum
+  "hub:a² + slow:2ab·u +.1 fast:b²·u²" at at_sum
+  "z =.1 a +.2 b·u" at at_z, "z² = hub:a² + slow:2ab·u +.1 fast:b²·u²" at at_sum
+  empty
+}
+// What a, b and u are, smaller, under the sum. Its own expression, so its sheet can set it apart.
+place at_a = (-6.1, 2.5)
+place at_b = (-6.1, 1.95)
+place at_u = (-6.1, 1.4)
+expression defs by said {
+  empty
+  empty
+  empty
+  "a = cosh(s)" at at_a, "b =.1 sinh(s)" at at_b, "u =.2 cos(t) + i·sin(t)" at at_u
+  empty
+}
+
+// The same 24 circles as the trail, to be lit.
+circles rings = circle(A + R·(cos(start + tau·k / 24), sin(start + tau·k / 24)), one) for k in 0..23

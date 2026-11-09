@@ -83,6 +83,18 @@ struct Scope<'a> {
 }
 
 impl Scope<'_> {
+    /// What a term prints: its own text, which a named one carries, or what it copies.
+    fn text<'k>(&'k self, key: &'k str) -> &'k str {
+        match self
+            .marks
+            .get(key)
+            .map(|&i| &self.figure.scene.marks[i].form)
+        {
+            Some(Form::Term { text, .. }) => text,
+            _ => base(key),
+        }
+    }
+
     fn size_and_font(&self, key: &str) -> Result<(f64, Font), Error> {
         let Some(mark) = self.marks.get(key) else {
             return Ok((DEFAULT_LABEL_SIZE * self.dpr, Font::default()));
@@ -117,7 +129,7 @@ impl Scope<'_> {
             let mut advances = Vec::with_capacity(piece.keys.len());
             for key in &piece.keys {
                 let (size, font) = self.size_and_font(key)?;
-                let text = base(key);
+                let text = self.text(key);
                 let pad = if OPERATORS.contains(&text) {
                     OPERATOR_PAD * size
                 } else {
@@ -301,6 +313,7 @@ pub fn labels(
                 font: style.font,
                 anchor: *at,
                 place: Place::Fixed,
+                leader: None,
             });
         }
     }
@@ -621,6 +634,68 @@ mod tests {
         assert_eq!((first.text.as_str(), second.text.as_str()), ("+", "+"));
         assert!(first.x < second.x);
         assert_eq!((first.opacity, second.opacity), (1.0, 1.0));
+    }
+
+    #[test]
+    fn a_named_term_prints_its_text_and_answers_to_its_name() {
+        let doc = "
+            viewport { x: 0..400, y: 0..400, width: 400 }
+            param step = 0 in 0..2
+            place left = (100, 200)
+            place right = (300, 200)
+            expression e by step {
+              \"hub:a² + slow:2ab\" at left
+              \"slow:2ab + hub:a² slow.1:2ab\" at right
+            }";
+        let f = build(
+            doc,
+            &["style term { size: 10px }\nstyle term.slow { fill: white }"],
+        )
+        .unwrap();
+        let labels = |step: f64| {
+            let inputs = Inputs {
+                time: 0.0,
+                params: vec![("step".to_string(), step)],
+            };
+            frame::prepare_with(&f, &inputs, 400, 400, 1.0, &Ten)
+                .unwrap()
+                .labels
+        };
+        let one = labels(1.0);
+        let (hub, slow) = (find(&one, "e.hub"), find(&one, "e.slow"));
+        assert_eq!((hub.text.as_str(), slow.text.as_str()), ("a²", "2ab"));
+        // Measured by what it prints: `a²` is two characters wide, and `2ab` three.
+        let plus = find(&one, "e.+");
+        assert!(
+            (plus.x - hub.x - 10.0 - 2.3 - 5.0).abs() < 1e-9,
+            "{} {}",
+            plus.x,
+            hub.x
+        );
+        assert_eq!(slow.color, [1.0; 3]);
+        // The name is its identity, so it moves to the other side, and its copy starts on it.
+        let half = labels(1.5);
+        assert_eq!(find(&half, "e.slow").opacity, 1.0);
+        let two = labels(2.0);
+        assert!(find(&two, "e.slow").x < find(&two, "e.hub").x);
+        assert_eq!(find(&two, "e.slow.1").text, "2ab");
+        // Its name is a tag, so a beat can focus it with what it names.
+        let mark = f.scene.marks.iter().find(|m| m.id == "e.slow").unwrap();
+        assert!(mark.tags.contains(&"slow".to_string()) && mark.tags.contains(&"2ab".to_string()));
+        // A colon on its own is still a term.
+        assert!(
+            build(
+                "param step in 0..1\nplace p = (0, 0)\nexpression e by step {\n  \"a : b\" at p\n}",
+                &[]
+            )
+            .is_ok()
+        );
+        let err = build(
+            "param step in 0..2\nplace p = (0, 0)\nexpression e by step {\n  \"slow:2ab\" at p\n  \"slow:2ba\" at p\n}",
+            &[],
+        )
+        .unwrap_err();
+        assert!(err.message.contains("prints `2ab` in one state"), "{err}");
     }
 
     #[test]

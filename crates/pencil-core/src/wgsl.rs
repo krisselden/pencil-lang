@@ -209,8 +209,10 @@ fn fs(in: Varying) -> @location(0) vec4<f32> {
 "#
 );
 
+/// A number, typed as `f32`. Left abstract, an expression made of nothing but numbers, such as
+/// `mix(0.45, 1.0, 1.0)` from a rule whose `self.focus` is always 1, can't be given a type.
 fn literal(n: f64) -> String {
-    let text = format!("{:?}", n as f32);
+    let text = format!("{:?}f", n as f32);
     if n < 0.0 { format!("({text})") } else { text }
 }
 
@@ -599,11 +601,19 @@ pub fn emit(figure: &Figure) -> String {
         }
         out.push_str("    }\n");
     }
-    out.push_str(if figure.styles.tone == Tone::Tanh {
-        "    return vec4<f32>(tanh(limited(lift(color.r))), tanh(limited(lift(color.g))), tanh(limited(lift(color.b))), 1.0);\n}\n"
-    } else {
-        "    return vec4<f32>(encode(color.r), encode(color.g), encode(color.b), 1.0);\n}\n"
-    });
+    match &figure.styles.tone {
+        Tone::Tanh => out.push_str(
+            "    return vec4<f32>(tanh(limited(lift(color.r))), tanh(limited(lift(color.g))), tanh(limited(lift(color.b))), 1.0);\n}\n",
+        ),
+        Tone::Clip => out.push_str(
+            "    return vec4<f32>(encode(color.r), encode(color.g), encode(color.b), 1.0);\n}\n",
+        ),
+        // `eval::Frame::shade`: clipped and rolled off in display values, mixed.
+        Tone::Mix(k) => out.push_str(&format!(
+            "    let tone = clamp({}, 0.0, 1.0);\n    return vec4<f32>(mix(encode(color.r), tanh(limited(lift(color.r))), tone), mix(encode(color.g), tanh(limited(lift(color.g))), tone), mix(encode(color.b), tanh(limited(lift(color.b))), tone), 1.0);\n}}\n",
+            emit_expr(k)
+        )),
+    }
     out
 }
 
