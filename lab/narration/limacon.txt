@@ -1,0 +1,9 @@
+Here's a [draw_central] circle.
+The tangent from zero [draw_tangent] touches it right [draw_drop] above one.
+Take any point on it, [point_C] C, and draw the [circles] circle about C, through one.
+[sweep:start] Do that for every point.
+Let's move C [place] over here.
+The tangent at C is a [mirror] mirror.
+Reflect one across it, and it [flip] lands here.
+That's where its circle [touches] touches the curve.
+And as C goes round again, the point [trace:start] traces the curve.

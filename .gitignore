@@ -5,3 +5,5 @@
 
 /lab/text/target
 /lab/text/out
+/lab/narration/out
+__pycache__/

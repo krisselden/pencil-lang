@@ -27,6 +27,7 @@ style at_B { stroke: ink; width: 1.25px; opacity: pop }
 
 style through_one { stroke: warm; width: 2.5px; trim: pen; opacity: mix(0.5, 1, self.focus) }
 style C { fill: warm; radius: 5px·pop; opacity: mix(0.5, 1, self.focus) }
+style name_C { font: math; size: 24px; fill: warm; distance: 20px; place: fixed; opacity: pop·mix(0.5, 1, self.focus) }
 style trail { stroke: warm; width: 1px; opacity: mix(0.2, 0.35, self.focus)·(1 - glow) }
 
 // The mirror: the tangent at C, dashed in the central circle's color, and 1 and E the same

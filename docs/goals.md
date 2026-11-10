@@ -44,7 +44,8 @@ belongs: `language.md` for the language, the section below for a figure.
 ### Now
 
 - **The explainer, phases 5 and 6** (`plan-explainer.md`): narration over the drafted cut, then a write-up here and in the
-  language reference.
+  language reference. `lab/narration` times beats from a script, drafted with a synthesized voice ("Narration timing" below).
+  Sections 1 to 3 are drafted. Next: a take in Kris's voice, and the rest of the script.
 
 ### Proposed order after that
 
@@ -74,6 +75,13 @@ Proposed by Claude on 2026-11-09, not yet agreed:
   move. Not built.
 - **How far should MathJSON go?** It stays, since open expressions are the point. But the IR only goes one way and is the compiled
   form, so what's truly open today is the `.pen` text.
+- **Should a `.pen` file know its narration?** Today `lab/narration` rewrites the pauses, so the anchors live in the script
+  and the `.pen` gets numbers. A beat that says which word it lands on would keep that link, at the cost of the figure needing
+  a take to have a length.
+- **Should `pencil check` hold captions to their labels?** A caption that names a point the figure doesn't label is now a mistake
+  by Kris's rule, and `lab/narration` checks it by matching letters and numbers. The compiler could check it exactly, if a caption
+  could refer to a point by its name rather than spelling it.
+- **Should E have a label of its own** before it's called z²? The narration avoids saying it for now.
 - **Should a `fit` view ease** when something it fits vanishes? It jumps, which is correct.
 - **Where do easing and themes live?** The power in moves is a language default, and a theme is where it belongs. Sheets are
   picked by the page, since the language has no media query.
@@ -428,6 +436,39 @@ Tests hold every mark in the IR to the same value under all the sheets, the same
 - **What this didn't reach:** figures before the lattice still use `offset`, which a sheet can't move, and their pages keep
   their own palettes. A panel can't be hidden or moved by a sheet. Sheets are picked by the page, since the language has no
   media query.
+
+## Narration timing
+
+`lab/narration`, run on 2026-11-10 against sections 1 to 3 of the explainer (`limacon.txt`). The question was whether a synthesized
+draft and a real recording can give the same timing data, so the words can be edited as text and recorded last.
+
+- **They can, by aligning both the same way.** The Montreal Forced Aligner takes a take plus its script and gives every word and
+  phoneme a time, and ARPAbet marks each vowel's stress. A script's anchors, such as `[mirror] mirror`, land a beat on the onset
+  of that word's stressed vowel. Neither the voice nor the format matters, so a phone's m4a goes through the same steps as the draft.
+- **Kokoro's own word times would nearly do:** 21 to 25 ms from the aligner's on average, and 65 ms at worst, a frame or four at
+  60 fps. They're only compared, so a draft and a take never depend on different tools.
+- **Recognition isn't a timing source.** Whisper's word starts were 68 ms off on average and 400 ms at worst, with no phonemes,
+  and it heard "limousine" for limaçon and "cinch" for sinh. It's the lab's `hear` check instead, since the aligner fits every
+  word somewhere even when a take says something else. That's how it caught Kokoro saying words twice: two spaces left where an
+  anchor was removed confused Kokoro's markup.
+- **One pronunciation for both:** Kokoro reads `sinh` as "sin" and `tanh` as "tan", and the aligner's dictionary lacks limaçon,
+  conchoid, cardioid, sinh and tanh. `words.dict` gives them in ARPAbet, and the draft voice gets the same, converted. The
+  dictionary already has `cosh` as rhyming with "gosh".
+- **Retiming keeps each beat's length,** since that's how fast a move reads, and changes only the waits between beats. At the
+  draft voice's pace, section 3 goes from 5.5 s to 11.7 s before `trace` starts. The waits grow from 0 to 0.9 s to between 1.2 and
+  3.3 s. The silent cut was punchy, and words set a slower pace than the motion did.
+- **The voice has to wait for the figure too.** In the first draft, "at E" ran straight into "That's where its circle" while E was
+  still landing. So each line of a script is now a clip. Within a line the voice sets the time, and a line starts late when a beat
+  it anchors couldn't arrive in time, or to hold a landing. The hold is the pause written after the beat in the `.pen`, so the
+  figure's own sense of how long a landing needs keeps meaning that, and a 5 s sweep keeps the voice waiting until it's done.
+- **What's said should be seen (Kris).** Any point a caption or the narration names is labeled in the figure. C was named only in
+  a caption, and the draft voice's C sounded like E. A label that appears as the letter is said settles it, since the eye tells the
+  ear which letter was meant. So C has a label now, in a beat of its own anchored on the spoken "C". E isn't said for now, since
+  its only label comes later and reads z². The lab's `labels` check holds a figure and its script to this, and on the figure before
+  the label it flags every line that names C.
+- **An arrival lands on the word for it:** `flip` on "lands", not on the place it lands.
+- **Not checked:** a take in Kris's voice, and whether a vowel's onset is where an arrival should land. The lab's docstring renders
+  a draft to judge that by.
 
 ## Text without a page
 

@@ -15,17 +15,19 @@ beat draw_drop for 0.5 show above_one, at_B
 pause 1
 
 // 2. The circles through 1.
-beat circles "A circle about any point of it, through 1." for 0.8 show C, through_one drop at_B focus C, through_one, central, .trail
+// C is named as it arrives, so a reader sees which letter is meant when it's said.
+beat point_C "A circle about any point of it, through 1." for 0.4 show C, name_C drop at_B focus C, name_C, central
+beat circles for 0.8 show through_one focus C, name_C, through_one, central, .trail
 // The trail starts under the finished circle, so its first copy has nothing to show by arriving.
 beat sweep for 5 show trail
 pause 0.8
 
 // 3. The mirror. C moves on to where the reflection is easy to see, the tangent there is a
 // mirror, and 1 turns over it in 3D to land on E.
-beat place "Reflect 1 across the tangent at C." for 1.1 drop from_zero, above_one, B focus C, through_one, central
-beat mirror for 0.6 show .mirror, to_one focus .mirror, to_one, C, one
+beat place "Reflect 1 across the tangent at C." for 1.1 drop from_zero, above_one, B focus C, name_C, through_one, central
+beat mirror for 0.6 show .mirror, to_one focus .mirror, to_one, C, name_C, one
 pause 0.3
-beat flip for 1.3 show E, to_E focus .mirror, to_one, to_E, E, C, one
+beat flip for 1.3 show E, to_E focus .mirror, to_one, to_E, E, C, name_C, one
 pause 0.6
 beat touches "That's where its circle touches the curve." for 0.7 show normal, tangent_E, at_E focus E, to_E, normal, tangent_E, at_E, through_one
 pause 0.9
@@ -36,9 +38,9 @@ pause 1.2
 // 4. The pedal. The central circle scales by 2 about 1, taking C to P, and the mirror goes with
 // it to the pedal circle's tangent at P. E is the foot from 1 onto that tangent.
 beat clear for 0.35 drop normal, tangent_E, at_E, to_one, to_E
-beat double "Double the central circle from 1." for 1.4 show pedal, scaling focus pedal, scaling, central, C, one
+beat double "Double the central circle from 1." for 1.4 show pedal, scaling focus pedal, scaling, central, C, name_C, one
 pause 0.2
-beat halves for 0.5 show half_in, half_out, P drop scaling focus pedal, half_in, half_out, C, P, one
+beat halves for 0.5 show half_in, half_out, P drop scaling focus pedal, half_in, half_out, C, name_C, P, one
 pause 0.8
 beat touching "The curve is where 1's perpendiculars meet its tangents." for 0.8 show pedal_tangent, foot, at_foot focus pedal, P, pedal_tangent, foot, at_foot, E, limacon, one
 pause 0.8
@@ -82,7 +84,7 @@ pause 1.2
 
 // 7. The glow. Everything goes but the 24 circles, the paper goes black, and they light up on both
 // sides, so the curve they all touch is there without being drawn.
-beat quiet "" for 0.8 drop hub_arm, slow_arm, fast_arm, A2, name_E, pascal, pascal_radius, L, reach_out, E, C, through_one, center, central, limacon, axis, O, one, name_zero, name_one
+beat quiet "" for 0.8 drop hub_arm, slow_arm, fast_arm, A2, name_E, pascal, pascal_radius, L, reach_out, E, C, name_C, through_one, center, central, limacon, axis, O, one, name_zero, name_one
 beat glow for 3 show rings
 pause 5
 
@@ -116,6 +118,7 @@ let C = A + R·n
 // Drawn from 1, as a compass would.
 curve through_one = parametric (u): C + (one - C)·exp(i·u) for u in 0..tau
 dot C
+label name_C = "C" at C away C - A
 let passed = min(floor(24·smoothstep(0, 1, sweep)), 23)
 circles trail = circle(A + R·(cos(start + tau·k / 24), sin(start + tau·k / 24)), one) for k in 0..passed tag trail
 

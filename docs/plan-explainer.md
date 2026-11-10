@@ -218,7 +218,7 @@ Each ends with everything passing, and the GPU matching the oracle.
    - **Terms that aren't operators set tight,** so `cosh s` printed as `coshs`, and a label is always centered on its point. The definitions under the sum are short expressions of their own, written `cosh(s)`.
    - **A dropped mark leaves only as its sheet says,** so each rule needs `self.life` in it to fade. What no beat ever shows has no life to read, and the sheet fades it by the `quiet` beat's progress instead.
    - **The 24 circles are weighted alike in the glow,** unlike `012-limacon`'s `0.9^i`, since here they're an evenly spaced family and not a trail behind a moving point.
-5. **Narration,** once there's a cut worth recording over.
+5. **Narration,** once there's a cut worth recording over. **Started 2026-11-10:** `lab/narration` drafts a script with a synthesized voice, aligns any take to it, and retimes the beats so each lands on its word's stressed syllable. Sections 1 to 3 are drafted, and C has a label that appears as it's said. `goals.md` has what it found.
 6. **Write up what it found** in `goals.md` and the language reference.
 
 ## Decisions for Kris
