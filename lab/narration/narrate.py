@@ -274,7 +274,9 @@ def unlabeled(pen, script):
                 continue
             names.append(m[1])
         if where == "narration":
-            names += [NUMBERS[w] for w in re.findall(r"[a-z]+", words.lower()) if w in NUMBERS]
+            # A number before a single letter is a coefficient, as in "two t", not a point.
+            names += [NUMBERS[w] for w in re.findall(r"\b([a-z]+)\b(?!\s+[a-z]\b)", words.lower())
+                      if w in NUMBERS]
         missing += [(where, name, words.strip()) for name in names if name not in labels]
     return missing
 

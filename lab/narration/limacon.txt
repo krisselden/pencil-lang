@@ -7,3 +7,16 @@ The tangent at C is a [mirror] mirror.
 Reflect one across it, and it [flip] lands here.
 That's where its circle [touches] touches the curve.
 And as C goes round again, the point [trace:start] traces the curve.
+Now double the central circle, from [double] one.
+C stays [halves] halfway there.
+Drop a [touching] perpendicular from one to its tangent, and the foot is on the curve.
+[pedal_round:start] It is, all the way round.
+This is [meet] Pascal's circle.
+Seen from one, the line is at [seen] angle t,
+and from the center, it's [doubled] two t.
+Go sinh two s farther, [farther] both ways.
+As the line turns, [conchoid_round:start] both ends trace the curve.
+Or add the arms the other way [around] around.
+The [name_hub] hub, the [name_slow] slow arm, the [name_fast] fast arm.
+That's [squaring] squaring.
+[roll:start] u turns at t, and u squared at two t.

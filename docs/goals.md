@@ -45,7 +45,7 @@ belongs: `language.md` for the language, the section below for a figure.
 
 - **The explainer, phases 5 and 6** (`plan-explainer.md`): narration over the drafted cut, then a write-up here and in the
   language reference. `lab/narration` times beats from a script, drafted with a synthesized voice ("Narration timing" below).
-  Sections 1 to 3 are drafted. Next: a take in Kris's voice, and the rest of the script.
+  The whole script is drafted, with the glow left silent. Next: a take in Kris's voice.
 
 ### Proposed order after that
 
@@ -439,7 +439,7 @@ Tests hold every mark in the IR to the same value under all the sheets, the same
 
 ## Narration timing
 
-`lab/narration`, run on 2026-11-10 against sections 1 to 3 of the explainer (`limacon.txt`). The question was whether a synthesized
+`lab/narration`, run on 2026-11-10 against the explainer (`limacon.txt`), first sections 1 to 3 and then all of it. The question was whether a synthesized
 draft and a real recording can give the same timing data, so the words can be edited as text and recorded last.
 
 - **They can, by aligning both the same way.** The Montreal Forced Aligner takes a take plus its script and gives every word and
@@ -467,6 +467,9 @@ draft and a real recording can give the same timing data, so the words can be ed
   its only label comes later and reads z². The lab's `labels` check holds a figure and its script to this, and on the figure before
   the label it flags every line that names C.
 - **An arrival lands on the word for it:** `flip` on "lands", not on the place it lands.
+- **The whole draft runs 102.6 s,** against the silent cut's 65.6 s, with 26 anchored beats. Every beat lands on its word except
+  `name_slow`, 0.07 s late: "hub, slow arm, fast arm" is said 0.6 s apart, and each beat is 0.6 s long.
+- **A number before a letter is a coefficient,** as in "two t", so the `labels` check doesn't ask for a point called 2.
 - **Not checked:** a take in Kris's voice, and whether a vowel's onset is where an arrival should land. The lab's docstring renders
   a draft to judge that by.
 
