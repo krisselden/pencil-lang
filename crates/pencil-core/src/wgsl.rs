@@ -11,6 +11,7 @@ use crate::frame::{
     DEFAULT_DOT_RADIUS, DEFAULT_STROKE_WIDTH, GEOMETRY_VEC4S, SIDE_TEXTURE_WIDTH, VALUE_VEC4S,
 };
 use crate::ir::{Expr, Form};
+use crate::nearest;
 use crate::style::{Blend, MarkStyle, Tone};
 
 const PRELUDE: &str = r#"
@@ -102,6 +103,38 @@ fn polygon(region: i32, p: vec2<f32>) -> vec3<f32> {
     let s = select(1.0, -1.0, winding != 0);
     let n = select(vec2<f32>(1.0, 0.0), s * toward / rho, rho > 1e-6);
     return vec3<f32>(s * rho, n);
+}
+
+fn nearest_texel(i: i32) -> vec4<f32> {
+    return textureLoad(nearest, vec2<i32>(i % NEAREST_WIDTH, i / NEAREST_WIDTH), 0);
+}
+
+// `nearest::nearest`, over the segments the pixel's tile lists: the distance in pixels, then the
+// way from the curve, or a negative distance if the mark has no curve to measure to.
+fn nearest_curve(mark: i32, p: vec2<f32>) -> vec3<f32> {
+    let head = nearest_texel(mark);
+    if head.w < 0.5 { return vec3<f32>(-1.0, 1.0, 0.0); }
+    let tiles = vec2<i32>(head.yz);
+    let tile = clamp(vec2<i32>(floor(p / NEAREST_TILE)), vec2<i32>(0), tiles - 1);
+    let entry = nearest_texel(i32(head.x) + tile.y * tiles.x + tile.x);
+    let start = i32(entry.x);
+    let count = i32(entry.y);
+    var best = 1e30;
+    var toward = vec2<f32>(1.0, 0.0);
+    for (var i = 0; i < count; i++) {
+        let s = nearest_texel(start + i);
+        let e = s.zw - s.xy;
+        let w = p - s.xy;
+        let len2 = dot(e, e);
+        let h = select(0.0, clamp(dot(w, e) / len2, 0.0, 1.0), len2 > 0.0);
+        let v = w - e * h;
+        let d2 = dot(v, v);
+        if d2 < best {
+            best = d2;
+            toward = v;
+        }
+    }
+    return vec3<f32>(sqrt(best), toward);
 }
 
 "#;
@@ -314,7 +347,8 @@ pub fn emit(figure: &Figure) -> String {
          @group(0) @binding(0) var<uniform> u: Uniforms;\n\
          @group(0) @binding(1) var coverage: texture_2d_array<f32>;\n\
          @group(0) @binding(2) var<uniform> geometry: array<vec4<f32>, {GEOMETRY_VEC4S}>;\n\
-         @group(0) @binding(3) var sides: texture_2d<f32>;\n\n\
+         @group(0) @binding(3) var sides: texture_2d<f32>;\n\
+         @group(0) @binding(4) var nearest: texture_2d<f32>;\n\n\
          @vertex\n\
          fn vs(@builtin(vertex_index) i: u32) -> @builtin(position) vec4<f32> {{\n    \
              let p = vec2<f32>(f32((i << 1u) & 2u), f32(i & 2u));\n    \
@@ -322,6 +356,11 @@ pub fn emit(figure: &Figure) -> String {
          }}\n"
     );
     out.push_str(&format!("const TANH_LIMIT: f32 = {TANH_LIMIT:?};\n"));
+    out.push_str(&format!(
+        "const NEAREST_WIDTH: i32 = {};\nconst NEAREST_TILE: f32 = {};\n",
+        nearest::TEXTURE_WIDTH,
+        literal(nearest::TILE_PX)
+    ));
     out.push_str(PRELUDE);
     out.push_str(BOX_COVERAGE);
     out.push_str(
@@ -353,6 +392,7 @@ pub fn emit(figure: &Figure) -> String {
     let sided = figure.sided();
     let mut layer = 0;
     let mut region = 0;
+    let mut traced = 0;
     for (i, (mark, style)) in figure
         .scene
         .marks
@@ -395,10 +435,10 @@ pub fn emit(figure: &Figure) -> String {
                 out.push_str("        let glen = length(gradient);\n");
                 // A true distance doesn't need its gradient, which is lost at a circle's center.
                 if *exact {
-                    out.push_str("        let self_dist = field;\n");
+                    out.push_str("        var self_dist = field;\n");
                 } else {
                     out.push_str(&format!(
-                        "        let self_dist = field / max(glen, {});\n",
+                        "        var self_dist = field / max(glen, {});\n",
                         literal(MIN_GRADIENT),
                     ));
                 }
@@ -409,9 +449,21 @@ pub fn emit(figure: &Figure) -> String {
                     ));
                 }
                 out.push_str(&format!(
-                    "        let normal = select(vec2<f32>(1.0, 0.0), gradient / glen, glen > {});\n",
+                    "        var normal = select(vec2<f32>(1.0, 0.0), gradient / glen, glen > {});\n",
                     literal(MIN_GRADIENT),
                 ));
+                // Measured to the traced curve, where there is one, with the field's sign.
+                if nearest::measures(mark, style) {
+                    out.push_str(&format!(
+                        "        let near = nearest_curve({traced}, local);\n\
+                         \x20       if near.x >= 0.0 {{\n\
+                         \x20           let side = select(1.0, -1.0, field < 0.0);\n\
+                         \x20           self_dist = side * near.x * pixel;\n\
+                         \x20           normal = select(normal, side * near.yz / near.x, near.x > 1e-6);\n\
+                         \x20       }}\n"
+                    ));
+                    traced += 1;
+                }
                 out.push_str("        let dist_px = self_dist / pixel;\n");
             }
             Form::Region(_) => {

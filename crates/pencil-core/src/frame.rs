@@ -6,6 +6,7 @@ use crate::error::Error;
 use crate::eval::{self, Env};
 use crate::fast;
 use crate::ir::{Expr, Form, Part, Viewport};
+use crate::nearest;
 use crate::place;
 use crate::presence;
 use crate::stroke;
@@ -110,6 +111,11 @@ pub struct Prepared {
     pub geometry: Vec<f32>,
     /// One segment list per line stroke, in mark order.
     pub strokes: Vec<Vec<f32>>,
+    /// The traced curve of each mark whose distance is measured to it, as `nearest::measures`
+    /// says, in mark order: segments `x0 y0 x1 y1` in device pixels, empty if it's absent.
+    pub traced: Vec<Vec<[f32; 4]>>,
+    /// The same, tiled for the GPU, as `nearest::texture`.
+    pub nearest: Vec<f32>,
     pub labels: Vec<Label>,
     pub paper: [f64; 3],
     /// Device pixels per `px`, a design pixel.
@@ -616,7 +622,39 @@ pub fn prepare_with(
         start += vertices.len();
     }
 
-    let strokes = stroke::build(figure, &env, view, width, height, dpr, &shown)?;
+    // A curve whose distance is measured is traced once, for that and for its stroke.
+    let mut curves = vec![None; scene.marks.len()];
+    let mut traced = Vec::new();
+    for (i, (mark, style)) in scene.marks.iter().zip(&figure.styles.marks).enumerate() {
+        if !nearest::measures(mark, style) {
+            continue;
+        }
+        let mut segments = Vec::new();
+        if shown[i] {
+            let lines = stroke::lines(&mark.form, &env, view, width, height, true)?;
+            for line in &lines {
+                for pair in line.points.windows(2) {
+                    let (ax, ay) = device(pair[0][0], pair[0][1], view, width, height);
+                    let (bx, by) = device(pair[1][0], pair[1][1], view, width, height);
+                    let segment = [ax as f32, ay as f32, bx as f32, by as f32];
+                    if segment.iter().all(|v| v.is_finite()) {
+                        segments.push(segment);
+                    }
+                }
+            }
+            curves[i] = Some(lines);
+        }
+        traced.push(segments);
+    }
+    let strokes = stroke::build(figure, &env, view, width, height, dpr, &shown, &curves)?;
+    let nearest = nearest::texture(&traced, width, height);
+    if nearest.len() > nearest::TEXTURE_WIDTH * nearest::TEXTURE_ROWS * 4 {
+        return Err(Error::new(format!(
+            "measuring distances to curves needs {} texels, and the limit is {} for now",
+            nearest.len() / 4,
+            nearest::TEXTURE_WIDTH * nearest::TEXTURE_ROWS
+        )));
+    }
     let paper = match &figure.styles.paper {
         Some(paper) => eval::color(paper, &env)?,
         None => [1.0; 3],
@@ -697,6 +735,8 @@ pub fn prepare_with(
         shown,
         geometry,
         strokes,
+        traced,
+        nearest,
         labels,
         paper,
         dpr,

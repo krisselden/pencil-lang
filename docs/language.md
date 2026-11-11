@@ -372,7 +372,7 @@ the color stays with the disk. A style can tell which it is from `self.curvature
 
 | Name | Meaning |
 |---|---|
-| `self.dist` | Distance to the mark, in `fill`, `stroke` and `fill_opacity`, on marks that have one. |
+| `self.dist` | Distance to the mark, in `fill`, `stroke` and `fill_opacity`, on marks that have one, and negative inside. It's a true distance: an implicit curve's is measured to the curve as traced in view, so `cos(24·self.dist)` makes even bands. |
 | `self.pixel` | How big a device pixel is in world units, wherever `self.dist` is, so that a glow can be a number of the screen's pixels across. It's what the screen can resolve, not the design: `1px` is a device pixel only at the design size on a 1× screen. |
 | `self.curvature` | A circle's signed curvature: above 0 counterclockwise, below 0 clockwise, and 0 on a line. |
 | `self.t` | Position along a stroke, 0 to 1, in `width`. |

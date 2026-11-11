@@ -9,6 +9,7 @@ use crate::Figure;
 use crate::error::Error;
 use crate::frame::{self, Inputs, Prepared};
 use crate::ir::{Expr, Form, Scene, System};
+use crate::nearest;
 use crate::stroke::{self, box_coverage};
 use crate::style::{Blend, MarkStyle, SELF_CURVATURE, SELF_DIST, SELF_PIXEL, Tone};
 
@@ -550,6 +551,7 @@ impl<'a> Frame<'a> {
         };
         let mut layer = 0;
         let mut region = 0;
+        let mut traced = 0;
         for (i, (mark, style)) in self
             .figure
             .scene
@@ -562,6 +564,7 @@ impl<'a> Frame<'a> {
             if !self.prepared.shown[i] {
                 layer += usize::from(style.stroke_is_line(&mark.form));
                 region += usize::from(matches!(mark.form, Form::Region(_)));
+                traced += usize::from(nearest::measures(mark, style));
                 continue;
             }
             let mut env = self.env.clone();
@@ -583,18 +586,33 @@ impl<'a> Frame<'a> {
                     if let Some(curvature) = curvature {
                         env.set(SELF_CURVATURE, real(curvature, &env)?);
                     }
-                    // A true distance doesn't need its gradient, which is lost at a circle's center.
-                    let dist = if *exact {
-                        f
-                    } else {
-                        f / glen.max(MIN_GRADIENT)
-                    };
                     let n = if glen > MIN_GRADIENT {
                         (gx / glen, gy / glen)
                     } else {
                         (1.0, 0.0)
                     };
-                    Some((dist / pixel, n))
+                    // Measured to the traced curve, where there is one, with the field's sign.
+                    let near = if nearest::measures(mark, style) {
+                        traced += 1;
+                        nearest::nearest(&self.prepared.traced[traced - 1], px, py)
+                    } else {
+                        None
+                    };
+                    match near {
+                        Some((rho, (vx, vy))) => {
+                            let sign = if f < 0.0 { -1.0 } else { 1.0 };
+                            let n = if rho > 1e-6 {
+                                (sign * vx / rho, sign * vy / rho)
+                            } else {
+                                n
+                            };
+                            Some((sign * rho, n))
+                        }
+                        // A true distance doesn't need its gradient, which is lost at a circle's
+                        // center. Otherwise it's estimated, which is only right near the curve.
+                        None if *exact => Some((f / pixel, n)),
+                        None => Some((f / glen.max(MIN_GRADIENT) / pixel, n)),
+                    }
                 }
                 Form::Region(_) => {
                     let m = frame::polygon_distance(&self.prepared.geometry, region, px, py);

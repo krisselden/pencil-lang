@@ -44,10 +44,15 @@ impl Field<'_> {
             let gx = eval::real(&self.grad[0], &self.env)?;
             let gy = eval::real(&self.grad[1], &self.env)?;
             let g2 = gx * gx + gy * gy;
-            if g2 < 1e-12 {
+            // Where the gradient vanishes or is infinite, as at a cusp, a step goes nowhere useful.
+            if !(1e-12..f64::INFINITY).contains(&g2) {
                 break;
             }
-            p = [p[0] - f * gx / g2, p[1] - f * gy / g2];
+            let next = [p[0] - f * gx / g2, p[1] - f * gy / g2];
+            if !(next[0].is_finite() && next[1].is_finite()) {
+                break;
+            }
+            p = next;
         }
         Ok(p)
     }
@@ -268,6 +273,19 @@ mod tests {
     }
 
     const CIRCLE: &str = "curve c = implicit (x, y): x^2 + y^2 = 1.3225";
+
+    /// An astroid's gradient is infinite at its cusps, which lie on grid lines here, and a Newton
+    /// step from there used to land on NaN.
+    #[test]
+    fn a_cusp_keeps_every_vertex_finite() {
+        let doc = "viewport { x: -1.6..1.6, y: -1.6..1.6 }\n\
+                   curve c = implicit (x, y): abs(x)^(2/3) + abs(y)^(2/3) = 1";
+        let found = lines(doc, 64);
+        assert!(!found.is_empty());
+        for p in found.iter().flat_map(|l| &l.points) {
+            assert!(p[0].is_finite() && p[1].is_finite(), "{p:?}");
+        }
+    }
 
     #[test]
     fn vertices_land_on_the_curve() {

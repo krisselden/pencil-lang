@@ -296,10 +296,12 @@ pub fn lines(
     }
 }
 
-/// Builds one segment list per line stroke, in mark order, in device pixels:
+/// Builds one segment list per line stroke, in mark order, in device pixels, using a curve's
+/// lines from `traced` where it's already been traced:
 /// `x0 y0 x1 y1  r0 r1 s0 s1  dash_on dash_period line_length 0`. A nonzero length
 /// clips coverage to the line's arc length, so it ends square as in SVG, even where
 /// an earlier segment's round joint would overhang the end.
+#[allow(clippy::too_many_arguments)]
 pub fn build(
     figure: &Figure,
     env: &Env,
@@ -308,6 +310,7 @@ pub fn build(
     height: u32,
     dpr: f64,
     shown: &[bool],
+    traced: &[Option<Vec<Polyline>>],
 ) -> Result<Vec<Vec<f32>>, Error> {
     let mut layers = Vec::new();
     for (i, (mark, style)) in figure
@@ -428,7 +431,11 @@ pub fn build(
         }
         // Dashes and tapers measure along the line, so they need all of it.
         let frame_only = !style.needs_arc_length();
-        for line in lines(&mark.form, env, view, width, height, frame_only)? {
+        let lines = match &traced[i] {
+            Some(lines) => lines.clone(),
+            None => lines(&mark.form, env, view, width, height, frame_only)?,
+        };
+        for line in lines {
             // Ticks say two lengths are equal, so they wait for the stroke to reach its middle.
             if style.ticks.is_some() && trim >= 0.5 && line.points.len() == 2 {
                 let ends = [to_device(line.points[0]), to_device(line.points[1])];

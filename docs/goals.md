@@ -67,8 +67,6 @@ Proposed by Claude on 2026-11-09, not yet agreed:
   shaders, which wgpu's WebGL2 backend lacks, and the winding integral as written needs storage buffers.
 - **How should a `.pen` file name fonts?** `font: math | sans` are roles. Video uses system fonts, which can't be redistributed,
   so someone else's render looks different. The math font also has `ᵗ` but not `ⁱ`, with no fallback.
-- **What should `self.dist` mean?** It's still the first-order estimate `f / |∇f|`, which shows moiré where the gradient shrinks.
-  Tracing could give a true distance near the curve, at a cost.
 - **How should a moving loop's dashes behave?** A loop gets a whole number of dashes, so they jump as it grows: about 25 times a
   cycle on the breathing circle, by arithmetic, not watched. The blog's hysteresis depends on history, which breaks seeking. A
   related one: dashes on a moving range ride with its start, and a real string's would stay put as it unwinds.
@@ -106,6 +104,8 @@ Built, and wrong or short in a known way. None has blocked a figure.
   enormous circles.
 - **Sides on collections** cost about 0.09 ms a circle, so they're capped at 256. Instanced quads with culling are the way past it.
 - **Regions** assume one straight edge per pixel, so sharp tips are approximate, and the 512-entry uniform array caps their vertices.
+- **Distance to an implicit curve** only counts the curve as traced, which is the view and one cell past it. Near the frame's
+  edge, a part of the curve just out of view can be nearer than the distance says.
 - **Tracing** uses a fixed 6-pixel cell, so it misses fine detail and is the least accurate path at small sizes. It still evaluates
   through `eval`, about 6 ms a frame for one curve in WASM, since `fast.rs` only serves curves and collections.
 - **Terms:** a term that isn't an operator sets tight (`cosh s` printed as `coshs`), and a label is always centered on its point.
@@ -503,6 +503,27 @@ app's browser pane. The editor is a textarea over a highlighted copy of its text
 - **Not checked:** Kris's own use of it, a phone, other browsers, and the page with the pane showing. The pane was hidden for
   most of the checks, so frames were drawn by hand rather than by the animation loop.
 
+## Distance to a curve
+
+Fixed on 2026-11-11, after Kris drew the heart `(x² + y² − 1)³ − x²y³ = 0` with `bands.style` in the playground and found
+`self.dist` a poor approximation. It was `f / |∇f|`, which is only right next to the curve.
+
+- **Where it failed:** `f / |∇f|` goes infinite wherever the gradient vanishes. The heart's gradient is zero at five points
+  inside the curve, which drew the bullseye and four swirls, and also at three points on the curve itself. Far out, f grows as
+  ρ⁶, so the estimate ran about six times short and the bands came out wide. The breathing circle's moiré at its center was
+  the same failure.
+- **Now it's measured to the curve as traced,** with the field's sign. An implicit curve whose distance is read, by a fill or a
+  stroke drawn as a field, is traced once, and the stroke uses the same trace. Circles, dots and regions keep their exact
+  distances. Bands are now even offsets of the curve, folding where two parts of it are equally near.
+- **The oracle looks at every segment,** and the GPU at those its 32-pixel tile lists: every segment within `d + 2h` of the tile's
+  center, where `d` is the nearest one's distance from there and `h` half the tile's diagonal. No other segment can be nearest to
+  any pixel of the tile. A test checks every pixel of a spiral, and `pencil check` agrees within 1/255 on the heart, Kris's three
+  further curves (the devil's curve, the astroid and a bifolium) and every corpus figure with a field.
+- **The astroid found a tracer bug:** its gradient is infinite at its cusps, and a Newton step from there gave NaN vertices. The
+  oracle went black, while the GPU skipped them. A step that would leave the finite numbers now stops instead.
+- **Cost:** in WASM at 1812², with the tiles listed on the CPU, a frame went from 18–46 ms to 31–59 ms across the five curves.
+  16-pixel tiles cost more on the CPU than they saved on the GPU.
+
 ## Text without a page
 
 Compared on 2026-11-05 in `lab/text`, with results on `web/text.html`. 269 glyphs at 1024×460 on an
@@ -597,7 +618,8 @@ Findings for what comes next:
   WebGL2 question is really about the vector layer.
 - **`self.dist` isn't a true distance.** It's the first-order estimate `f / |∇f|`, which
   distorts where the gradient shrinks: `bands.style` shows moiré at the circle's center,
-  where a true distance would give even rings. This is the styling problem Kris predicted.
+  where a true distance would give even rings. This is the styling problem Kris predicted. Fixed on
+  2026-11-11 ("Distance to a curve").
 
 **Stroke test. Done 2026-11-05.** Marching squares with Newton refinement, drawn as
 instanced segments with an exact box filter and max blending. `web/strokes.html` compares it

@@ -3,6 +3,7 @@
 
 use pencil_core::eval::srgb_encode;
 use pencil_core::frame::{GEOMETRY_VEC4S, Prepared, SIDE_TEXTURE_WIDTH, VALUE_VEC4S, side_rows};
+use pencil_core::nearest;
 use pencil_core::{Figure, stroke, wgsl};
 use wgpu::util::DeviceExt;
 
@@ -57,6 +58,24 @@ struct Coverage {
     height: u32,
 }
 
+/// The texture of traced curves, `rows` high.
+fn nearest_texture(device: &wgpu::Device, rows: u32) -> wgpu::Texture {
+    device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("pencil nearest"),
+        size: wgpu::Extent3d {
+            width: nearest::TEXTURE_WIDTH as u32,
+            height: rows.max(1),
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Rgba32Float,
+        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+        view_formats: &[],
+    })
+}
+
 /// A compiled figure. The shader encodes sRGB itself, so `format` must be a
 /// non-sRGB format. That keeps output identical across backends.
 pub struct FigurePipeline {
@@ -67,6 +86,9 @@ pub struct FigurePipeline {
     /// Each collection's sides, per instance. Always there, since the layout says so.
     sides: wgpu::Texture,
     sides_view: wgpu::TextureView,
+    /// Traced curves, tiled, for distances to them. It grows as a frame needs more rows.
+    nearest: wgpu::Texture,
+    nearest_view: wgpu::TextureView,
     coverage_pipeline: wgpu::RenderPipeline,
     coverage_bind_group: wgpu::BindGroup,
     coverage: Option<Coverage>,
@@ -119,6 +141,16 @@ impl FigurePipeline {
                 },
                 wgpu::BindGroupLayoutEntry {
                     binding: 3,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 4,
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Texture {
                         sample_type: wgpu::TextureSampleType::Float { filterable: false },
@@ -245,6 +277,8 @@ impl FigurePipeline {
             view_formats: &[],
         });
         let sides_view = sides.create_view(&Default::default());
+        let nearest = nearest_texture(device, 1);
+        let nearest_view = nearest.create_view(&Default::default());
         Self {
             pipeline,
             layout,
@@ -252,6 +286,8 @@ impl FigurePipeline {
             geometry,
             sides,
             sides_view,
+            nearest,
+            nearest_view,
             coverage_pipeline,
             coverage_bind_group,
             coverage: None,
@@ -302,6 +338,10 @@ impl FigurePipeline {
                     binding: 3,
                     resource: wgpu::BindingResource::TextureView(&self.sides_view),
                 },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: wgpu::BindingResource::TextureView(&self.nearest_view),
+                },
             ],
         });
         self.coverage = Some(Coverage {
@@ -347,6 +387,34 @@ impl FigurePipeline {
                     rows_per_image: None,
                 },
                 self.sides.size(),
+            );
+        }
+        let rows = (prepared.nearest.len() / (nearest::TEXTURE_WIDTH * 4)) as u32;
+        if rows > self.nearest.height() {
+            self.nearest = nearest_texture(device, rows);
+            self.nearest_view = self.nearest.create_view(&Default::default());
+            // The bind group names the texture, so it's made again.
+            self.coverage = None;
+        }
+        if rows > 0 {
+            let bytes: Vec<u8> = prepared
+                .nearest
+                .iter()
+                .flat_map(|f| f.to_le_bytes())
+                .collect();
+            queue.write_texture(
+                self.nearest.as_image_copy(),
+                &bytes,
+                wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(nearest::TEXTURE_WIDTH as u32 * 16),
+                    rows_per_image: None,
+                },
+                wgpu::Extent3d {
+                    width: nearest::TEXTURE_WIDTH as u32,
+                    height: rows,
+                    depth_or_array_layers: 1,
+                },
             );
         }
         self.coverage_for(device, inputs.width, inputs.height);
