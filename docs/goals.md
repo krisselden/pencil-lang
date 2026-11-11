@@ -104,8 +104,9 @@ Built, and wrong or short in a known way. None has blocked a figure.
   enormous circles.
 - **Sides on collections** cost about 0.09 ms a circle, so they're capped at 256. Instanced quads with culling are the way past it.
 - **Regions** assume one straight edge per pixel, so sharp tips are approximate, and the 512-entry uniform array caps their vertices.
-- **Distance to an implicit curve** only counts the curve as traced, which is the view and one cell past it. Near the frame's
-  edge, a part of the curve just out of view can be nearer than the distance says.
+- **Distance to an implicit curve** only counts the curve as traced: the view, and one cell or the stroke's half width past it.
+  Near the frame's edge, a part of the curve just out of view can be nearer than the distance says.
+- **A traced curve's dashes and taper** measure along the line as traced, so they depend on how far past the frame it runs.
 - **Tracing** uses a fixed 6-pixel cell, so it misses fine detail and is the least accurate path at small sizes. It still evaluates
   through `eval`, about 6 ms a frame for one curve in WASM, since `fast.rs` only serves curves and collections.
 - **Terms:** a term that isn't an operator sets tight (`cosh s` printed as `coshs`), and a label is always centered on its point.
@@ -521,6 +522,10 @@ Fixed on 2026-11-11, after Kris drew the heart `(x² + y² − 1)³ − x²y³ =
   further curves (the devil's curve, the astroid and a bifolium) and every corpus figure with a field.
 - **The astroid found a tracer bug:** its gradient is infinite at its cusps, and a Newton step from there gave NaN vertices. The
   oracle went black, while the GPU skipped them. A step that would leave the finite numbers now stops instead.
+- **A wide stroke showed its end (Kris):** a traced curve stopped one 6-pixel cell past the frame, and a stroke ends square
+  across its line, so a 40px stroke leaving at a slant was cut off inside the frame. A curve is now traced past the frame by its
+  stroke's half width and a pixel, sampled along `self.t` for a taper, and a test holds an open curve's ends that far out. Strokes
+  under about 10 device pixels still trace one cell past, as before.
 - **Cost:** in WASM at 1812², with the tiles listed on the CPU, a frame went from 18–46 ms to 31–59 ms across the five curves.
   16-pixel tiles cost more on the CPU than they saved on the GPU.
 

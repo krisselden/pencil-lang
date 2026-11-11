@@ -222,7 +222,8 @@ fn is_constant(e: &Expr) -> bool {
     constant
 }
 
-/// The lines a mark's stroke follows, in world coordinates.
+/// The lines a mark's stroke follows, in world coordinates. A traced curve runs `reach` device
+/// pixels past the frame, so a stroke that wide doesn't show where it ends.
 pub fn lines(
     form: &Form,
     env: &Env,
@@ -230,6 +231,7 @@ pub fn lines(
     width: u32,
     height: u32,
     frame_only: bool,
+    reach: f64,
 ) -> Result<Vec<Polyline>, Error> {
     match form {
         // A curve that knows its own path doesn't need tracing.
@@ -242,13 +244,18 @@ pub fn lines(
             width,
             height,
             frame_only,
+            reach,
         ),
         Form::Field {
             vars, field, grad, ..
         } => {
             let cols = (width as f64 / CELL_PX).ceil() as u32;
             let rows = (height as f64 / CELL_PX).ceil() as u32;
-            trace(vars, field, grad, env, view, cols, rows)
+            // A stroke ends square across its line, so its end can come back as far as its half
+            // width toward the frame, and a pixel more for its edge. Thin strokes need only the
+            // one cell, as before.
+            let margin = ((reach.max(0.0) + 1.0) / CELL_PX).ceil().max(1.0) as u32;
+            trace(vars, field, grad, env, view, cols, rows, margin)
         }
         Form::Parametric(arc) => arc_lines(arc, env, view, width, height, frame_only),
         Form::Polyline { points, closed } => {
@@ -433,7 +440,19 @@ pub fn build(
         let frame_only = !style.needs_arc_length();
         let lines = match &traced[i] {
             Some(lines) => lines.clone(),
-            None => lines(&mark.form, env, view, width, height, frame_only)?,
+            None => lines(
+                &mark.form,
+                env,
+                view,
+                width,
+                height,
+                frame_only,
+                if matches!(mark.form, Form::Field { .. }) {
+                    half_width(style, env, dpr)?
+                } else {
+                    0.0
+                },
+            )?,
         };
         for line in lines {
             // Ticks say two lengths are equal, so they wait for the stroke to reach its middle.
@@ -1158,6 +1177,21 @@ fn push_arrow(
 /// How long a tick across a segment is, in style pixels.
 const DEFAULT_TICK: f64 = 10.0;
 
+/// Half a stroke's widest width, in device pixels, for how far past the frame its line has to
+/// run. A width that follows `self.t` is sampled along it.
+pub fn half_width(style: &MarkStyle, env: &Env, dpr: f64) -> Result<f64, Error> {
+    let Some(width) = &style.width else {
+        return Ok(DEFAULT_STROKE_WIDTH * dpr / 2.0);
+    };
+    let mut env = env.clone();
+    let mut widest: f64 = 0.0;
+    for k in 0..=16 {
+        env.set(SELF_T, k as f64 / 16.0);
+        widest = widest.max(pixels(width, &env)?);
+    }
+    Ok(widest / 2.0)
+}
+
 /// A style's length in device pixels, through the frame's units.
 fn pixels(e: &Expr, env: &Env) -> Result<f64, Error> {
     frame::length(e, env)
@@ -1607,6 +1641,25 @@ mod tests {
             .unwrap()
             .strokes
             .remove(0)
+    }
+
+    /// A wide stroke on a traced curve runs past the frame by more than half its width, so its
+    /// square end can't show inside, even where the curve leaves at a slant.
+    #[test]
+    fn a_wide_traced_stroke_ends_out_of_sight() {
+        // It leaves through the top at a shallow slant, so a square end there would tilt into view.
+        let doc = "viewport { x: -1..1, y: -1..1 }\n\
+                   curve c = implicit (x, y): y = 0.35·x + 0.8 + 0.01·x^2";
+        for (width, beyond) in [(2.0, 5.0), (40.0, 21.0), (90.0, 46.0)] {
+            let segments = layer_of(doc, &format!("style c {{ stroke: black; width: {width}px }}"), 256);
+            let first = &segments[..FLOATS_PER_SEGMENT];
+            let last = &segments[segments.len() - FLOATS_PER_SEGMENT..];
+            for (x, y) in [(first[0], first[1]), (last[2], last[3])] {
+                // How far outside the 256-pixel frame it ends.
+                let outside = (-x).max(x - 256.0).max(-y).max(y - 256.0);
+                assert!(outside >= beyond, "{width}px: the line ends at ({x}, {y})");
+            }
+        }
     }
 
     fn layer(sheet: &str, size: u32) -> Vec<f32> {

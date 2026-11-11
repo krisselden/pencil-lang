@@ -58,8 +58,9 @@ impl Field<'_> {
     }
 }
 
-/// Traces a curve over a `cols` by `rows` grid covering the viewport, with one extra
-/// cell on every side so open curves run past the edge instead of ending at it.
+/// Traces a curve over a `cols` by `rows` grid covering the viewport, with `margin` extra cells
+/// on every side, at least one, so open curves run past the edge instead of ending at it.
+#[allow(clippy::too_many_arguments)]
 pub fn trace(
     vars: &[String; 2],
     expr: &Expr,
@@ -68,7 +69,9 @@ pub fn trace(
     view: &Viewport,
     cols: u32,
     rows: u32,
+    margin: u32,
 ) -> Result<Vec<Polyline>, Error> {
+    let margin = margin.max(1);
     let mut field = Field {
         vars,
         field: expr,
@@ -79,11 +82,11 @@ pub fn trace(
         (view.x[1] - view.x[0]) / cols as f64,
         (view.y[1] - view.y[0]) / rows as f64,
     );
-    let (nx, ny) = (cols + 2, rows + 2);
+    let (nx, ny) = (cols + 2 * margin, rows + 2 * margin);
     let corner = |i: u32, j: u32| {
         [
-            view.x[0] + (i as f64 - 1.0) * cell_x,
-            view.y[0] + (j as f64 - 1.0) * cell_y,
+            view.x[0] + (i as f64 - margin as f64) * cell_x,
+            view.y[0] + (j as f64 - margin as f64) * cell_y,
         ]
     };
 
@@ -260,6 +263,7 @@ mod tests {
             &figure.scene.viewport,
             cells,
             cells,
+            1,
         )
         .unwrap()
     }

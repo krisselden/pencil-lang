@@ -631,7 +631,13 @@ pub fn prepare_with(
         }
         let mut segments = Vec::new();
         if shown[i] {
-            let lines = stroke::lines(&mark.form, &env, view, width, height, true)?;
+            // Its stroke shares the trace, so it reaches as far as the stroke needs.
+            let reach = if style.stroke_is_line(&mark.form) {
+                stroke::half_width(style, &env, dpr)?
+            } else {
+                0.0
+            };
+            let lines = stroke::lines(&mark.form, &env, view, width, height, true, reach)?;
             for line in &lines {
                 for pair in line.points.windows(2) {
                     let (ax, ay) = device(pair[0][0], pair[0][1], view, width, height);
