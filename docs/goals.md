@@ -54,7 +54,8 @@ Proposed by Claude on 2026-11-09, not yet agreed:
 1. **A custom element**, `<pencil-figure src style>`, built from `web/fit.js`. It's how Pencil gets onto the site, it can take its
    aspect ratio from an Astro build so nothing shifts, and it replaces the setup each page in `web/` repeats.
 2. **A highlighting grammar** for `.pen` and `.style`. Cheap, and it doesn't fix the syntax in place.
-3. **A playground with an editor:** the element, an editor, and the WASM check, for people who want to try it.
+3. **A playground with an editor:** the element, an editor, and the WASM check, for people who want to try it. A first one for
+   Kris is built ("The playground" below), ahead of the element and the grammar, so he can react to the syntax now.
 4. **A syntax pass,** before anything hardens the syntax. Split `compile_flat` first (below).
 5. **A language server,** diagnostics first, since errors already carry a line and column. Hover and completion once the syntax
    settles.
@@ -472,6 +473,35 @@ draft and a real recording can give the same timing data, so the words can be ed
 - **A number before a letter is a coefficient,** as in "two t", so the `labels` check doesn't ask for a point called 2.
 - **Not checked:** a take in Kris's voice, and whether a vowel's onset is where an arrival should land. The lab's docstring renders
   a draft to judge that by.
+
+## The playground
+
+`web/playground.html`, built on 2026-11-11 so Kris can react to the syntax while narration waits for a take. A figure's `.pen` and
+each of its sheets are tabs in an editor beside the figure, compiled again 120 ms after typing stops. A menu loads any corpus figure
+or the explainer, with the sheets its own page or video uses. Edits are kept in the browser per file, and Revert reads the file
+from disk again. Nothing is written to disk. Play, a time scrubber, beat stepping, a slider for each param, and dragging handles
+all set the same bindings the other pages do. All 16 entries compile and draw on WebGPU and on `?gl`, checked in the desktop
+app's browser pane. The editor is a textarea over a highlighted copy of its text, with no library.
+
+- **Errors now say which file they're in.** A sheet's error came back with the sheet's line and no file, and `pencil` printed it
+  after the `.pen`'s path. `Error` has a `sheet` now, so the page marks the right tab, line and column, and the CLI names the
+  sheet. A broken edit leaves the last figure that compiled on screen. An edit that compiles but can't draw goes back to the
+  last sources that drew, but no edit tried has reached that path.
+- **Style errors only know their rule's line.** Every one says column 1, so the page can only mark the whole line. The parser
+  doesn't keep where each declaration is.
+- **One error at a time.** The parser and compiler stop at the first. A language server would want them all.
+- **Parse errors printed Rust's own token forms,** such as `found Punct("+")`. They now print the token as it was written:
+  ``found `+` ``.
+- **Compiling is cheap, and WebGL2's pipelines aren't.** On WebGPU a whole load takes 1 to 20 ms, the lattice the slowest. On
+  `?gl` it takes 90 to 580 ms. For the explainer, compiling is 2 ms of a 48 ms load there, so the rest is making the pipelines.
+  Typing on WebGL2 stalls that long whenever it pauses. Keeping a pipeline whose shader didn't change would help, if it matters.
+- **Highlighting stops where a grammar would start.** It colors comments, strings, numbers with their units, and a line's first
+  word when a space follows it, which picks out statements and `style`. Property names, selectors, built-ins and operators wait
+  for the highlighting grammar.
+- **Stepping a timed figure seeks time.** It finds the moment a beat is done by halving, since `time_for` samples and landed
+  short of whole beats. An untimed figure's step sets `beat`, as the bounds page does.
+- **Not checked:** Kris's own use of it, a phone, other browsers, and the page with the pane showing. The pane was hidden for
+  most of the checks, so frames were drawn by hand rather than by the animation loop.
 
 ## Text without a page
 

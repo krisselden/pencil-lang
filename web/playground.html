@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pencil playground</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --ink: rgb(18 17 15); --paper: rgb(242 240 235); --muted: rgb(110 106 99); --rule: rgb(214 210 202);
+    --bad: #b5443c; --field: rgb(250 249 246);
+    --comment: rgb(130 126 118); --string: rgb(22 123 38); --number: rgb(0 104 181); --word: rgb(96 66 166);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ink: rgb(243 240 234); --paper: rgb(23 22 20); --muted: rgb(148 143 134); --rule: rgb(60 58 54);
+      --bad: #f38d82; --field: rgb(30 29 27);
+      --comment: rgb(130 126 118); --string: rgb(121 195 124); --number: rgb(118 179 241); --word: rgb(169 139 255);
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font: 14px/1.45 ui-sans-serif, system-ui, sans-serif; }
+  .app { display: grid; grid-template-columns: minmax(320px, 1fr) minmax(320px, 1fr); grid-template-rows: auto 1fr; height: 100%; }
+  header { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--rule); }
+  header h1 { font-size: 14px; font-weight: 600; margin: 0; }
+  header .hint { color: var(--muted); font-size: 12px; margin-left: auto; }
+  button, select { font: inherit; font-size: 13px; }
+
+  /* The editor: a textarea over a highlighted copy of its text, so the caret, selection and undo are the browser's own. */
+  .editor { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--rule); }
+  .tabs { display: flex; flex-wrap: wrap; gap: 2px; padding: 6px 8px 0; border-bottom: 1px solid var(--rule); }
+  .tab { border: 1px solid transparent; border-bottom: 0; background: none; padding: 4px 10px; border-radius: 4px 4px 0 0; color: var(--muted); cursor: pointer; font-family: ui-monospace, monospace; font-size: 12px; }
+  .tab[aria-selected=true] { border-color: var(--rule); background: var(--field); color: var(--ink); margin-bottom: -1px; }
+  .tab.edited::after { content: ' •'; }
+  .tab.failed { color: var(--bad); }
+  .tab.failed::before { content: '✕ '; }
+  .tools { display: flex; gap: 6px; padding: 4px 8px; font-size: 12px; color: var(--muted); align-items: center; }
+  .tools .path { font-family: ui-monospace, monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tools button { font-size: 12px; white-space: nowrap; }
+  .tools .spacer { flex: 1; }
+  .code { position: relative; flex: 1; min-height: 0; background: var(--field); overflow: hidden; font: 13px/20px ui-monospace, 'SF Mono', Menlo, monospace; tab-size: 2; }
+  .gutter, .code pre, .code textarea { position: absolute; top: 0; bottom: 0; margin: 0; padding: 8px 0; font: inherit; white-space: pre; }
+  .gutter { left: 0; width: 44px; padding-right: 8px; text-align: right; color: var(--muted); opacity: 0.6; overflow: hidden; user-select: none; }
+  .gutter div.bad { color: var(--bad); opacity: 1; font-weight: 600; }
+  .code pre { left: 44px; right: 0; padding-left: 10px; overflow: hidden; pointer-events: none; }
+  .code pre .inner { will-change: transform; }
+  .code textarea { left: 44px; right: 0; width: calc(100% - 44px); padding-left: 10px; border: 0; outline: none; resize: none; background: transparent; color: transparent; caret-color: var(--ink); overflow: auto; }
+  .code textarea::selection { background: rgb(96 66 166 / 0.25); color: transparent; }
+  .t-comment { color: var(--comment); font-style: italic; }
+  .t-string { color: var(--string); }
+  .t-number { color: var(--number); }
+  .t-word { color: var(--word); font-weight: 600; }
+  .line-bad { background: rgb(181 68 60 / 0.12); }
+  .at-bad { text-decoration: underline wavy var(--bad); text-decoration-skip-ink: none; text-underline-offset: 3px; }
+
+  /* The figure, with its controls and what went wrong under it. */
+  .view { display: flex; flex-direction: column; gap: 10px; padding: 12px; overflow: auto; min-height: 0; }
+  .stage { position: relative; overflow: hidden; width: 100%; margin: 0 auto; }
+  canvas { display: block; width: 100%; outline: none; }
+  .label { position: absolute; left: 0; top: 0; white-space: nowrap; font-family: system-ui, -apple-system, sans-serif; line-height: 1; will-change: transform; }
+  .label.math { font-family: Charter, 'Bitstream Charter', 'Sitka Text', Cambria, serif; font-style: italic; }
+  .controls { display: grid; grid-template-columns: auto 1fr auto; gap: 6px 10px; align-items: center; font-size: 13px; }
+  .controls input[type=range] { width: 100%; }
+  .controls label { font-family: ui-monospace, monospace; font-size: 12px; }
+  .controls .row { grid-column: 1 / -1; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .controls .held { color: var(--word); }
+  output { font-variant-numeric: tabular-nums; font-family: ui-monospace, monospace; font-size: 12px; min-width: 5ch; }
+  #caption { color: var(--muted); font-style: italic; }
+  #errors { margin: 0; padding: 0; list-style: none; font: 12px/1.5 ui-monospace, monospace; }
+  #errors li { color: var(--bad); white-space: pre-wrap; padding: 6px 8px; border-left: 3px solid var(--bad); background: rgb(181 68 60 / 0.08); margin-bottom: 4px; cursor: pointer; }
+  #errors li.stale { cursor: default; }
+  #errors li .note { color: var(--muted); }
+  #status { color: var(--muted); font-size: 12px; }
+  @media (max-width: 800px) { .app { grid-template-columns: 1fr; grid-template-rows: auto 50vh auto; } .editor { border-right: 0; } }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1>Pencil playground</h1>
+    <label>Figure <select id="figure-pick"></select></label>
+    <span class="hint">Edits recompile as you type and are kept in this browser. <kbd>Esc</kbd> leaves the editor; then <kbd>Space</kbd> plays, <kbd>←</kbd> <kbd>→</kbd> step beats.</span>
+  </header>
+  <section class="editor" aria-label="Sources">
+    <div class="tabs" id="tabs" role="tablist"></div>
+    <div class="tools">
+      <span class="path" id="path"></span>
+      <span class="spacer"></span>
+      <button id="copy" type="button">Copy</button>
+      <button id="revert" type="button" title="Reload this file from disk, dropping your edits">Revert</button>
+      <button id="revert-all" type="button" title="Reload every file from disk">Revert all</button>
+    </div>
+    <div class="code">
+      <div class="gutter" id="gutter"></div>
+      <pre aria-hidden="true"><div class="inner" id="highlight"></div></pre>
+      <textarea id="source" spellcheck="false" autocapitalize="off" autocomplete="off" wrap="off" aria-label="Source"></textarea>
+    </div>
+  </section>
+  <section class="view" aria-label="Figure">
+    <div class="stage" id="stage"><canvas id="figure" tabindex="0"></canvas></div>
+    <div class="controls">
+      <button id="play" type="button">Pause</button>
+      <input id="time" type="range" min="0" max="10" step="0.001" value="0" aria-label="Time">
+      <output id="time-value">0.00 s</output>
+      <div class="row" id="beat-row" hidden>
+        <button id="back" type="button" aria-label="Previous beat">◀</button>
+        <output id="beat-value"></output>
+        <button id="next" type="button" aria-label="Next beat">▶</button>
+        <span id="caption"></span>
+      </div>
+      <div id="params" style="display: contents"></div>
+    </div>
+    <ul id="errors" role="alert"></ul>
+    <p id="status">Starting…</p>
+  </section>
+</div>
+<script type="module" src="playground.js"></script>
+</body>
+</html>

@@ -24,7 +24,7 @@ cargo run -p pencil-cli -- check corpus/001-circle/circle.pen --style corpus/001
 cargo run -p pencil-cli -- render corpus/001-circle/circle.pen --style corpus/001-circle/bands.style --t 1.25 --out out/frame.png
 scripts/build-web.sh
 cargo run --release -p pencil-cli -- video corpus/003-unroll/unroll.pen --style corpus/003-unroll/blog.style --size 1280 --out out/unroll.mp4
-scripts/serve.py              # port 8741, no caching; then open /web/, /web/unroll.html, /web/bounds.html, /web/strokes.html or /web/text.html (add ?gl for WebGL2)
+scripts/serve.py              # port 8741, no caching; then open /web/playground.html, /web/unroll.html, /web/bounds.html, /web/strokes.html or /web/text.html (add ?gl for WebGL2)
 ```
 
 ## Layout

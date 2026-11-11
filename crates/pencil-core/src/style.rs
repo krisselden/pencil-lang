@@ -427,30 +427,29 @@ fn with_story(e: &Expr, mark: &crate::ir::Mark) -> Expr {
 /// including in rules written before it, so a sheet can change what `ink` means for a whole
 /// figure. A definition can use any other name, in any order.
 pub fn sheet_names(sheets: &[Document]) -> Result<HashMap<String, Expr>, Error> {
-    let mut written: HashMap<&str, (&Expr, usize)> = HashMap::new();
-    for sheet in sheets {
+    let mut written: HashMap<&str, (&Expr, usize, usize)> = HashMap::new();
+    for (index, sheet) in sheets.iter().enumerate() {
         for item in &sheet.items {
             if let Item::Let { name, expr, line } = item {
-                written.insert(name, (expr, *line));
+                written.insert(name, (expr, *line, index));
             }
         }
     }
     fn expand(
         name: &str,
-        written: &HashMap<&str, (&Expr, usize)>,
+        written: &HashMap<&str, (&Expr, usize, usize)>,
         done: &mut HashMap<String, Expr>,
         visiting: &mut Vec<String>,
     ) -> Result<(), Error> {
         if done.contains_key(name) {
             return Ok(());
         }
-        let (expr, line) = written[name];
+        let (expr, line, sheet) = written[name];
         if visiting.iter().any(|v| v == name) {
-            return Err(Error::at(
-                line,
-                1,
-                format!("`{name}` is defined in terms of itself"),
-            ));
+            return Err(
+                Error::at(line, 1, format!("`{name}` is defined in terms of itself"))
+                    .in_sheet(sheet),
+            );
         }
         visiting.push(name.to_string());
         let mut used = Vec::new();
@@ -496,10 +495,15 @@ pub fn resolve_keeping(
     // The document comes last, and its own `let`s are bindings.
     let sheet_names = sheet_names(&sheets[..sheets.len().saturating_sub(1)])?;
 
-    for sheet in sheets {
+    for (index, sheet) in sheets.iter().enumerate() {
+        // The document comes last, and its errors name no sheet.
+        let in_sheet = |e: Error| match index + 1 < sheets.len() {
+            true => e.in_sheet(index),
+            false => e,
+        };
         for item in &sheet.items {
             let Item::Style(rule) = item else { continue };
-            let at = |message: String| Error::at(rule.line, 1, message);
+            let at = |message: String| in_sheet(Error::at(rule.line, 1, message));
             let decls: Vec<(String, Expr)> = rule
                 .decls
                 .iter()

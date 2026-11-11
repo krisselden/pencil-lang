@@ -269,6 +269,22 @@ enum Tok {
     Eof,
 }
 
+/// How a token reads in an error: as it was written.
+impl std::fmt::Display for Tok {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Tok::Ident(word) => write!(f, "`{word}`"),
+            Tok::Num(n) => write!(f, "`{n}`"),
+            Tok::Px => write!(f, "`px`"),
+            Tok::Em => write!(f, "`em`"),
+            Tok::Punct(p) => write!(f, "`{p}`"),
+            Tok::Sup(n) => write!(f, "a superscript {n}"),
+            Tok::Str(text) => write!(f, "the text {text:?}"),
+            Tok::Eof => write!(f, "the end of the file"),
+        }
+    }
+}
+
 struct Lexed {
     tok: Tok,
     line: usize,
@@ -531,7 +547,7 @@ impl Parser {
         if self.eat(p) {
             Ok(())
         } else {
-            Err(self.error(format!("expected `{p}`, found {:?}", self.peek())))
+            Err(self.error(format!("expected `{p}`, found {}", self.peek())))
         }
     }
 
@@ -541,7 +557,7 @@ impl Parser {
                 Tok::Ident(name) => Ok(name),
                 _ => unreachable!(),
             },
-            other => Err(self.error(format!("expected {what}, found {other:?}"))),
+            other => Err(self.error(format!("expected {what}, found {other}"))),
         }
     }
 
@@ -636,7 +652,7 @@ impl Parser {
                         return Err(Error::at(
                             line,
                             1,
-                            format!("expected text, found {other:?}"),
+                            format!("expected text, found {other}"),
                         ));
                     }
                 };
@@ -785,7 +801,7 @@ impl Parser {
                             Tok::Str(text) => text,
                             other => {
                                 return Err(self.error(format!(
-                                    "expected a written expression in quotes, found {other:?}"
+                                    "expected a written expression in quotes, found {other}"
                                 )));
                             }
                         };
@@ -894,7 +910,7 @@ impl Parser {
                         return Err(Error::at(
                             line,
                             1,
-                            format!("expected a caption, found {other:?}"),
+                            format!("expected a caption, found {other}"),
                         ));
                     }
                 };
@@ -1149,7 +1165,7 @@ impl Parser {
                     return Err(Error::at(
                         line,
                         1,
-                        format!("expected text, found {other:?}"),
+                        format!("expected text, found {other}"),
                     ));
                 }
             }
@@ -1361,7 +1377,7 @@ impl Parser {
                 self.expect(")")?;
                 Ok(inner)
             }
-            other => Err(self.error(format!("expected an expression, found {other:?}"))),
+            other => Err(self.error(format!("expected an expression, found {other}"))),
         }
     }
 }

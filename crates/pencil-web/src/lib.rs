@@ -69,6 +69,20 @@ fn js_error(message: impl std::fmt::Display) -> JsError {
     JsError::new(&message.to_string())
 }
 
+/// A compile error as a JS `Error` that also says where it is: `line` and `col`, 1-based or 0
+/// for nowhere, and `sheet`, the index of the style sheet it's in, or `null` for the document.
+fn compile_error(error: pencil_core::Error) -> JsValue {
+    let js = js_sys::Error::new(&error.to_string());
+    let set = |key: &str, value: JsValue| {
+        let _ = js_sys::Reflect::set(&js, &JsValue::from_str(key), &value);
+    };
+    set("line", JsValue::from_f64(error.line as f64));
+    set("col", JsValue::from_f64(error.col as f64));
+    set("text", JsValue::from_str(&error.message));
+    set("sheet", error.sheet.map_or(JsValue::NULL, |i| JsValue::from_f64(i as f64)));
+    js.into()
+}
+
 #[wasm_bindgen]
 impl Player {
     /// Sets up the GPU for a canvas. Takes the canvas's current size. `force_gl`
@@ -150,9 +164,10 @@ impl Player {
 
     /// Compiles new sources. On an error the previous figure stays on screen, so a
     /// half-typed edit doesn't blank the canvas.
-    pub fn load(&mut self, doc: &str, sheets: Vec<String>) -> Result<(), JsError> {
+    /// The error says where it is (see `compile_error`).
+    pub fn load(&mut self, doc: &str, sheets: Vec<String>) -> Result<(), JsValue> {
         let refs: Vec<&str> = sheets.iter().map(String::as_str).collect();
-        let composition = compose(doc, &refs).map_err(js_error)?;
+        let composition = compose(doc, &refs).map_err(compile_error)?;
         let pipelines = composition
             .panels
             .iter()
@@ -254,6 +269,7 @@ impl Player {
                 "height": figure.scene.viewport.design_height,
             },
             "beats": figure.scene.beats,
+            "beatLengths": figure.scene.beat_lengths,
             "params": figure.scene.params.iter().map(|p| serde_json::json!({
                 "id": p.id, "min": p.range[0], "max": p.range[1],
             })).collect::<Vec<_>>(),
@@ -449,8 +465,8 @@ pub fn named_colors(sheets: Vec<String>) -> Result<String, JsError> {
 /// A document's design size, as JSON `[width, height]`, to shape its canvas before a player
 /// exists to draw on it.
 #[wasm_bindgen]
-pub fn figure_size(doc: &str, sheets: Vec<String>) -> Result<String, JsError> {
+pub fn figure_size(doc: &str, sheets: Vec<String>) -> Result<String, JsValue> {
     let refs: Vec<&str> = sheets.iter().map(String::as_str).collect();
-    let composition = compose(doc, &refs).map_err(js_error)?;
+    let composition = compose(doc, &refs).map_err(compile_error)?;
     Ok(serde_json::json!(composition.size).to_string())
 }

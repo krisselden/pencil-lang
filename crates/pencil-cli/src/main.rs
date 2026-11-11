@@ -92,7 +92,10 @@ fn load(args: &Args) -> Result<Composition, Box<dyn Error>> {
         .map(|p| read(p))
         .collect::<Result<Vec<_>, _>>()?;
     let refs: Vec<&str> = sheets.iter().map(String::as_str).collect();
-    compose(&doc, &refs).map_err(|e| format!("{}:{e}", args.doc.display()).into())
+    compose(&doc, &refs).map_err(|e| {
+        let file = e.sheet.map_or(&args.doc, |i| &args.styles[i]);
+        format!("{}:{e}", file.display()).into()
+    })
 }
 
 /// The frame's height for a width, following the figure's shape. Even, because video

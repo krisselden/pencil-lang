@@ -118,8 +118,8 @@ pub fn build(doc: &str, sheets: &[&str]) -> Result<Figure, Error> {
     let document = parse::parse(doc)?;
     let mut scene = compile::compile(&document)?;
     let mut parsed = Vec::with_capacity(sheets.len() + 1);
-    for sheet in sheets {
-        parsed.push(parse::parse(sheet)?);
+    for (index, sheet) in sheets.iter().enumerate() {
+        parsed.push(parse::parse(sheet).map_err(|e| e.in_sheet(index))?);
     }
     parsed.push(document);
     let styles = style::resolve(&scene, &parsed)?;
@@ -162,8 +162,8 @@ pub struct Composition {
 
 fn parsed_sheets(doc: &parse::Document, sheets: &[&str]) -> Result<Vec<parse::Document>, Error> {
     let mut parsed = Vec::with_capacity(sheets.len() + 1);
-    for sheet in sheets {
-        parsed.push(parse::parse(sheet)?);
+    for (index, sheet) in sheets.iter().enumerate() {
+        parsed.push(parse::parse(sheet).map_err(|e| e.in_sheet(index))?);
     }
     parsed.push(doc.clone());
     Ok(parsed)
