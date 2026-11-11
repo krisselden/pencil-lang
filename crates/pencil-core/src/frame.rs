@@ -463,13 +463,11 @@ pub fn drag_value(
         },
         Err(e) => return Err(e),
     };
-    let range = figure
-        .scene
-        .params
-        .iter()
-        .find(|p| p.id == handle.param)
-        .map_or([f64::NEG_INFINITY, f64::INFINITY], |p| p.range);
-    Ok((handle.param.clone(), value.clamp(range[0], range[1])))
+    let value = match figure.scene.params.iter().find(|p| p.id == handle.param) {
+        Some(param) => param.settle(value),
+        None => value,
+    };
+    Ok((handle.param.clone(), value))
 }
 
 /// A label's text, with its values in it. A whole number prints as one.
@@ -953,6 +951,40 @@ mod tests {
         let P = (cos(a), sin(a))
         dot P
         handle P sets a = atan2(max(pointer.y, 0), pointer.x)";
+
+    /// A param with steps lands on one however it's driven: its default, time, a reader, a drag.
+    #[test]
+    fn a_stepped_param_only_takes_its_steps() {
+        let doc = "
+            viewport { x: -2..2, y: -2..2 }
+            param a = 1 in 0.2..1.85 step 0.25
+            param n = 2.6 in 1..10 step 1
+            bind n = 1 + time
+            let P = (cos(a), sin(a))
+            dot P
+            handle P sets a = atan2(max(pointer.y, 0), pointer.x)";
+        let f = build(doc, &[]).unwrap();
+        let env = eval::frame_env(&f, &Inputs::at(2.4)).unwrap();
+        assert_eq!(env.get("a"), Some(0.95), "the default goes to the nearest step");
+        assert_eq!(env.get("n"), Some(3.0), "so does a binding");
+        let read = Inputs {
+            time: 0.0,
+            params: vec![("a".into(), 1.3)],
+        };
+        assert_eq!(eval::frame_env(&f, &read).unwrap().get("a"), Some(1.2));
+        let drag = |px: f64, py: f64| drag_value(&f, &Inputs::at(0.0), 0, 400, 400, px, py).unwrap().1;
+        // At 45°, π/4 is nearest 0.7.
+        assert!((drag(300.0, 100.0) - 0.7).abs() < 1e-12);
+        // The range's end isn't a step, so a drag stops at the last one before it.
+        assert!((drag(1.0, 201.0) - 1.7).abs() < 1e-12);
+        assert_eq!(drag(399.0, 199.0), 0.2);
+    }
+
+    #[test]
+    fn a_step_has_to_be_above_zero() {
+        let err = build("param n = 1 in 0..4 step 0", &[]).unwrap_err();
+        assert!(err.to_string().contains("a step has to be above 0"), "{err}");
+    }
 
     #[test]
     fn a_drag_follows_the_inverse_within_the_range() {

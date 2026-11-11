@@ -341,7 +341,7 @@ function paintControls() {
     label.textContent = param.id;
     label.htmlFor = `param-${param.id}`;
     const input = document.createElement('input');
-    Object.assign(input, { type: 'range', id: `param-${param.id}`, min: param.min, max: param.max, step: (param.max - param.min) / 1000 || 0.001 });
+    Object.assign(input, { type: 'range', id: `param-${param.id}`, min: param.min, max: param.max, step: param.step ?? ((param.max - param.min) / 1000 || 0.001) });
     const out = document.createElement('output');
     input.addEventListener('input', () => {
       setPlaying(false);
@@ -363,7 +363,9 @@ function readControls() {
     let value;
     try { value = player.value(param.id, time); } catch { continue; }
     if (document.activeElement !== input) input.value = value;
-    input.nextElementSibling.textContent = Number.isFinite(value) ? value.toFixed(3) : '—';
+    // A stepped param shows as many decimals as its step has, so a whole number shows as one.
+    const decimals = param.step == null ? 3 : (String(param.step).split('.')[1] ?? '').length;
+    input.nextElementSibling.textContent = Number.isFinite(value) ? value.toFixed(decimals) : '—';
     input.previousElementSibling.classList.toggle('held', held.has(param.id));
   }
   const beats = info?.beats ?? [];

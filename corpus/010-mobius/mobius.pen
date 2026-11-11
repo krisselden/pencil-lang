@@ -5,7 +5,7 @@
 doc mobius
 duration 13
 
-param n = 8 in 1..10
+param n = 8 in 1..10 step 1
 param a = 1 in -10..10
 param b = 1 in -10..10
 param c = 0.5 in -10..10

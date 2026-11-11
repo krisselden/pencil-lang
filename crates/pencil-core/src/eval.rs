@@ -445,6 +445,11 @@ pub fn scene_env(scene: &Scene, inputs: &Inputs, memo: Option<&Solved>) -> Resul
             }
             (None, _) => real(&binding.expr, &env),
         };
+        // A param with steps only takes those values, however it's driven.
+        let value = value.map(|v| match scene.params.iter().find(|p| p.id == binding.id) {
+            Some(param) => param.stepped(v),
+            None => v,
+        });
         match value {
             Ok(value) => env.set(&binding.id, value),
             Err(e) if e.absent => env.set_absent(&binding.id),

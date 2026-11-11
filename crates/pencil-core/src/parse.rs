@@ -50,6 +50,7 @@ pub enum Item {
         name: String,
         default: Expr,
         range: [Expr; 2],
+        step: Option<Expr>,
         line: usize,
     },
     Bind {
@@ -1069,10 +1070,17 @@ impl Parser {
         };
         self.keyword("in")?;
         let range = self.range()?;
+        let step = if self.at_word("step") {
+            self.bump();
+            Some(self.expr()?)
+        } else {
+            None
+        };
         Ok(Item::Param {
             name,
             default,
             range,
+            step,
             line,
         })
     }

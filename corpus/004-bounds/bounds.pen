@@ -14,7 +14,7 @@ fn dir(t) = (cos(t), sin(t))
 // θ where the flower closes: a ring of q for p = 0, or neighbors at 360°/q for q = 2p.
 fn closing(q, ring) = mix(2·acos((sqrt(5 + 4·cos(tau / q)) - 1) / 2), tau / q, ring)
 
-param q = 6 in 4..12
+param q = 6 in 4..12 step 1
 param ring = 1 in 0..1
 // The sliders set θ through its binding, and dragging P takes it over. It's the same
 // mechanism as time and a slider in Unroll.

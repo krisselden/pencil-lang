@@ -60,6 +60,30 @@ pub struct Binding {
 pub struct Param {
     pub id: String,
     pub range: [f64; 2],
+    /// The param only takes the values its range's start plus a whole number of these, as a
+    /// whole number does with a step of 1.
+    pub step: Option<f64>,
+}
+
+impl Param {
+    /// The value it takes: the nearest step, if it has steps.
+    pub fn stepped(&self, value: f64) -> f64 {
+        match self.step {
+            Some(step) => self.range[0] + ((value - self.range[0]) / step).round() * step,
+            None => value,
+        }
+    }
+
+    /// A reader's value for it: within its range, and on a step. The range's end counts only if
+    /// it's on one.
+    pub fn settle(&self, value: f64) -> f64 {
+        let [lo, hi] = self.range;
+        let top = match self.step {
+            Some(step) => lo + ((hi - lo) / step + 1e-9).floor() * step,
+            None => hi,
+        };
+        self.stepped(value.clamp(lo, top.max(lo)))
+    }
 }
 
 /// A piece of a region's boundary.
@@ -439,7 +463,10 @@ impl Scene {
                 "param": h.param,
                 "inverse": h.inverse.to_mathjson(),
             })).collect::<Vec<_>>(),
-            "params": self.params.iter().map(|p| json!({ "id": p.id, "range": p.range })).collect::<Vec<_>>(),
+            "params": self.params.iter().map(|p| match p.step {
+                Some(step) => json!({ "id": p.id, "range": p.range, "step": step }),
+                None => json!({ "id": p.id, "range": p.range }),
+            }).collect::<Vec<_>>(),
             "bindings": self.bindings.iter().map(|b| json!({
                 "id": b.id,
                 "expr": b.expr.to_mathjson(),

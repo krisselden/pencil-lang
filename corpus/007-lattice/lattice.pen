@@ -9,8 +9,8 @@
 // The skew μ, ν comes from `solve`: the two equations that say all six neighbors touch.
 doc lattice
 
-param q = 7 in 3..12
-param p = 2 in 0..12
+param q = 7 in 3..12 step 1
+param p = 2 in 0..12 step 1
 
 let omega = -1 / 2 + sqrt(3) / 2·i
 fn grid(a, b) = a + b·omega

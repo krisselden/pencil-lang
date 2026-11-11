@@ -982,6 +982,7 @@ fn declare_beat(scene: &mut Scene, lowerer: &mut Lowerer) {
     scene.params.push(Param {
         id: BEAT_PARAM.to_string(),
         range: [0.0, 0.0],
+        step: None,
     });
     scene.bindings.push(Binding {
         id: BEAT_PARAM.to_string(),
@@ -2195,6 +2196,7 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
                 name,
                 default,
                 range,
+                step,
                 line,
             } => {
                 claim(name, *line)?;
@@ -2203,10 +2205,25 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
                     constant(&range[0], "a param's range").map_err(&fail)?,
                     constant(&range[1], "a param's range").map_err(&fail)?,
                 ];
+                let step = match step {
+                    Some(step) => {
+                        let step = constant(step, "a param's step").map_err(&fail)?;
+                        if !(step > 0.0 && step.is_finite()) {
+                            return Err(Error::at(
+                                *line,
+                                1,
+                                format!("`{name}` steps by {step}, and a step has to be above 0"),
+                            ));
+                        }
+                        Some(step)
+                    }
+                    None => None,
+                };
                 let default = lowerer.scalar(default, &none).map_err(&fail)?;
                 scene.params.push(Param {
                     id: name.clone(),
                     range,
+                    step,
                 });
                 scene.bindings.push(Binding {
                     id: name.clone(),
