@@ -374,23 +374,113 @@ pub fn type_of(e: &Expr, names: &[&str], spatial: bool) -> Result<Ty, String> {
                     | "Sign" | "Floor" | "Pixels" | "Ems" | "Sinh" | "Cosh" | "Tanh",
                     [Real],
                 ) => Ok(Real),
+                // Built-ins are capitalized once parsed, so a name still in lowercase is one no
+                // sheet defines.
+                _ if head.starts_with(|c: char| c.is_lowercase()) => Err(format!(
+                    "no function `{head}`: a sheet can define one with `fn {head}(…) = …`"
+                )),
                 _ => Err(format!("`{head}` doesn't take {tys:?}")),
             }
         }
     }
 }
 
-/// Replaces a style sheet's own names with what they stand for, so a theme can name its
-/// colors and sizes and nothing downstream needs to know.
-fn with_names(e: &Expr, names: &HashMap<String, Expr>) -> Expr {
-    match e {
-        Expr::Sym(s) => names.get(s).cloned().unwrap_or_else(|| e.clone()),
-        Expr::App(head, args) => Expr::App(
-            head.clone(),
-            args.iter().map(|a| with_names(a, names)).collect(),
-        ),
+/// A sheet's own function: its parameters and body, inlined where it's called.
+type Functions = HashMap<String, (Vec<String>, Expr)>;
+
+/// How deep sheet functions can call each other, which only a function that calls itself would
+/// reach.
+const CALL_DEPTH: usize = 32;
+
+/// Replaces a style sheet's own names with what they stand for, and its functions' calls with
+/// their bodies, so a theme can name its colors, sizes and curves and nothing downstream needs to
+/// know.
+fn with_names(e: &Expr, names: &HashMap<String, Expr>, functions: &Functions) -> Result<Expr, String> {
+    with_names_in(e, names, functions, &HashMap::new(), 0)
+}
+
+/// `with_names`, inside a function's body, where `args` are what its parameters stand for and
+/// shadow the sheet's names.
+fn with_names_in(
+    e: &Expr,
+    names: &HashMap<String, Expr>,
+    functions: &Functions,
+    args: &HashMap<String, Expr>,
+    depth: usize,
+) -> Result<Expr, String> {
+    Ok(match e {
+        Expr::Sym(s) => match args.get(s).or_else(|| names.get(s)) {
+            Some(value) => value.clone(),
+            None => e.clone(),
+        },
+        Expr::App(head, given) => {
+            let given = given
+                .iter()
+                .map(|a| with_names_in(a, names, functions, args, depth))
+                .collect::<Result<Vec<_>, _>>()?;
+            match functions.get(head) {
+                Some((params, body)) => {
+                    if params.len() != given.len() {
+                        return Err(format!(
+                            "`{head}` takes {} argument{}, not {}",
+                            params.len(),
+                            if params.len() == 1 { "" } else { "s" },
+                            given.len()
+                        ));
+                    }
+                    if depth >= CALL_DEPTH {
+                        return Err(format!("`{head}` calls itself, which a sheet's function can't"));
+                    }
+                    let local = params.iter().cloned().zip(given).collect();
+                    with_names_in(body, names, functions, &local, depth + 1)?
+                }
+                None => Expr::App(head.clone(), given),
+            }
+        }
         other => other.clone(),
+    })
+}
+
+/// The names an expression uses, including those in the bodies of the functions it calls, but
+/// not their parameters.
+fn names_used(
+    e: &Expr,
+    functions: &Functions,
+    params: &[String],
+    calling: &mut Vec<String>,
+    out: &mut Vec<String>,
+) {
+    match e {
+        Expr::Sym(s) if !params.contains(s) => out.push(s.clone()),
+        Expr::App(head, args) => {
+            for a in args {
+                names_used(a, functions, params, calling, out);
+            }
+            if let Some((own, body)) = functions.get(head) {
+                // A function that calls itself is reported where it's inlined.
+                if !calling.contains(head) {
+                    calling.push(head.clone());
+                    names_used(body, functions, own, calling, out);
+                    calling.pop();
+                }
+            }
+        }
+        _ => {}
     }
+}
+
+/// The functions sheets define. As with names, the last sheet to define one decides what it
+/// means everywhere.
+fn sheet_functions(sheets: &[Document]) -> Functions {
+    let mut functions = Functions::new();
+    for sheet in sheets {
+        for item in &sheet.items {
+            if let Item::Fn { name, params, body, .. } = item {
+                functions.insert(name.clone(), (params.clone(), body.clone()));
+            }
+        }
+    }
+    functions
 }
 
 /// How a beat's caption looks, when a sheet asks for it with `style caption { … }`.
@@ -435,9 +525,11 @@ pub fn sheet_names(sheets: &[Document]) -> Result<HashMap<String, Expr>, Error> 
             }
         }
     }
+    let functions = sheet_functions(sheets);
     fn expand(
         name: &str,
         written: &HashMap<&str, (&Expr, usize, usize)>,
+        functions: &Functions,
         done: &mut HashMap<String, Expr>,
         visiting: &mut Vec<String>,
     ) -> Result<(), Error> {
@@ -453,19 +545,21 @@ pub fn sheet_names(sheets: &[Document]) -> Result<HashMap<String, Expr>, Error> 
         }
         visiting.push(name.to_string());
         let mut used = Vec::new();
-        expr.visit_syms(&mut |s| used.push(s.to_string()));
+        names_used(expr, functions, &[], &mut Vec::new(), &mut used);
         for other in used {
             if written.contains_key(other.as_str()) {
-                expand(&other, written, done, visiting)?;
+                expand(&other, written, functions, done, visiting)?;
             }
         }
         visiting.pop();
-        done.insert(name.to_string(), with_names(expr, done));
+        let value = with_names(expr, done, functions)
+            .map_err(|message| Error::at(line, 1, message).in_sheet(sheet))?;
+        done.insert(name.to_string(), value);
         Ok(())
     }
     let mut done = HashMap::new();
     for name in written.keys() {
-        expand(name, &written, &mut done, &mut Vec::new())?;
+        expand(name, &written, &functions, &mut done, &mut Vec::new())?;
     }
     Ok(done)
 }
@@ -494,6 +588,7 @@ pub fn resolve_keeping(
     let names: Vec<&str> = scene.bindings.iter().map(|b| b.id.as_str()).collect();
     // The document comes last, and its own `let`s are bindings.
     let sheet_names = sheet_names(&sheets[..sheets.len().saturating_sub(1)])?;
+    let functions = sheet_functions(&sheets[..sheets.len().saturating_sub(1)]);
 
     for (index, sheet) in sheets.iter().enumerate() {
         // The document comes last, and its errors name no sheet.
@@ -507,8 +602,11 @@ pub fn resolve_keeping(
             let decls: Vec<(String, Expr)> = rule
                 .decls
                 .iter()
-                .map(|(prop, value)| (prop.clone(), with_names(value, &sheet_names)))
-                .collect();
+                .map(|(prop, value)| {
+                    let value = with_names(value, &sheet_names, &functions).map_err(&at)?;
+                    Ok((prop.clone(), value))
+                })
+                .collect::<Result<_, Error>>()?;
             for selector in &rule.selectors {
                 if selector.target == "panels" && selector.tags.is_empty() {
                     for (prop, value) in &decls {
@@ -1021,6 +1119,33 @@ mod tests {
         assert!(base.dash.is_none() && base.stroke.is_none());
         assert!(base.gap.is_some(), "only what's named is taken back");
         assert!(other.dash.is_some() && other.stroke.is_some());
+    }
+
+    /// A sheet's function is inlined where it's called, from a rule or a name, with its
+    /// parameters shadowing the sheet's names.
+    #[test]
+    fn a_sheet_can_define_a_function() {
+        let doc = "let O = (0, 0)\nlet A = (1, 0)\ncurve base = ray(O, A)";
+        let theme = "let soft = 4\nfn glow(d, w) = exp(-d / w) * soft\nlet faint = glow(2, 8)";
+        let f = build(doc, &[theme, "let w = 100\nstyle base { stroke: black; width: glow(1, 2); opacity: faint }"]).unwrap();
+        let env = crate::eval::Env::new(0.0);
+        let value = |e: &Option<Expr>| crate::eval::real(e.as_ref().unwrap(), &env).unwrap();
+        let base = &f.styles.marks[0];
+        assert!((value(&base.width) - (-0.5f64).exp() * 4.0).abs() < 1e-12, "`w` is the parameter, not the sheet's 100");
+        assert!((value(&base.opacity) - (-0.25f64).exp() * 4.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn a_sheets_function_says_what_went_wrong() {
+        let doc = "let O = (0, 0)\nlet A = (1, 0)\ncurve base = ray(O, A)";
+        for (sheet, wanted) in [
+            ("style base { stroke: black; width: glow(1, 2) }", "no function `glow`"),
+            ("fn glow(d) = d\nstyle base { stroke: black; width: glow(1, 2) }", "takes 1 argument, not 2"),
+            ("fn glow(d) = glow(d)\nstyle base { stroke: black; width: glow(1) }", "calls itself"),
+        ] {
+            let error = build(doc, &[sheet]).unwrap_err().to_string();
+            assert!(error.contains(wanted), "{sheet}: {error}");
+        }
     }
 
     /// A dash of no length is no dashing: the line is drawn solid, not as nothing.

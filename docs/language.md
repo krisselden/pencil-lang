@@ -366,7 +366,9 @@ takes back what an earlier rule set, as in CSS: after `style ray { dash: 10px }`
 **A style sheet can name values** with `let ink = rgb(28, 27, 25)`. The last sheet to define a name decides what it
 means everywhere, including in rules written before it, as a CSS variable does. So `corpus/theme.style` holds a theme's
 colors and label roles, and `corpus/dark.style` only redefines the colors. A name can use another defined in any order, but
-not itself. A document picks a role by tag: `label n = "|z|" at M tag note`, and it never picks a number. A rule that names a mark has to find
+not itself. A sheet can define functions too, as a document can: `fn glow(d, w) = exp(-d / w)`, then
+`opacity: glow(self.dist, 6px)`. A call is inlined, its parameters hide the sheet's names of the same spelling, the last sheet
+to define a function decides what it means, and a function can't call itself. A document picks a role by tag: `label n = "|z|" at M tag note`, and it never picks a number. A rule that names a mark has to find
 it, but a rule by type or tag may match nothing, since a shared sheet can't know what each figure uses.
 
 **Selectors** combine a name or type with tags: `c`, `circle`, `.aux`, `circle.blue`, and
@@ -461,6 +463,7 @@ Newest first. "Why" is the reason at the time, so these can be revisited.
 
 | Date | Decision | Why |
 |---|---|---|
+| 2026-11-11 | A sheet can define functions | Kris wrote a `glow` in a sheet and got "`glow` doesn't take [Real, Real]": a sheet's `fn` was parsed and then ignored, so its calls reached the type checker as unknown. A falloff or an easing is a sheet's business as much as a color is, and `fn` is how a document already says it, so sheets now take the same statement, and a call to a function nothing defines says so |
 | 2026-11-11 | A focus can follow a choice, and beats with no lengths can have one | Bounds' last beat is about whichever flower the reader's case closes, and the other should recede. Which one is the document's to say, so the focus follows the choice by an option's name, and the sheet only says how receding looks. Its tags became what each beat is (`boundary`, `middle`), not a color, since the sheet decides colors |
 | 2026-11-11 | Any property can be `none`, and `dash: 0` is solid | Kris wanted one solid ray among bounds' dashed ones, tried `dash: none` and then `dash: 0`, and neither worked: nothing could take back an earlier rule's dash, and a dash of 0 drew nothing at all. Both now do what he tried |
 | 2026-11-11 | A choice's options can have names | Bounds chooses which angle is a q-th of a turn, and its options are the two values of θ that make it so. As written they're formulas, which say nothing to a reader, while the cases have names, p = 0 and q = 2p, which the captions use. A name and a value go together, so a name rides on the option, and a choice of bare names still waits for a figure that needs one |
