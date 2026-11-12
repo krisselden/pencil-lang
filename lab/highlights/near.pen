@@ -16,7 +16,7 @@ let Meet = (n·near, 0)
 let Ring = (near², 0)
 let Near = Ring + (-1.6, 2.6)
 group shape() {
-  curve whole = parametric (t): on_circle(t) for t in 0..tau
+  curve whole = parametric (t): on_circle(t) for t in 0..2·π
 }
 use shape()
 use shape() through squared as image

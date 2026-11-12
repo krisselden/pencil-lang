@@ -51,8 +51,8 @@ belongs: `language.md` for the language, the section below for a figure.
 
 Proposed by Claude on 2026-11-09, not yet agreed:
 
-1. **A custom element:** built as `<pencil-figure src sheets>` ("The element" below), and the playground draws through it. Next:
-   move the pages in `web/` onto it, then the site.
+1. **A custom element:** built as `<pencil-figure src sheets>` ("The element" below), and the playground and every figure
+   page in `web/` draw through it. Next: the site.
 2. **A highlighting grammar** for `.pen` and `.style`. Cheap, and it doesn't fix the syntax in place.
 3. **A playground with an editor:** the element, an editor, and the WASM check, for people who want to try it. A first one for
    Kris is built ("The playground" below), ahead of the element and the grammar, so he can react to the syntax now.
@@ -63,6 +63,19 @@ Proposed by Claude on 2026-11-09, not yet agreed:
 
 ### Questions
 
+- **Names and notation (Kris, 2026-11-12).** `web/ast.html` shows how text reads today, token by token, as a tree and
+  as compiled bindings. What it shows, and what's open:
+  - **Which names are global.** `time`, `pi` and `π` are, and colors, plus every built-in function. A constant's name can't be
+    declared, and only a function's parameter shadows one. Desmos gives `r`, `θ`, `t` and `τ` special meanings that a figure loses
+    once it assigns them. Kris wants named sets of globals a figure opts into, as TypeScript's `lib` does, and a library of
+    functions to `use`, rather than everything at once. φ the golden ratio would be fine as a global if `let` and `param` could
+    take its name.
+  - **Subscripts.** `x1`, `x_1` and `x₁` are three different names, and `x_{1}` doesn't parse. Desmos and LaTeX make them one.
+  - **Implicit multiplication.** `2π`, `2 π` and `2(x + 1)` don't parse. Kris would at least take a space or parentheses as a
+    product, and finds it odd that `2π` isn't one.
+  - **LaTeX.** Pasting from Desmos gives LaTeX (`\frac{a}{b}`, `\left(`, `x_{1}`), and nothing reads it yet.
+  - **Labels from expressions.** A label could be the expression itself, as ggplot2 takes axis titles from the unevaluated
+    arguments R passes it.
 - **Is WebGPU needed?** Not for strokes or fields: both ran the same on WebGL2. Text is the untested part. Vello relies on compute
   shaders, which wgpu's WebGL2 backend lacks, and the winding integral as written needs storage buffers.
 - **How should a `.pen` file name fonts?** `font: math | sans` are roles. Video uses system fonts, which can't be redistributed,
@@ -515,8 +528,9 @@ app's browser pane. The editor is a textarea over a highlighted copy of its text
 ## The element
 
 `web/pencil-figure.js`, built on 2026-11-11, first in the proposed order. `<pencil-figure src="…pen" sheets="a.style b.style">`
-owns the canvas, its labels, the GPU and the clock, so a page only says which figure and which sheets. The playground draws
-through it, and its controls only set and read the element. Checked in headless Chrome on the M1 Pro, on WebGPU and `?gl`.
+owns the canvas, its labels, the GPU and the clock, so a page only says which figure and which sheets. The playground and
+every figure page in `web/` draw through it, and their controls only set and read the element. Checked in headless Chrome on
+the M1 Pro, on WebGPU and `?gl`.
 
 - **The clock is a Web Animations `Animation`** on the element, `animate([], { duration, iterations: Infinity })`, so pausing,
   seeking and `playbackRate` are the browser's, and DevTools' Animations panel lists it as `pencil <file>`. The element reads it
@@ -548,10 +562,29 @@ through it, and its controls only set and read the element. Checked in headless 
 - **A hidden pane doesn't render,** so it runs no animation frames, no `IntersectionObserver` callbacks and no document timeline.
   The desktop app's pane was hidden, so these checks drove headless Chrome over the DevTools protocol instead, with a counter
   wrapped around `requestAnimationFrame`.
+- **The pages moved onto it on 2026-11-12:** circle, circumcircle, hearts, lattice, limaçon, Möbius, proof, square, tangents
+  and unroll, after bounds, the playground and the prompter. Their own loops, `fit`/`follow` and label code are gone, and
+  `fit.js` keeps only `match`, which the element uses. What the pages share around the element (a play button that only shows
+  when `info.usesTime`, a time slider, the status line, `?gl`, and reloading as files change) is `web/controls.js`, and is only
+  calls on the element and its events. `strokes.html` and `text.html` stay as they are: the first renders offscreen to compare
+  pixels against SVG, and the second shows images from `lab/text` with no player at all. Checked in the desktop app's pane on
+  WebGPU and `?gl`, with no console errors. What moving them asked of the element, and of the figures:
+  - **Sheets picked in script fetch once.** Hearts, Möbius and the lattice pick sheets by the reader's theme (and the lattice by
+    width), so they set `sheets` from script. The element now fetches a microtask after `src` or `sheets` changes, so a page that
+    sets them just after the element is parsed fetches once, not once with the markup's and once with its own.
+  - **`colors`** gives the named colors the figure's sheets define, which the lattice page sets on its root so its legend and
+    background match. Empty until the figure loads.
+  - **Loop lengths come from the figures.** Each page had its own period. The circle had none, so it says `duration 2·π`
+    (one breath), as the limaçon does, and loops without a jump. The proof loops on its beats' 9.5 s rather than the page's 10.
+  - **What changed for a reader:** the tangents page gets a play button, since `d` follows time, and starts held at d = 3 as
+    before. Playing Möbius after moving b, c or d carries on from the time that gives that value, as the element does
+    everywhere, rather than from where it paused. Circumcircle and limaçon now start paused under `prefers-reduced-motion`.
+  - **A param held before the figure loads** stays held when play is pressed before the load too, since the element doesn't
+    know yet what time drives. Only a reader faster than the GPU's start could reach it. Not fixed.
 - **Not built:** a `ScrollTimeline` or `ViewTimeline` as the clock, which would let scrolling scrub a figure. The element's
   `iterations: Infinity` doesn't suit a scroll range, which wants one pass. Keyboard on a focused figure is still the page's.
-- **Not checked:** a phone, other browsers, the pages in `web/` and the site, which still set themselves up, and a draw that
-  fails after compiling, which the playground handles from the element's `error` event but no edit has reached.
+- **Not checked:** a phone, other browsers, the site, which still sets itself up, the pages with the pane showing (it was
+  hidden, so a screenshot drew each frame), and a draw that fails after compiling, which the playground handles from the element's `error` event but no edit has reached.
 
 ## Distance to a curve
 
@@ -704,7 +737,7 @@ exact shape, for black on white:
   high curvature. Tracing uses a fixed 6-pixel cell, which will miss fine detail.
 
 **Step 2: `involute/Unroll` from the site. Done 2026-11-05.** `corpus/003-unroll/unroll.pen`,
-with one param `a` driven by `tau·cycle(mod(time, 13))` or by a slider:
+with one param `a` driven by `2·π·cycle(mod(time, 13))` or by a slider:
 
 - **Interactive:** `web/unroll.html`. The slider takes `a` over, play hands it back at the
   matching time, and style files can be switched live. Runs on WebGPU and WebGL2.
@@ -726,7 +759,7 @@ colors, caps and label positions come from the page's computed styles.
   against 7/255 for sampled curves, because of tracing's fixed 6-pixel grid.
 - **Known limits of regions:** coverage assumes one straight edge per pixel, so sharp tips are
   approximate, and the 512-entry uniform array caps the vertices a figure's regions can use.
-- **Dashes on a moving range ride with its start.** `wound` runs `a..tau`, so its dashes move with
+- **Dashes on a moving range ride with its start.** `wound` runs `a..2·π`, so its dashes move with
   P. They're continuous now, since a moment when a moving range's ends meet no longer counts as a
   loop, but a real string's marks would stay put as it unwinds. Anchoring dashes at the far end
   would need a declarative option, and it isn't built.

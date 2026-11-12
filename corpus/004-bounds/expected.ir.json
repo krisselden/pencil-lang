@@ -10,7 +10,7 @@
       "id": "case.index"
     },
     {
-      "expr": ["IfNonnegative",["Subtract","case.index",0.5],["Multiply",2.0,["Arccos",["Divide",["Subtract",["Sqrt",["Add",5.0,["Multiply",4.0,["Cos",["Divide","tau","q"]]]]],1.0],2.0]]],["Divide","tau","q"]],
+      "expr": ["IfNonnegative",["Subtract","case.index",0.5],["Multiply",2.0,["Arccos",["Divide",["Subtract",["Sqrt",["Add",5.0,["Multiply",4.0,["Cos",["Divide",["Multiply",2.0,"π"],"q"]]]]],1.0],2.0]]],["Divide",["Multiply",2.0,"π"],"q"]],
       "id": "case"
     },
     {
@@ -626,7 +626,7 @@
       "id": "ratio"
     },
     {
-      "expr": ["Divide","tau","theta"],
+      "expr": ["Divide",["Multiply",2.0,"π"],"theta"],
       "id": "ring_count"
     },
     {
@@ -709,7 +709,7 @@
         "kind": "sdf",
         "line": {
           "point": [["Add","c.x",["Multiply","c.r",["Cos","t"]]],["Add","c.y",["Multiply","c.r",["Sin","t"]]]],
-          "range": [0.0,"tau"],
+          "range": [0.0,["Multiply",2.0,"pi"]],
           "var": "t"
         },
         "vars": ["x","y"]
@@ -748,7 +748,7 @@
         "kind": "sdf",
         "line": {
           "point": [["Add","d.x",["Multiply","d.r",["Cos","t"]]],["Add","d.y",["Multiply","d.r",["Sin","t"]]]],
-          "range": [0.0,"tau"],
+          "range": [0.0,["Multiply",2.0,"pi"]],
           "var": "t"
         },
         "vars": ["x","y"]
@@ -766,7 +766,7 @@
         "kind": "sdf",
         "line": {
           "point": [["Add","t.x",["Multiply","t.r",["Cos","t"]]],["Add","t.y",["Multiply","t.r",["Sin","t"]]]],
-          "range": [0.0,"tau"],
+          "range": [0.0,["Multiply",2.0,"pi"]],
           "var": "t"
         },
         "vars": ["x","y"]
@@ -878,7 +878,7 @@
         "kind": "sdf",
         "line": {
           "point": [["Add","c_1.x",["Multiply","c_1.r",["Cos","t"]]],["Add","c_1.y",["Multiply","c_1.r",["Sin","t"]]]],
-          "range": [0.0,"tau"],
+          "range": [0.0,["Multiply",2.0,"pi"]],
           "var": "t"
         },
         "vars": ["x","y"]
@@ -896,7 +896,7 @@
         "kind": "sdf",
         "line": {
           "point": [["Add","d_1.x",["Multiply","d_1.r",["Cos","t"]]],["Add","d_1.y",["Multiply","d_1.r",["Sin","t"]]]],
-          "range": [0.0,"tau"],
+          "range": [0.0,["Multiply",2.0,"pi"]],
           "var": "t"
         },
         "vars": ["x","y"]
@@ -914,7 +914,7 @@
         "kind": "sdf",
         "line": {
           "point": [["Add","t_m.x",["Multiply","t_m.r",["Cos","t"]]],["Add","t_m.y",["Multiply","t_m.r",["Sin","t"]]]],
-          "range": [0.0,"tau"],
+          "range": [0.0,["Multiply",2.0,"pi"]],
           "var": "t"
         },
         "vars": ["x","y"]
@@ -932,7 +932,7 @@
         "kind": "sdf",
         "line": {
           "point": [["Add","e_1.x",["Multiply","e_1.r",["Cos","t"]]],["Add","e_1.y",["Multiply","e_1.r",["Sin","t"]]]],
-          "range": [0.0,"tau"],
+          "range": [0.0,["Multiply",2.0,"pi"]],
           "var": "t"
         },
         "vars": ["x","y"]
@@ -950,7 +950,7 @@
         "kind": "sdf",
         "line": {
           "point": [["Add","g_1.x",["Multiply","g_1.r",["Cos","t"]]],["Add","g_1.y",["Multiply","g_1.r",["Sin","t"]]]],
-          "range": [0.0,"tau"],
+          "range": [0.0,["Multiply",2.0,"pi"]],
           "var": "t"
         },
         "vars": ["x","y"]
@@ -999,7 +999,7 @@
         "kind": "sdf",
         "line": {
           "point": [["Add","e.x",["Multiply","e.r",["Cos","t"]]],["Add","e.y",["Multiply","e.r",["Sin","t"]]]],
-          "range": [0.0,"tau"],
+          "range": [0.0,["Multiply",2.0,"pi"]],
           "var": "t"
         },
         "vars": ["x","y"]
@@ -1125,7 +1125,7 @@
         "kind": "sdf",
         "line": {
           "point": [["Add","p.x",["Multiply","p.r",["Cos","t"]]],["Add","p.y",["Multiply","p.r",["Sin","t"]]]],
-          "range": [0.0,"tau"],
+          "range": [0.0,["Multiply",2.0,"pi"]],
           "var": "t"
         },
         "vars": ["x","y"]
@@ -1143,7 +1143,7 @@
         "kind": "sdf",
         "line": {
           "point": [["Add","r.x",["Multiply","r.r",["Cos","t"]]],["Add","r.y",["Multiply","r.r",["Sin","t"]]]],
-          "range": [0.0,"tau"],
+          "range": [0.0,["Multiply",2.0,"pi"]],
           "var": "t"
         },
         "vars": ["x","y"]
@@ -1223,7 +1223,7 @@
         "kind": "sdf",
         "line": {
           "point": [["Add","q_1.x",["Multiply","q_1.r",["Cos","t"]]],["Add","q_1.y",["Multiply","q_1.r",["Sin","t"]]]],
-          "range": [0.0,"tau"],
+          "range": [0.0,["Multiply",2.0,"pi"]],
           "var": "t"
         },
         "vars": ["x","y"]
@@ -1241,7 +1241,7 @@
         "kind": "sdf",
         "line": {
           "point": [["Add","s.x",["Multiply","s.r",["Cos","t"]]],["Add","s.y",["Multiply","s.r",["Sin","t"]]]],
-          "range": [0.0,"tau"],
+          "range": [0.0,["Multiply",2.0,"pi"]],
           "var": "t"
         },
         "vars": ["x","y"]
@@ -1259,7 +1259,7 @@
         "kind": "sdf",
         "line": {
           "point": [["Add","p_m.x",["Multiply","p_m.r",["Cos","t"]]],["Add","p_m.y",["Multiply","p_m.r",["Sin","t"]]]],
-          "range": [0.0,"tau"],
+          "range": [0.0,["Multiply",2.0,"pi"]],
           "var": "t"
         },
         "vars": ["x","y"]
@@ -1277,7 +1277,7 @@
         "kind": "sdf",
         "line": {
           "point": [["Add","r_m.x",["Multiply","r_m.r",["Cos","t"]]],["Add","r_m.y",["Multiply","r_m.r",["Sin","t"]]]],
-          "range": [0.0,"tau"],
+          "range": [0.0,["Multiply",2.0,"pi"]],
           "var": "t"
         },
         "vars": ["x","y"]
@@ -1294,7 +1294,7 @@
         "kind": "sdf",
         "line": {
           "point": [["Add","p_1.x",["Multiply","p_1.r",["Cos","t"]]],["Add","p_1.y",["Multiply","p_1.r",["Sin","t"]]]],
-          "range": [0.0,"tau"],
+          "range": [0.0,["Multiply",2.0,"pi"]],
           "var": "t"
         },
         "vars": ["x","y"]
@@ -1307,7 +1307,7 @@
       "form": {
         "arc": {
           "point": [["Add","A.x",["Multiply",["Add",["Multiply",["Subtract",["Add","Z.x",["Multiply","p_1.r",["Cos","u"]]],"A.x"],["Cos","u"]],["Multiply",["Subtract",["Add","Z.y",["Multiply","p_1.r",["Sin","u"]]],"A.y"],["Sin","u"]]],["Cos","u"]]],["Add","A.y",["Multiply",["Add",["Multiply",["Subtract",["Add","Z.x",["Multiply","p_1.r",["Cos","u"]]],"A.x"],["Cos","u"]],["Multiply",["Subtract",["Add","Z.y",["Multiply","p_1.r",["Sin","u"]]],"A.y"],["Sin","u"]]],["Sin","u"]]]],
-          "range": [0.0,"tau"],
+          "range": [0.0,["Multiply",2.0,"π"]],
           "var": "u"
         },
         "kind": "parametric"
@@ -1321,7 +1321,7 @@
       "form": {
         "closed": false,
         "kind": "polyline",
-        "points": [["O.x","O.y"],[["Multiply",4.0,["Cos",["Divide","tau","q"]]],["Multiply",4.0,["Sin",["Divide","tau","q"]]]]]
+        "points": [["O.x","O.y"],[["Multiply",4.0,["Cos",["Divide",["Multiply",2.0,"π"],"q"]]],["Multiply",4.0,["Sin",["Divide",["Multiply",2.0,"π"],"q"]]]]]
       },
       "id": "step",
       "tags": ["segment","level_curve"]

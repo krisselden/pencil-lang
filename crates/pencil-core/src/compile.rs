@@ -17,7 +17,7 @@ use crate::parse::{CurveSyntax, Document, Item, ManyKind, PartSyntax};
 /// Beyond this, `z^n` goes through exp and ln rather than multiplying out.
 const MAX_COMPLEX_POWER: f64 = 8.0;
 pub const SIGNALS: [&str; 1] = ["time"];
-pub const CONSTANTS: [&str; 3] = ["pi", "π", "tau"];
+pub const CONSTANTS: [&str; 2] = ["pi", "π"];
 /// The discrete param that beats declare.
 pub const BEAT_PARAM: &str = "beat";
 
@@ -1321,7 +1321,7 @@ fn circle_form(name: &str) -> Result<Form, Error> {
         line: Some(Arc {
             var: var.to_string(),
             point: [around("x", "Cos"), around("y", "Sin")],
-            range: [num(0.0), Expr::sym("tau")],
+            range: [num(0.0), mul(num(2.0), Expr::sym("pi"))],
         }),
     })
 }
@@ -1372,7 +1372,7 @@ fn cycle_form(name: &str) -> Form {
         line: Some(Arc {
             var: var.to_string(),
             point: [around("x", "Cos"), around("y", "Sin")],
-            range: [num(0.0), Expr::sym("tau")],
+            range: [num(0.0), mul(num(2.0), Expr::sym("pi"))],
         }),
     }
 }
@@ -4248,7 +4248,7 @@ mod tests {
     fn a_choices_options_can_have_names() {
         let s = scene(
             "param q = 6 in 4..12 step 1
-             param case = \"q = 2p\" in {\"p = 0\": tau / q, \"q = 2p\": 2·acos((sqrt(5 + 4·cos(tau / q)) - 1) / 2), q}",
+             param case = \"q = 2p\" in {\"p = 0\": 2·π / q, \"q = 2p\": 2·acos((sqrt(5 + 4·cos(2·π / q)) - 1) / 2), q}",
         )
         .unwrap();
         let index = s.params.iter().find(|p| p.id == "case.index").unwrap();
@@ -4459,6 +4459,22 @@ mod tests {
         assert_eq!(at_time(&doc("duration 12\nbind beat = 2"), 0.0, &beat), 2.0);
     }
 
+    #[test]
+    fn a_duration_can_be_written_with_pi() {
+        for written in ["2·π", "2·pi"] {
+            let s = scene(&format!("duration {written}")).unwrap();
+            assert_eq!(s.duration, Some(std::f64::consts::TAU), "duration {written}");
+        }
+    }
+
+    /// τ is a variable too often to be a constant, as in bipolar coordinates' (σ, τ).
+    #[test]
+    fn tau_is_a_name_a_figure_can_take() {
+        for name in ["tau", "τ"] {
+            scene(&format!("param {name} in 0..1")).unwrap();
+        }
+    }
+
     /// A scene's value for `name` at a time, with every binding worked out in order.
     fn at_time(s: &Scene, time: f64, e: &Expr) -> f64 {
         let mut env = Env::new(time);
@@ -4476,7 +4492,7 @@ mod tests {
         beat spin for 2 show P focus P
         pause 1
         beat gone \"\" for 0.5 drop c, P
-        let P = (cos(tau·spin), sin(tau·spin))
+        let P = (cos(2·π·spin), sin(2·π·spin))
         curve c = circle((0, 0), (grow, 0))
         dot P
         segment axis = (-1, 0), (1, 0)";

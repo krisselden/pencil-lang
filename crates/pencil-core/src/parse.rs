@@ -1532,6 +1532,50 @@ pub fn parse_expression(src: &str) -> Result<Expr, Error> {
     Parser::new(src)?.expr()
 }
 
+/// An expression that is the whole of `src`, with nothing after it.
+pub fn parse_whole_expression(src: &str) -> Result<Expr, Error> {
+    let mut parser = Parser::new(src)?;
+    let e = parser.expr()?;
+    if *parser.peek() != Tok::Eof {
+        return Err(parser.error(format!("expected the end, found {}", parser.peek())));
+    }
+    Ok(e)
+}
+
+/// A token as the lexer read it, for tools that show how text is read: what kind it is, and
+/// its text after the lexer's own rewriting, so `·` reads `*` and `²` reads `^2`.
+pub struct Token {
+    pub kind: &'static str,
+    pub text: String,
+    pub line: usize,
+    pub col: usize,
+}
+
+pub fn tokens(src: &str) -> Result<Vec<Token>, Error> {
+    Ok(lex(src)?
+        .into_iter()
+        .filter(|t| t.tok != Tok::Eof)
+        .map(|t| {
+            let (kind, text) = match t.tok {
+                Tok::Ident(name) => ("name", name),
+                Tok::Num(n) => ("number", n.to_string()),
+                Tok::Px => ("unit", "px".to_string()),
+                Tok::Em => ("unit", "em".to_string()),
+                Tok::Punct(p) => ("punct", p.to_string()),
+                Tok::Sup(n) => ("power", format!("^{n}")),
+                Tok::Str(text) => ("text", format!("{text:?}")),
+                Tok::Eof => unreachable!(),
+            };
+            Token {
+                kind,
+                text,
+                line: t.line,
+                col: t.col,
+            }
+        })
+        .collect())
+}
+
 pub fn parse(src: &str) -> Result<Document, Error> {
     Parser::new(src)?.document()
 }
@@ -1612,14 +1656,14 @@ mod tests {
     #[test]
     fn marks_parse() {
         let doc = parse(
-            "param a = 1 in 0..tau
+            "param a = 1 in 0..2·π
              bind a = time
              fn f(t) = (cos(t), sin(t))
              curve p = parametric (t): f(t) for t in 0..a
              curve s = sdf (x, y): x
              segment g = (0, 0), f(a)
              rightangle m = (0, 0), f(a), (1, 1) size 0.2
-             region r = (0, 0), f(t) for t in a..tau
+             region r = (0, 0), f(t) for t in a..2·π
              dot O, P
              label n = \"P\" at f(a) offset (1, 2)",
         )

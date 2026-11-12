@@ -176,7 +176,7 @@
       "form": {
         "arc": {
           "point": [["Add",["Multiply","r0",["Multiply",["Exp",0.0],["Cos","t"]]],"x0"],["Multiply","r0",["Multiply",["Exp",0.0],["Sin","t"]]]],
-          "range": [0.0,"tau"],
+          "range": [0.0,["Multiply",2.0,"π"]],
           "var": "t"
         },
         "kind": "parametric"
@@ -189,7 +189,7 @@
       "form": {
         "arc": {
           "point": [["Multiply",["Exp",["Multiply","p",["Where",["Subtract",["Add",["Power",["Add",["Multiply","r0",["Multiply",["Exp",0.0],["Cos","t"]]],"x0"],2.0],["Power",["Multiply","r0",["Multiply",["Exp",0.0],["Sin","t"]]],2.0]],1e-12],["Ln",["Sqrt",["Add",["Power",["Add",["Multiply","r0",["Multiply",["Exp",0.0],["Cos","t"]]],"x0"],2.0],["Power",["Multiply","r0",["Multiply",["Exp",0.0],["Sin","t"]]],2.0]]]]]]],["Cos",["Multiply","p",["Where",["Subtract",["Add",["Power",["Add",["Multiply","r0",["Multiply",["Exp",0.0],["Cos","t"]]],"x0"],2.0],["Power",["Multiply","r0",["Multiply",["Exp",0.0],["Sin","t"]]],2.0]],1e-12],["Arctan2",["Multiply","r0",["Multiply",["Exp",0.0],["Sin","t"]]],["Add",["Multiply","r0",["Multiply",["Exp",0.0],["Cos","t"]]],"x0"]]]]]],["Multiply",["Exp",["Multiply","p",["Where",["Subtract",["Add",["Power",["Add",["Multiply","r0",["Multiply",["Exp",0.0],["Cos","t"]]],"x0"],2.0],["Power",["Multiply","r0",["Multiply",["Exp",0.0],["Sin","t"]]],2.0]],1e-12],["Ln",["Sqrt",["Add",["Power",["Add",["Multiply","r0",["Multiply",["Exp",0.0],["Cos","t"]]],"x0"],2.0],["Power",["Multiply","r0",["Multiply",["Exp",0.0],["Sin","t"]]],2.0]]]]]]],["Sin",["Multiply","p",["Where",["Subtract",["Add",["Power",["Add",["Multiply","r0",["Multiply",["Exp",0.0],["Cos","t"]]],"x0"],2.0],["Power",["Multiply","r0",["Multiply",["Exp",0.0],["Sin","t"]]],2.0]],1e-12],["Arctan2",["Multiply","r0",["Multiply",["Exp",0.0],["Sin","t"]]],["Add",["Multiply","r0",["Multiply",["Exp",0.0],["Cos","t"]]],"x0"]]]]]]],
-          "range": [0.0,"tau"],
+          "range": [0.0,["Multiply",2.0,"π"]],
           "var": "t"
         },
         "kind": "parametric"
@@ -202,7 +202,7 @@
       "form": {
         "arc": {
           "point": [["Subtract",["Multiply",["Add",["Multiply","r0",["Multiply",["Exp",0.0],["Cos","t"]]],"x0"],["Add",["Multiply","r0",["Multiply",["Exp",0.0],["Cos","t"]]],"x0"]],["Multiply",["Multiply","r0",["Multiply",["Exp",0.0],["Sin","t"]]],["Multiply","r0",["Multiply",["Exp",0.0],["Sin","t"]]]]],["Add",["Multiply",["Add",["Multiply","r0",["Multiply",["Exp",0.0],["Cos","t"]]],"x0"],["Multiply","r0",["Multiply",["Exp",0.0],["Sin","t"]]]],["Multiply",["Multiply","r0",["Multiply",["Exp",0.0],["Sin","t"]]],["Add",["Multiply","r0",["Multiply",["Exp",0.0],["Cos","t"]]],"x0"]]]],
-          "range": [0.0,"tau"],
+          "range": [0.0,["Multiply",2.0,"π"]],
           "var": "t"
         },
         "kind": "parametric"
@@ -219,7 +219,7 @@
         "kind": "sdf",
         "line": {
           "point": [["Add","unit.x",["Multiply","unit.r",["Cos","t"]]],["Add","unit.y",["Multiply","unit.r",["Sin","t"]]]],
-          "range": [0.0,"tau"],
+          "range": [0.0,["Multiply",2.0,"pi"]],
           "var": "t"
         },
         "vars": ["x","y"]

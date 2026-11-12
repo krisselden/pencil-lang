@@ -21,7 +21,7 @@ let r1 = (a + 1) / 2 - x1
 
 let focus = (1, 0)
 
-circles rings = circle(c, focus) for i in 0..23 with angle = time - i·tau / 24, c = (r1·cos(angle) + x1, r1·sin(angle))
+circles rings = circle(c, focus) for i in 0..23 with angle = time - i·2·π / 24, c = (r1·cos(angle) + x1, r1·sin(angle))
 ```
 
 And its style, which is kept apart from it:

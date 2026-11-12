@@ -1794,7 +1794,7 @@ fn panels_with_the_same_systems_share_their_answers() {
 #[test]
 fn the_figures_are_written_in_complex_numbers() {
     let lattice = square_read("007-lattice/lattice.pen");
-    assert!(lattice.contains("fn to_turn(w) = tau·i·w / A"));
+    assert!(lattice.contains("fn to_turn(w) = 2·π·i·w / A"));
     assert!(lattice.contains("fn grid(a, b) = a + b·omega"));
     for gone in ["times_i", "fn over", "fn polar"] {
         assert!(!lattice.contains(gone), "`{gone}` is back");
@@ -2330,7 +2330,7 @@ fn every_form_and_hint_draws_the_same_circle() {
     use pencil_core::frame::Inputs;
     let implicit = "curve c = implicit (x, y): x^2 + y^2 = 1.3225";
     let sdf = "curve c = sdf (x, y): sqrt(x^2 + y^2) - 1.15";
-    let parametric = "curve c = parametric (t): (1.15 * cos(t), 1.15 * sin(t)) for t in 0..tau";
+    let parametric = "curve c = parametric (t): (1.15 * cos(t), 1.15 * sin(t)) for t in 0..2·π";
     let plain = "style c { stroke: black; width: 3px }";
     let line = "style c { stroke: black; width: 3px; draw: line }";
     let field = "style c { stroke: black; width: 3px; draw: field }";

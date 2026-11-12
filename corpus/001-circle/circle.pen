@@ -1,5 +1,7 @@
 // A breathing circle: the smallest figure that exercises the whole path.
 doc circle
+// One breath, so it loops without a jump.
+duration 2·π
 
 viewport { x: -2..2, y: -2..2 }
 

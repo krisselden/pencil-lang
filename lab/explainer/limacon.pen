@@ -112,15 +112,15 @@ label name_one = "1" at one away (0, -1) tag tick
 // a faint copy every 24th of the way. Then it moves on, and goes round once more as E traces.
 let start = atan2(B.y, B.x - A.x)
 let phi0 = 320·π / 180
-let phi = start + tau·smoothstep(0, 1, sweep) + (phi0 - start)·smoothstep(0, 1, place) + tau·smoothstep(0, 1, trace) + tau·smoothstep(0, 1, pedal_round) + tau·smoothstep(0, 1, conchoid_round) + tau·smoothstep(0, 1, roll)
+let phi = start + 2·π·smoothstep(0, 1, sweep) + (phi0 - start)·smoothstep(0, 1, place) + 2·π·smoothstep(0, 1, trace) + 2·π·smoothstep(0, 1, pedal_round) + 2·π·smoothstep(0, 1, conchoid_round) + 2·π·smoothstep(0, 1, roll)
 let n = (cos(phi), sin(phi))
 let C = A + R·n
 // Drawn from 1, as a compass would.
-curve through_one = parametric (u): C + (one - C)·exp(i·u) for u in 0..tau
+curve through_one = parametric (u): C + (one - C)·exp(i·u) for u in 0..2·π
 dot C
 label name_C = "C" at C away C - A
 let passed = min(floor(24·smoothstep(0, 1, sweep)), 23)
-circles trail = circle(A + R·(cos(start + tau·k / 24), sin(start + tau·k / 24)), one) for k in 0..passed tag trail
+circles trail = circle(A + R·(cos(start + 2·π·k / 24), sin(start + 2·π·k / 24)), one) for k in 0..passed tag trail
 
 // The tangent at C is the mirror, drawn out from C both ways.
 let along = (-sin(phi), cos(phi))
@@ -144,7 +144,7 @@ rightangle at_E = C, E, E + across size 0.28
 
 // E for every place of C, from where it starts tracing to where C is now: 1 reflected across the
 // tangent at angle u, worked out as above.
-let traced = phi0 + tau·smoothstep(0, 1, trace)
+let traced = phi0 + 2·π·smoothstep(0, 1, trace)
 curve limacon = parametric (u): one + 2·((A.x - 1)·cos(u) + R)·(cos(u), sin(u)) for u in phi0..traced
 
 // The central circle scaled by k about 1, from 1 to 2: the pedal circle, about cosh 2s with radius
@@ -167,7 +167,7 @@ segment foot = one, E
 rightangle at_foot = one, E, E + along size 0.28
 
 // Pascal's circle: about A, through 1 and cosh 2s, so its radius is sinh² s. Drawn from 1.
-curve pascal = parametric (u): A + (one - A)·exp(i·u) for u in 0..tau
+curve pascal = parametric (u): A + (one - A)·exp(i·u) for u in 0..2·π
 // t is C's angle, as seen from 1 along the line to E. The circle's center sees L at twice it.
 let t = atan2(n.y, n.x)
 let L = A + sinh(s)²·(cos(2·t), sin(2·t))
@@ -220,4 +220,4 @@ expression defs by said {
 }
 
 // The same 24 circles as the trail, to be lit.
-circles rings = circle(A + R·(cos(start + tau·k / 24), sin(start + tau·k / 24)), one) for k in 0..23
+circles rings = circle(A + R·(cos(start + 2·π·k / 24), sin(start + 2·π·k / 24)), one) for k in 0..23

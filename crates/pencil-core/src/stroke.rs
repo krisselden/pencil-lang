@@ -1909,7 +1909,7 @@ mod tests {
 
     #[test]
     fn parametric_curves_land_on_the_curve_and_subdivide_where_curved() {
-        let doc = "curve p = parametric (t): (cos(t), sin(t)) for t in 0..tau";
+        let doc = "curve p = parametric (t): (cos(t), sin(t)) for t in 0..2·π";
         let s = layer_of(doc, "style p { stroke: black; width: 1px }", 400);
         let segments: Vec<&[f32]> = s.chunks(FLOATS_PER_SEGMENT).collect();
         for g in &segments {
@@ -1971,8 +1971,8 @@ mod tests {
     /// and that moment mustn't change how its dashes are laid out.
     #[test]
     fn a_moving_range_keeps_its_dashes_when_its_ends_momentarily_meet() {
-        let doc = "param a in 0..tau
-                   curve c = parametric (t): (cos(t), sin(t)) for t in a..tau";
+        let doc = "param a in 0..2·π
+                   curve c = parametric (t): (cos(t), sin(t)) for t in a..2·π";
         let sheet = "style c { stroke: black; width: 2px; dash: 7px; gap: 5px }";
         let figure = build_figure(doc, &[sheet]).unwrap();
         let at = |a: f64| {
@@ -2002,7 +2002,7 @@ mod tests {
     /// A range that can't move stays a real loop, with a whole number of dashes.
     #[test]
     fn a_fixed_range_that_closes_is_a_loop() {
-        let doc = "curve c = parametric (t): (cos(t), sin(t)) for t in 0..tau";
+        let doc = "curve c = parametric (t): (cos(t), sin(t)) for t in 0..2·π";
         let s = layer_of(
             doc,
             "style c { stroke: black; width: 2px; dash: 7px; gap: 5px }",

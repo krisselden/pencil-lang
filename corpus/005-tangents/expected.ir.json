@@ -2,7 +2,7 @@
   "beats": [],
   "bindings": [
     {
-      "expr": ["Add",1.6,["Multiply",1.4,["Cos",["Divide",["Multiply","tau","time"],12.0]]]],
+      "expr": ["Add",1.6,["Multiply",1.4,["Cos",["Divide",["Multiply",["Multiply",2.0,"π"],"time"],12.0]]]],
       "id": "d"
     },
     {
@@ -194,7 +194,7 @@
         "kind": "sdf",
         "line": {
           "point": [["Add","c.x",["Multiply","c.r",["Cos","t"]]],["Add","c.y",["Multiply","c.r",["Sin","t"]]]],
-          "range": [0.0,"tau"],
+          "range": [0.0,["Multiply",2.0,"pi"]],
           "var": "t"
         },
         "vars": ["x","y"]
@@ -211,7 +211,7 @@
         "kind": "sdf",
         "line": {
           "point": [["Add","thales.x",["Multiply","thales.r",["Cos","t"]]],["Add","thales.y",["Multiply","thales.r",["Sin","t"]]]],
-          "range": [0.0,"tau"],
+          "range": [0.0,["Multiply",2.0,"pi"]],
           "var": "t"
         },
         "vars": ["x","y"]

@@ -48,5 +48,5 @@ let L = A + sinh(s)²·(cos(2·t), sin(2·t))
 arrow fast_from_hub = A, L
 segment conchoid = L - sinh(2·s)·(cos(t), sin(t)), E
 
-curve limacon = parametric (u): (1, 0) + (sinh(2·s) + 2·sinh(s)²·cos(u))·(cos(u), sin(u)) for u in 0..tau
+curve limacon = parametric (u): (1, 0) + (sinh(2·s) + 2·sinh(s)²·cos(u))·(cos(u), sin(u)) for u in 0..2·π
 dot zero, one, A, B, C, E, A2, L

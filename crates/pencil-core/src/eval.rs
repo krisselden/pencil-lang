@@ -116,7 +116,6 @@ pub fn eval(e: &Expr, env: &Env) -> Result<Value, Error> {
         Expr::Num(n) => Real(*n),
         Expr::Sym(s) => match s.as_str() {
             "pi" | "π" => Real(std::f64::consts::PI),
-            "tau" => Real(std::f64::consts::TAU),
             "white" => Color([1.0; 3]),
             "black" => Color([0.0; 3]),
             _ => match env.vars.get(s) {
@@ -1069,7 +1068,7 @@ mod tests {
 
     #[test]
     fn region_arcs_follow_their_parameter() {
-        let doc = "region r = (0, 0), (cos(t), sin(t)) for t in 0..tau";
+        let doc = "region r = (0, 0), (cos(t), sin(t)) for t in 0..2·π";
         let f = build(doc, &["style r { fill: black }"]).unwrap();
         let frame = frame(&f, 200);
         assert_eq!(frame.shade(100.5, 60.5).unwrap(), [0.0; 3]);

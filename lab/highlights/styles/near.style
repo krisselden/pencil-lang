@@ -1,7 +1,7 @@
 style figure { width: 640px; height: 640px }
 
 style whole { stroke: red; width: 2.5px }
-style image_whole { stroke: accent; width: 0.35px + 0.95px·sqrt(x0² + r² + 2·x0·r·cos(tau·self.t)) }
+style image_whole { stroke: accent; width: 0.35px + 0.95px·sqrt(x0² + r² + 2·x0·r·cos(2·π·self.t)) }
 style unit { stroke: muted; width: 1px; opacity: 0.5 }
 style leader { stroke: ink; width: 1px; show: near - 0.01 }
 style Ring { radius: 22px; fill_opacity: 0; stroke: ink; width: 1.5px; show: near + 0.01 }

@@ -8,11 +8,28 @@
 
 use serde_json::{Value, json};
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub enum Expr {
     Num(f64),
     Sym(String),
     App(String, Vec<Expr>),
+}
+
+/// As an S-expression, `(Multiply 2 pi)`, so a statement that holds one stays readable.
+impl std::fmt::Debug for Expr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Expr::Num(n) => write!(f, "{n}"),
+            Expr::Sym(s) => write!(f, "{s}"),
+            Expr::App(head, args) => {
+                write!(f, "({head}")?;
+                for a in args {
+                    write!(f, " {a:?}")?;
+                }
+                write!(f, ")")
+            }
+        }
+    }
 }
 
 impl Expr {

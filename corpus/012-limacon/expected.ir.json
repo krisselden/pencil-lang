@@ -47,7 +47,7 @@
         ],
         "with": [
           {
-            "expr": ["Subtract","time",["Divide",["Multiply","i","tau"],24.0]],
+            "expr": ["Subtract","time",["Divide",["Multiply",["Multiply","i",2.0],"π"],24.0]],
             "id": "angle"
           },
           {

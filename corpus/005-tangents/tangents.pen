@@ -10,7 +10,7 @@ viewport { x: -1.6..3.4, y: -1.5625..1.5625 }
 fn dir(t) = (cos(t), sin(t))
 
 param d in 0.15..3.2
-bind d = 1.6 + 1.4·cos(tau·time / 12)
+bind d = 1.6 + 1.4·cos(2·π·time / 12)
 
 let heading = 0.35
 let O = (0, 0)

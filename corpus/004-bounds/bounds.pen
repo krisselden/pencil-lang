@@ -17,7 +17,7 @@ fn dir(t) = (cos(t), sin(t))
 // to P and the boundary flower's centers. For q = 2p it's the angle φ to F and the middle flower's
 // centers, and since cos φ = cos²(θ/2) + cos(θ/2) − 1, θ follows from it.
 param q = 6 in 4..12 step 1
-param case in {"p = 0": tau / q, "q = 2p": 2·acos((sqrt(5 + 4·cos(tau / q)) - 1) / 2)}
+param case in {"p = 0": 2·π / q, "q = 2p": 2·acos((sqrt(5 + 4·cos(2·π / q)) - 1) / 2)}
 // θ is the construction's own: P's angle, which sets the circle at 1. The case closes it, and
 // dragging P takes it over, to see the angles in between.
 param theta in 0.2..1.85
@@ -131,9 +131,9 @@ beat "Every center in both flowers lies on one curve, the level curve of the cir
   let Z = midpoint(L, Q)
   curve p_1 = circle(Z, Q) tag aux
   // The pedal: for each tangent of the circle, the foot of the perpendicular from A.
-  curve level = parametric (u): A + dir(u)·dot(Z + p_1.r·dir(u) - A, dir(u)) for u in 0..tau
+  curve level = parametric (u): A + dir(u)·dot(Z + p_1.r·dir(u) - A, dir(u)) for u in 0..2·π
   // The step the case closes for, a q-th of a turn: through P for p = 0, and through F for q = 2p.
-  segment step = O, 4·dir(tau / q)
+  segment step = O, 4·dir(2·π / q)
 }
 
 // Drawn last, so it stays on top. The param's range is the constraint on the drag.
@@ -143,5 +143,5 @@ handle P sets theta = atan2(max(pointer.y, 0), pointer.x)
 
 // For the readout: what this P closes for.
 let ratio = sin(theta / 2)
-let ring_count = tau / theta
+let ring_count = 2·π / theta
 let zoom_count = pi / atan2(F.y, F.x)

@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pencil AST</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --ink: rgb(18 17 15); --paper: rgb(242 240 235); --muted: rgb(110 106 99); --rule: rgb(214 210 202);
+    --bad: #b5443c; --field: rgb(250 249 246);
+    --string: rgb(22 123 38); --number: rgb(0 104 181); --word: rgb(96 66 166); --punct: rgb(150 100 20);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ink: rgb(243 240 234); --paper: rgb(23 22 20); --muted: rgb(148 143 134); --rule: rgb(60 58 54);
+      --bad: #f38d82; --field: rgb(30 29 27);
+      --string: rgb(121 195 124); --number: rgb(118 179 241); --word: rgb(169 139 255); --punct: rgb(230 180 90);
+    }
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { height: 100%; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font: 14px/1.45 ui-sans-serif, system-ui, sans-serif; }
+  .app { display: grid; grid-template-columns: minmax(280px, 2fr) minmax(320px, 3fr); grid-template-rows: auto 1fr; height: 100%; }
+  header { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--rule); }
+  header h1 { font-size: 14px; font-weight: 600; margin: 0 6px 0 0; }
+  header button { font: 12px ui-monospace, monospace; padding: 2px 7px; border: 1px solid var(--rule); background: var(--field); color: var(--ink); border-radius: 4px; cursor: pointer; }
+  .source { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--rule); }
+  textarea { flex: 1; width: 100%; border: 0; outline: none; resize: none; padding: 10px 12px; background: var(--field); color: var(--ink);
+             font: 15px/22px ui-monospace, 'SF Mono', Menlo, monospace; tab-size: 2; }
+  .out { overflow: auto; padding: 10px 14px 40px; min-height: 0; }
+  h2 { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin: 16px 0 6px; }
+  h2:first-child { margin-top: 0; }
+  .tokens { display: flex; flex-wrap: wrap; gap: 4px; font: 13px ui-monospace, monospace; }
+  .tok { border: 1px solid var(--rule); border-radius: 4px; padding: 1px 6px; background: var(--field); }
+  .tok small { color: var(--muted); font-size: 10px; margin-left: 4px; }
+  .k-name { color: var(--word); } .k-number { color: var(--number); } .k-text { color: var(--string); }
+  .k-punct, .k-power, .k-unit { color: var(--punct); }
+  pre { margin: 0; font: 13px/19px ui-monospace, 'SF Mono', Menlo, monospace; white-space: pre; }
+  .tree .head { font-weight: 600; } .tree .sym { color: var(--word); } .tree .num { color: var(--number); } .tree .str { color: var(--string); }
+  .tree .rule { color: var(--muted); }
+  .bad { color: var(--bad); }
+  .bad pre { color: var(--ink); }
+  details summary { cursor: pointer; color: var(--muted); font-size: 12px; }
+  .note { color: var(--muted); font-size: 12px; margin: 4px 0 0; }
+  @media (max-width: 720px) {
+    .app { grid-template-columns: 1fr; grid-template-rows: auto 30vh 1fr; }
+    .source { border-right: 0; border-bottom: 1px solid var(--rule); }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1>Pencil AST</h1>
+    <span id="examples"></span>
+  </header>
+  <div class="source">
+    <textarea id="src" spellcheck="false" autocapitalize="off" autocomplete="off" aria-label="Pencil source"></textarea>
+  </div>
+  <div class="out" id="out" aria-live="polite"></div>
+</div>
+<script type="module">
+import init, { inspect } from './pkg/pencil_web.js';
+
+// Each shows something about how names, products and powers read today.
+const EXAMPLES = [
+  '2·π', '2π', '2 π', '2(x + 1)', 'x²', '-x^2', 'a/b/c', 'a^b^c', 'sin(x)^2', '1e3',
+  'x1', 'x_1', 'x₁', 'x_{1}', '(1, 2)·i',
+  'param a in 0..1\nlet P = (cos(2·π·a), sin(2·π·a))\nlet z = P^2',
+];
+
+const $ = (id) => document.getElementById(id);
+const src = $('src');
+const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]);
+
+// A MathJSON tree drawn with rules, one node to a line.
+function tree(v, prefix = '', last = true, top = true) {
+  const branch = top ? '' : `<span class="rule">${prefix}${last ? '└─ ' : '├─ '}</span>`;
+  const below = top ? '' : prefix + (last ? '   ' : '│  ');
+  if (Array.isArray(v)) {
+    const [head, ...args] = v;
+    return `${branch}<span class="head">${esc(head)}</span>\n` +
+      args.map((a, i) => tree(a, below, i === args.length - 1, false)).join('');
+  }
+  const cls = typeof v === 'number' ? 'num' : 'sym';
+  return `${branch}<span class="${cls}">${esc(v)}</span>\n`;
+}
+const sexpr = (v) => Array.isArray(v) ? `(${v.map(sexpr).join(' ')})` : v;
+
+// Where an error is, under the line it's on.
+function failure(e, text) {
+  if (!e.line) return `<p class="bad">${esc(e.error)}</p>`;
+  const line = text.split('\n')[e.line - 1] ?? '';
+  return `<div class="bad"><p>${e.line}:${e.col} ${esc(e.error)}</p>` +
+    `<pre>${esc(line)}\n${' '.repeat(Math.max(0, e.col - 1))}<span class="bad">^</span></pre></div>`;
+}
+
+function show() {
+  const text = src.value;
+  const seen = JSON.parse(inspect(text));
+  let html = '<h2>Tokens</h2>';
+  if (seen.tokens.error) {
+    $('out').innerHTML = html + failure(seen.tokens, text);
+    return;
+  }
+  html += '<div class="tokens">' + seen.tokens.map((t) =>
+    `<span class="tok k-${t.kind}" title="${t.kind} at ${t.line}:${t.col}">${esc(t.text)}<small>${t.kind}</small></span>`).join('') + '</div>';
+  if (seen.expression && !seen.expression.error) {
+    html += '<h2>Expression</h2>' + `<pre class="tree">${tree(seen.expression)}</pre>`;
+    html += '<h2>MathJSON</h2>' + `<pre>${esc(JSON.stringify(seen.expression))}</pre>`;
+    html += `<p class="note">${esc(sexpr(seen.expression))}</p>`;
+  } else if (Array.isArray(seen.document)) {
+    html += '<h2>Statements</h2>' + seen.document.map((s) => `<pre>${esc(s)}</pre>`).join('<hr>');
+    html += '<h2>IR bindings</h2>';
+    // Each named scalar as it compiled, which is where points and powers expand; then the rest.
+    html += seen.ir.error ? failure(seen.ir, text)
+      : `<pre>${seen.ir.bindings.map((b) => `<span class="tree"><span class="sym">${esc(b.id)}</span></span> = ${esc(sexpr(b.expr))}`).join('\n')}</pre>` +
+        `<details><summary>all of the IR</summary><pre>${esc(JSON.stringify(seen.ir, null, 1))}</pre></details>`;
+  } else {
+    // Neither reads: one line is most likely meant as an expression, and more as a document.
+    const one = !text.trim().includes('\n');
+    html += `<h2>${one ? 'Expression' : 'Document'}</h2>${failure(one ? seen.expression : seen.document, text)}`;
+  }
+  $('out').innerHTML = html;
+}
+
+function load(text) {
+  src.value = text;
+  run();
+}
+function run() {
+  history.replaceState(null, '', '#' + encodeURIComponent(src.value));
+  show();
+}
+
+await init();
+$('examples').innerHTML = EXAMPLES.map((e, i) =>
+  `<button data-i="${i}" title="${esc(e)}">${esc(e.includes('\n') ? 'document' : e)}</button>`).join('');
+$('examples').addEventListener('click', (ev) => {
+  const i = ev.target.dataset?.i;
+  if (i !== undefined) load(EXAMPLES[i]);
+});
+src.addEventListener('input', run);
+load(location.hash.length > 1 ? decodeURIComponent(location.hash.slice(1)) : EXAMPLES[0]);
+src.focus();
+</script>
+</body>
+</html>

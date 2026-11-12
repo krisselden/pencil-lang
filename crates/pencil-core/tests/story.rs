@@ -12,7 +12,7 @@ const STORY: &str = "
     beat spin \"A point goes round.\" for 2 show P focus P
     beat hold for 1
     beat gone \"\" for 0.5 drop c, P
-    let P = (cos(tau·spin), sin(tau·spin))
+    let P = (cos(2·π·spin), sin(2·π·spin))
     curve c = circle((0, 0), (grow, 0))
     dot P
     segment axis = (-1, 0), (1, 0)";

@@ -166,7 +166,7 @@ beat circles "A circle about any point of it, through 1."   for 12 focus through
 beat mirror  "Reflect 1 across the tangent at C."           for 12 focus tangent_at_C, E, normal
 beat hold                                                   for 2
 
-bind t = tau·circles
+bind t = 2·π·circles
 ```
 
 - **Lengths, not times,** so changing one moves everything after it. They add up to the `duration`.

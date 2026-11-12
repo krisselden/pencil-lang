@@ -72,7 +72,7 @@
         "kind": "sdf",
         "line": {
           "point": [["Add","around.x",["Multiply","around.r",["Cos","t"]]],["Add","around.y",["Multiply","around.r",["Sin","t"]]]],
-          "range": [0.0,"tau"],
+          "range": [0.0,["Multiply",2.0,"pi"]],
           "var": "t"
         },
         "vars": ["x","y"]
@@ -85,7 +85,7 @@
       "form": {
         "arc": {
           "point": [["Cos",["Add",["Multiply",3.0,"s"],4.0]],["Sin",["Add",["Multiply",2.0,"s"],5.88]]],
-          "range": [0.0,"tau"],
+          "range": [0.0,["Multiply",2.0,"π"]],
           "var": "s"
         },
         "kind": "parametric"

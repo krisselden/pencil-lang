@@ -22,7 +22,7 @@ group grid() {
   curves up = parametric (t): t + s·r0·i / 3 for t in 1 / n..n for s in -3..3
 }
 group circle_of_n() {
-  curve orbit = parametric (t): x0 + r0·exp(i·t) for t in 0..tau
+  curve orbit = parametric (t): x0 + r0·exp(i·t) for t in 0..2·π
 }
 
 use grid() as plain

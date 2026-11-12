@@ -409,7 +409,7 @@ mod tests {
         // x = 2·sin(t) is within ±1 near t = 0, π and 2π.
         let doc = "viewport { x: -2..2, y: -2..2 }
             curve c = circle((0, 0), (1, 0))
-            curve u = parametric (t): intersect(c, line((2·sin(t), 0), (2·sin(t), 1)), 1) for t in 0..tau";
+            curve u = parametric (t): intersect(c, line((2·sin(t), 0), (2·sin(t), 1)), 1) for t in 0..2·π";
         let f = build(doc, &[]).unwrap();
         let crate::ir::Form::Parametric(arc) = &f.scene.marks[1].form else {
             panic!();

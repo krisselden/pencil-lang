@@ -15,13 +15,13 @@ rules can sit in the document or in separate style files.
 | Statement | Meaning |
 |---|---|
 | `doc name` | Names the document. |
-| `duration 13` | How long one pass of the time bindings takes, for looping and video. |
+| `duration 13` | How long one pass of the time bindings takes, for looping and video. Any constant will do: `duration 2·π` loops once per turn of `time`. |
 | `viewport { … }` | The world window (see below). |
 | `let x = expr` | A named value: a number, point, circle or line. |
 | `fn f(a, b) = expr` | A function, inlined where it's called. No recursion. |
-| `param a = 1 in 0..tau` | A root that time or a reader can drive. The range constrains drags. |
+| `param a = 1 in 0..2·π` | A root that time or a reader can drive. The range constrains drags. |
 | `param n = 3 in 1..12 step 1` | A param that only takes its range's start plus whole steps, however it's driven: its default, a binding, a reader or a drag goes to the nearest one. A step of 1 makes it a whole number, and a page's control steps the same way. |
-| `param axis in {ω, 1, 1 + ω}` | A param that's one of these values, the first unless `= 1` names another as written. They can be any one kind, and numbers go with points as points on the real axis. The name is the chosen value, so the math can use it directly: `imag(conj(axis)·P)` is the cross product with whichever direction was chosen. The param a reader sets is `axis.index`, which option it is, from 0, and a page labels each option with its text, or with its name: in `{"p = 0": tau / q, "q = 2p": …}` a page shows the names and the math gets the values, and `= "q = 2p"` starts there. |
+| `param axis in {ω, 1, 1 + ω}` | A param that's one of these values, the first unless `= 1` names another as written. They can be any one kind, and numbers go with points as points on the real axis. The name is the chosen value, so the math can use it directly: `imag(conj(axis)·P)` is the cross product with whichever direction was chosen. The param a reader sets is `axis.index`, which option it is, from 0, and a page labels each option with its text, or with its name: in `{"p = 0": 2·π / q, "q = 2p": …}` a page shows the names and the math gets the values, and `= "q = 2p"` starts there. |
 | `solve (x, y) from 0, 1: f(x, y) = 0, g(x, y) = 2` | Unknowns defined by equations (see below). |
 | `bind a = expr` | What drives a param when no reader has taken it over. |
 | `beat "caption" tag t { … }` | A discrete step of a construction (see below). |
@@ -59,7 +59,7 @@ Each form keeps its own representation (`goals.md`).
 |---|---|---|
 | Implicit | `curve c = implicit (x, y): x² + y² = r²` | Traced to a line |
 | Exact distance | `curve c = sdf (x, y): sqrt(x² + y²) - r` | Per pixel |
-| Parametric | `curve c = parametric (t): (cos(t), sin(t)) for t in 0..tau` | Sampled to a line |
+| Parametric | `curve c = parametric (t): (cos(t), sin(t)) for t in 0..2·π` | Sampled to a line |
 | Construction | `curve c = circle(O, A)`, `curve g = ray(O, B)` | A circle per pixel, a line or ray as a line |
 
 A parametric range can run down as well as up, and the curve is drawn from its first bound, so
@@ -251,7 +251,7 @@ colors every `a`. A renderer measures the text with its own font, and core says 
 ## Expressions
 
 Numbers, names, `+ - * / ^`, `·` for multiply, `²` and `³`, unary `-`, and calls. `(a, b)` is a
-point, which is also a complex number (see below), and `P.x` and `P.y` read one. Names can be Unicode. `time`, `pi`, `π` and `tau` are
+point, which is also a complex number (see below), and `P.x` and `P.y` read one. Names can be Unicode. `time`, `pi` and `π` are
 always available. Coordinates only exist inside the curve that names them.
 
 Points add and subtract, scale by a number, and negate. All of this expands to scalars at
@@ -303,7 +303,7 @@ exists, and root 0 is absent, rather than root 1 taking its place and jumping.
 
 ```
 let omega = -1 / 2 + sqrt(3) / 2·i
-fn to_turn(w) = tau·i·w / A
+fn to_turn(w) = 2·π·i·w / A
 fn spiral(t) = exp(t)
 ```
 
@@ -463,6 +463,7 @@ Newest first. "Why" is the reason at the time, so these can be revisited.
 
 | Date | Decision | Why |
 |---|---|---|
+| 2026-11-12 | `tau` and `τ` aren't constants; write `2·π` | τ is a variable as often as a constant, as in bipolar coordinates' (σ, τ), and a constant's name can't be declared by `let` or `param`. Hearts only worked because a function's parameters are substituted before constants are read. Constants a figure wants beyond π belong in a library it asks for, which is open |
 | 2026-11-11 | A sheet can define functions | Kris wrote a `glow` in a sheet and got "`glow` doesn't take [Real, Real]": a sheet's `fn` was parsed and then ignored, so its calls reached the type checker as unknown. A falloff or an easing is a sheet's business as much as a color is, and `fn` is how a document already says it, so sheets now take the same statement, and a call to a function nothing defines says so |
 | 2026-11-11 | A focus can follow a choice, and beats with no lengths can have one | Bounds' last beat is about whichever flower the reader's case closes, and the other should recede. Which one is the document's to say, so the focus follows the choice by an option's name, and the sheet only says how receding looks. Its tags became what each beat is (`boundary`, `middle`), not a color, since the sheet decides colors |
 | 2026-11-11 | Any property can be `none`, and `dash: 0` is solid | Kris wanted one solid ray among bounds' dashed ones, tried `dash: none` and then `dash: 0`, and neither worked: nothing could take back an earlier rule's dash, and a dash of 0 drew nothing at all. Both now do what he tried |

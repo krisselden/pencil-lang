@@ -194,10 +194,6 @@ fn compile_piece(e: &Expr, slots: &mut Slots, env: &Env) -> Option<(Node, u32)> 
                 PieceKey::Number(std::f64::consts::PI.to_bits()),
                 Node::Num(std::f64::consts::PI),
             ),
-            "tau" => slots.piece(
-                PieceKey::Number(std::f64::consts::TAU.to_bits()),
-                Node::Num(std::f64::consts::TAU),
-            ),
             "white" | "black" => return None,
             name => {
                 let slot = Node::Slot(slots.slot(name, env));

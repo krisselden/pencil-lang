@@ -277,7 +277,6 @@ pub fn emit_expr(e: &Expr) -> String {
         Expr::Sym(s) => match s.as_str() {
             "time" => "u.time".to_string(),
             "pi" | "π" => literal(std::f64::consts::PI),
-            "tau" => literal(std::f64::consts::TAU),
             "white" => "vec3<f32>(1.0)".to_string(),
             "black" => "vec3<f32>(0.0)".to_string(),
             "self.dist" => "self_dist".to_string(),

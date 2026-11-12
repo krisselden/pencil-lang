@@ -22,6 +22,13 @@ import urllib.parse
 
 
 class NoCache(http.server.SimpleHTTPRequestHandler):
+    # Pencil's own files are text, so a browser shows them rather than downloading them.
+    extensions_map = {
+        **http.server.SimpleHTTPRequestHandler.extensions_map,
+        ".pen": "text/plain; charset=utf-8",
+        ".style": "text/plain; charset=utf-8",
+    }
+
     def end_headers(self):
         self.send_header("Cache-Control", "no-cache")
         super().end_headers()

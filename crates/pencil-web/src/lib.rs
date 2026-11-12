@@ -483,3 +483,10 @@ pub fn figure_size(doc: &str, sheets: Vec<String>) -> Result<String, JsValue> {
     let composition = compose(doc, &refs).map_err(compile_error)?;
     Ok(serde_json::json!(composition.size).to_string())
 }
+
+/// How text reads, stage by stage, as JSON: its tokens, then the expression it is or the
+/// document's statements and IR. The AST page shows it.
+#[wasm_bindgen]
+pub fn inspect(src: &str) -> String {
+    pencil_core::inspect::inspect(src).to_string()
+}

@@ -17,7 +17,7 @@ let one = (1, 0)
 let A = (cosh(s)², 0)
 let R = sinh(s)·cosh(s)
 curve central = circle(A, A + (R, 0))
-curve limacon = parametric (u): one + (sinh(2·s) + 2·sinh(s)²·cos(u))·(cos(u), sin(u)) for u in 0..tau
+curve limacon = parametric (u): one + (sinh(2·s) + 2·sinh(s)²·cos(u))·(cos(u), sin(u)) for u in 0..2·π
 
 let C = A + R·(cos(t), sin(t))
 let along_tangent = (-sin(t), cos(t))
@@ -39,6 +39,6 @@ expression sum by beat {
   "z² = hub:a² + slow:2ab +.1 fast:b²" at at_sum
 }
 
-circles rings = circle(c, one) for i in 0..23 with angle = tau·i / 24, c = A + R·(cos(angle), sin(angle))
+circles rings = circle(c, one) for i in 0..23 with angle = 2·π·i / 24, c = A + R·(cos(angle), sin(angle))
 
 dot one, C, E

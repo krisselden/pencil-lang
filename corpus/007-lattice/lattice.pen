@@ -16,7 +16,7 @@ let omega = -1 / 2 + sqrt(3) / 2·i
 fn grid(a, b) = a + b·omega
 let A = grid(-p, q - p)
 
-fn to_turn(w) = tau·i·w / A
+fn to_turn(w) = 2·π·i·w / A
 fn skewed(t, m, n) = n·real(t) / (1 - i·m) + i·imag(t)
 fn center(w, m, n) = exp(skewed(to_turn(w), m, n))
 // How a circle at c(w) stands to the circle at 1. They touch when this is k².
@@ -32,8 +32,8 @@ let k = sqrt(tangency(omega, mu, nu))
 fn spiral(w) = center(w, mu, nu)
 // One turn up and down the cylinder. exp sends all of these to the same place, so what
 // crosses the 0 and 2πi lines in log space is what crosses at 1 in the spiral.
-fn above(w) = to_turn(w) + tau·i
-fn below(w) = to_turn(w) - tau·i
+fn above(w) = to_turn(w) + 2·π·i
+fn below(w) = to_turn(w) - 2·π·i
 
 let zero = 0
 let end_point = A
@@ -129,7 +129,7 @@ panel log "Log space" "T(w) = 2πi·w / A" {
   use lattice_points() through to_turn
   // The strip one turn of the spiral comes from: 0 ≤ Im < 2π.
   curve strip_low = line((0, 0), (1, 0)) tag strip
-  curve strip_high = line(tau·i, 1 + tau·i) tag strip
+  curve strip_high = line(2·π·i, 1 + 2·π·i) tag strip
   use triangle() through above as up
   use triangle() through below as down
   use flat_view() through to_turn

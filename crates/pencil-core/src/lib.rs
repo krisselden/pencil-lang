@@ -12,6 +12,7 @@ pub mod error;
 pub mod eval;
 pub mod fast;
 pub mod frame;
+pub mod inspect;
 pub mod ir;
 pub mod nearest;
 pub mod parse;
