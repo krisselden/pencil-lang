@@ -51,8 +51,8 @@ belongs: `language.md` for the language, the section below for a figure.
 
 Proposed by Claude on 2026-11-09, not yet agreed:
 
-1. **A custom element**, `<pencil-figure src style>`, built from `web/fit.js`. It's how Pencil gets onto the site, it can take its
-   aspect ratio from an Astro build so nothing shifts, and it replaces the setup each page in `web/` repeats.
+1. **A custom element:** built as `<pencil-figure src sheets>` ("The element" below), and the playground draws through it. Next:
+   move the pages in `web/` onto it, then the site.
 2. **A highlighting grammar** for `.pen` and `.style`. Cheap, and it doesn't fix the syntax in place.
 3. **A playground with an editor:** the element, an editor, and the WASM check, for people who want to try it. A first one for
    Kris is built ("The playground" below), ahead of the element and the grammar, so he can react to the syntax now.
@@ -505,10 +505,53 @@ app's browser pane. The editor is a textarea over a highlighted copy of its text
 - **Highlighting stops where a grammar would start.** It colors comments, strings, numbers with their units, and a line's first
   word when a space follows it, which picks out statements and `style`. Property names, selectors, built-ins and operators wait
   for the highlighting grammar.
-- **Stepping a timed figure seeks time.** It finds the moment a beat is done by halving, since `time_for` samples and landed
-  short of whole beats. An untimed figure's step sets `beat`, as the bounds page does.
+- **Stepping seeks time when `beat` follows time,** and sets `beat` otherwise. It finds the moment a beat is reached by halving,
+  since `time_for` samples and landed short of whole beats. At first only beats with lengths counted as following time, so
+  stepping the bounds figure set `beat` and left time behind: Next said 3/10 at 3.2 s, and playing on kept them apart. The core
+  now says which bindings time drives ("The element" below).
 - **Not checked:** Kris's own use of it, a phone, other browsers, and the page with the pane showing. The pane was hidden for
   most of the checks, so frames were drawn by hand rather than by the animation loop.
+
+## The element
+
+`web/pencil-figure.js`, built on 2026-11-11, first in the proposed order. `<pencil-figure src="…pen" sheets="a.style b.style">`
+owns the canvas, its labels, the GPU and the clock, so a page only says which figure and which sheets. The playground draws
+through it, and its controls only set and read the element. Checked in headless Chrome on the M1 Pro, on WebGPU and `?gl`.
+
+- **The clock is a Web Animations `Animation`** on the element, `animate([], { duration, iterations: Infinity })`, so pausing,
+  seeking and `playbackRate` are the browser's, and DevTools' Animations panel lists it as `pencil <file>`. The element reads it
+  each frame while it runs, as `progress × duration`. While paused it keeps its own time, since a time at the very end of a loop
+  would read back as 0. A figure with no `duration` loops on 10 s, as before.
+- **The core says what time drives.** `clock::time_driven` lists the bindings whose values follow time, through the bindings
+  they read and through a `solve`'s inputs. `clock::uses_time` says whether anything does, counting `time` read directly by a mark
+  (the limaçon's rings read it in a `with`), a style (`bands.style`) or the paper. `Player.info()` carries both, as `timeDriven`
+  and `usesTime`. Ring, wave and the lattice use no time, so the playground shows them no clock. The square uses it only through
+  its beats.
+- **Stepping and seeking follow the core's answer.** Setting `beat` seeks time when time drives it, and holds it otherwise.
+  Seeking hands a held `beat` back to time. Play hands back only the params time drives, so a param with no time binding keeps
+  the value a reader gave it, where before, play reset it to its default.
+- **Nothing runs while nothing changes.** The loop asks for a frame only while the clock runs, after a change, or while a label
+  spring is settling. Paused, a figure asked for no frames in 600 ms. The tangents asked for 14 as its labels settled, then
+  none. Before, the playground asked for every frame and drew only when something had changed.
+- **The GPU starts near the viewport and is let go on removal.** An `IntersectionObserver` with a 200px margin starts the
+  player, and the clock pauses offscreen and runs again where it was. Removing the element destroys the device, loses or
+  unconfigures the context, and gives it a new canvas, since a canvas keeps its context for life. A move, which disconnects
+  and connects at once, keeps it all. Forty figures in turn on WebGL2 all started, with no context warnings.
+- **The shape comes before the GPU.** Once the sources are fetched, `figure_size` sets the canvas's aspect ratio, so an
+  offscreen figure already takes its height. A page built ahead of time can set `--pencil-aspect` itself.
+- **`sheets`, not `style`,** since `style` is HTML's own attribute. `params="a: 0.5; beat: 2"` holds params as a reader would,
+  and `hold`, `release`, `value`, `params`, `time`, `beat`, `step`, `play` and `pause` are the script side. A drag fires `input`
+  with the param's name, which `Player.drag` now returns. `paused` starts it paused, and so does `prefers-reduced-motion`.
+- **The labels were drawn at twice their distance** whenever the device pixel ratio changed after the page loaded. The label layer
+  kept the ratio it was made with, and every page made it once. The element reads the ratio each frame, so zooming and moving
+  a window between screens are covered too.
+- **A hidden pane doesn't render,** so it runs no animation frames, no `IntersectionObserver` callbacks and no document timeline.
+  The desktop app's pane was hidden, so these checks drove headless Chrome over the DevTools protocol instead, with a counter
+  wrapped around `requestAnimationFrame`.
+- **Not built:** a `ScrollTimeline` or `ViewTimeline` as the clock, which would let scrolling scrub a figure. The element's
+  `iterations: Infinity` doesn't suit a scroll range, which wants one pass. Keyboard on a focused figure is still the page's.
+- **Not checked:** a phone, other browsers, the pages in `web/` and the site, which still set themselves up, and a draw that
+  fails after compiling, which the playground handles from the element's `error` event but no edit has reached.
 
 ## Distance to a curve
 

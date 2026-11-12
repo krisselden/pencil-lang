@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use pencil_core::frame::{self, Inputs};
 use pencil_core::style::Font;
 use pencil_core::terms::{Estimate, TextWidths};
-use pencil_core::{Composition, compose, eval};
+use pencil_core::{Composition, clock, compose, eval};
 use pencil_render::{FigurePipeline, FrameInputs};
 use wasm_bindgen::prelude::*;
 use web_sys::HtmlCanvasElement;
@@ -156,6 +156,13 @@ impl Player {
         })
     }
 
+    /// Lets go of the GPU now, rather than whenever the page's garbage collector gets to it:
+    /// browsers cap how many contexts can be live at once. The player can't be used after.
+    pub fn destroy(self) {
+        drop(self.figure);
+        self.device.destroy();
+    }
+
     /// The wgpu backend in use: `BrowserWebGpu` or `Gl`.
     #[wasm_bindgen(getter)]
     pub fn backend(&self) -> String {
@@ -224,10 +231,11 @@ impl Player {
         Ok(self.grabbed.is_some())
     }
 
-    /// Moves the grabbed handle to this device pixel, through its inverse.
-    pub fn drag(&mut self, time: f32, x: f64, y: f64) -> Result<(), JsError> {
+    /// Moves the grabbed handle to this device pixel, through its inverse. Returns the param it
+    /// set, if a handle is grabbed.
+    pub fn drag(&mut self, time: f32, x: f64, y: f64) -> Result<Option<String>, JsError> {
         let (Some((panel, handle)), Some((composition, _))) = (self.grabbed, &self.figure) else {
-            return Ok(());
+            return Ok(None);
         };
         let inputs = self.inputs(time);
         // A drag can leave its panel, and the inverse still answers.
@@ -243,14 +251,16 @@ impl Player {
         )
         .map_err(js_error)?;
         self.set_param(&param, value);
-        Ok(())
+        Ok(Some(param))
     }
 
     pub fn release(&mut self) {
         self.grabbed = None;
     }
 
-    /// The figure's params and duration, as JSON.
+    /// The figure's params and duration, as JSON. `timeDriven` names the bindings whose values
+    /// change with time, so a page knows whether stepping one seeks time or sets it, and
+    /// `usesTime` says whether anything does, so a figure that never moves needs no clock.
     pub fn info(&self) -> String {
         let Some((composition, _)) = &self.figure else {
             return "null".to_string();
@@ -270,6 +280,8 @@ impl Player {
             },
             "beats": figure.scene.beats,
             "beatLengths": figure.scene.beat_lengths,
+            "timeDriven": clock::time_driven(&figure.scene),
+            "usesTime": clock::composition_uses_time(composition),
             "params": figure.scene.params.iter().map(|p| serde_json::json!({
                 "id": p.id, "min": p.range[0], "max": p.range[1], "step": p.step,
                 "choice": p.choice.as_ref().map(|c| serde_json::json!({ "of": c.of, "options": c.options })),

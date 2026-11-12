@@ -5,6 +5,7 @@
 //! (the GPU path). Both evaluation paths implement the same shading, defined in
 //! one place each and compared by `pencil check`.
 
+pub mod clock;
 pub mod compile;
 pub mod diff;
 pub mod error;

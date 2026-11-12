@@ -19,6 +19,8 @@
     }
   }
   * { box-sizing: border-box; }
+  /* A rule that sets `display` would otherwise show what's hidden. */
+  [hidden] { display: none !important; }
   html, body { height: 100%; }
   body { margin: 0; background: var(--paper); color: var(--ink); font: 14px/1.45 ui-sans-serif, system-ui, sans-serif; }
   .app { display: grid; grid-template-columns: minmax(320px, 1fr) minmax(320px, 1fr); grid-template-rows: auto 1fr; height: 100%; }
@@ -56,10 +58,7 @@
 
   /* The figure, with its controls and what went wrong under it. */
   .view { display: flex; flex-direction: column; gap: 10px; padding: 12px; overflow: auto; min-height: 0; }
-  .stage { position: relative; overflow: hidden; width: 100%; margin: 0 auto; }
-  canvas { display: block; width: 100%; outline: none; }
-  .label { position: absolute; left: 0; top: 0; white-space: nowrap; font-family: system-ui, -apple-system, sans-serif; line-height: 1; will-change: transform; }
-  .label.math { font-family: Charter, 'Bitstream Charter', 'Sitka Text', Cambria, serif; font-style: italic; }
+  pencil-figure { width: 100%; margin: 0 auto; outline: none; }
   .controls { display: grid; grid-template-columns: auto 1fr auto; gap: 6px 10px; align-items: center; font-size: 13px; }
   .controls input[type=range] { width: 100%; }
   .controls label { font-family: ui-monospace, monospace; font-size: 12px; }
@@ -98,11 +97,13 @@
     </div>
   </section>
   <section class="view" aria-label="Figure">
-    <div class="stage" id="stage"><canvas id="figure" tabindex="0"></canvas></div>
+    <pencil-figure id="figure" tabindex="0"></pencil-figure>
     <div class="controls">
-      <button id="play" type="button">Pause</button>
-      <input id="time" type="range" min="0" max="10" step="0.001" value="0" aria-label="Time">
-      <output id="time-value">0.00 s</output>
+      <div id="clock" style="display: contents">
+        <button id="play" type="button">Pause</button>
+        <input id="time" type="range" min="0" max="10" step="0.001" value="0" aria-label="Time">
+        <output id="time-value">0.00 s</output>
+      </div>
       <div class="row" id="beat-row" hidden>
         <button id="back" type="button" aria-label="Previous beat">◀</button>
         <output id="beat-value"></output>
