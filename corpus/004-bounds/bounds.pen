@@ -3,6 +3,7 @@
 // 1 has radius sin(θ/2), so k = sin(θ/2). Names follow the GeoGebra construction, except
 // where one would clash: the param q keeps its name, so the circle q is q_1.
 doc bounds
+// The ten beats share it, 3 s each, in a video. On a page, the reader's buttons take `beat` over.
 duration 30
 
 viewport {
@@ -131,9 +132,6 @@ beat "Every center in both flowers lies on one curve, the level curve of the cir
 dot P
 label name_p = "P" at P offset (12, -12)
 handle P sets theta = atan2(max(pointer.y, 0), pointer.x)
-
-// A video steps through the beats. On a page, the reader's buttons take this param over.
-bind beat = min(floor(time / 3), 9)
 
 // For the readout: what this P closes for.
 let ratio = sin(theta / 2)

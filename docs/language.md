@@ -84,7 +84,10 @@ page's column in another's.
 
 A `beat` block groups marks into a discrete step. Any `beat` block declares the param `beat`,
 ranging over the beats, and its marks get the block's tags. A `self.age` in a style is that
-mark's own `beat − index`, so one rule can fade every earlier beat.
+mark's own `beat − index`, so one rule can fade every earlier beat. In a figure with a `duration`, beats
+with no lengths share it evenly and `beat` follows time, so the timing is said once: ten beats in
+`duration 30` are 3 s each. With no duration, a reader steps through them. `bind beat = …` can
+still drive them by something else.
 
 **A beat can have a length,** which makes it one move of a figure's story. Beats and pauses run in
 the order they're written, and their lengths add up to the `duration`, so making one longer moves
@@ -451,6 +454,7 @@ Newest first. "Why" is the reason at the time, so these can be revisited.
 
 | Date | Decision | Why |
 |---|---|---|
+| 2026-11-11 | Beats with no lengths share the `duration` | Bounds said its timing twice, in `duration 30` and in `bind beat = min(floor(time / 3), 9)`, so any other duration, or the playground's default loop, cut beats off. Kris expected the beats to share the duration, which says it once. They stay whole steps, so `self.age` keeps its meaning, and the same change gives `beat` its range by name: it had gone to the first param, which in bounds was `q` |
 | 2026-11-11 | A param can be one of a list of values, with no enums | The Doyle spiral's shader picks which of ω, 1 and 1 + ω to count arms along, and switches on the pick in two places. Both follow from the direction itself, so a choice of values lets the math use the pick, where an enum would need matching. The options' text labels a page's control, as the site's `{ω, 1, 1 + ω}` comment does |
 | 2026-11-11 | A param can have a `step` | Kris added `N` to the limaçon in the playground and found no way to say it counts. A step is part of what the param is, as a type would be, so it belongs in the document and not in a page's control: the value snaps wherever it comes from, and a page reads the step to build its control. The integer params in the corpus say `step 1` now |
 | 2026-11-11 | An error names the file it's in, the document or which sheet, as well as its line and column | A sheet's error came back with the sheet's line and no file, and `pencil` printed it after the `.pen`'s path. The playground has to put an error at its place in the right editor |

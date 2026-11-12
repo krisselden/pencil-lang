@@ -2982,8 +2982,26 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
     if !story.moves.is_empty() {
         finish_story(&mut scene, &story)?;
     } else if !scene.beats.is_empty() {
-        let last = scene.beats.len() as f64 - 1.0;
-        scene.params[0].range = [0.0, last];
+        // Steps with no lengths: `beat` is which one it's on, a whole number.
+        let count = scene.beats.len() as f64;
+        if let Some(param) = scene.params.iter_mut().find(|p| p.id == BEAT_PARAM) {
+            param.range = [0.0, count - 1.0];
+        }
+        // With a duration, they share it evenly and follow time, so the timing is said once.
+        // Without one there's no clock, and a reader steps through them.
+        if let Some(duration) = scene.duration {
+            let share = duration / count;
+            if let Some(binding) = scene.bindings.iter_mut().find(|b| b.id == BEAT_PARAM) {
+                binding.expr = Expr::app(
+                    "Clamp",
+                    vec![
+                        Expr::app("Floor", vec![div(Expr::sym("time"), num(share))]),
+                        num(0.0),
+                        num(count - 1.0),
+                    ],
+                );
+            }
+        }
     }
     // Bind expressions were lowered where they were written, and only here replace
     // the param's default.
@@ -4242,6 +4260,45 @@ mod tests {
         assert_eq!(s.marks[1].beat, Some(1));
         assert!(s.marks[1].tags.contains(&"aux".to_string()));
         assert!(!s.marks[1].tags.contains(&"blue".to_string()));
+    }
+
+    /// Beats with no lengths share a figure's duration, so its timing is said once, and with no
+    /// duration they're steps for a reader. `beat` gets their range wherever it's declared.
+    #[test]
+    fn beats_with_no_lengths_share_the_duration() {
+        let doc = |head: &str| {
+            scene(&format!(
+                "{head}
+                 param q = 6 in 4..12 step 1
+                 let A = (0, 0)
+                 let B = (1, 0)
+                 let C = (2, 0)
+                 beat \"One\" {{
+                   dot A
+                 }}
+                 beat \"Two\" {{
+                   dot B
+                 }}
+                 beat \"Three\" {{
+                   dot C
+                 }}"
+            ))
+            .unwrap()
+        };
+        let s = doc("duration 12");
+        let range = |s: &Scene, id: &str| s.params.iter().find(|p| p.id == id).unwrap().range;
+        assert_eq!(range(&s, "q"), [4.0, 12.0]);
+        assert_eq!(range(&s, BEAT_PARAM), [0.0, 2.0]);
+        let beat = Expr::sym(BEAT_PARAM);
+        for (time, want) in [(0.0, 0.0), (3.9, 0.0), (4.0, 1.0), (11.9, 2.0), (12.0, 2.0)] {
+            assert_eq!(at_time(&s, time, &beat), want, "at {time} s");
+        }
+        // A longer duration spreads them out, rather than leaving the last one to hold.
+        assert_eq!(at_time(&doc("duration 30"), 10.0, &beat), 1.0);
+        // No duration, no clock.
+        assert_eq!(at_time(&doc(""), 20.0, &beat), 0.0);
+        // Something else can still drive them.
+        assert_eq!(at_time(&doc("duration 12\nbind beat = 2"), 0.0, &beat), 2.0);
     }
 
     /// A scene's value for `name` at a time, with every binding worked out in order.

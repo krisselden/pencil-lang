@@ -22,7 +22,7 @@
       "id": "near_zero.y"
     },
     {
-      "expr": ["Min",["Floor",["Divide","time",3.0]],9.0],
+      "expr": ["Clamp",["Floor",["Divide","time",3.0]],0.0,9.0],
       "id": "beat"
     },
     {
@@ -1228,7 +1228,7 @@
   "params": [
     {
       "id": "q",
-      "range": [0.0,9.0],
+      "range": [4.0,12.0],
       "step": 1.0
     },
     {
@@ -1241,7 +1241,7 @@
     },
     {
       "id": "beat",
-      "range": [0.0,0.0]
+      "range": [0.0,9.0]
     }
   ],
   "places": [],
