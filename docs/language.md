@@ -21,6 +21,7 @@ rules can sit in the document or in separate style files.
 | `fn f(a, b) = expr` | A function, inlined where it's called. No recursion. |
 | `param a = 1 in 0..tau` | A root that time or a reader can drive. The range constrains drags. |
 | `param n = 3 in 1..12 step 1` | A param that only takes its range's start plus whole steps, however it's driven: its default, a binding, a reader or a drag goes to the nearest one. A step of 1 makes it a whole number, and a page's control steps the same way. |
+| `param axis in {ω, 1, 1 + ω}` | A param that's one of these values, the first unless `= 1` names another as written. They can be any one kind, and numbers go with points as points on the real axis. The name is the chosen value, so the math can use it directly: `imag(conj(axis)·P)` is the cross product with whichever direction was chosen. The param a reader sets is `axis.index`, which option it is, from 0, and a page labels each option with its text. |
 | `solve (x, y) from 0, 1: f(x, y) = 0, g(x, y) = 2` | Unknowns defined by equations (see below). |
 | `bind a = expr` | What drives a param when no reader has taken it over. |
 | `beat "caption" tag t { … }` | A discrete step of a construction (see below). |
@@ -450,6 +451,7 @@ Newest first. "Why" is the reason at the time, so these can be revisited.
 
 | Date | Decision | Why |
 |---|---|---|
+| 2026-11-11 | A param can be one of a list of values, with no enums | The Doyle spiral's shader picks which of ω, 1 and 1 + ω to count arms along, and switches on the pick in two places. Both follow from the direction itself, so a choice of values lets the math use the pick, where an enum would need matching. The options' text labels a page's control, as the site's `{ω, 1, 1 + ω}` comment does |
 | 2026-11-11 | A param can have a `step` | Kris added `N` to the limaçon in the playground and found no way to say it counts. A step is part of what the param is, as a type would be, so it belongs in the document and not in a page's control: the value snaps wherever it comes from, and a page reads the step to build its control. The integer params in the corpus say `step 1` now |
 | 2026-11-11 | An error names the file it's in, the document or which sheet, as well as its line and column | A sheet's error came back with the sheet's line and no file, and `pencil` printed it after the `.pen`'s path. The playground has to put an error at its place in the right editor |
 | 2026-11-09 | Lengths have units: a bare number is the figure's own, `px` a design pixel and `em` the reader's text size | Pages shrink a figure to fit, and its strokes thin with it as an SVG's do, which reads fine. Its labels shrinking too is what made it hard to read, and the blog keeps them a screen size. Saying which frame a length is in, rather than a hidden rule that labels are different, keeps a title that should scale and a hairline that shouldn't expressible. And all three are lengths, so they mix |

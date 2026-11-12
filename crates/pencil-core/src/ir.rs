@@ -63,6 +63,17 @@ pub struct Param {
     /// The param only takes the values its range's start plus a whole number of these, as a
     /// whole number does with a step of 1.
     pub step: Option<f64>,
+    /// For a param that's one of a list of values, the value's name and what each option says.
+    /// The param itself is which one, counting from 0.
+    pub choice: Option<Choice>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Choice {
+    /// The name the document reads, which is the chosen value.
+    pub of: String,
+    /// Each option as written, which is how a page labels it.
+    pub options: Vec<String>,
 }
 
 impl Param {
@@ -463,9 +474,15 @@ impl Scene {
                 "param": h.param,
                 "inverse": h.inverse.to_mathjson(),
             })).collect::<Vec<_>>(),
-            "params": self.params.iter().map(|p| match p.step {
-                Some(step) => json!({ "id": p.id, "range": p.range, "step": step }),
-                None => json!({ "id": p.id, "range": p.range }),
+            "params": self.params.iter().map(|p| {
+                let mut param = json!({ "id": p.id, "range": p.range });
+                if let Some(step) = p.step {
+                    param["step"] = json!(step);
+                }
+                if let Some(choice) = &p.choice {
+                    param["choice"] = json!({ "of": choice.of, "options": choice.options });
+                }
+                param
             }).collect::<Vec<_>>(),
             "bindings": self.bindings.iter().map(|b| json!({
                 "id": b.id,

@@ -8,7 +8,7 @@ use crate::diff::derivative;
 use crate::error::Error;
 use crate::eval::{self, Env};
 use crate::ir::{
-    Arc, Binding, Expr, Expression, Form, Handle, Hang, Mark, Param, Part, Piece, Scene, Spot,
+    Arc, Binding, Choice, Expr, Expression, Form, Handle, Hang, Mark, Param, Part, Piece, Scene, Spot,
     System, Viewport,
 };
 use crate::parse::{CurveSyntax, Document, Item, ManyKind, PartSyntax};
@@ -983,6 +983,7 @@ fn declare_beat(scene: &mut Scene, lowerer: &mut Lowerer) {
         id: BEAT_PARAM.to_string(),
         range: [0.0, 0.0],
         step: None,
+        choice: None,
     });
     scene.bindings.push(Binding {
         id: BEAT_PARAM.to_string(),
@@ -2192,6 +2193,87 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
                 }
                 binds.push((name.clone(), low, *line));
             }
+            Item::Choice {
+                name,
+                default,
+                options,
+                line,
+            } => {
+                claim(name, *line)?;
+                let fail = at_line(*line);
+                let labels: Vec<String> = options.iter().map(|(_, text)| text.clone()).collect();
+                let first = match default {
+                    None => 0,
+                    Some(text) => {
+                        let written = |s: &str| s.split_whitespace().collect::<String>();
+                        labels
+                            .iter()
+                            .position(|label| written(label) == written(text))
+                            .ok_or_else(|| {
+                                Error::at(
+                                    *line,
+                                    1,
+                                    format!(
+                                        "`{name}` starts at {text}, which isn't one of its options: {}",
+                                        labels.join(", ")
+                                    ),
+                                )
+                            })?
+                    }
+                };
+                let mut values = Vec::new();
+                for (option, _) in options {
+                    values.push(lowerer.lower(option, &none, 0).map_err(&fail)?);
+                }
+                // A number is a point on the real axis, so numbers and points can be offered together.
+                if values.iter().any(|v| matches!(v, Val::Point(..))) {
+                    for v in &mut values {
+                        if let Val::Scalar(x) = v {
+                            *v = Val::Point(x.clone(), num(0.0));
+                        }
+                    }
+                }
+                if let Some(other) = values.iter().find(|v| !v.same_kind(&values[0])) {
+                    return Err(Error::at(
+                        *line,
+                        1,
+                        format!(
+                            "`{name}` offers {} and {}, and its options have to be of one kind",
+                            values[0].kind(),
+                            other.kind()
+                        ),
+                    ));
+                }
+                // The param is which option, and the name is that option's value.
+                let index = format!("{name}.index");
+                scene.params.push(Param {
+                    id: index.clone(),
+                    range: [0.0, (values.len() - 1) as f64],
+                    step: Some(1.0),
+                    choice: Some(Choice {
+                        of: name.clone(),
+                        options: labels,
+                    }),
+                });
+                scene.bindings.push(Binding {
+                    id: index.clone(),
+                    expr: num(first as f64),
+                });
+                lowerer.scalars.insert(index.clone());
+                let which = Expr::sym(&index);
+                let mut fields = values[0].fields();
+                for (k, value) in values.iter().enumerate().skip(1) {
+                    // From option k on, it's that one's.
+                    let reached = sub(which.clone(), num(k as f64 - 0.5));
+                    fields = fields
+                        .into_iter()
+                        .zip(value.fields())
+                        .map(|(before, here)| Expr::app("IfNonnegative", vec![reached.clone(), here, before]))
+                        .collect();
+                }
+                let chosen = values[0].with_fields(fields);
+                lowerer.bind(&mut scene, name, chosen);
+            }
             Item::Param {
                 name,
                 default,
@@ -2224,6 +2306,7 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
                     id: name.clone(),
                     range,
                     step,
+                    choice: None,
                 });
                 scene.bindings.push(Binding {
                     id: name.clone(),
@@ -4005,6 +4088,52 @@ mod tests {
         let env = env_of(&s, 0.0);
         assert_eq!(env.get("P"), Some(2.0));
         assert_eq!(env.get("Q"), Some(3.0));
+    }
+
+    /// A choice is one of its values: the param is which one, and a page gets each as written.
+    #[test]
+    fn a_choice_is_one_of_its_values() {
+        let s = scene(
+            "let ω = -1 / 2 + sqrt(3) / 2·i
+             param axis in {ω, 1, 1 + ω}
+             param k = 3 in {2, 3,  5}
+             let P = 2·axis",
+        )
+        .unwrap();
+        let index = s.params.iter().find(|p| p.id == "axis.index").unwrap();
+        assert_eq!(index.range, [0.0, 2.0]);
+        assert_eq!(index.step, Some(1.0));
+        let choice = index.choice.as_ref().unwrap();
+        assert_eq!(choice.of, "axis");
+        assert_eq!(choice.options, ["ω", "1", "1 + ω"]);
+        let at = |which: f64| {
+            let inputs = crate::frame::Inputs {
+                time: 0.0,
+                params: vec![("axis.index".into(), which), ("k.index".into(), which)],
+            };
+            let env = eval::scene_env(&s, &inputs, None).unwrap();
+            [env.get("P.x").unwrap(), env.get("P.y").unwrap(), env.get("k").unwrap()]
+        };
+        let h = 3f64.sqrt();
+        // The number 1 is a point on the real axis, offered alongside ω.
+        for (which, want) in [(0.0, [-1.0, h, 2.0]), (1.0, [2.0, 0.0, 3.0]), (2.0, [1.0, h, 5.0])] {
+            let got = at(which);
+            assert!(got.iter().zip(want).all(|(g, w)| near(*g, w)), "{which}: {got:?}");
+        }
+        // Between options, a reader's value goes to the nearest.
+        assert!(near(at(1.4)[0], 2.0));
+        // The default is named by an option, as written, and spaces don't matter.
+        let env = env_of(&s, 0.0);
+        assert_eq!(env.get("axis.index"), Some(0.0));
+        assert_eq!(env.get("k"), Some(3.0));
+    }
+
+    #[test]
+    fn a_choice_says_what_went_wrong() {
+        let err = scene("param k = 4 in {2, 3, 5}").unwrap_err().to_string();
+        assert!(err.contains("starts at 4, which isn't one of its options: 2, 3, 5"), "{err}");
+        let err = scene("let c = circle((0, 0), 1)\nparam k in {c, 1}").unwrap_err().to_string();
+        assert!(err.contains("offers a circle and a number"), "{err}");
     }
 
     #[test]

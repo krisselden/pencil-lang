@@ -338,12 +338,20 @@ function paintControls() {
     // An untimed figure's beats are stepped, not slid.
     if (param.id === 'beat' && beats.length) continue;
     const label = document.createElement('label');
-    label.textContent = param.id;
+    // A choice is named for its value, and its param is which option.
+    label.textContent = param.choice?.of ?? param.id;
     label.htmlFor = `param-${param.id}`;
-    const input = document.createElement('input');
-    Object.assign(input, { type: 'range', id: `param-${param.id}`, min: param.min, max: param.max, step: param.step ?? ((param.max - param.min) / 1000 || 0.001) });
+    let input;
+    if (param.choice) {
+      input = document.createElement('select');
+      input.id = `param-${param.id}`;
+      param.choice.options.forEach((text, i) => input.append(new Option(text, String(i))));
+    } else {
+      input = document.createElement('input');
+      Object.assign(input, { type: 'range', id: `param-${param.id}`, min: param.min, max: param.max, step: param.step ?? ((param.max - param.min) / 1000 || 0.001) });
+    }
     const out = document.createElement('output');
-    input.addEventListener('input', () => {
+    input.addEventListener(param.choice ? 'change' : 'input', () => {
       setPlaying(false);
       held.set(param.id, Number(input.value));
       player.set_param(param.id, Number(input.value));
@@ -362,10 +370,11 @@ function readControls() {
     if (!input) continue;
     let value;
     try { value = player.value(param.id, time); } catch { continue; }
-    if (document.activeElement !== input) input.value = value;
-    // A stepped param shows as many decimals as its step has, so a whole number shows as one.
+    if (document.activeElement !== input) input.value = String(value);
+    // A stepped param shows as many decimals as its step has, so a whole number shows as one. A
+    // choice shows its option in the control itself.
     const decimals = param.step == null ? 3 : (String(param.step).split('.')[1] ?? '').length;
-    input.nextElementSibling.textContent = Number.isFinite(value) ? value.toFixed(decimals) : '—';
+    input.nextElementSibling.textContent = param.choice ? '' : Number.isFinite(value) ? value.toFixed(decimals) : '—';
     input.previousElementSibling.classList.toggle('held', held.has(param.id));
   }
   const beats = info?.beats ?? [];

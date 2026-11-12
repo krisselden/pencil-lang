@@ -53,6 +53,14 @@ pub enum Item {
         step: Option<Expr>,
         line: usize,
     },
+    /// `param axis in {ω, 1, 1 + ω}`: a param that's one of these values. Each comes with its
+    /// text as written, which is how a page names it, and so is the default if there is one.
+    Choice {
+        name: String,
+        default: Option<String>,
+        options: Vec<(Expr, String)>,
+        line: usize,
+    },
     Bind {
         name: String,
         expr: Expr,
@@ -437,6 +445,9 @@ fn lex(src: &str) -> Result<Vec<Lexed>, Error> {
 struct Parser {
     toks: Vec<Lexed>,
     pos: usize,
+    /// The source, and where each line starts in it, so a piece can be quoted as written.
+    src: Vec<char>,
+    line_starts: Vec<usize>,
 }
 
 /// Builtin names in source, and their MathJSON heads. Anything else is left under
@@ -1061,14 +1072,47 @@ impl Parser {
         })
     }
 
+    /// Where token `i` starts in the source.
+    fn offset(&self, i: usize) -> usize {
+        let t = &self.toks[i];
+        self.line_starts.get(t.line - 1).map_or(self.src.len(), |s| s + t.col - 1)
+    }
+
+    /// The source from token `from` up to token `to`, as written.
+    fn text(&self, from: usize, to: usize) -> String {
+        let (a, b) = (self.offset(from), self.offset(to).min(self.src.len()));
+        self.src[a..b.max(a)].iter().collect::<String>().trim().to_string()
+    }
+
     fn param(&mut self, line: usize) -> Result<Item, Error> {
         let name = self.ident("a param")?;
+        let start = self.pos + 1;
         let default = if self.eat("=") {
-            self.expr()?
+            Some(self.expr()?)
         } else {
-            Expr::Num(0.0)
+            None
         };
+        let default_text = default.as_ref().map(|_| self.text(start, self.pos));
         self.keyword("in")?;
+        if self.eat("{") {
+            let mut options = Vec::new();
+            loop {
+                let from = self.pos;
+                let option = self.expr()?;
+                options.push((option, self.text(from, self.pos)));
+                if self.eat("}") {
+                    break;
+                }
+                self.expect(",")?;
+            }
+            return Ok(Item::Choice {
+                name,
+                default: default_text,
+                options,
+                line,
+            });
+        }
+        let default = default.unwrap_or(Expr::Num(0.0));
         let range = self.range()?;
         let step = if self.at_word("step") {
             self.bump();
@@ -1391,20 +1435,26 @@ impl Parser {
 }
 
 /// One expression, as written inside a label's text.
-pub fn parse_expression(src: &str) -> Result<Expr, Error> {
-    Parser {
-        toks: lex(src)?,
-        pos: 0,
+impl Parser {
+    fn new(src: &str) -> Result<Parser, Error> {
+        let src: Vec<char> = src.chars().collect();
+        let mut line_starts = vec![0];
+        line_starts.extend(src.iter().enumerate().filter(|(_, c)| **c == '\n').map(|(i, _)| i + 1));
+        Ok(Parser {
+            toks: lex(&src.iter().collect::<String>())?,
+            pos: 0,
+            src,
+            line_starts,
+        })
     }
-    .expr()
+}
+
+pub fn parse_expression(src: &str) -> Result<Expr, Error> {
+    Parser::new(src)?.expr()
 }
 
 pub fn parse(src: &str) -> Result<Document, Error> {
-    Parser {
-        toks: lex(src)?,
-        pos: 0,
-    }
-    .document()
+    Parser::new(src)?.document()
 }
 
 #[cfg(test)]

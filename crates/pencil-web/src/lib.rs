@@ -272,6 +272,7 @@ impl Player {
             "beatLengths": figure.scene.beat_lengths,
             "params": figure.scene.params.iter().map(|p| serde_json::json!({
                 "id": p.id, "min": p.range[0], "max": p.range[1], "step": p.step,
+                "choice": p.choice.as_ref().map(|c| serde_json::json!({ "of": c.of, "options": c.options })),
             })).collect::<Vec<_>>(),
         })
         .to_string()
