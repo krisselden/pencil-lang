@@ -261,8 +261,8 @@ def unlabeled(pen, script):
     be seen: a label is how a reader knows which letter was meant, and it settles letters that
     sound alike, as C and E do."""
     text = Path(pen).read_text()
-    labels = set(re.findall(r'^label\s+\w+\s*=\s*"([^"]*)"', text, re.M))
-    said = [("caption", c) for c in re.findall(r'^beat\s+\w+\s+"([^"]+)"', text, re.M)]
+    labels = set(re.findall(r'^\s*label\s+\w+\s*=\s*"([^"]*)"', text, re.M))
+    said = [("caption", c) for c in re.findall(r'^beat\s+(?:\w+\s+)?"([^"]+)"', text, re.M)]
     said += [("narration", ANCHOR.sub("", line)) for line in lines_of(Path(script).read_text())]
     missing = []
     for where, words in said:
@@ -271,6 +271,10 @@ def unlabeled(pen, script):
             # "A circle" and "I" are words, unless a capital follows nothing lowercase.
             after = words[m.end():].lstrip()
             if m[1] in ("A", "I") and after[:1].islower():
+                continue
+            # A number in an equation, as in `p = 0`, `θ/2` or `360°`, is a value, not a point.
+            before = words[:m.start()].rstrip()
+            if m[1][0].isdigit() and (before[-1:] in "=/(−-+·×^" and before or after[:1] in "°/)^·"):
                 continue
             names.append(m[1])
         if where == "narration":

@@ -4146,6 +4146,26 @@ mod tests {
         assert_eq!(env.get("k"), Some(3.0));
     }
 
+    /// An option can have a name, which a page shows, while the math gets its value.
+    #[test]
+    fn a_choices_options_can_have_names() {
+        let s = scene(
+            "param q = 6 in 4..12 step 1
+             param case = \"q = 2p\" in {\"p = 0\": tau / q, \"q = 2p\": 2·acos((sqrt(5 + 4·cos(tau / q)) - 1) / 2), q}",
+        )
+        .unwrap();
+        let index = s.params.iter().find(|p| p.id == "case.index").unwrap();
+        // An option with no name shows as written.
+        assert_eq!(index.choice.as_ref().unwrap().options, ["p = 0", "q = 2p", "q"]);
+        let env = env_of(&s, 0.0);
+        assert_eq!(env.get("case.index"), Some(1.0));
+        let tau = std::f64::consts::TAU;
+        let c = ((5.0 + 4.0 * (tau / 6.0).cos()).sqrt() - 1.0) / 2.0;
+        assert!(near(env.get("case").unwrap(), 2.0 * c.acos()));
+        let err = scene("param n = \"one\" in 0..1").unwrap_err().to_string();
+        assert!(err.contains("names an option, which only a choice has"), "{err}");
+    }
+
     #[test]
     fn a_choice_says_what_went_wrong() {
         let err = scene("param k = 4 in {2, 3, 5}").unwrap_err().to_string();

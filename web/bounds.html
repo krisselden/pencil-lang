@@ -11,12 +11,6 @@
          font: 15px/1.45 ui-sans-serif, system-ui, sans-serif; }
   main { max-width: 765px; margin: 0 auto; }
   h1 { font-size: 16px; font-weight: 600; margin: 0 0 12px; }
-  .stage { position: relative; overflow: hidden; touch-action: none; }
-  canvas { display: block; width: 100%; outline-offset: 2px; }
-  .label { position: absolute; left: 0; top: 0; pointer-events: none; white-space: nowrap;
-           font-family: system-ui, -apple-system, sans-serif; line-height: 1;
-           paint-order: stroke; -webkit-text-stroke-color: transparent; will-change: transform; }
-  .label.math { font-family: Charter, 'Bitstream Charter', 'Sitka Text', Cambria, serif; font-style: italic; }
   .controls { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; margin: 12px 0; }
   .controls input[type=range] { width: 7rem; }
   fieldset { border: 0; padding: 0; margin: 0; display: flex; gap: 8px; align-items: center; }
@@ -27,22 +21,19 @@
   #caption { color: var(--ink); min-height: 3em; }
   #readout { font-variant-numeric: tabular-nums; }
   #error { color: var(--bad); white-space: pre-wrap; font-family: ui-monospace, monospace; font-size: 13px; }
+  pencil-figure { touch-action: none; }
 </style>
 </head>
 <body>
 <main>
   <h1>Bounds: the two boundary flowers, by ruler and compass</h1>
-  <div class="stage" id="stage"><canvas id="figure" tabindex="0" aria-label="A ruler-and-compass construction of the two boundary Doyle flowers around the circle at 1, one step at a time. Left and right arrow keys step through it."></canvas></div>
+  <pencil-figure id="figure" src="../corpus/004-bounds/bounds.pen" sheets="../corpus/004-bounds/blog.style" paused
+    tabindex="0" aria-label="A ruler-and-compass construction of the two boundary Doyle flowers around the circle at 1, one step at a time. Left and right arrow keys step through it."></pencil-figure>
   <div class="controls">
     <button id="back" type="button">Back</button>
     <span id="count"></span>
     <button id="next" type="button">Next</button>
-    <label>q <input id="q" type="range" min="4" max="12" step="1" value="6"> <output id="q-value" for="q">6</output></label>
-    <fieldset>
-      <legend>closes for</legend>
-      <label><input type="radio" name="case" value="1" checked> p = 0</label>
-      <label><input type="radio" name="case" value="0"> q = 2p</label>
-    </fieldset>
+    <span id="params"></span>
     <span>Drag P.</span>
   </div>
   <p id="caption" aria-live="polite"></p>
@@ -51,184 +42,107 @@
   <p id="error" role="alert"></p>
 </main>
 <script type="module">
-  import init, { Player, figure_size } from './pkg/pencil_web.js';
-  import { fit, follow } from './fit.js';
+  // The figure says what its controls are: q's range and step, and the case's options by name.
+  // The page only lays them out, so it can't disagree with the playground, which reads the same.
+  import './pencil-figure.js';
 
-  const BASE = '../corpus/004-bounds/';
   const $ = (id) => document.getElementById(id);
-  const canvas = $('figure');
-  const stage = $('stage');
-  const params = new URLSearchParams(location.search);
+  const figure = $('figure');
+  if (new URLSearchParams(location.search).has('gl')) figure.setAttribute('gl', '');
 
-  const read = async (name) => {
-    const response = await fetch(BASE + name, { cache: 'no-store' });
-    if (!response.ok) throw new Error(`${name}: ${response.status}`);
-    return response.text();
+  // q and the case close the flower by setting θ through its binding, so changing one hands θ back
+  // from a drag.
+  const set = (name, value) => {
+    figure.hold(name, value);
+    figure.release('theta');
   };
 
-  const firstDoc = await read('bounds.pen');
-  const dpr = window.devicePixelRatio || 1;
-  await init();
-  fit(canvas, JSON.parse(figure_size(firstDoc, [await read('blog.style')])));
-  const player = await Player.create(canvas, params.has('gl'));
-
-  // The page's state is its bindings: it never computes the figure's values itself.
-  let beats = [];
-  let beat = 0;
-  let dirty = true;
-  const TIME = 0;
-
-  const restore = () => {
-    player.set_param('beat', beat);
-    player.set_param('q', Number($('q').value));
-    player.set_param('ring', Number(document.querySelector('input[name=case]:checked').value));
-  };
-
-  let loaded = '';
-  let compiles = 0;
-  const reload = async () => {
-    let doc, style;
-    try {
-      [doc, style] = await Promise.all([read('bounds.pen'), read('blog.style')]);
-    } catch (e) {
-      $('error').textContent = String(e);
-      return;
+  function controls() {
+    const box = $('params');
+    box.replaceChildren();
+    for (const param of figure.info.params) {
+      if (param.choice) {
+        // A few options read best side by side.
+        const set_ = document.createElement('fieldset');
+        const legend = document.createElement('legend');
+        legend.textContent = param.choice.of;
+        set_.append(legend);
+        param.choice.options.forEach((text, i) => {
+          const label = document.createElement('label');
+          const input = Object.assign(document.createElement('input'), { type: 'radio', name: param.id, value: String(i) });
+          input.checked = figure.value(param.id) === i;
+          input.addEventListener('change', () => set(param.id, i));
+          label.append(input, ` ${text}`);
+          set_.append(label);
+        });
+        box.append(set_);
+      } else if (param.id === 'q') {
+        const label = document.createElement('label');
+        const input = Object.assign(document.createElement('input'), {
+          type: 'range', min: param.min, max: param.max, step: param.step ?? 'any', value: figure.value('q'),
+        });
+        const out = document.createElement('output');
+        out.textContent = input.value;
+        input.addEventListener('input', () => {
+          out.textContent = input.value;
+          set('q', Number(input.value));
+        });
+        label.append('q ', input, ' ', out);
+        box.append(label);
+      }
     }
-    const key = `${doc}\0${style}`;
-    if (key === loaded) return;
-    loaded = key;
-    try {
-      player.load(doc, [style]);
-      beats = JSON.parse(player.info()).beats;
-      restore();
-      $('error').textContent = '';
-      compiles += 1;
-      $('status').textContent = `${player.backend}, ${canvas.width}×${canvas.height}, compiled ${compiles} time${compiles === 1 ? '' : 's'}`;
-      go(beat);
-    } catch (e) {
-      $('error').textContent = `bounds.pen or blog.style: ${e.message}`;
-    }
-  };
-
-  function go(index) {
-    beat = Math.max(0, Math.min(beats.length - 1, index));
-    player.set_param('beat', beat);
-    $('back').disabled = beat === 0;
-    $('next').disabled = beat === beats.length - 1;
-    $('count').textContent = `${beat + 1} / ${beats.length}`;
-    $('caption').textContent = beats[beat];
-    dirty = true;
   }
-  $('back').addEventListener('click', () => go(beat - 1));
-  $('next').addEventListener('click', () => go(beat + 1));
-  canvas.addEventListener('keydown', (e) => {
-    if (e.key === 'ArrowRight') go(beat + 1);
-    else if (e.key === 'ArrowLeft') go(beat - 1);
+
+  function readout() {
+    const beats = figure.info?.beats ?? [];
+    const beat = Math.round(figure.beat);
+    $('count').textContent = `${beat + 1} / ${beats.length}`;
+    $('caption').textContent = beats[beat] ?? '';
+    $('back').disabled = beat <= 0;
+    $('next').disabled = beat >= beats.length - 1;
+    const v = (name) => figure.value(name);
+    const degrees = (r) => `${(r * 180 / Math.PI).toFixed(1)}°`;
+    $('readout').textContent =
+      `θ ${degrees(v('theta'))}  k ${v('ratio').toFixed(3)}  ring ${v('ring_count').toFixed(2)}  2p: p ${v('zoom_count').toFixed(2)}`;
+  }
+
+  let compiles = 0;
+  figure.addEventListener('load', () => {
+    compiles += 1;
+    $('error').textContent = '';
+    $('status').textContent = `${figure.backend ?? 'starting'}, compiled ${compiles} time${compiles === 1 ? '' : 's'}`;
+    controls();
+    readout();
+  });
+  figure.addEventListener('draw', readout);
+  figure.addEventListener('error', (e) => { $('error').textContent = String(e.detail.error?.message ?? e.detail.error); });
+  $('back').addEventListener('click', () => figure.step(-1));
+  $('next').addEventListener('click', () => figure.step(1));
+  figure.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowRight') figure.step(1);
+    else if (e.key === 'ArrowLeft') figure.step(-1);
     else return;
     e.preventDefault();
   });
 
-  // The q slider and the case set θ through its binding, so they hand θ back to it.
-  const snap = () => {
-    player.release_param('theta');
-    restore();
-    $('q-value').textContent = $('q').value;
-    dirty = true;
-  };
-  $('q').addEventListener('input', snap);
-  for (const radio of document.querySelectorAll('input[name=case]')) radio.addEventListener('change', snap);
-
-  const device = (e) => {
-    const box = canvas.getBoundingClientRect();
-    return [(e.clientX - box.left) * (canvas.width / box.width), (e.clientY - box.top) * (canvas.height / box.height)];
-  };
-  canvas.addEventListener('pointerdown', (e) => {
-    const [x, y] = device(e);
-    if (player.grab(TIME, x, y, 24 * dpr)) {
-      canvas.setPointerCapture(e.pointerId);
-      canvas.style.cursor = 'grabbing';
-      player.drag(TIME, x, y);
-      dirty = true;
-    }
-  });
-  canvas.addEventListener('pointermove', (e) => {
-    if (!canvas.hasPointerCapture(e.pointerId)) {
-      const [x, y] = device(e);
-      canvas.style.cursor = player.grab(TIME, x, y, 24 * dpr) ? 'grab' : '';
-      player.release();
-      return;
-    }
-    const [x, y] = device(e);
-    player.drag(TIME, x, y);
-    dirty = true;
-  });
-  const end = (e) => {
-    if (canvas.hasPointerCapture(e.pointerId)) canvas.releasePointerCapture(e.pointerId);
-    player.release();
-    canvas.style.cursor = '';
-  };
-  canvas.addEventListener('pointerup', end);
-  canvas.addEventListener('pointercancel', end);
-
-  const spans = new Map();
-  const drawLabels = (labels) => {
-    const present = new Set();
-    for (const label of labels) {
-      present.add(label.id);
-      let span = spans.get(label.id);
-      if (!span) {
-        span = document.createElement('span');
-        span.className = 'label';
-        stage.append(span);
-        spans.set(label.id, span);
-      }
-      if (span.textContent !== label.text) span.textContent = label.text;
-      span.hidden = false;
-      span.classList.toggle('math', label.math);
-      span.style.fontSize = `${label.size / dpr}px`;
-      span.style.color = label.color;
-      span.style.webkitTextStrokeColor = label.haloColor;
-      span.style.webkitTextStrokeWidth = `${label.halo / dpr}px`;
-      span.style.opacity = label.opacity;
-      span.style.transform = `translate(${label.x / dpr}px, ${label.y / dpr}px) translate(-50%, -50%)`;
-    }
-    // A label that isn't listed doesn't exist this frame.
-    for (const [id, span] of spans) span.hidden = !present.has(id);
-  };
-
-  const draw = () => {
-    drawLabels(JSON.parse(player.draw(TIME, dpr)));
-    const v = (name) => player.value(name, TIME);
-    const degrees = (r) => `${(r * 180 / Math.PI).toFixed(1)}°`;
-    $('readout').textContent =
-      `θ ${degrees(v('theta'))}  k ${v('ratio').toFixed(3)}  ring ${v('ring_count').toFixed(2)}  2p: p ${v('zoom_count').toFixed(2)}`;
-  };
-
-  // Draws only when something changed, so a still figure costs nothing.
-  // Draws now: a resize calls it too, so the cleared canvas is never shown.
-  const paint = () => {
-    dirty = false;
+  // Live reload while editing the figure: recompile when either file changes.
+  const read = async (url) => (await fetch(url, { cache: 'no-store' })).text();
+  let loaded = null;
+  setInterval(async () => {
     try {
-      draw();
+      const texts = await Promise.all([read(figure.getAttribute('src')), read(figure.getAttribute('sheets'))]);
+      const key = texts.join('\0');
+      if (loaded === null) loaded = key;
+      else if (key !== loaded) {
+        loaded = key;
+        figure.load(texts[0], [texts[1]]);
+      }
     } catch (e) {
       $('error').textContent = e.message;
     }
-  };
-  const frame = () => {
-    if (dirty) paint();
-    requestAnimationFrame(frame);
-  };
-
-  await reload();
-  setInterval(async () => {
-    const before = loaded;
-    await reload();
-    if (loaded !== before) dirty = true;
   }, 500);
-  requestAnimationFrame(frame);
 
-  window.pencil = { player, dpr, draw, go, redraw() { dirty = true; } };
-  follow(canvas, player, paint);
+  window.pencil = { figure };
 </script>
 </body>
 </html>

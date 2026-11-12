@@ -21,7 +21,7 @@ rules can sit in the document or in separate style files.
 | `fn f(a, b) = expr` | A function, inlined where it's called. No recursion. |
 | `param a = 1 in 0..tau` | A root that time or a reader can drive. The range constrains drags. |
 | `param n = 3 in 1..12 step 1` | A param that only takes its range's start plus whole steps, however it's driven: its default, a binding, a reader or a drag goes to the nearest one. A step of 1 makes it a whole number, and a page's control steps the same way. |
-| `param axis in {ω, 1, 1 + ω}` | A param that's one of these values, the first unless `= 1` names another as written. They can be any one kind, and numbers go with points as points on the real axis. The name is the chosen value, so the math can use it directly: `imag(conj(axis)·P)` is the cross product with whichever direction was chosen. The param a reader sets is `axis.index`, which option it is, from 0, and a page labels each option with its text. |
+| `param axis in {ω, 1, 1 + ω}` | A param that's one of these values, the first unless `= 1` names another as written. They can be any one kind, and numbers go with points as points on the real axis. The name is the chosen value, so the math can use it directly: `imag(conj(axis)·P)` is the cross product with whichever direction was chosen. The param a reader sets is `axis.index`, which option it is, from 0, and a page labels each option with its text, or with its name: in `{"p = 0": tau / q, "q = 2p": …}` a page shows the names and the math gets the values, and `= "q = 2p"` starts there. |
 | `solve (x, y) from 0, 1: f(x, y) = 0, g(x, y) = 2` | Unknowns defined by equations (see below). |
 | `bind a = expr` | What drives a param when no reader has taken it over. |
 | `beat "caption" tag t { … }` | A discrete step of a construction (see below). |
@@ -354,7 +354,9 @@ On a page, `player.value` reads an absent binding as `NaN`.
 ## Styles
 
 `style selector, selector { property: value; … }`. Later rules win, across files, with the
-document's own rules last. There's no specificity (SPEC/15).
+document's own rules last. There's no specificity (SPEC/15). Any property can be `none`, which
+takes back what an earlier rule set, as in CSS: after `style ray { dash: 10px }`,
+`style base { dash: none }` draws that one ray solid, and `stroke: none` draws no line.
 
 **A style sheet can name values** with `let ink = rgb(28, 27, 25)`. The last sheet to define a name decides what it
 means everywhere, including in rules written before it, as a CSS variable does. So `corpus/theme.style` holds a theme's
@@ -407,7 +409,7 @@ pixels, so they can't be in `em`.
 | `stroke` | Curves, lines, regions, dots | A color. |
 | `width` | Strokes | A length. Can vary along the stroke with `self.t`. |
 | `head`, `head_span` | Curves | With `head: 13px`, a curve ends in an arrowhead. `head_span: 1` holds it to 60% of the last 1 of the curve's parameter, so it can't dwarf a spiral's tight turns. |
-| `dash`, `gap` | Lines | Lengths. A loop gets a whole number of dashes, stretched to fit. |
+| `dash`, `gap` | Lines | Lengths. A loop gets a whole number of dashes, stretched to fit. `dash: 0`, like `dash: none`, is solid. |
 | `cap` | Lines | `butt` (default) or `round`. |
 | `draw` | Strokes | A hint: `auto` (default), `line` or `field`. |
 | `blend` | Edges, sides | `gamma` (default, as SVG does), `linear`, or `add`, which adds to what's there in display values and never covers it. |
@@ -454,6 +456,8 @@ Newest first. "Why" is the reason at the time, so these can be revisited.
 
 | Date | Decision | Why |
 |---|---|---|
+| 2026-11-11 | Any property can be `none`, and `dash: 0` is solid | Kris wanted one solid ray among bounds' dashed ones, tried `dash: none` and then `dash: 0`, and neither worked: nothing could take back an earlier rule's dash, and a dash of 0 drew nothing at all. Both now do what he tried |
+| 2026-11-11 | A choice's options can have names | Bounds chooses which angle is a q-th of a turn, and its options are the two values of θ that make it so. As written they're formulas, which say nothing to a reader, while the cases have names, p = 0 and q = 2p, which the captions use. A name and a value go together, so a name rides on the option, and a choice of bare names still waits for a figure that needs one |
 | 2026-11-11 | Beats with no lengths share the `duration` | Bounds said its timing twice, in `duration 30` and in `bind beat = min(floor(time / 3), 9)`, so any other duration, or the playground's default loop, cut beats off. Kris expected the beats to share the duration, which says it once. They stay whole steps, so `self.age` keeps its meaning, and the same change gives `beat` its range by name: it had gone to the first param, which in bounds was `q` |
 | 2026-11-11 | A param can be one of a list of values, with no enums | The Doyle spiral's shader picks which of ω, 1 and 1 + ω to count arms along, and switches on the pick in two places. Both follow from the direction itself, so a choice of values lets the math use the pick, where an enum would need matching. The options' text labels a page's control, as the site's `{ω, 1, 1 + ω}` comment does |
 | 2026-11-11 | A param can have a `step` | Kris added `N` to the limaçon in the playground and found no way to say it counts. A step is part of what the param is, as a type would be, so it belongs in the document and not in a page's control: the value snaps wherever it comes from, and a page reads the step to build its control. The integer params in the corpus say `step 1` now |

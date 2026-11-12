@@ -6,11 +6,15 @@
       "id": "q"
     },
     {
-      "expr": 1.0,
-      "id": "ring"
+      "expr": 0.0,
+      "id": "case.index"
     },
     {
-      "expr": ["Mix",["Multiply",2.0,["Arccos",["Divide",["Subtract",["Sqrt",["Add",5.0,["Multiply",4.0,["Cos",["Divide","tau","q"]]]]],1.0],2.0]]],["Divide","tau","q"],"ring"],
+      "expr": ["IfNonnegative",["Subtract","case.index",0.5],["Multiply",2.0,["Arccos",["Divide",["Subtract",["Sqrt",["Add",5.0,["Multiply",4.0,["Cos",["Divide","tau","q"]]]]],1.0],2.0]]],["Divide","tau","q"]],
+      "id": "case"
+    },
+    {
+      "expr": "case",
       "id": "theta"
     },
     {
@@ -56,6 +60,22 @@
     {
       "expr": ["Where",["Subtract",["Add",["Multiply",["Subtract","A.x","O.x"],["Subtract","A.x","O.x"]],["Multiply",["Subtract","A.y","O.y"],["Subtract","A.y","O.y"]]],1e-12],"A.y"],
       "id": "f.by"
+    },
+    {
+      "expr": ["Where",["Subtract",["Add",["Multiply",["Subtract","A.x","O.x"],["Subtract","A.x","O.x"]],["Multiply",["Subtract","A.y","O.y"],["Subtract","A.y","O.y"]]],1e-12],"O.x"],
+      "id": "base.ax"
+    },
+    {
+      "expr": ["Where",["Subtract",["Add",["Multiply",["Subtract","A.x","O.x"],["Subtract","A.x","O.x"]],["Multiply",["Subtract","A.y","O.y"],["Subtract","A.y","O.y"]]],1e-12],"O.y"],
+      "id": "base.ay"
+    },
+    {
+      "expr": ["Where",["Subtract",["Add",["Multiply",["Subtract","A.x","O.x"],["Subtract","A.x","O.x"]],["Multiply",["Subtract","A.y","O.y"],["Subtract","A.y","O.y"]]],1e-12],"A.x"],
+      "id": "base.bx"
+    },
+    {
+      "expr": ["Where",["Subtract",["Add",["Multiply",["Subtract","A.x","O.x"],["Subtract","A.x","O.x"]],["Multiply",["Subtract","A.y","O.y"],["Subtract","A.y","O.y"]]],1e-12],"A.y"],
+      "id": "base.by"
     },
     {
       "expr": "O.x",
@@ -637,6 +657,19 @@
     {
       "beat": 0,
       "form": {
+        "at": ["O.x","O.y"],
+        "away": [0.0,-1.0],
+        "kind": "label",
+        "offset": [0.0,0.0],
+        "text": "0",
+        "values": []
+      },
+      "id": "zero",
+      "tags": ["label","ink"]
+    },
+    {
+      "beat": 0,
+      "form": {
         "at": ["A.x","A.y"],
         "kind": "dot"
       },
@@ -647,13 +680,24 @@
       "beat": 0,
       "form": {
         "at": ["A.x","A.y"],
+        "away": [0.0,-1.0],
         "kind": "label",
-        "offset": [12.0,-12.0],
+        "offset": [0.0,0.0],
         "text": "1",
         "values": []
       },
       "id": "one",
       "tags": ["label","ink"]
+    },
+    {
+      "beat": 0,
+      "form": {
+        "closed": false,
+        "kind": "polyline",
+        "points": [["base.ax","base.ay"],[["Add","base.ax",["Multiply",["Divide",["Subtract","base.bx","base.ax"],["Sqrt",["Add",["Power",["Subtract","base.bx","base.ax"],2.0],["Power",["Subtract","base.by","base.ay"],2.0]]]],100.0]],["Add","base.ay",["Multiply",["Divide",["Subtract","base.by","base.ay"],["Sqrt",["Add",["Power",["Subtract","base.bx","base.ax"],2.0],["Power",["Subtract","base.by","base.ay"],2.0]]]],100.0]]]]
+      },
+      "id": "base",
+      "tags": ["ray","ink"]
     },
     {
       "beat": 0,
@@ -680,6 +724,19 @@
       },
       "id": "B",
       "tags": ["dot","red"]
+    },
+    {
+      "beat": 1,
+      "form": {
+        "at": ["B.x","B.y"],
+        "away": ["B.x","B.y"],
+        "kind": "label",
+        "offset": [0.0,0.0],
+        "text": "B",
+        "values": []
+      },
+      "id": "name_b",
+      "tags": ["label","red"]
     },
     {
       "beat": 1,
@@ -937,7 +994,20 @@
         "kind": "dot"
       },
       "id": "F",
-      "tags": ["dot","pink"]
+      "tags": ["dot","pink","named"]
+    },
+    {
+      "beat": 5,
+      "form": {
+        "at": ["F.x","F.y"],
+        "away": [["Negate","F.x"],["Negate","F.y"]],
+        "kind": "label",
+        "offset": [0.0,0.0],
+        "text": "F",
+        "values": []
+      },
+      "id": "name_f",
+      "tags": ["label","pink"]
     },
     {
       "beat": 5,
@@ -1204,6 +1274,16 @@
       "tags": ["curve","accent"]
     },
     {
+      "beat": 9,
+      "form": {
+        "closed": false,
+        "kind": "polyline",
+        "points": [["O.x","O.y"],[["Multiply",4.0,["Cos",["Divide","tau","q"]]],["Multiply",4.0,["Sin",["Divide","tau","q"]]]]]
+      },
+      "id": "step",
+      "tags": ["segment","accent"]
+    },
+    {
       "beat": null,
       "form": {
         "at": ["P.x","P.y"],
@@ -1232,8 +1312,13 @@
       "step": 1.0
     },
     {
-      "id": "ring",
-      "range": [0.0,1.0]
+      "choice": {
+        "of": "case",
+        "options": ["p = 0","q = 2p"]
+      },
+      "id": "case.index",
+      "range": [0.0,1.0],
+      "step": 1.0
     },
     {
       "id": "theta",

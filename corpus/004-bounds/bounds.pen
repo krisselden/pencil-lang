@@ -12,25 +12,29 @@ viewport {
 }
 
 fn dir(t) = (cos(t), sin(t))
-// θ where the flower closes: a ring of q for p = 0, or neighbors at 360°/q for q = 2p.
-fn closing(q, ring) = mix(2·acos((sqrt(5 + 4·cos(tau / q)) - 1) / 2), tau / q, ring)
 
+// q steps make a full turn, and the case says which angle is the step. For p = 0 it's θ, the angle
+// to P and the blue centers. For q = 2p it's the angle φ to F and the pink centers, and since
+// cos φ = cos²(θ/2) + cos(θ/2) − 1, θ follows from it.
 param q = 6 in 4..12 step 1
-param ring = 1 in 0..1
-// The sliders set θ through its binding, and dragging P takes it over. It's the same
-// mechanism as time and a slider in Unroll.
+param case in {"p = 0": tau / q, "q = 2p": 2·acos((sqrt(5 + 4·cos(tau / q)) - 1) / 2)}
+// θ is the construction's own: P's angle, which sets the circle at 1. The case closes it, and
+// dragging P takes it over, to see the angles in between.
 param theta in 0.2..1.85
-bind theta = closing(q, ring)
+bind theta = case
 
 let near_zero = (-0.2, 0)
 
 beat "Start with the unit circle and a point P on it, at angle θ." tag ink {
   let O = (0, 0)
   dot O
+  label zero = "0" at O away (0, -1)
   let A = (1, 0)
   dot A tag named
-  label one = "1" at A offset (12, -12)
+  label one = "1" at A away (0, -1)
   let f = line(O, A)
+  // The base that P's angle, and the step, are measured from.
+  curve base = ray(O, A)
   curve c = circle(O, A) tag aux
   let P = dir(theta)
 }
@@ -38,6 +42,7 @@ beat "Start with the unit circle and a point P on it, at angle θ." tag ink {
 beat "Halfway from 1 to P is B. The circle at 1 through B has radius sin(θ/2): that is k." tag red {
   let B = midpoint(P, A)
   dot B
+  label name_b = "B" at B away B
   curve d = circle(A, B)
 }
 
@@ -80,7 +85,8 @@ beat "q = 2p: the circle about −½ through cos(θ/2) crosses the unit circle a
   dot E
   curve e = circle(E, D) tag aux
   let F = intersect(c, e, 1)
-  dot F
+  dot F tag named
+  label name_f = "F" at F away -F
   curve i = ray(O, F)
 }
 
@@ -126,6 +132,8 @@ beat "Every center in both flowers lies on one curve, the level curve of the cir
   curve p_1 = circle(Z, Q) tag aux
   // The pedal: for each tangent of the circle, the foot of the perpendicular from A.
   curve level = parametric (u): A + dir(u)·dot(Z + p_1.r·dir(u) - A, dir(u)) for u in 0..tau
+  // The step the case closes for, a q-th of a turn: through P for p = 0, and through F for q = 2p.
+  segment step = O, 4·dir(tau / q)
 }
 
 // Drawn last, so it stays on top. The param's range is the constraint on the drag.

@@ -831,6 +831,8 @@ fn apply(
             }
             continue;
         }
+        // `none` takes back what an earlier rule set, as in CSS: `dash: none` is a solid line.
+        let clear = matches!(value, Expr::Sym(word) if word == "none");
         let value = &with_story(value, mark);
         let measure = matches!(
             prop.as_str(),
@@ -875,10 +877,12 @@ fn apply(
         }
         // `fill_opacity` is a measure that can still fade with distance, as a glow does.
         let spatial = !measure || prop == "fill_opacity";
-        let ty = type_of(value, &scope, spatial)?;
-        let want = if measure { Ty::Real } else { Ty::Color };
-        if ty != want {
-            return Err(format!("`{prop}` needs a {want:?}, found a {ty:?}"));
+        if !clear {
+            let ty = type_of(value, &scope, spatial)?;
+            let want = if measure { Ty::Real } else { Ty::Color };
+            if ty != want {
+                return Err(format!("`{prop}` needs a {want:?}, found a {ty:?}"));
+            }
         }
         if spatial && !spatial_ok && (uses(value, SELF_DIST) || uses(value, SELF_PIXEL)) {
             return Err(format!(
@@ -909,7 +913,7 @@ fn apply(
             ));
         }
         // Drawing part of a stroke needs a start: a parameter, or the first of its points.
-        if prop == "trim" {
+        if prop == "trim" && !clear {
             let has_start = match form {
                 Form::Parametric(_) | Form::Polyline { .. } | Form::Arrow { .. } => true,
                 Form::Field { line, .. } => line.is_some(),
@@ -924,11 +928,12 @@ fn apply(
             }
         }
         if matches!(prop.as_str(), "ticks" | "tick")
+            && !clear
             && !matches!(form, Form::Polyline { points, closed: false } if points.len() == 2)
         {
             return Err(format!("`{id}` isn't a segment, so it can't use `{prop}`"));
         }
-        if matches!(prop.as_str(), "leader" | "leader_gap") && !matches!(form, Form::Label { .. }) {
+        if matches!(prop.as_str(), "leader" | "leader_gap") && !clear && !matches!(form, Form::Label { .. }) {
             return Err(format!("`{id}` isn't a label, so it can't use `{prop}`"));
         }
         let slot = match (facet, prop.as_str()) {
@@ -981,7 +986,7 @@ fn apply(
                 return Err(format!("unknown property `{prop}`"));
             }
         };
-        *slot = Some(value.clone());
+        *slot = if clear { None } else { Some(value.clone()) };
     }
     Ok(())
 }
@@ -1001,6 +1006,35 @@ mod tests {
 
     fn paper_of(doc: &str, sheets: &[&str]) -> Result<Expr, Error> {
         Ok(crate::build(doc, sheets)?.styles.paper.unwrap())
+    }
+
+    /// `none` takes back what an earlier rule set, so one ray can be solid among dashed ones.
+    #[test]
+    fn none_takes_a_property_back() {
+        let doc = "let O = (0, 0)\nlet A = (1, 0)\ncurve base = ray(O, A)\ncurve other = ray(O, (0, 1))";
+        let f = build(
+            doc,
+            &["style ray { stroke: black; dash: 10px; gap: 8px }\nstyle base { dash: none; stroke: none }"],
+        )
+        .unwrap();
+        let [base, other] = [&f.styles.marks[0], &f.styles.marks[1]];
+        assert!(base.dash.is_none() && base.stroke.is_none());
+        assert!(base.gap.is_some(), "only what's named is taken back");
+        assert!(other.dash.is_some() && other.stroke.is_some());
+    }
+
+    /// A dash of no length is no dashing: the line is drawn solid, not as nothing.
+    #[test]
+    fn a_dash_of_zero_is_solid() {
+        let doc = "let O = (0, 0)\nlet A = (1, 0)\ncurve base = ray(O, A)";
+        let f = build(doc, &["style base { stroke: black; width: 2px; dash: 0; gap: 8px }"]).unwrap();
+        let p = crate::frame::prepare(&f, &crate::frame::Inputs::at(0.0), 64, 64, 1.0).unwrap();
+        let segments = &p.strokes[0];
+        assert!(!segments.is_empty());
+        // Each segment carries its dash and period, and both are 0 for a solid line.
+        for s in segments.chunks(crate::stroke::FLOATS_PER_SEGMENT) {
+            assert_eq!((s[8], s[9]), (0.0, 0.0));
+        }
     }
 
     #[test]

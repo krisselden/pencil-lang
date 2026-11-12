@@ -170,22 +170,22 @@ fn bounds_circles_keep_the_ratio_to_their_distance() {
     }
 }
 
-/// The closing formulas in `closing`, from the blog's `closingTheta`.
+/// Each case makes its angle a q-th of a turn, as the blog's `closingTheta` does: θ itself for
+/// p = 0, and F's angle for q = 2p.
 #[test]
 fn bounds_closes_where_it_should() {
-    use std::f64::consts::{PI, TAU};
+    use std::f64::consts::TAU;
     for q in 4..=12 {
         let q = q as f64;
-        let env = bounds_env(&[("q", q), ("ring", 1.0)]);
+        let env = bounds_env(&[("q", q), ("case.index", 0.0)]);
         assert!((env.get("theta").unwrap() - TAU / q).abs() < 1e-9);
         assert!((env.get("ring_count").unwrap() - q).abs() < 1e-9);
         // For q = 2p, the neighbors sit at 360°/q, so π/φ is p.
-        let env = bounds_env(&[("q", q), ("ring", 0.0)]);
+        let env = bounds_env(&[("q", q), ("case.index", 1.0)]);
         assert!(
             (env.get("zoom_count").unwrap() - q / 2.0).abs() < 1e-9,
             "q = {q}"
         );
-        let _ = PI;
     }
 }
 

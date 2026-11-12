@@ -23,6 +23,10 @@ style dot.red    { fill: oklch(0.51, 0.15, 27) }
 style dot.blue   { fill: oklch(0.51, 0.145, 250) }
 style dot.pink   { fill: oklch(0.51, 0.15, 345) }
 style .named     { opacity: reveal(self.age, 1, 1) }
-style P          { fill: rgb(242, 240, 235); stroke: rgb(18, 17, 15); width: 4px; radius: 9px; opacity: 1 }
+// The handle: a ring, small enough not to hide what's near P.
+style P          { fill: rgb(242, 240, 235); stroke: rgb(18, 17, 15); width: 2px; radius: 5.5px; opacity: 1 }
+style base, step { stroke: rgb(18, 17, 15); width: 1.5px; dash: none; opacity: reveal(self.age, 1, 1) }
 
-style one, name_p { fill: rgb(18, 17, 15); size: 1em; halo: 0.2em; font: math }
+style one, name_p, zero, name_b, name_f { fill: rgb(18, 17, 15); size: 1em; halo: 0.2em; font: math }
+// Named in a caption, so each shows from its beat on.
+style zero, name_b, name_f { opacity: reveal(self.age, 1, 1) }

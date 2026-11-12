@@ -1229,8 +1229,12 @@ fn push_line(
     }
 
     let (mut on, mut period) = (0.0, 0.0);
-    if let Some(dash) = &style.dash {
-        let dash = pixels(dash, &env)?;
+    // A dash of no length is no dashing, so `dash: 0` draws solid, as `dash: none` does.
+    let dash = match &style.dash {
+        Some(dash) => Some(pixels(dash, &env)?).filter(|d| *d > 0.0),
+        None => None,
+    };
+    if let Some(dash) = dash {
         let gap = match &style.gap {
             Some(gap) => pixels(gap, &env)?,
             None => dash,

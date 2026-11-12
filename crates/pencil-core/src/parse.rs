@@ -1087,19 +1087,36 @@ impl Parser {
     fn param(&mut self, line: usize) -> Result<Item, Error> {
         let name = self.ident("a param")?;
         let start = self.pos + 1;
-        let default = if self.eat("=") {
-            Some(self.expr()?)
+        // A choice's default can be one of its options' names.
+        let (default, default_text) = if self.eat("=") {
+            if let Tok::Str(named) = self.peek().clone() {
+                self.bump();
+                (None, Some(named))
+            } else {
+                let default = self.expr()?;
+                (Some(default), Some(self.text(start, self.pos)))
+            }
         } else {
-            None
+            (None, None)
         };
-        let default_text = default.as_ref().map(|_| self.text(start, self.pos));
         self.keyword("in")?;
         if self.eat("{") {
             let mut options = Vec::new();
             loop {
+                // An option can have a name, `"q = 2p": 2·acos(…)`, which a page shows instead of
+                // its value as written.
+                let named = match (self.peek().clone(), self.toks.get(self.pos + 1).map(|t| &t.tok)) {
+                    (Tok::Str(name), Some(Tok::Punct(":"))) => {
+                        self.bump();
+                        self.bump();
+                        Some(name)
+                    }
+                    _ => None,
+                };
                 let from = self.pos;
                 let option = self.expr()?;
-                options.push((option, self.text(from, self.pos)));
+                let text = named.unwrap_or_else(|| self.text(from, self.pos));
+                options.push((option, text));
                 if self.eat("}") {
                     break;
                 }
@@ -1112,7 +1129,15 @@ impl Parser {
                 line,
             });
         }
-        let default = default.unwrap_or(Expr::Num(0.0));
+        let default = match (default, default_text) {
+            (Some(default), _) => default,
+            (None, Some(named)) => {
+                return Err(self.error(format!(
+                    "a param's default is a number; \"{named}\" names an option, which only a choice has"
+                )));
+            }
+            (None, None) => Expr::Num(0.0),
+        };
         let range = self.range()?;
         let step = if self.at_word("step") {
             self.bump();
