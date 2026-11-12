@@ -26,11 +26,20 @@ pub struct Move {
     pub length: Expr,
     pub show: Vec<String>,
     pub drop: Vec<String>,
-    pub focus: Vec<String>,
+    pub focus: Vec<Focus>,
     pub tags: Vec<String>,
     /// Whether it has a block, closed by an `EndBeat`.
     pub block: bool,
     pub line: usize,
+}
+
+/// What a beat is about: a mark or `.tag`, and maybe only while a choice is on one option, as in
+/// `.middle if case = "q = 2p"`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Focus {
+    pub word: String,
+    /// The choice, and the option, as written.
+    pub when: Option<(String, String)>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -193,6 +202,7 @@ pub enum Item {
     Beat {
         caption: String,
         tags: Vec<String>,
+        focus: Vec<Focus>,
     },
     EndBeat,
     /// A beat with a length: one move of a figure's story. Its marks are the block's, if it has
@@ -870,10 +880,14 @@ impl Parser {
                 let length = self.expr()?;
                 let (mut show, mut drop, mut focus, mut tags) = (vec![], vec![], vec![], vec![]);
                 loop {
+                    if self.at_word("focus") {
+                        self.bump();
+                        focus.extend(self.focus_list()?);
+                        continue;
+                    }
                     let list = match self.peek() {
                         Tok::Ident(w) if w == "show" => &mut show,
                         Tok::Ident(w) if w == "drop" => &mut drop,
-                        Tok::Ident(w) if w == "focus" => &mut focus,
                         Tok::Ident(w) if w == "tag" => &mut tags,
                         _ => break,
                     };
@@ -927,8 +941,18 @@ impl Parser {
                     }
                 };
                 let tags = self.tags()?;
+                let focus = if self.at_word("focus") {
+                    self.bump();
+                    self.focus_list()?
+                } else {
+                    Vec::new()
+                };
                 self.expect("{")?;
-                items.push(Item::Beat { caption, tags });
+                items.push(Item::Beat {
+                    caption,
+                    tags,
+                    focus,
+                });
                 while !self.eat("}") {
                     if *self.peek() == Tok::Eof {
                         return Err(self.error("this `beat` isn't closed"));
@@ -1070,6 +1094,36 @@ impl Parser {
             body,
             line,
         })
+    }
+
+    /// A beat's `focus`: marks and `.tags`, each maybe only while a choice is on one option.
+    fn focus_list(&mut self) -> Result<Vec<Focus>, Error> {
+        let mut list = Vec::new();
+        loop {
+            // A tag is written `.tag`, as in a selector.
+            let dotted = self.eat(".");
+            let word = self.ident("a mark or `.tag`")?;
+            let word = if dotted { format!(".{word}") } else { word };
+            let when = if self.at_word("if") {
+                self.bump();
+                let choice = self.ident("a choice")?;
+                self.expect("=")?;
+                match self.bump() {
+                    Tok::Str(option) => Some((choice, option)),
+                    other => {
+                        return Err(self.error(format!(
+                            "a focus follows a choice by an option's name in quotes, found {other}"
+                        )));
+                    }
+                }
+            } else {
+                None
+            };
+            list.push(Focus { word, when });
+            if !self.eat(",") {
+                return Ok(list);
+            }
+        }
     }
 
     /// Where token `i` starts in the source.

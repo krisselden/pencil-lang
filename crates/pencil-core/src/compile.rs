@@ -970,6 +970,8 @@ struct Story {
     blocks: Vec<(usize, std::ops::Range<usize>)>,
     /// The block being read: its beat, and where its marks start.
     open: Option<(usize, usize)>,
+    /// What each beat with no length is about, by its index, with the line it's on.
+    step_focus: Vec<(usize, Vec<crate::parse::Focus>, usize)>,
     caption: String,
 }
 
@@ -1119,22 +1121,99 @@ fn finish_story(scene: &mut Scene, story: &Story) -> Result<(), Error> {
         lives.push(Some(life));
     }
 
-    // Focus holds until a beat names another, and starts on everything.
+    let named: Vec<(usize, &[crate::parse::Focus], usize)> = story
+        .moves
+        .iter()
+        .enumerate()
+        .map(|(k, written)| (k, written.focus.as_slice(), written.line))
+        .collect();
+    let focuses = focus_over(scene, &named, progress)?;
+
+    for ((mark, life), focus) in scene.marks.iter_mut().zip(lives).zip(focuses) {
+        mark.life = life;
+        mark.focus = focus;
+    }
+    Ok(())
+}
+
+/// How much each mark is in focus, as the beats name what they're about. Focus holds until a beat
+/// names another, and starts on everything. A beat's `focus` can follow a choice, so what it's about
+/// can depend on which option a reader picked. `progress(k)` is how far the figure has come into
+/// beat `k`.
+fn focus_over(
+    scene: &Scene,
+    named: &[(usize, &[crate::parse::Focus], usize)],
+    progress: impl Fn(usize) -> Expr,
+) -> Result<Vec<Option<Expr>>, Error> {
+    let marks = &scene.marks;
+    let find = |word: &str, line: usize| -> Result<Vec<usize>, Error> {
+        let found: Vec<usize> = match word.strip_prefix('.') {
+            Some(tag) => (0..marks.len())
+                .filter(|&i| marks[i].tags.iter().any(|t| t == tag))
+                .collect(),
+            None => (0..marks.len()).filter(|&i| marks[i].id == word).collect(),
+        };
+        if found.is_empty() {
+            let what = match word.strip_prefix('.') {
+                Some(tag) => format!("no mark is tagged `{tag}`"),
+                None => format!("no mark is named `{word}`"),
+            };
+            return Err(Error::at(line, 1, format!("`focus {word}`: {what}")));
+        }
+        Ok(found)
+    };
+    // 1 while a choice is on an option, and 0 otherwise.
+    let chosen = |choice: &str, option: &str, line: usize| -> Result<Expr, Error> {
+        let Some(param) = scene
+            .params
+            .iter()
+            .find(|p| p.choice.as_ref().is_some_and(|c| c.of == choice))
+        else {
+            return Err(Error::at(line, 1, format!("`if {choice} = …`: `{choice}` isn't a choice")));
+        };
+        let options = &param.choice.as_ref().expect("found by its choice").options;
+        let written = |s: &str| s.split_whitespace().collect::<String>();
+        let Some(k) = options.iter().position(|o| written(o) == written(option)) else {
+            return Err(Error::at(
+                line,
+                1,
+                format!(
+                    "`{choice}` has no option \"{option}\": its options are {}",
+                    options.join(", ")
+                ),
+            ));
+        };
+        let off = Expr::app("Abs", vec![sub(Expr::sym(&param.id), num(k as f64))]);
+        Ok(Expr::app("IfNonnegative", vec![sub(num(0.5), off), num(1.0), num(0.0)]))
+    };
     let mut focuses: Vec<Option<Expr>> = vec![None; marks.len()];
-    let mut was = vec![1.0; marks.len()];
-    for (k, written) in story.moves.iter().enumerate() {
-        if written.focus.is_empty() {
+    let mut was: Vec<Expr> = vec![num(1.0); marks.len()];
+    for &(k, focus, line) in named {
+        if focus.is_empty() {
             continue;
         }
-        let mut now = vec![0.0; marks.len()];
-        for word in &written.focus {
-            for i in find(word, "focus", written.line)? {
-                now[i] = 1.0;
+        let mut now: Vec<Expr> = vec![num(0.0); marks.len()];
+        for entry in focus {
+            let weight = match &entry.when {
+                Some((choice, option)) => chosen(choice, option, line)?,
+                None => num(1.0),
+            };
+            for i in find(&entry.word, line)? {
+                // Named twice, it's in focus if either says so.
+                now[i] = match &now[i] {
+                    Expr::Num(n) if *n == 0.0 => weight.clone(),
+                    before => Expr::app("Max", vec![before.clone(), weight.clone()]),
+                };
             }
         }
         for i in 0..marks.len() {
             if now[i] != was[i] {
-                let change = mul(num(now[i] - was[i]), progress(k));
+                // Worked out here when both are numbers, as they are unless a choice is followed.
+                let step = match (&now[i], &was[i]) {
+                    (Expr::Num(a), Expr::Num(b)) => num(a - b),
+                    (a, b) => sub(a.clone(), b.clone()),
+                };
+                let change = mul(step, progress(k));
                 focuses[i] = Some(match focuses[i].take() {
                     Some(f) => add(f, change),
                     None => add(num(1.0), change),
@@ -1143,12 +1222,7 @@ fn finish_story(scene: &mut Scene, story: &Story) -> Result<(), Error> {
         }
         was = now;
     }
-
-    for ((mark, life), focus) in scene.marks.iter_mut().zip(lives).zip(focuses) {
-        mark.life = life;
-        mark.focus = focus;
-    }
-    Ok(())
+    Ok(focuses)
 }
 
 /// A value that holds for the whole figure. Evaluating it at time 0 would quietly freeze
@@ -2148,7 +2222,11 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
                 story.steps.push(Step::Pause(length));
                 continue;
             }
-            Item::Beat { caption, tags } => {
+            Item::Beat {
+                caption,
+                tags,
+                focus,
+            } => {
                 if !story.moves.is_empty() {
                     return Err(Error::new(
                         "a beat without a length can't follow one with: give them all lengths",
@@ -2159,6 +2237,9 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
                     declare_beat(&mut scene, &mut lowerer);
                 }
                 beat = Some(scene.beats.len());
+                if !focus.is_empty() {
+                    story.step_focus.push((scene.beats.len(), focus.clone(), 0));
+                }
                 scene.beats.push(caption.clone());
                 beat_tags = tags.clone();
                 continue;
@@ -2982,6 +3063,22 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
     if !story.moves.is_empty() {
         finish_story(&mut scene, &story)?;
     } else if !scene.beats.is_empty() {
+        // A step with no length is on from when `beat` reaches it, all at once.
+        let named: Vec<(usize, &[crate::parse::Focus], usize)> = story
+            .step_focus
+            .iter()
+            .map(|(k, focus, line)| (*k, focus.as_slice(), *line))
+            .collect();
+        let reached = |k: usize| {
+            Expr::app(
+                "Clamp",
+                vec![add(sub(Expr::sym(BEAT_PARAM), num(k as f64)), num(1.0)), num(0.0), num(1.0)],
+            )
+        };
+        let focuses = focus_over(&scene, &named, reached)?;
+        for (mark, focus) in scene.marks.iter_mut().zip(focuses) {
+            mark.focus = focus;
+        }
         // Steps with no lengths: `beat` is which one it's on, a whole number.
         let count = scene.beats.len() as f64;
         if let Some(param) = scene.params.iter_mut().find(|p| p.id == BEAT_PARAM) {
@@ -4280,6 +4377,47 @@ mod tests {
         assert_eq!(s.marks[1].beat, Some(1));
         assert!(s.marks[1].tags.contains(&"aux".to_string()));
         assert!(!s.marks[1].tags.contains(&"blue".to_string()));
+    }
+
+    /// A beat can say what it's about, with or without a length, and it can follow a choice: the
+    /// last beat is about whichever flower the reader picked.
+    #[test]
+    fn a_focus_can_follow_a_choice() {
+        let s = scene(
+            "param case in {\"a\": 1, \"b\": 2}
+             let A = (0, 0)
+             let B = (1, 0)
+             let C = (2, 0)
+             beat \"One\" tag first {
+               dot A
+             }
+             beat \"Two\" tag second {
+               dot B
+             }
+             beat \"Three\" focus C, .first if case = \"a\", .second if case = \"b\" {
+               dot C
+             }",
+        )
+        .unwrap();
+        let focus = |id: &str, beat: f64, which: f64| {
+            let inputs = crate::frame::Inputs {
+                time: 0.0,
+                params: vec![(BEAT_PARAM.into(), beat), ("case.index".into(), which)],
+            };
+            let env = eval::scene_env(&s, &inputs, None).unwrap();
+            let mark = s.marks.iter().find(|m| m.id == id).unwrap();
+            mark.focus.as_ref().map_or(1.0, |f| eval::real(f, &env).unwrap())
+        };
+        // Until the beat that names it, everything is in focus.
+        for id in ["A", "B", "C"] {
+            assert_eq!(focus(id, 1.0, 0.0), 1.0, "{id}");
+        }
+        assert_eq!([focus("A", 2.0, 0.0), focus("B", 2.0, 0.0), focus("C", 2.0, 0.0)], [1.0, 0.0, 1.0]);
+        assert_eq!([focus("A", 2.0, 1.0), focus("B", 2.0, 1.0), focus("C", 2.0, 1.0)], [0.0, 1.0, 1.0]);
+        let err = scene("param k = 1 in 0..2\nlet A = (0, 0)\nbeat \"One\" focus A if k = \"x\" {\n dot A\n}")
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("`k` isn't a choice"), "{err}");
     }
 
     /// Beats with no lengths share a figure's duration, so its timing is said once, and with no

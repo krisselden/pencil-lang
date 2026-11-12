@@ -358,7 +358,7 @@ pub fn type_of(e: &Expr, names: &[&str], spatial: bool) -> Result<Ty, String> {
                 ("Oklch" | "Rgb", [Real, Real, Real]) => Ok(Color),
                 ("Hue", [Real]) => Ok(Color),
                 ("Mix", [Color, Color, Real]) => Ok(Color),
-                ("Mix" | "Clamp" | "Smoothstep" | "Reveal", [Real, Real, Real]) => Ok(Real),
+                ("Mix" | "Clamp" | "Smoothstep" | "Reveal" | "IfNonnegative", [Real, Real, Real]) => Ok(Real),
                 ("Multiply", [Color, Real] | [Real, Color]) | ("Divide", [Color, Real]) => {
                     Ok(Color)
                 }

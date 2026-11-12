@@ -315,6 +315,12 @@ pub fn emit_expr(e: &Expr) -> String {
             ("Min", _) => call("min", args),
             ("Max", _) => call("max", args),
             ("Clamp", _) => call("clamp", args),
+            ("IfNonnegative", [x, a, b]) => format!(
+                "select({}, {}, {} >= 0.0)",
+                emit_expr(b),
+                emit_expr(a),
+                emit_expr(x)
+            ),
             ("Mod", _) => call("fmod", args),
             ("Smoothstep", _) => call("ease", args),
             ("Oklch", _) => call("oklch", args),

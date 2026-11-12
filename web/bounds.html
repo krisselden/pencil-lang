@@ -102,8 +102,12 @@
     $('next').disabled = beat >= beats.length - 1;
     const v = (name) => figure.value(name);
     const degrees = (r) => `${(r * 180 / Math.PI).toFixed(1)}°`;
+    // The chosen flower's top centre: P itself when p = 0, and when q = 2p the middle flower's,
+    // which lies toward F. Its turns to a full turn is q.
+    const turns = v('case.index') < 0.5 ? v('ring_count') : 2 * v('zoom_count');
+    const arg = 2 * Math.PI / turns;
     $('readout').textContent =
-      `θ ${degrees(v('theta'))}  k ${v('ratio').toFixed(3)}  ring ${v('ring_count').toFixed(2)}  2p: p ${v('zoom_count').toFixed(2)}`;
+      `arg z ${degrees(arg)} = 360°/${turns.toFixed(2)}   θ ${degrees(v('theta'))}   k = sin(θ/2) = ${v('ratio').toFixed(3)}`;
   }
 
   let compiles = 0;

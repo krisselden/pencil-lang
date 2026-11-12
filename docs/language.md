@@ -89,6 +89,11 @@ with no lengths share it evenly and `beat` follows time, so the timing is said o
 `duration 30` are 3 s each. With no duration, a reader steps through them. `bind beat = …` can
 still drive them by something else.
 
+**A beat can say what it's about,** with or without a length: `focus P, .arms`, and `self.focus` is 1
+on those during that beat and 0 on the rest, until a beat names others. An entry can follow a choice,
+so the beat is about what a reader picked: `focus level, .boundary if case = "p = 0", .middle if case
+= "q = 2p"`. On a beat with no length, `focus` comes after its tags: `beat "…" tag t focus … {`.
+
 **A beat can have a length,** which makes it one move of a figure's story. Beats and pauses run in
 the order they're written, and their lengths add up to the `duration`, so making one longer moves
 everything after it instead of everything having to be retimed:
@@ -456,6 +461,7 @@ Newest first. "Why" is the reason at the time, so these can be revisited.
 
 | Date | Decision | Why |
 |---|---|---|
+| 2026-11-11 | A focus can follow a choice, and beats with no lengths can have one | Bounds' last beat is about whichever flower the reader's case closes, and the other should recede. Which one is the document's to say, so the focus follows the choice by an option's name, and the sheet only says how receding looks. Its tags became what each beat is (`boundary`, `middle`), not a color, since the sheet decides colors |
 | 2026-11-11 | Any property can be `none`, and `dash: 0` is solid | Kris wanted one solid ray among bounds' dashed ones, tried `dash: none` and then `dash: 0`, and neither worked: nothing could take back an earlier rule's dash, and a dash of 0 drew nothing at all. Both now do what he tried |
 | 2026-11-11 | A choice's options can have names | Bounds chooses which angle is a q-th of a turn, and its options are the two values of θ that make it so. As written they're formulas, which say nothing to a reader, while the cases have names, p = 0 and q = 2p, which the captions use. A name and a value go together, so a name rides on the option, and a choice of bare names still waits for a figure that needs one |
 | 2026-11-11 | Beats with no lengths share the `duration` | Bounds said its timing twice, in `duration 30` and in `bind beat = min(floor(time / 3), 9)`, so any other duration, or the playground's default loop, cut beats off. Kris expected the beats to share the duration, which says it once. They stay whole steps, so `self.age` keeps its meaning, and the same change gives `beat` its range by name: it had gone to the first param, which in bounds was `q` |

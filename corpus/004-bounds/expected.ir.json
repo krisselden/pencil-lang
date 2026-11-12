@@ -652,7 +652,7 @@
         "kind": "dot"
       },
       "id": "O",
-      "tags": ["dot","ink"]
+      "tags": ["dot","given"]
     },
     {
       "beat": 0,
@@ -665,7 +665,7 @@
         "values": []
       },
       "id": "zero",
-      "tags": ["label","ink"]
+      "tags": ["label","given"]
     },
     {
       "beat": 0,
@@ -674,7 +674,7 @@
         "kind": "dot"
       },
       "id": "A",
-      "tags": ["dot","ink","named"]
+      "tags": ["dot","given","named"]
     },
     {
       "beat": 0,
@@ -687,17 +687,18 @@
         "values": []
       },
       "id": "one",
-      "tags": ["label","ink"]
+      "tags": ["label","given"]
     },
     {
       "beat": 0,
+      "focus": ["Add",1.0,["Multiply",["Subtract",["Max",1.0,1.0],1.0],["Clamp",["Add",["Subtract","beat",9.0],1.0],0.0,1.0]]],
       "form": {
         "closed": false,
         "kind": "polyline",
         "points": [["base.ax","base.ay"],[["Add","base.ax",["Multiply",["Divide",["Subtract","base.bx","base.ax"],["Sqrt",["Add",["Power",["Subtract","base.bx","base.ax"],2.0],["Power",["Subtract","base.by","base.ay"],2.0]]]],100.0]],["Add","base.ay",["Multiply",["Divide",["Subtract","base.by","base.ay"],["Sqrt",["Add",["Power",["Subtract","base.bx","base.ax"],2.0],["Power",["Subtract","base.by","base.ay"],2.0]]]],100.0]]]]
       },
       "id": "base",
-      "tags": ["ray","ink"]
+      "tags": ["ray","given"]
     },
     {
       "beat": 0,
@@ -714,7 +715,7 @@
         "vars": ["x","y"]
       },
       "id": "c",
-      "tags": ["circle","ink","aux"]
+      "tags": ["circle","given","aux"]
     },
     {
       "beat": 1,
@@ -723,7 +724,7 @@
         "kind": "dot"
       },
       "id": "B",
-      "tags": ["dot","red"]
+      "tags": ["dot","ratio"]
     },
     {
       "beat": 1,
@@ -736,7 +737,7 @@
         "values": []
       },
       "id": "name_b",
-      "tags": ["label","red"]
+      "tags": ["label","ratio"]
     },
     {
       "beat": 1,
@@ -753,10 +754,11 @@
         "vars": ["x","y"]
       },
       "id": "d",
-      "tags": ["circle","red"]
+      "tags": ["circle","ratio"]
     },
     {
       "beat": 2,
+      "focus": ["Add",1.0,["Multiply",["Subtract",["IfNonnegative",["Subtract",0.5,["Abs",["Subtract","case.index",0.0]]],1.0,0.0],1.0],["Clamp",["Add",["Subtract","beat",9.0],1.0],0.0,1.0]]],
       "form": {
         "curvature": ["Divide",1.0,"t.r"],
         "field": ["Subtract",["Sqrt",["Add",["Power",["Subtract","x","t.x"],2.0],["Power",["Subtract","y","t.y"],2.0]]],"t.r"],
@@ -770,95 +772,105 @@
         "vars": ["x","y"]
       },
       "id": "t",
-      "tags": ["circle","blue"]
+      "tags": ["circle","boundary"]
     },
     {
       "beat": 3,
+      "focus": ["Add",1.0,["Multiply",["Subtract",["IfNonnegative",["Subtract",0.5,["Abs",["Subtract","case.index",0.0]]],1.0,0.0],1.0],["Clamp",["Add",["Subtract","beat",9.0],1.0],0.0,1.0]]],
       "form": {
         "closed": false,
         "kind": "polyline",
         "points": [["g.ax","g.ay"],[["Add","g.ax",["Multiply",["Divide",["Subtract","g.bx","g.ax"],["Sqrt",["Add",["Power",["Subtract","g.bx","g.ax"],2.0],["Power",["Subtract","g.by","g.ay"],2.0]]]],100.0]],["Add","g.ay",["Multiply",["Divide",["Subtract","g.by","g.ay"],["Sqrt",["Add",["Power",["Subtract","g.bx","g.ax"],2.0],["Power",["Subtract","g.by","g.ay"],2.0]]]],100.0]]]]
       },
       "id": "g",
-      "tags": ["ray","blue"]
+      "tags": ["ray","boundary"]
     },
     {
       "beat": 3,
+      "focus": ["Add",1.0,["Multiply",["Subtract",["IfNonnegative",["Subtract",0.5,["Abs",["Subtract","case.index",0.0]]],1.0,0.0],1.0],["Clamp",["Add",["Subtract","beat",9.0],1.0],0.0,1.0]]],
       "form": {
         "at": ["C.x","C.y"],
         "kind": "dot"
       },
       "id": "C",
-      "tags": ["dot","blue"]
+      "tags": ["dot","boundary"]
     },
     {
       "beat": 3,
+      "focus": ["Add",1.0,["Multiply",["Subtract",["IfNonnegative",["Subtract",0.5,["Abs",["Subtract","case.index",0.0]]],1.0,0.0],1.0],["Clamp",["Add",["Subtract","beat",9.0],1.0],0.0,1.0]]],
       "form": {
         "closed": false,
         "kind": "polyline",
         "points": [["a.ax","a.ay"],[["Add","a.ax",["Multiply",["Divide",["Subtract","a.bx","a.ax"],["Sqrt",["Add",["Power",["Subtract","a.bx","a.ax"],2.0],["Power",["Subtract","a.by","a.ay"],2.0]]]],100.0]],["Add","a.ay",["Multiply",["Divide",["Subtract","a.by","a.ay"],["Sqrt",["Add",["Power",["Subtract","a.bx","a.ax"],2.0],["Power",["Subtract","a.by","a.ay"],2.0]]]],100.0]]]]
       },
       "id": "a",
-      "tags": ["ray","blue"]
+      "tags": ["ray","boundary"]
     },
     {
       "beat": 3,
+      "focus": ["Add",1.0,["Multiply",["Subtract",["IfNonnegative",["Subtract",0.5,["Abs",["Subtract","case.index",0.0]]],1.0,0.0],1.0],["Clamp",["Add",["Subtract","beat",9.0],1.0],0.0,1.0]]],
       "form": {
         "at": ["S.x","S.y"],
         "kind": "dot"
       },
       "id": "S",
-      "tags": ["dot","blue"]
+      "tags": ["dot","boundary"]
     },
     {
       "beat": 3,
+      "focus": ["Add",1.0,["Multiply",["Subtract",["IfNonnegative",["Subtract",0.5,["Abs",["Subtract","case.index",0.0]]],1.0,0.0],1.0],["Clamp",["Add",["Subtract","beat",9.0],1.0],0.0,1.0]]],
       "form": {
         "at": ["T.x","T.y"],
         "kind": "dot"
       },
       "id": "T",
-      "tags": ["dot","blue"]
+      "tags": ["dot","boundary"]
     },
     {
       "beat": 3,
+      "focus": ["Add",1.0,["Multiply",["Subtract",["IfNonnegative",["Subtract",0.5,["Abs",["Subtract","case.index",0.0]]],1.0,0.0],1.0],["Clamp",["Add",["Subtract","beat",9.0],1.0],0.0,1.0]]],
       "form": {
         "closed": false,
         "kind": "polyline",
         "points": [["b.ax","b.ay"],[["Add","b.ax",["Multiply",["Divide",["Subtract","b.bx","b.ax"],["Sqrt",["Add",["Power",["Subtract","b.bx","b.ax"],2.0],["Power",["Subtract","b.by","b.ay"],2.0]]]],100.0]],["Add","b.ay",["Multiply",["Divide",["Subtract","b.by","b.ay"],["Sqrt",["Add",["Power",["Subtract","b.bx","b.ax"],2.0],["Power",["Subtract","b.by","b.ay"],2.0]]]],100.0]]]]
       },
       "id": "b",
-      "tags": ["ray","blue"]
+      "tags": ["ray","boundary"]
     },
     {
       "beat": 3,
+      "focus": ["Add",1.0,["Multiply",["Subtract",["IfNonnegative",["Subtract",0.5,["Abs",["Subtract","case.index",0.0]]],1.0,0.0],1.0],["Clamp",["Add",["Subtract","beat",9.0],1.0],0.0,1.0]]],
       "form": {
         "closed": false,
         "kind": "polyline",
         "points": [["f_1.ax","f_1.ay"],[["Add","f_1.ax",["Multiply",["Divide",["Subtract","f_1.bx","f_1.ax"],["Sqrt",["Add",["Power",["Subtract","f_1.bx","f_1.ax"],2.0],["Power",["Subtract","f_1.by","f_1.ay"],2.0]]]],100.0]],["Add","f_1.ay",["Multiply",["Divide",["Subtract","f_1.by","f_1.ay"],["Sqrt",["Add",["Power",["Subtract","f_1.bx","f_1.ax"],2.0],["Power",["Subtract","f_1.by","f_1.ay"],2.0]]]],100.0]]]]
       },
       "id": "f_1",
-      "tags": ["ray","blue"]
+      "tags": ["ray","boundary"]
     },
     {
       "beat": 3,
+      "focus": ["Add",1.0,["Multiply",["Subtract",["IfNonnegative",["Subtract",0.5,["Abs",["Subtract","case.index",0.0]]],1.0,0.0],1.0],["Clamp",["Add",["Subtract","beat",9.0],1.0],0.0,1.0]]],
       "form": {
         "at": ["U.x","U.y"],
         "kind": "dot"
       },
       "id": "U",
-      "tags": ["dot","blue"]
+      "tags": ["dot","boundary"]
     },
     {
       "beat": 3,
+      "focus": ["Add",1.0,["Multiply",["Subtract",["IfNonnegative",["Subtract",0.5,["Abs",["Subtract","case.index",0.0]]],1.0,0.0],1.0],["Clamp",["Add",["Subtract","beat",9.0],1.0],0.0,1.0]]],
       "form": {
         "at": ["V.x","V.y"],
         "kind": "dot"
       },
       "id": "V",
-      "tags": ["dot","blue"]
+      "tags": ["dot","boundary"]
     },
     {
       "beat": 3,
+      "focus": ["Add",1.0,["Multiply",["Subtract",["IfNonnegative",["Subtract",0.5,["Abs",["Subtract","case.index",0.0]]],1.0,0.0],1.0],["Clamp",["Add",["Subtract","beat",9.0],1.0],0.0,1.0]]],
       "form": {
         "curvature": ["Divide",1.0,"c_1.r"],
         "field": ["Subtract",["Sqrt",["Add",["Power",["Subtract","x","c_1.x"],2.0],["Power",["Subtract","y","c_1.y"],2.0]]],"c_1.r"],
@@ -872,10 +884,11 @@
         "vars": ["x","y"]
       },
       "id": "c_1",
-      "tags": ["circle","blue"]
+      "tags": ["circle","boundary"]
     },
     {
       "beat": 3,
+      "focus": ["Add",1.0,["Multiply",["Subtract",["IfNonnegative",["Subtract",0.5,["Abs",["Subtract","case.index",0.0]]],1.0,0.0],1.0],["Clamp",["Add",["Subtract","beat",9.0],1.0],0.0,1.0]]],
       "form": {
         "curvature": ["Divide",1.0,"d_1.r"],
         "field": ["Subtract",["Sqrt",["Add",["Power",["Subtract","x","d_1.x"],2.0],["Power",["Subtract","y","d_1.y"],2.0]]],"d_1.r"],
@@ -889,10 +902,11 @@
         "vars": ["x","y"]
       },
       "id": "d_1",
-      "tags": ["circle","blue"]
+      "tags": ["circle","boundary"]
     },
     {
       "beat": 4,
+      "focus": ["Add",1.0,["Multiply",["Subtract",["IfNonnegative",["Subtract",0.5,["Abs",["Subtract","case.index",0.0]]],1.0,0.0],1.0],["Clamp",["Add",["Subtract","beat",9.0],1.0],0.0,1.0]]],
       "form": {
         "curvature": ["Divide",1.0,"t_m.r"],
         "field": ["Subtract",["Sqrt",["Add",["Power",["Subtract","x","t_m.x"],2.0],["Power",["Subtract","y","t_m.y"],2.0]]],"t_m.r"],
@@ -906,10 +920,11 @@
         "vars": ["x","y"]
       },
       "id": "t_m",
-      "tags": ["circle","blue"]
+      "tags": ["circle","boundary"]
     },
     {
       "beat": 4,
+      "focus": ["Add",1.0,["Multiply",["Subtract",["IfNonnegative",["Subtract",0.5,["Abs",["Subtract","case.index",0.0]]],1.0,0.0],1.0],["Clamp",["Add",["Subtract","beat",9.0],1.0],0.0,1.0]]],
       "form": {
         "curvature": ["Divide",1.0,"e_1.r"],
         "field": ["Subtract",["Sqrt",["Add",["Power",["Subtract","x","e_1.x"],2.0],["Power",["Subtract","y","e_1.y"],2.0]]],"e_1.r"],
@@ -923,10 +938,11 @@
         "vars": ["x","y"]
       },
       "id": "e_1",
-      "tags": ["circle","blue"]
+      "tags": ["circle","boundary"]
     },
     {
       "beat": 4,
+      "focus": ["Add",1.0,["Multiply",["Subtract",["IfNonnegative",["Subtract",0.5,["Abs",["Subtract","case.index",0.0]]],1.0,0.0],1.0],["Clamp",["Add",["Subtract","beat",9.0],1.0],0.0,1.0]]],
       "form": {
         "curvature": ["Divide",1.0,"g_1.r"],
         "field": ["Subtract",["Sqrt",["Add",["Power",["Subtract","x","g_1.x"],2.0],["Power",["Subtract","y","g_1.y"],2.0]]],"g_1.r"],
@@ -940,38 +956,42 @@
         "vars": ["x","y"]
       },
       "id": "g_1",
-      "tags": ["circle","blue"]
+      "tags": ["circle","boundary"]
     },
     {
       "beat": 5,
+      "focus": ["Add",1.0,["Multiply",["Subtract",["IfNonnegative",["Subtract",0.5,["Abs",["Subtract","case.index",1.0]]],1.0,0.0],1.0],["Clamp",["Add",["Subtract","beat",9.0],1.0],0.0,1.0]]],
       "form": {
         "closed": false,
         "kind": "polyline",
         "points": [[["Add","h.ax",["Multiply",["Divide",["Subtract","h.bx","h.ax"],["Sqrt",["Add",["Power",["Subtract","h.bx","h.ax"],2.0],["Power",["Subtract","h.by","h.ay"],2.0]]]],-100.0]],["Add","h.ay",["Multiply",["Divide",["Subtract","h.by","h.ay"],["Sqrt",["Add",["Power",["Subtract","h.bx","h.ax"],2.0],["Power",["Subtract","h.by","h.ay"],2.0]]]],-100.0]]],[["Add","h.ax",["Multiply",["Divide",["Subtract","h.bx","h.ax"],["Sqrt",["Add",["Power",["Subtract","h.bx","h.ax"],2.0],["Power",["Subtract","h.by","h.ay"],2.0]]]],100.0]],["Add","h.ay",["Multiply",["Divide",["Subtract","h.by","h.ay"],["Sqrt",["Add",["Power",["Subtract","h.bx","h.ax"],2.0],["Power",["Subtract","h.by","h.ay"],2.0]]]],100.0]]]]
       },
       "id": "h",
-      "tags": ["line","pink"]
+      "tags": ["line","middle"]
     },
     {
       "beat": 5,
+      "focus": ["Add",1.0,["Multiply",["Subtract",["IfNonnegative",["Subtract",0.5,["Abs",["Subtract","case.index",1.0]]],1.0,0.0],1.0],["Clamp",["Add",["Subtract","beat",9.0],1.0],0.0,1.0]]],
       "form": {
         "at": ["D.x","D.y"],
         "kind": "dot"
       },
       "id": "D",
-      "tags": ["dot","pink"]
+      "tags": ["dot","middle"]
     },
     {
       "beat": 5,
+      "focus": ["Add",1.0,["Multiply",["Subtract",["IfNonnegative",["Subtract",0.5,["Abs",["Subtract","case.index",1.0]]],1.0,0.0],1.0],["Clamp",["Add",["Subtract","beat",9.0],1.0],0.0,1.0]]],
       "form": {
         "at": ["E.x","E.y"],
         "kind": "dot"
       },
       "id": "E",
-      "tags": ["dot","pink"]
+      "tags": ["dot","middle"]
     },
     {
       "beat": 5,
+      "focus": ["Add",1.0,["Multiply",["Subtract",["IfNonnegative",["Subtract",0.5,["Abs",["Subtract","case.index",1.0]]],1.0,0.0],1.0],["Clamp",["Add",["Subtract","beat",9.0],1.0],0.0,1.0]]],
       "form": {
         "curvature": ["Divide",1.0,"e.r"],
         "field": ["Subtract",["Sqrt",["Add",["Power",["Subtract","x","e.x"],2.0],["Power",["Subtract","y","e.y"],2.0]]],"e.r"],
@@ -985,19 +1005,21 @@
         "vars": ["x","y"]
       },
       "id": "e",
-      "tags": ["circle","pink","aux"]
+      "tags": ["circle","middle","aux"]
     },
     {
       "beat": 5,
+      "focus": ["Add",1.0,["Multiply",["Subtract",["IfNonnegative",["Subtract",0.5,["Abs",["Subtract","case.index",1.0]]],1.0,0.0],1.0],["Clamp",["Add",["Subtract","beat",9.0],1.0],0.0,1.0]]],
       "form": {
         "at": ["F.x","F.y"],
         "kind": "dot"
       },
       "id": "F",
-      "tags": ["dot","pink","named"]
+      "tags": ["dot","middle","named"]
     },
     {
       "beat": 5,
+      "focus": ["Add",1.0,["Multiply",["Subtract",["IfNonnegative",["Subtract",0.5,["Abs",["Subtract","case.index",1.0]]],1.0,0.0],1.0],["Clamp",["Add",["Subtract","beat",9.0],1.0],0.0,1.0]]],
       "form": {
         "at": ["F.x","F.y"],
         "away": [["Negate","F.x"],["Negate","F.y"]],
@@ -1007,86 +1029,95 @@
         "values": []
       },
       "id": "name_f",
-      "tags": ["label","pink"]
+      "tags": ["label","middle"]
     },
     {
       "beat": 5,
+      "focus": ["Add",1.0,["Multiply",["Subtract",["IfNonnegative",["Subtract",0.5,["Abs",["Subtract","case.index",1.0]]],1.0,0.0],1.0],["Clamp",["Add",["Subtract","beat",9.0],1.0],0.0,1.0]]],
       "form": {
         "closed": false,
         "kind": "polyline",
         "points": [["i.ax","i.ay"],[["Add","i.ax",["Multiply",["Divide",["Subtract","i.bx","i.ax"],["Sqrt",["Add",["Power",["Subtract","i.bx","i.ax"],2.0],["Power",["Subtract","i.by","i.ay"],2.0]]]],100.0]],["Add","i.ay",["Multiply",["Divide",["Subtract","i.by","i.ay"],["Sqrt",["Add",["Power",["Subtract","i.bx","i.ax"],2.0],["Power",["Subtract","i.by","i.ay"],2.0]]]],100.0]]]]
       },
       "id": "i",
-      "tags": ["ray","pink"]
+      "tags": ["ray","middle"]
     },
     {
       "beat": 6,
+      "focus": ["Add",1.0,["Multiply",["Subtract",["IfNonnegative",["Subtract",0.5,["Abs",["Subtract","case.index",1.0]]],1.0,0.0],1.0],["Clamp",["Add",["Subtract","beat",9.0],1.0],0.0,1.0]]],
       "form": {
         "closed": false,
         "kind": "polyline",
         "points": [["j.ax","j.ay"],[["Add","j.ax",["Multiply",["Divide",["Subtract","j.bx","j.ax"],["Sqrt",["Add",["Power",["Subtract","j.bx","j.ax"],2.0],["Power",["Subtract","j.by","j.ay"],2.0]]]],100.0]],["Add","j.ay",["Multiply",["Divide",["Subtract","j.by","j.ay"],["Sqrt",["Add",["Power",["Subtract","j.bx","j.ax"],2.0],["Power",["Subtract","j.by","j.ay"],2.0]]]],100.0]]]]
       },
       "id": "j",
-      "tags": ["ray","pink"]
+      "tags": ["ray","middle"]
     },
     {
       "beat": 6,
+      "focus": ["Add",1.0,["Multiply",["Subtract",["IfNonnegative",["Subtract",0.5,["Abs",["Subtract","case.index",1.0]]],1.0,0.0],1.0],["Clamp",["Add",["Subtract","beat",9.0],1.0],0.0,1.0]]],
       "form": {
         "at": ["H.x","H.y"],
         "kind": "dot"
       },
       "id": "H",
-      "tags": ["dot","pink"]
+      "tags": ["dot","middle"]
     },
     {
       "beat": 6,
+      "focus": ["Add",1.0,["Multiply",["Subtract",["IfNonnegative",["Subtract",0.5,["Abs",["Subtract","case.index",1.0]]],1.0,0.0],1.0],["Clamp",["Add",["Subtract","beat",9.0],1.0],0.0,1.0]]],
       "form": {
         "at": ["I.x","I.y"],
         "kind": "dot"
       },
       "id": "I",
-      "tags": ["dot","pink"]
+      "tags": ["dot","middle"]
     },
     {
       "beat": 6,
+      "focus": ["Add",1.0,["Multiply",["Subtract",["IfNonnegative",["Subtract",0.5,["Abs",["Subtract","case.index",1.0]]],1.0,0.0],1.0],["Clamp",["Add",["Subtract","beat",9.0],1.0],0.0,1.0]]],
       "form": {
         "closed": false,
         "kind": "polyline",
         "points": [["k.ax","k.ay"],[["Add","k.ax",["Multiply",["Divide",["Subtract","k.bx","k.ax"],["Sqrt",["Add",["Power",["Subtract","k.bx","k.ax"],2.0],["Power",["Subtract","k.by","k.ay"],2.0]]]],100.0]],["Add","k.ay",["Multiply",["Divide",["Subtract","k.by","k.ay"],["Sqrt",["Add",["Power",["Subtract","k.bx","k.ax"],2.0],["Power",["Subtract","k.by","k.ay"],2.0]]]],100.0]]]]
       },
       "id": "k",
-      "tags": ["ray","pink"]
+      "tags": ["ray","middle"]
     },
     {
       "beat": 6,
+      "focus": ["Add",1.0,["Multiply",["Subtract",["IfNonnegative",["Subtract",0.5,["Abs",["Subtract","case.index",1.0]]],1.0,0.0],1.0],["Clamp",["Add",["Subtract","beat",9.0],1.0],0.0,1.0]]],
       "form": {
         "closed": false,
         "kind": "polyline",
         "points": [["l.ax","l.ay"],[["Add","l.ax",["Multiply",["Divide",["Subtract","l.bx","l.ax"],["Sqrt",["Add",["Power",["Subtract","l.bx","l.ax"],2.0],["Power",["Subtract","l.by","l.ay"],2.0]]]],100.0]],["Add","l.ay",["Multiply",["Divide",["Subtract","l.by","l.ay"],["Sqrt",["Add",["Power",["Subtract","l.bx","l.ax"],2.0],["Power",["Subtract","l.by","l.ay"],2.0]]]],100.0]]]]
       },
       "id": "l",
-      "tags": ["ray","pink"]
+      "tags": ["ray","middle"]
     },
     {
       "beat": 6,
+      "focus": ["Add",1.0,["Multiply",["Subtract",["IfNonnegative",["Subtract",0.5,["Abs",["Subtract","case.index",1.0]]],1.0,0.0],1.0],["Clamp",["Add",["Subtract","beat",9.0],1.0],0.0,1.0]]],
       "form": {
         "at": ["J.x","J.y"],
         "kind": "dot"
       },
       "id": "J",
-      "tags": ["dot","pink"]
+      "tags": ["dot","middle"]
     },
     {
       "beat": 6,
+      "focus": ["Add",1.0,["Multiply",["Subtract",["IfNonnegative",["Subtract",0.5,["Abs",["Subtract","case.index",1.0]]],1.0,0.0],1.0],["Clamp",["Add",["Subtract","beat",9.0],1.0],0.0,1.0]]],
       "form": {
         "at": ["M.x","M.y"],
         "kind": "dot"
       },
       "id": "M",
-      "tags": ["dot","pink"]
+      "tags": ["dot","middle"]
     },
     {
       "beat": 6,
+      "focus": ["Add",1.0,["Multiply",["Subtract",["IfNonnegative",["Subtract",0.5,["Abs",["Subtract","case.index",1.0]]],1.0,0.0],1.0],["Clamp",["Add",["Subtract","beat",9.0],1.0],0.0,1.0]]],
       "form": {
         "curvature": ["Divide",1.0,"p.r"],
         "field": ["Subtract",["Sqrt",["Add",["Power",["Subtract","x","p.x"],2.0],["Power",["Subtract","y","p.y"],2.0]]],"p.r"],
@@ -1100,10 +1131,11 @@
         "vars": ["x","y"]
       },
       "id": "p",
-      "tags": ["circle","pink"]
+      "tags": ["circle","middle"]
     },
     {
       "beat": 6,
+      "focus": ["Add",1.0,["Multiply",["Subtract",["IfNonnegative",["Subtract",0.5,["Abs",["Subtract","case.index",1.0]]],1.0,0.0],1.0],["Clamp",["Add",["Subtract","beat",9.0],1.0],0.0,1.0]]],
       "form": {
         "curvature": ["Divide",1.0,"r.r"],
         "field": ["Subtract",["Sqrt",["Add",["Power",["Subtract","x","r.x"],2.0],["Power",["Subtract","y","r.y"],2.0]]],"r.r"],
@@ -1117,66 +1149,73 @@
         "vars": ["x","y"]
       },
       "id": "r",
-      "tags": ["circle","pink"]
+      "tags": ["circle","middle"]
     },
     {
       "beat": 7,
+      "focus": ["Add",1.0,["Multiply",["Subtract",["IfNonnegative",["Subtract",0.5,["Abs",["Subtract","case.index",1.0]]],1.0,0.0],1.0],["Clamp",["Add",["Subtract","beat",9.0],1.0],0.0,1.0]]],
       "form": {
         "at": ["K.x","K.y"],
         "kind": "dot"
       },
       "id": "K",
-      "tags": ["dot","pink"]
+      "tags": ["dot","middle"]
     },
     {
       "beat": 7,
+      "focus": ["Add",1.0,["Multiply",["Subtract",["IfNonnegative",["Subtract",0.5,["Abs",["Subtract","case.index",1.0]]],1.0,0.0],1.0],["Clamp",["Add",["Subtract","beat",9.0],1.0],0.0,1.0]]],
       "form": {
         "at": ["N.x","N.y"],
         "kind": "dot"
       },
       "id": "N",
-      "tags": ["dot","pink"]
+      "tags": ["dot","middle"]
     },
     {
       "beat": 7,
+      "focus": ["Add",1.0,["Multiply",["Subtract",["IfNonnegative",["Subtract",0.5,["Abs",["Subtract","case.index",1.0]]],1.0,0.0],1.0],["Clamp",["Add",["Subtract","beat",9.0],1.0],0.0,1.0]]],
       "form": {
         "closed": false,
         "kind": "polyline",
         "points": [["m.ax","m.ay"],[["Add","m.ax",["Multiply",["Divide",["Subtract","m.bx","m.ax"],["Sqrt",["Add",["Power",["Subtract","m.bx","m.ax"],2.0],["Power",["Subtract","m.by","m.ay"],2.0]]]],100.0]],["Add","m.ay",["Multiply",["Divide",["Subtract","m.by","m.ay"],["Sqrt",["Add",["Power",["Subtract","m.bx","m.ax"],2.0],["Power",["Subtract","m.by","m.ay"],2.0]]]],100.0]]]]
       },
       "id": "m",
-      "tags": ["ray","pink"]
+      "tags": ["ray","middle"]
     },
     {
       "beat": 7,
+      "focus": ["Add",1.0,["Multiply",["Subtract",["IfNonnegative",["Subtract",0.5,["Abs",["Subtract","case.index",1.0]]],1.0,0.0],1.0],["Clamp",["Add",["Subtract","beat",9.0],1.0],0.0,1.0]]],
       "form": {
         "closed": false,
         "kind": "polyline",
         "points": [["n.ax","n.ay"],[["Add","n.ax",["Multiply",["Divide",["Subtract","n.bx","n.ax"],["Sqrt",["Add",["Power",["Subtract","n.bx","n.ax"],2.0],["Power",["Subtract","n.by","n.ay"],2.0]]]],100.0]],["Add","n.ay",["Multiply",["Divide",["Subtract","n.by","n.ay"],["Sqrt",["Add",["Power",["Subtract","n.bx","n.ax"],2.0],["Power",["Subtract","n.by","n.ay"],2.0]]]],100.0]]]]
       },
       "id": "n",
-      "tags": ["ray","pink"]
+      "tags": ["ray","middle"]
     },
     {
       "beat": 7,
+      "focus": ["Add",1.0,["Multiply",["Subtract",["IfNonnegative",["Subtract",0.5,["Abs",["Subtract","case.index",1.0]]],1.0,0.0],1.0],["Clamp",["Add",["Subtract","beat",9.0],1.0],0.0,1.0]]],
       "form": {
         "at": ["L.x","L.y"],
         "kind": "dot"
       },
       "id": "L",
-      "tags": ["dot","pink"]
+      "tags": ["dot","middle"]
     },
     {
       "beat": 7,
+      "focus": ["Add",1.0,["Multiply",["Subtract",["IfNonnegative",["Subtract",0.5,["Abs",["Subtract","case.index",1.0]]],1.0,0.0],1.0],["Clamp",["Add",["Subtract","beat",9.0],1.0],0.0,1.0]]],
       "form": {
         "at": ["Q.x","Q.y"],
         "kind": "dot"
       },
       "id": "Q",
-      "tags": ["dot","pink"]
+      "tags": ["dot","middle"]
     },
     {
       "beat": 7,
+      "focus": ["Add",1.0,["Multiply",["Subtract",["IfNonnegative",["Subtract",0.5,["Abs",["Subtract","case.index",1.0]]],1.0,0.0],1.0],["Clamp",["Add",["Subtract","beat",9.0],1.0],0.0,1.0]]],
       "form": {
         "curvature": ["Divide",1.0,"q_1.r"],
         "field": ["Subtract",["Sqrt",["Add",["Power",["Subtract","x","q_1.x"],2.0],["Power",["Subtract","y","q_1.y"],2.0]]],"q_1.r"],
@@ -1190,10 +1229,11 @@
         "vars": ["x","y"]
       },
       "id": "q_1",
-      "tags": ["circle","pink"]
+      "tags": ["circle","middle"]
     },
     {
       "beat": 7,
+      "focus": ["Add",1.0,["Multiply",["Subtract",["IfNonnegative",["Subtract",0.5,["Abs",["Subtract","case.index",1.0]]],1.0,0.0],1.0],["Clamp",["Add",["Subtract","beat",9.0],1.0],0.0,1.0]]],
       "form": {
         "curvature": ["Divide",1.0,"s.r"],
         "field": ["Subtract",["Sqrt",["Add",["Power",["Subtract","x","s.x"],2.0],["Power",["Subtract","y","s.y"],2.0]]],"s.r"],
@@ -1207,10 +1247,11 @@
         "vars": ["x","y"]
       },
       "id": "s",
-      "tags": ["circle","pink"]
+      "tags": ["circle","middle"]
     },
     {
       "beat": 8,
+      "focus": ["Add",1.0,["Multiply",["Subtract",["IfNonnegative",["Subtract",0.5,["Abs",["Subtract","case.index",1.0]]],1.0,0.0],1.0],["Clamp",["Add",["Subtract","beat",9.0],1.0],0.0,1.0]]],
       "form": {
         "curvature": ["Divide",1.0,"p_m.r"],
         "field": ["Subtract",["Sqrt",["Add",["Power",["Subtract","x","p_m.x"],2.0],["Power",["Subtract","y","p_m.y"],2.0]]],"p_m.r"],
@@ -1224,10 +1265,11 @@
         "vars": ["x","y"]
       },
       "id": "p_m",
-      "tags": ["circle","pink"]
+      "tags": ["circle","middle"]
     },
     {
       "beat": 8,
+      "focus": ["Add",1.0,["Multiply",["Subtract",["IfNonnegative",["Subtract",0.5,["Abs",["Subtract","case.index",1.0]]],1.0,0.0],1.0],["Clamp",["Add",["Subtract","beat",9.0],1.0],0.0,1.0]]],
       "form": {
         "curvature": ["Divide",1.0,"r_m.r"],
         "field": ["Subtract",["Sqrt",["Add",["Power",["Subtract","x","r_m.x"],2.0],["Power",["Subtract","y","r_m.y"],2.0]]],"r_m.r"],
@@ -1241,7 +1283,7 @@
         "vars": ["x","y"]
       },
       "id": "r_m",
-      "tags": ["circle","pink"]
+      "tags": ["circle","middle"]
     },
     {
       "beat": 9,
@@ -1258,7 +1300,7 @@
         "vars": ["x","y"]
       },
       "id": "p_1",
-      "tags": ["circle","accent","aux"]
+      "tags": ["circle","level_curve","aux"]
     },
     {
       "beat": 9,
@@ -1271,17 +1313,18 @@
         "kind": "parametric"
       },
       "id": "level",
-      "tags": ["curve","accent"]
+      "tags": ["curve","level_curve"]
     },
     {
       "beat": 9,
+      "focus": ["Add",1.0,["Multiply",["Subtract",["Max",1.0,1.0],1.0],["Clamp",["Add",["Subtract","beat",9.0],1.0],0.0,1.0]]],
       "form": {
         "closed": false,
         "kind": "polyline",
         "points": [["O.x","O.y"],[["Multiply",4.0,["Cos",["Divide","tau","q"]]],["Multiply",4.0,["Sin",["Divide","tau","q"]]]]]
       },
       "id": "step",
-      "tags": ["segment","accent"]
+      "tags": ["segment","level_curve"]
     },
     {
       "beat": null,
@@ -1294,6 +1337,7 @@
     },
     {
       "beat": null,
+      "focus": ["Add",1.0,["Multiply",-1.0,["Clamp",["Add",["Subtract","beat",9.0],1.0],0.0,1.0]]],
       "form": {
         "at": ["P.x","P.y"],
         "kind": "label",

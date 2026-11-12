@@ -14,8 +14,8 @@ viewport {
 fn dir(t) = (cos(t), sin(t))
 
 // q steps make a full turn, and the case says which angle is the step. For p = 0 it's θ, the angle
-// to P and the blue centers. For q = 2p it's the angle φ to F and the pink centers, and since
-// cos φ = cos²(θ/2) + cos(θ/2) − 1, θ follows from it.
+// to P and the boundary flower's centers. For q = 2p it's the angle φ to F and the middle flower's
+// centers, and since cos φ = cos²(θ/2) + cos(θ/2) − 1, θ follows from it.
 param q = 6 in 4..12 step 1
 param case in {"p = 0": tau / q, "q = 2p": 2·acos((sqrt(5 + 4·cos(tau / q)) - 1) / 2)}
 // θ is the construction's own: P's angle, which sets the circle at 1. The case closes it, and
@@ -25,7 +25,7 @@ bind theta = case
 
 let near_zero = (-0.2, 0)
 
-beat "Start with the unit circle and a point P on it, at angle θ." tag ink {
+beat "Start with the unit circle and a point P on it, at angle θ." tag given {
   let O = (0, 0)
   dot O
   label zero = "0" at O away (0, -1)
@@ -39,18 +39,18 @@ beat "Start with the unit circle and a point P on it, at angle θ." tag ink {
   let P = dir(theta)
 }
 
-beat "Halfway from 1 to P is B. The circle at 1 through B has radius sin(θ/2): that is k." tag red {
+beat "Halfway from 1 to P is B. The circle at 1 through B has radius sin(θ/2): that is k." tag ratio {
   let B = midpoint(P, A)
   dot B
   label name_b = "B" at B away B
   curve d = circle(A, B)
 }
 
-beat "p = 0: a circle the same size, at P, touches it. Copies keep going around the unit circle, and the ring closes when θ = 360°/q." tag blue {
+beat "p = 0: a circle the same size, at P, touches it. Copies keep going around the unit circle, and the ring closes when θ = 360°/q." tag boundary {
   curve t = circle(P, B)
 }
 
-beat "Its other two neighbors sit on the ray halfway to P, one inside the unit circle and one outside." tag blue {
+beat "Its other two neighbors sit on the ray halfway to P, one inside the unit circle and one outside." tag boundary {
   curve g = ray(O, B)
   let C = intersect(c, g, 1)
   dot C
@@ -70,13 +70,13 @@ beat "Its other two neighbors sit on the ray halfway to P, one inside the unit c
   curve d_1 = circle(V, T)
 }
 
-beat "Mirror them across the real axis: six circles around one, and every circle the same ratio k to its distance from 0." tag blue {
+beat "Mirror them across the real axis: six circles around one, and every circle the same ratio k to its distance from 0." tag boundary {
   curve t_m = mirror(t, f)
   curve e_1 = mirror(c_1, f)
   curve g_1 = mirror(d_1, f)
 }
 
-beat "q = 2p: the circle about −½ through cos(θ/2) crosses the unit circle at F. The next neighbors lie in that direction." tag pink {
+beat "q = 2p: the circle about −½ through cos(θ/2) crosses the unit circle at F. The next neighbors lie in that direction." tag middle {
   curve h = perpendicular(C, f)
   let D = intersect(f, h)
   dot D
@@ -90,7 +90,7 @@ beat "q = 2p: the circle about −½ through cos(θ/2) crosses the unit circle a
   curve i = ray(O, F)
 }
 
-beat "Two neighbors on that ray, touching the circle at 1 where the ray halfway to F crosses it." tag pink {
+beat "Two neighbors on that ray, touching the circle at 1 where the ray halfway to F crosses it." tag middle {
   let G = midpoint(F, A)
   curve j = ray(O, G)
   let H = intersect(d, j, 0)
@@ -107,7 +107,7 @@ beat "Two neighbors on that ray, touching the circle at 1 where the ray halfway 
   curve r = circle(M, I)
 }
 
-beat "And two on the real axis, the direction that is a pure zoom. Each touches its neighbor where that same ray crosses it again." tag pink {
+beat "And two on the real axis, the direction that is a pure zoom. Each touches its neighbor where that same ray crosses it again." tag middle {
   let K = intersect(p, j, 0)
   dot K
   let N = intersect(r, j, 1)
@@ -122,12 +122,12 @@ beat "And two on the real axis, the direction that is a pure zoom. Each touches 
   curve s = circle(Q, N)
 }
 
-beat "Mirror the pair across the real axis: the q = 2p flower." tag pink {
+beat "Mirror the pair across the real axis: the q = 2p flower." tag middle {
   curve p_m = mirror(p, f)
   curve r_m = mirror(r, f)
 }
 
-beat "Every center in both flowers lies on one curve, the level curve of the circle at 1. One way to draw it: the pedal of the circle on the two real-axis centers, seen from 1." tag accent {
+beat "Every center in both flowers lies on one curve, the level curve of the circle at 1. One way to draw it: the pedal of the circle on the two real-axis centers, seen from 1." tag level_curve focus .given, .ratio, .level_curve, base, step, P, .boundary if case = "p = 0", .middle if case = "q = 2p" {
   let Z = midpoint(L, Q)
   curve p_1 = circle(Z, Q) tag aux
   // The pedal: for each tangent of the circle, the foot of the perpendicular from A.
