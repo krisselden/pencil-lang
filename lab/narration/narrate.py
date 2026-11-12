@@ -26,6 +26,16 @@ the repo's root:
     ffmpeg -i out/narrated.mp4 -i lab/narration/out/limacon.wav -map 0:v -map 1:a -af apad -shortest \\
         -c:v copy -c:a aac out/narrated-audio.mp4
 
+It also writes `out/limacon.prompt.json`, each word's time in the story, for a teleprompter that
+plays the figure and lights the words as they're due, to read a take along with it:
+
+    http://localhost:8741/web/prompter.html?take=limacon
+
+The prompter records too. `scripts/serve.py` keeps each take in `out/takes`, with the figure's time
+it started at and the `.pen` it was read with, so it's in step with the figure as recorded:
+
+    pixi run python narrate.py video out/takes/limacon-20261112-091500.json
+
 `labels` holds a figure to Kris's rule that any point a caption or the narration names is labeled in
 the figure, which is how a reader knows which letter was meant.
 
@@ -183,6 +193,11 @@ def align(take, script, out):
     phones = tiers["phones"]["entries"]
     expected = words_of(text)
     said = [w[2] for w in words]
+    # The aligner can split a last word that trails off into silence in two. Only what follows the
+    # script's end is let go.
+    if len(said) > len(expected) and said[: len(expected)] == expected:
+        print(f"let go of {len(said) - len(expected)} word(s) past the end: {said[len(expected):]}")
+        words, said = words[: len(expected)], expected
     if said != expected:
         sys.exit(f"the aligner heard different words:\n  script {expected}\n  aligned {said}")
 
@@ -197,7 +212,7 @@ def align(take, script, out):
         start, end, word = words[anchor["word"]]
         anchors.append({**anchor, "text": word, "at": stressed(phones, start, end)})
     info = soundfile.info(str(wav))
-    result = {"audio": str(wav.resolve()), "duration": info.frames / info.samplerate,
+    result = {"audio": str(wav.resolve()), "duration": info.frames / info.samplerate, "script": text,
               "lines": spans, "words": words, "anchors": anchors, "oov": sum(oovs, [])}
     out.write_text(json.dumps(result, indent=1))
     for a in anchors:
@@ -405,7 +420,71 @@ def retime(pen, timing, out):
         at = int(starts[i] * rate)
         track[at : at + len(clip)] += clip[: len(track) - at]
     soundfile.write(Path(out).with_suffix(".wav"), track, rate)
-    print(f"\nwrote {out} and {Path(out).with_suffix('.wav')} ({len(track) / rate:.1f} s)")
+
+    # Each word as the script writes it, and when it's said in the story, for the prompter.
+    prompt, k = [], 0
+    for i, line in enumerate(lines_of(take["script"])):
+        row = []
+        for token in ANCHOR.sub(" ", line).split():
+            if normal(token):
+                start, end, _ = take["words"][k]
+                k += 1
+                row.append([token, round(starts[i] + start - cuts[i], 3),
+                            round(starts[i] + end - cuts[i], 3)])
+            elif row:
+                row[-1][0] += " " + token  # A dash or the like goes with the word before it.
+        prompt.append(row)
+    Path(out).with_suffix(".prompt.json").write_text(
+        json.dumps({"duration": round(len(track) / rate, 3), "lines": prompt}))
+    print(f"\nwrote {out}, {Path(out).with_suffix('.wav')} ({len(track) / rate:.1f} s) and "
+          f"{Path(out).with_suffix('.prompt.json')}")
+
+
+REPO = Path(__file__).resolve().parents[2]
+
+
+def video(*abouts):
+    """Takes the prompter recorded, on the figure they were read with. Each starts at a known time
+    in the figure, so it's placed there as it is, with nothing retimed. Several takes make one
+    narration, as when a reader stops partway and starts again from a later word: each runs until
+    the next one starts. An `.mp4` given last is where the video goes."""
+    out = None
+    if abouts and abouts[-1].endswith(".mp4"):
+        *abouts, out = abouts
+    abouts = sorted((Path(a).resolve() for a in abouts),
+                    key=lambda a: json.loads(a.read_text())["start"])
+    takes = [json.loads(a.read_text()) for a in abouts]
+    pens = {a.with_suffix(".pen").read_text() for a in abouts if a.with_suffix(".pen").exists()}
+    if len(pens) > 1:
+        sys.exit("those takes were read with different timings, so they can't share a video")
+    about, take = abouts[0], takes[0]
+    pen = about.with_suffix(".pen")
+    if not pen.exists():
+        pen = Path(__file__).with_name("out") / f"{take['figure']}.pen"
+    out = Path(out).resolve() if out else REPO / "out" / f"{about.stem}.mp4"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    # The sheets are as the page named them, from web/.
+    sheets = [str((REPO / "web" / s).resolve()) for s in take["sheets"].split()]
+    silent = out.with_suffix(".silent.mp4")
+    subprocess.run(["cargo", "run", "--release", "-q", "-p", "pencil-cli", "--", "video", str(pen),
+                    *(a for s in sheets for a in ("--style", s)), "--size", "1280",
+                    "--out", str(silent)], cwd=REPO, check=True)
+    # Each take cut where the next begins, delayed to its start, and the lot mixed with no change
+    # of level.
+    inputs, parts = [], []
+    for k, (a, t) in enumerate(zip(abouts, takes)):
+        inputs += ["-i", str(a.with_name(t["recording"]))]
+        cut = f"atrim=0:{takes[k + 1]['start'] - t['start']:.3f}," if k + 1 < len(takes) else ""
+        parts.append(f"[{k + 1}:a]aformat=sample_rates=48000:channel_layouts=mono,{cut}"
+                     f"adelay={round(1000 * t['start'])}:all=1[a{k}]")
+    mix = "".join(f"[a{k}]" for k in range(len(takes)))
+    graph = ";".join(parts) + f";{mix}amix=inputs={len(takes)}:normalize=0,apad[out]"
+    subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(silent), *inputs,
+                    "-filter_complex", graph, "-map", "0:v", "-map", "[out]", "-shortest",
+                    "-c:v", "copy", "-c:a", "aac", str(out)], check=True)
+    silent.unlink()
+    spans = ", ".join(f"{t['start']:.1f}–{t.get('end', 0):.1f} s" for t in takes)
+    print(f"wrote {out}, with the takes at {spans} in the figure")
 
 
 def lines_of_script(take):
@@ -419,6 +498,7 @@ def lines_of_script(take):
 
 if __name__ == "__main__":
     command, *args = sys.argv[1:]
-    run = {"say": say, "hear": hear, "align": align, "retime": retime, "labels": labels}[command]
+    run = {"say": say, "hear": hear, "align": align, "retime": retime, "labels": labels,
+           "video": video}[command]
     if run(*args) is False:
         sys.exit(1)

@@ -1,0 +1,325 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Prompter</title>
+<style>
+  /* The figure is drawn on the dark sheet, so the page is dark too. */
+  :root { color-scheme: dark; --ink: #f3f0ea; --paper: #171614; --muted: #8f8a81; --dim: #4d4a45;
+          --lit: #f6c453; --rec: #e5534b; --bad: #e58a80; }
+  html, body { height: 100%; }
+  body { margin: 0; background: var(--paper); color: var(--ink);
+         font: 15px/1.45 ui-sans-serif, system-ui, sans-serif;
+         display: grid; grid-template-rows: auto 1fr auto; }
+  .stage { width: min(100%, calc(52vh * 16 / 9)); margin: 0 auto; }
+  /* The script, with the line being said held at the middle. */
+  .prompt { position: relative; overflow: hidden; min-height: 9em;
+            -webkit-mask-image: linear-gradient(transparent, #000 22%, #000 78%, transparent);
+                    mask-image: linear-gradient(transparent, #000 22%, #000 78%, transparent); }
+  .lines { position: absolute; left: 0; right: 0; top: 50%; padding: 0 16px; text-align: center;
+           transition: transform 0.45s ease; }
+  .line { margin: 0 auto; max-width: 30em; font-size: clamp(20px, 3.6vw, 34px); line-height: 1.3;
+          padding: 0.25em 0; color: var(--dim); transition: color 0.3s; }
+  .line.next { color: var(--muted); }
+  .line.now { color: var(--ink); }
+  .word { cursor: pointer; }
+  /* A word fills from the left as it's said, as far as --fill says. */
+  .line.now .word { color: transparent; -webkit-background-clip: text; background-clip: text;
+                    background-image: linear-gradient(90deg, var(--lit) calc(var(--fill, 0) * 100%),
+                                                      var(--ink) calc(var(--fill, 0) * 100%)); }
+  .count { position: fixed; inset: 0; display: grid; place-items: center; pointer-events: none;
+           font-size: 22vh; font-weight: 600; color: var(--lit); text-shadow: 0 0 24px #000; }
+  /* `display: grid` above would otherwise outrank the `hidden` attribute. */
+  .count[hidden] { display: none; }
+  .controls { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; justify-content: center;
+              padding: 10px 16px 14px; color: var(--muted); }
+  button { font: inherit; padding: 4px 12px; }
+  output { font-variant-numeric: tabular-nums; }
+  #recording { color: var(--rec); font-weight: 600; }
+  #take { color: var(--ink); }
+  #error { color: var(--bad); white-space: pre-wrap; font-family: ui-monospace, monospace; font-size: 13px; }
+  @media (hover: none) { .keys { display: none; } }
+  /* A phone on its side: the figure and the words side by side. */
+  @media (orientation: landscape) and (max-height: 520px) {
+    body { grid-template-columns: 1.15fr 1fr; grid-template-rows: 1fr auto; }
+    .stage { width: 100%; align-self: center; }
+    .prompt { grid-column: 2; grid-row: 1; }
+    .line { font-size: clamp(18px, 3vw, 26px); }
+    .controls { grid-column: 1 / -1; padding: 4px 12px 8px; }
+  }
+</style>
+</head>
+<body>
+<div class="stage">
+  <pencil-figure id="figure" paused aria-label="The figure the narration is read along with."></pencil-figure>
+</div>
+<div class="prompt" id="prompt"><div class="lines" id="lines"></div></div>
+<div class="controls">
+  <button id="start" type="button">Start</button>
+  <button id="restart" type="button">From the top</button>
+  <label><input id="record" type="checkbox" checked> Record</label>
+  <label><input id="guide" type="checkbox"> Hear the guide</label>
+  <button id="playback" type="button" hidden>Play back</button>
+  <output id="clock">0.0 s</output>
+  <span id="recording" hidden>● Recording</span>
+  <span id="take" aria-live="polite"></span>
+  <span class="keys">Space starts and stops. Tap a word to start just before it.</span>
+  <span id="error" role="alert"></span>
+</div>
+<div class="count" id="count" hidden></div>
+<audio id="audio" preload="auto"></audio>
+<audio id="heard"></audio>
+<script type="module">
+  // A teleprompter for recording a figure's narration. The figure plays as `narrate.py retime`
+  // timed it, and each word of the script lights up as it's due, so a reader can say it with the
+  // picture. `?take=name` reads lab/narration/out/name.pen, .prompt.json and .wav.
+  //
+  // With Record on, the microphone runs from the moment the figure starts until it stops, and the
+  // take goes to `scripts/serve.py`, with the figure's time it started at. A take is in step with
+  // the figure by construction, so `narrate.py video` puts it on the rendered figure as it is.
+  import './pencil-figure.js';
+
+  const $ = (id) => document.getElementById(id);
+  const search = new URLSearchParams(location.search);
+  const take = search.get('take') ?? 'limacon';
+  const out = `../lab/narration/out/${take}`;
+  const sheets = search.get('sheets')
+    ?? '../corpus/theme.style ../corpus/dark.style ../lab/explainer/limacon.style ../lab/explainer/caption.style';
+  // Seconds of count-in, how far before a tapped word to start, and the shortest take worth keeping.
+  const COUNT = 3, BEFORE = 1.5, SHORTEST = 1;
+
+  const figure = $('figure');
+  if (search.has('gl')) figure.setAttribute('gl', '');
+  figure.setAttribute('sheets', sheets);
+  figure.setAttribute('src', `${out}.pen`);
+  $('audio').src = `${out}.wav`;
+
+  const response = await fetch(`${out}.prompt.json`, { cache: 'no-store' });
+  if (!response.ok) {
+    $('error').textContent = `${out}.prompt.json: ${response.status}. Run narrate.py retime first.`;
+    throw new Error('no prompt');
+  }
+  const prompt = await response.json();
+
+  // The script, a line a row and a word a span.
+  const rows = prompt.lines.map((words) => {
+    const row = document.createElement('p');
+    row.className = 'line';
+    for (const [text, start] of words) {
+      const span = document.createElement('span');
+      span.className = 'word';
+      span.textContent = text;
+      span.addEventListener('click', () => seek(start - BEFORE));
+      row.append(span, ' ');
+    }
+    return row;
+  });
+  $('lines').append(...rows);
+  const words = (i) => prompt.lines[i];
+  // A line becomes the one to read only just before its first word is due. Until then it waits
+  // dimmed below the line just said, so a reader holds through the figure's pauses instead of
+  // starting early. Words light a little early too, since reading one takes a moment.
+  const LINE_LEAD = 0.6, WORD_LEAD = 0.25;
+  const lineAt = (t) => {
+    let i = 0;
+    while (i + 1 < rows.length && t >= words(i + 1)[0][1] - LINE_LEAD) i += 1;
+    return i;
+  };
+
+  let shown = -1;
+  const show = (t) => {
+    const i = lineAt(t);
+    if (i !== shown) {
+      rows.forEach((row, k) => row.className = 'line' + (k === i ? ' now' : k === i + 1 ? ' next' : ''));
+      const row = rows[i];
+      $('lines').style.transform = `translateY(${-(row.offsetTop + row.offsetHeight / 2)}px)`;
+      shown = i;
+    }
+    rows[i].querySelectorAll('.word').forEach((span, k) => {
+      const [, start, end] = words(i)[k];
+      const lit = (t + WORD_LEAD - start) / (end - start);
+      span.style.setProperty('--fill', Math.min(Math.max(lit, 0), 1));
+    });
+    $('clock').textContent = `${t.toFixed(1)} s`;
+  };
+
+  // The figure's clock loops, and a take shouldn't: it stops at the figure's end instead, which
+  // can come after the last word.
+  const end = () => figure.duration;
+  let last = 0;
+  figure.addEventListener('draw', () => {
+    const t = figure.time;
+    if (!figure.paused && (t < last - 1 || t >= end() - 0.02)) {
+      stop(end());
+      figure.time = end();
+      last = end();
+      show(end());
+      return;
+    }
+    last = t;
+    show(t);
+  });
+  figure.addEventListener('load', () => show(figure.time));
+  figure.addEventListener('error', (e) => { $('error').textContent = String(e.detail.error?.message ?? e.detail.error); });
+
+  // ---- Recording ----
+
+  let stream = null, recorder = null, lastTake = null;
+  // Safari records MP4, the others WebM.
+  const type = ['audio/mp4', 'audio/webm;codecs=opus', 'audio/webm']
+    .find((t) => window.MediaRecorder?.isTypeSupported(t)) ?? '';
+
+  /** The microphone, asked for once. Its processing is off: the aligner wants the voice as said. */
+  async function microphone() {
+    stream ??= await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+    });
+    return stream;
+  }
+
+  /** Starts the figure and the microphone together, and notes the figure's time the take
+   * starts at. */
+  function record() {
+    const chunks = [];
+    const take = new MediaRecorder(stream, type ? { mimeType: type } : {});
+    take.addEventListener('dataavailable', (e) => e.data.size && chunks.push(e.data));
+    take.addEventListener('start', () => {
+      take.began = figure.time;
+      figure.play();
+      $('recording').hidden = false;
+    }, { once: true });
+    take.addEventListener('stop', () => {
+      $('recording').hidden = true;
+      const blob = new Blob(chunks, { type: take.mimeType || type || 'audio/webm' });
+      keep(blob, take.began, take.finished);
+    }, { once: true });
+    recorder = take;
+    take.start();
+  }
+
+  /** Sends a take to the server, which keeps it, and keeps it here to play back. */
+  async function keep(blob, start, finish) {
+    if (!(finish - start >= SHORTEST)) return;
+    lastTake = { url: URL.createObjectURL(blob), start };
+    $('playback').hidden = false;
+    const range = `${start.toFixed(1)}–${finish.toFixed(1)} s`;
+    $('take').textContent = `Saving the take, ${range}…`;
+    const query = new URLSearchParams({ take, start: start.toFixed(3), end: finish.toFixed(3), sheets });
+    try {
+      const saved = await fetch(`/takes?${query}`, {
+        method: 'POST', headers: { 'Content-Type': blob.type }, body: blob,
+      });
+      if (!saved.ok) throw new Error(`${saved.status}`);
+      $('take').textContent = `Saved the take, ${range}.`;
+    } catch (e) {
+      // A server that doesn't keep takes: the take can still be saved by hand.
+      const link = document.createElement('a');
+      link.href = lastTake.url;
+      link.download = `${take}-at-${start.toFixed(2)}s.${blob.type.includes('mp4') ? 'm4a' : 'webm'}`;
+      link.textContent = 'Save it';
+      $('take').replaceChildren(`The server didn't keep the take (${e.message}). `, link);
+    }
+  }
+
+  // ---- Playing ----
+
+  let counting = 0;
+  const guide = $('audio'), heard = $('heard');
+
+  function go() {
+    if ($('record').checked && stream) record();
+    else figure.play();
+    if ($('guide').checked) {
+      guide.currentTime = figure.time;
+      guide.play().catch(() => {});
+    }
+    $('start').textContent = 'Stop';
+  }
+
+  /** Stops everything, and ends a take at `at`, the figure's time. */
+  function stop(at = figure.time) {
+    clearInterval(counting);
+    counting = 0;
+    $('count').hidden = true;
+    if (recorder?.state === 'recording') {
+      recorder.finished = at;
+      recorder.stop();
+    }
+    figure.pause();
+    guide.pause();
+    heard.pause();
+    $('start').textContent = 'Start';
+  }
+
+  // A phone would lock its screen partway through a take, so it's kept awake once she starts.
+  let awake = null;
+  const stayAwake = async () => {
+    try { if (!awake || awake.released) awake = await navigator.wakeLock?.request('screen'); } catch {}
+  };
+  document.addEventListener('visibilitychange', () => { if (awake && !document.hidden) stayAwake(); });
+
+  // Counts in, then plays from where it is.
+  async function start() {
+    stayAwake();
+    if (figure.time >= end() - 0.05) seek(0);
+    if ($('record').checked) {
+      try {
+        await microphone();
+      } catch (e) {
+        $('error').textContent = `No microphone: ${e.message}`;
+        $('record').checked = false;
+      }
+    }
+    let n = COUNT;
+    $('count').textContent = n;
+    $('count').hidden = false;
+    $('start').textContent = 'Stop';
+    counting = setInterval(() => {
+      n -= 1;
+      if (n > 0) { $('count').textContent = n; return; }
+      clearInterval(counting);
+      counting = 0;
+      $('count').hidden = true;
+      go();
+    }, 1000);
+  }
+
+  const busy = () => counting || !figure.paused;
+  const toggle = () => (busy() ? stop() : start());
+
+  function seek(t) {
+    stop();
+    figure.time = Math.max(0, t);
+    last = figure.time;
+    show(figure.time);
+  }
+
+  /** The last take, with the figure from where it started. */
+  function playBack() {
+    if (!lastTake) return;
+    seek(lastTake.start);
+    heard.src = lastTake.url;
+    heard.onended = () => stop();
+    heard.play().then(() => figure.play()).catch((e) => { $('error').textContent = e.message; });
+    $('start').textContent = 'Stop';
+  }
+
+  $('start').addEventListener('click', toggle);
+  $('restart').addEventListener('click', () => seek(0));
+  $('playback').addEventListener('click', playBack);
+  $('guide').addEventListener('change', () => {
+    if (!$('guide').checked) guide.pause();
+    else if (!figure.paused) { guide.currentTime = figure.time; guide.play().catch(() => {}); }
+  });
+  // Space is always start and stop, even on a focused button, which would otherwise click it too.
+  addEventListener('keydown', (e) => {
+    if (e.key !== ' ') return;
+    e.preventDefault();
+    if (!e.repeat) toggle();
+  }, true);
+  addEventListener('keyup', (e) => { if (e.key === ' ') e.preventDefault(); }, true);
+  addEventListener('resize', () => { shown = -1; show(figure.time); });
+</script>
+</body>
+</html>
