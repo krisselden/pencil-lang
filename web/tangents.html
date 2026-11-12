@@ -11,15 +11,11 @@
          font: 15px/1.45 ui-sans-serif, system-ui, sans-serif; }
   main { max-width: 765px; margin: 0 auto; }
   h1 { font-size: 16px; font-weight: 600; margin: 0 0 12px; }
-  .stage { position: relative; overflow: hidden; touch-action: none; }
-  canvas { display: block; width: 100%; }
-  .label { position: absolute; left: 0; top: 0; pointer-events: none; white-space: nowrap;
-           font-family: system-ui, -apple-system, sans-serif; line-height: 1;
-           paint-order: stroke; -webkit-text-stroke-color: transparent; will-change: transform; }
-  .label.math { font-family: Charter, 'Bitstream Charter', 'Sitka Text', Cambria, serif; font-style: italic; }
+  pencil-figure { touch-action: none; }
   .controls { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; margin: 12px 0; }
   .controls input[type=range] { width: 14rem; max-width: 100%; }
   output { font-variant-numeric: tabular-nums; }
+  button { font: inherit; }
   p { margin: 4px 0; color: var(--muted); }
   #readout { color: var(--ink); font-variant-numeric: tabular-nums; }
   #error { color: var(--bad); white-space: pre-wrap; font-family: ui-monospace, monospace; font-size: 13px; }
@@ -28,8 +24,11 @@
 <body>
 <main>
   <h1>A point and a circle: two tangents outside, a chord inside</h1>
-  <div class="stage" id="stage"><canvas id="figure" aria-label="A circle and a point P. With P outside the circle, the two tangents from P are drawn. With P inside, the chord through P at right angles to OP is drawn."></canvas></div>
+  <pencil-figure id="figure" src="../corpus/005-tangents/tangents.pen" sheets="../corpus/theme.style ../corpus/005-tangents/plain.style"
+    paused params="d: 3"
+    aria-label="A circle and a point P. With P outside the circle, the two tangents from P are drawn. With P inside, the chord through P at right angles to OP is drawn."></pencil-figure>
   <div class="controls">
+    <button id="play" type="button">Play</button>
     <label>distance of P from O <input id="d" type="range" min="0.15" max="3.2" step="0.001" value="3"></label>
     <output id="d-value" for="d"></output>
     <span>Or drag P.</span>
@@ -39,107 +38,35 @@
   <p id="error" role="alert"></p>
 </main>
 <script type="module">
-  import init, { Player, figure_size } from './pkg/pencil_web.js';
-  import { fit, follow } from './fit.js';
-  import { LabelLayer } from './labels.js';
+  import { fromQuery, report, playButton } from './controls.js';
 
-  const BASE = '../corpus/005-tangents/';
   const $ = (id) => document.getElementById(id);
-  const canvas = $('figure');
-  const stage = $('stage');
-  const params = new URLSearchParams(location.search);
+  const figure = $('figure');
+  fromQuery(figure);
+  report(figure, $('status'), $('error'));
+  // It starts held at d = 3. Time sweeps P in and out, and playing carries on from where P is.
+  playButton(figure, $('play'));
 
-  const read = async (name) => {
-    const response = await fetch(BASE + name, { cache: 'no-store' });
-    if (!response.ok) throw new Error(`${name}: ${response.status}`);
-    return response.text();
-  };
-
-  const doc = await read('tangents.pen');
-  const theme = await (await fetch('../corpus/theme.style', { cache: 'no-store' })).text();
-  const style = await read('plain.style');
-  const dpr = window.devicePixelRatio || 1;
-  await init();
-  fit(canvas, JSON.parse(figure_size(doc, [theme, style])));
-  const player = await Player.create(canvas, params.has('gl'));
-  const TIME = 0;
-  let dirty = true;
-
-  const setDistance = (value) => {
-    player.set_param('d', value);
-    dirty = true;
-  };
-  try {
-    player.load(doc, [theme, style]);
-    setDistance(Number($('d').value));
-    $('status').textContent = `${player.backend}, ${canvas.width}×${canvas.height}`;
-  } catch (e) {
-    $('error').textContent = `tangents.pen or plain.style: ${e.message}`;
-  }
-  $('d').addEventListener('input', () => setDistance(Number($('d').value)));
-
-  const device = (e) => {
-    const box = canvas.getBoundingClientRect();
-    return [(e.clientX - box.left) * (canvas.width / box.width), (e.clientY - box.top) * (canvas.height / box.height)];
-  };
-  canvas.addEventListener('pointerdown', (e) => {
-    const [x, y] = device(e);
-    if (player.grab(TIME, x, y, 24 * dpr)) {
-      canvas.setPointerCapture(e.pointerId);
-      canvas.style.cursor = 'grabbing';
-      player.drag(TIME, x, y);
-      dirty = true;
-    }
+  // The slider and a drag on P set the same param.
+  $('d').addEventListener('input', () => {
+    figure.pause();
+    figure.hold('d', Number($('d').value));
   });
-  canvas.addEventListener('pointermove', (e) => {
-    const [x, y] = device(e);
-    if (!canvas.hasPointerCapture(e.pointerId)) {
-      canvas.style.cursor = player.grab(TIME, x, y, 24 * dpr) ? 'grab' : '';
-      player.release();
-      return;
-    }
-    player.drag(TIME, x, y);
-    dirty = true;
+  figure.addEventListener('load', () => {
+    const d = figure.info.params.find((p) => p.id === 'd');
+    Object.assign($('d'), { min: d.min, max: d.max });
   });
-  const end = (e) => {
-    if (canvas.hasPointerCapture(e.pointerId)) canvas.releasePointerCapture(e.pointerId);
-    player.release();
-    canvas.style.cursor = '';
-  };
-  canvas.addEventListener('pointerup', end);
-  canvas.addEventListener('pointercancel', end);
-
-  const layer = new LabelLayer(stage, dpr);
-
-  const draw = () => {
-    layer.update(JSON.parse(player.draw(TIME, dpr)));
-    const v = (name) => player.value(name, TIME);
+  figure.addEventListener('draw', () => {
+    const v = (name) => figure.value(name);
     const d = v('d');
     $('d').value = d;
     $('d-value').textContent = d.toFixed(3);
     $('readout').textContent = v('outside')
       ? `P is outside the circle: each tangent has length ${v('tangent_length').toFixed(3)}.`
       : `P is inside the circle: it has no tangents, and the chord reaches ${v('half_chord').toFixed(3)} each way.`;
-  };
+  });
 
-  // Draws now: a resize calls it too, so the cleared canvas is never shown.
-  const paint = () => {
-    dirty = false;
-    try {
-      draw();
-    } catch (e) {
-      $('error').textContent = e.message;
-    }
-  };
-  const frame = (now) => {
-    if (dirty) paint();
-    layer.tick(now);
-    requestAnimationFrame(frame);
-  };
-  requestAnimationFrame(frame);
-
-  window.pencil = { layer, player, dpr, draw, setDistance, redraw() { dirty = true; } };
-  follow(canvas, player, paint);
+  window.pencil = { figure };
 </script>
 </body>
 </html>

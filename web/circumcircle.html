@@ -10,10 +10,6 @@
   body { margin: 0; padding: 24px 16px; background: var(--paper); color: var(--ink); font: 15px/1.45 ui-sans-serif, system-ui, sans-serif; }
   main { max-width: 800px; margin: 0 auto; }
   h1 { font-size: 16px; font-weight: 600; margin: 0 0 12px; }
-  .stage { position: relative; overflow: hidden; }
-  canvas { display: block; width: 100%; }
-  .label { position: absolute; left: 0; top: 0; white-space: nowrap; font-family: system-ui, -apple-system, sans-serif; line-height: 1; will-change: transform; }
-  .label.math { font-family: Charter, 'Bitstream Charter', 'Sitka Text', Cambria, serif; font-style: italic; }
   .controls { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; margin: 12px 0; }
   .controls input[type=range] { width: 8rem; }
   output { font-variant-numeric: tabular-nums; }
@@ -25,7 +21,8 @@
 <body>
 <main>
   <h1>A circumcircle, going through a line</h1>
-  <div class="stage" id="stage"><canvas id="figure" aria-label="A triangle and the circle through its corners, warm on one side and cool on the other. When the triangle turns over, the circle straightens into a line and comes back the other way round."></canvas></div>
+  <pencil-figure id="figure" src="../corpus/011-circumcircle/circumcircle.pen" sheets="../corpus/011-circumcircle/plain.style"
+    aria-label="A triangle and the circle through its corners, warm on one side and cool on the other. When the triangle turns over, the circle straightens into a line and comes back the other way round."></pencil-figure>
   <p>Warm is its negative side. When the corners pass, the circle goes through a line and comes back the other way round, and that side doesn’t change.</p>
   <div class="controls">
     <button id="play" type="button">Pause</button>
@@ -34,52 +31,15 @@
   <p id="error" role="alert"></p>
 </main>
 <script type="module">
-  import init, { Player, figure_size, named_colors } from './pkg/pencil_web.js';
-  import { LabelLayer } from './labels.js';
-  import { fit, follow } from './fit.js';
+  import { fromQuery, report, playButton } from './controls.js';
+
   const $ = (id) => document.getElementById(id);
-  const get = async (path) => {
-    const response = await fetch(path, { cache: 'no-store' });
-    if (!response.ok) throw new Error(`${path}: ${response.status}`);
-    return response.text();
-  };
-  const canvas = $('figure');
-  const doc = await get('../corpus/011-circumcircle/circumcircle.pen');
-  const sheets = [await get('../corpus/011-circumcircle/plain.style')];
-  await init();
-  const dpr = window.devicePixelRatio || 1;
-  fit(canvas, JSON.parse(figure_size(doc, sheets)));
-  const player = await Player.create(canvas, new URLSearchParams(location.search).has('gl'));
-  const layer = new LabelLayer($('stage'), dpr);
-  player.set_measure(layer.measure);
-  const PERIOD = 17.95;
-  let time = 0, last = 0, playing = true, dirty = true;
-  try {
-    player.load(doc, sheets);
-    $('status').textContent = `${player.backend}, ${canvas.width}×${canvas.height}`;
-  } catch (e) {
-    $('error').textContent = e.message;
-  }
-  $('play').addEventListener('click', () => {
-    playing = !playing;
-    $('play').textContent = playing ? 'Pause' : 'Play';
-    dirty = true;
-  });
-  // Draws now: a resize calls it too, so the cleared canvas is never shown.
-  const paint = () => {
-    dirty = false;
-    try { layer.update(JSON.parse(player.draw(time, dpr))); } catch (e) { $('error').textContent = e.message; playing = false; }
-  };
-  const frame = (now) => {
-    if (playing) { time = (time + (now - last) / 1000) % PERIOD; dirty = true; }
-    last = now;
-    if (dirty) paint();
-    layer.tick(now);
-    requestAnimationFrame(frame);
-  };
-  requestAnimationFrame((now) => { last = now; frame(now); });
-  window.pencil = { player, layer, redraw() { dirty = true; } };
-  follow(canvas, player, paint);
+  const figure = $('figure');
+  fromQuery(figure);
+  report(figure, $('status'), $('error'));
+  playButton(figure, $('play'));
+
+  window.pencil = { figure };
 </script>
 </body>
 </html>

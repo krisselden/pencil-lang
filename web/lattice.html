@@ -10,10 +10,6 @@
   body { margin: 0; padding: 24px 16px; background: var(--paper_color); color: var(--ink); font: 15px/1.45 ui-sans-serif, system-ui, sans-serif; }
   main { max-width: 860px; margin: 0 auto; }
   h1 { font-size: 16px; font-weight: 600; margin: 0 0 12px; }
-  .stage { position: relative; overflow: hidden; }
-  canvas { display: block; width: 100%; }
-  .label { position: absolute; left: 0; top: 0; white-space: nowrap; font-family: system-ui, -apple-system, sans-serif; line-height: 1; will-change: transform; }
-  .label.math { font-family: Charter, 'Bitstream Charter', 'Sitka Text', Cambria, serif; font-style: italic; }
   .controls { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; margin: 12px 0; }
   .controls input[type=range] { flex: 1; min-width: 10rem; }
   output { font-variant-numeric: tabular-nums; }
@@ -28,7 +24,8 @@
 <body>
 <main>
   <h1>One lattice, through the maps that make a Doyle spiral</h1>
-  <div class="stage" id="stage"><canvas id="figure" aria-label="Four linked panels of a lattice triangle: the lattice itself, after the map to log space, after exp as a spiral of circles, and a close-up of the spiral near 1."></canvas></div>
+  <pencil-figure id="figure" src="../corpus/007-lattice/lattice.pen"
+    aria-label="Four linked panels of a lattice triangle: the lattice itself, after the map to log space, after exp as a spiral of circles, and a close-up of the spiral near 1."></pencil-figure>
   <div class="controls">
     <label><i>q</i> <input id="q" type="range" min="3" max="12" step="1" value="7"></label><output id="q-value" for="q"></output>
     <label><i>p</i> <input id="p" type="range" min="0" max="7" step="1" value="2"></label><output id="p-value" for="p"></output>
@@ -44,108 +41,63 @@
   <p id="error" role="alert"></p>
 </main>
 <script type="module">
-  import init, { Player, figure_size, named_colors } from './pkg/pencil_web.js';
-  import { LabelLayer } from './labels.js';
-  import { fit, follow } from './fit.js';
+  import { fromQuery, report } from './controls.js';
 
   const $ = (id) => document.getElementById(id);
-  const get = async (path) => {
-    const response = await fetch(path, { cache: 'no-store' });
-    if (!response.ok) throw new Error(`${path}: ${response.status}`);
-    return response.text();
-  };
-  const canvas = $('figure');
-  const doc = await get('../corpus/007-lattice/lattice.pen');
-  const [theme, plain, narrow, dark] = await Promise.all(
-    ['theme.style', '007-lattice/plain.style', '007-lattice/narrow.style', 'dark.style'].map((f) => get(`../corpus/${f}`)),
-  );
-  await init();
-  const dpr = window.devicePixelRatio || 1;
+  const figure = $('figure');
+  fromQuery(figure);
+  report(figure, $('status'), $('error'));
 
   // The reader's theme and the page's width pick the sheets. `?dark`, `?light`, `?narrow` and
-  // `?wide` pin them, to look at one.
+  // `?wide` pin them, to look at one. The narrow sheet gives the figure another shape, which the
+  // element follows, and a new sheet keeps the params and each label where it is.
   const query = new URLSearchParams(location.search);
   const wantsDark = matchMedia('(prefers-color-scheme: dark)');
   const wantsNarrow = matchMedia('(max-width: 600px)');
-  const sheets = () => {
+  const pick = () => {
     const isDark = query.has('dark') || (!query.has('light') && wantsDark.matches);
     const isNarrow = query.has('narrow') || (!query.has('wide') && wantsNarrow.matches);
-    return { isDark, list: [theme, plain, ...(isNarrow ? [narrow] : []), ...(isDark ? [dark] : [])] };
-  };
-  // The narrow sheet gives the figure another shape, and the player follows the canvas to it.
-  const shape = (list) => fit(canvas, JSON.parse(figure_size(doc, list)));
-  const colors = (list, isDark) => {
     document.documentElement.style.colorScheme = isDark ? 'dark' : 'light';
-    for (const [name, color] of Object.entries(JSON.parse(named_colors(list)))) {
+    figure.setAttribute('sheets', [
+      '../corpus/theme.style', '../corpus/007-lattice/plain.style',
+      ...(isNarrow ? ['../corpus/007-lattice/narrow.style'] : []),
+      ...(isDark ? ['../corpus/dark.style'] : []),
+    ].join(' '));
+  };
+  pick();
+  wantsDark.addEventListener('change', pick);
+  wantsNarrow.addEventListener('change', pick);
+
+  // The page takes its colors from the figure's sheets.
+  figure.addEventListener('load', () => {
+    for (const [name, color] of Object.entries(figure.colors)) {
       document.documentElement.style.setProperty(`--${name}`, color);
     }
-  };
-  {
-    const { isDark, list } = sheets();
-    colors(list, isDark);
-    shape(list);
-  }
+  });
 
-  const player = await Player.create(canvas, query.has('gl'));
-  const layer = new LabelLayer($('stage'), dpr);
-  player.set_measure(layer.measure);
-  let dirty = true;
-  const set = (name) => {
-    player.set_param(name, Number($(name).value));
-    $(`${name}-value`).textContent = $(name).value;
-    dirty = true;
-  };
-  const inputs = ['q', 'p'];
-  try {
-    player.load(doc, sheets().list);
-    inputs.forEach(set);
-    $('status').textContent = `${player.backend}, ${canvas.width}×${canvas.height}`;
-  } catch (e) {
-    $('error').textContent = e.message;
-  }
-  for (const name of inputs) {
+  for (const name of ['q', 'p']) {
     $(name).addEventListener('input', () => {
       // p steps along the edge of q, so it can't be past it.
       if (Number($('p').value) > Number($('q').value)) {
         $('p').value = $('q').value;
-        set('p');
+        figure.hold('p', Number($('p').value));
       }
-      set(name);
+      figure.hold(name, Number($(name).value));
     });
   }
-  // Loading again keeps the sliders, and each label stays where it is relative to its point.
-  const restyle = () => {
-    const { isDark, list } = sheets();
-    try {
-      colors(list, isDark);
-      shape(list);
-      player.load(doc, list);
-      inputs.forEach(set);
-    } catch (e) {
-      $('error').textContent = e.message;
-    }
-  };
-  wantsDark.addEventListener('change', restyle);
-  wantsNarrow.addEventListener('change', restyle);
+
   const signed = (n, sign) => (n === 0 ? '0' : `${sign}${n}`);
-  const readout = () => {
-    const [q, p] = [Number($('q').value), Number($('p').value)];
+  figure.addEventListener('draw', () => {
+    const [q, p] = [figure.value('q'), figure.value('p')];
+    for (const [name, value] of [['q', q], ['p', p]]) {
+      $(name).value = value;
+      $(`${name}-value`).textContent = value;
+    }
     const route = (text, color) => `<span style="color: var(--${color})">${text}</span>`;
     $('readout').innerHTML = `${route(`(${signed(q, '−')})·1`, 'blue')} + ${route(`(${signed(q - p, '+')})·(1 + ω)`, 'green')} = ${route(`(${signed(q, '+')})·ω`, 'red')} + ${route(`(${signed(p, '−')})·(1 + ω)`, 'accent')} = A = ${p ? `−${p}` : '0'} + ${q - p}ω`;
-  };
-  // Draws now: a resize calls it too, so the cleared canvas is never shown.
-  const paint = () => {
-    dirty = false;
-    try { layer.update(JSON.parse(player.draw(0, dpr))); readout(); } catch (e) { $('error').textContent = e.message; }
-  };
-  const frame = (now) => {
-    if (dirty) paint();
-    layer.tick(now);
-    requestAnimationFrame(frame);
-  };
-  requestAnimationFrame(frame);
-  window.pencil = { player, layer, set, restyle, redraw() { dirty = true; } };
-  follow(canvas, player, paint);
+  });
+
+  window.pencil = { figure };
 </script>
 </body>
 </html>

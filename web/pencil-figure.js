@@ -13,9 +13,11 @@
 //
 // Attributes: `src` and `sheets` (space-separated URLs, in order), `params` (`a: 0.5; beat: 2`,
 // held as if a reader set them), `paused` to start paused, and `gl` to skip WebGPU.
+// A page that picks its sheets in script, by the reader's theme or width, sets `sheets` as soon as
+// the element is defined: changes made before that script finishes are fetched once.
 // Events: `load` when a figure is compiled, `draw` after each frame drawn, `input` when a reader
 // drags a param, `play` and `pause`, and `error` (its `detail.error`) when one can't load or draw.
-import init, { Player, figure_size } from './pkg/pencil_web.js';
+import init, { Player, figure_size, named_colors } from './pkg/pencil_web.js';
 import { LabelLayer } from './labels.js';
 import { match } from './fit.js';
 
@@ -63,6 +65,7 @@ export class PencilFigure extends HTMLElement {
   #generation = 0;
   #sources = null; // { doc, sheets }, compiled or waiting for the GPU
   #fetched = null;
+  #fetching = false;
   #info = null;
   #driven = new Set();
   #held = new Map();
@@ -113,7 +116,7 @@ export class PencilFigure extends HTMLElement {
     this.#seen.observe(this);
     this.#resized = new ResizeObserver(() => this.#follow());
     this.#resized.observe(this.#canvas);
-    this.#fetchSources();
+    this.#queueFetch();
   }
 
   disconnectedCallback() {
@@ -130,8 +133,8 @@ export class PencilFigure extends HTMLElement {
   attributeChangedCallback(name) {
     if (name === 'params') {
       for (const [param, value] of parseParams(this.getAttribute('params'))) this.hold(param, value);
-    } else if (this.isConnected) {
-      this.#fetchSources();
+    } else {
+      this.#queueFetch();
     }
   }
 
@@ -205,6 +208,17 @@ export class PencilFigure extends HTMLElement {
   }
 
   // ---- Sources ----
+
+  /** Fetches the sources once the task that set them is done, so `src` and `sheets` set one
+   * after the other, or set by a page's script just after the element is parsed, fetch once. */
+  #queueFetch() {
+    if (this.#fetching) return;
+    this.#fetching = true;
+    queueMicrotask(() => {
+      this.#fetching = false;
+      if (this.isConnected) this.#fetchSources();
+    });
+  }
 
   async #fetchSources() {
     const src = this.getAttribute('src');
@@ -467,6 +481,13 @@ export class PencilFigure extends HTMLElement {
    * drives (`timeDriven`), and whether anything reads time (`usesTime`). */
   get info() {
     return this.#info;
+  }
+
+  /** The named colors the figure's sheets define, by name, so the page around it can match:
+   * `{ paper_color: 'rgb(…)', … }`. Empty until the figure has loaded. */
+  get colors() {
+    if (!this.#info || !this.#sources) return {};
+    return JSON.parse(named_colors(this.#sources.sheets));
   }
 
   /** The WASM host, for measuring and debugging. */

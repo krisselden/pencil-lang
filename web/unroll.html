@@ -11,12 +11,7 @@
          font: 15px/1.45 ui-sans-serif, system-ui, sans-serif; }
   main { max-width: 765px; margin: 0 auto; }
   h1 { font-size: 16px; font-weight: 600; margin: 0 0 12px; }
-  .stage { position: relative; cursor: pointer; overflow: hidden; }
-  canvas { display: block; width: 100%; }
-  .label { position: absolute; left: 0; top: 0; pointer-events: none; white-space: nowrap;
-           font-family: system-ui, -apple-system, sans-serif; line-height: 1;
-           paint-order: stroke; -webkit-text-stroke-color: transparent; will-change: transform; }
-  .label.math { font-family: Charter, 'Bitstream Charter', 'Sitka Text', Cambria, serif; font-style: italic; }
+  pencil-figure { cursor: pointer; }
   .controls { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin: 12px 0; }
   .controls input[type=range] { flex: 1; min-width: 140px; }
   output { font-variant-numeric: tabular-nums; min-width: 4ch; text-align: right; }
@@ -29,7 +24,8 @@
 <body>
 <main>
   <h1>Unroll: unwinding a string from a circle</h1>
-  <div class="stage" id="stage"><canvas id="figure"></canvas></div>
+  <pencil-figure id="figure" src="../corpus/003-unroll/unroll.pen" sheets="../corpus/003-unroll/blog.style"
+    aria-label="A string unwinding from a circle. Its end traces an involute, and the triangle it makes with the center always has the area of the sector swept so far."></pencil-figure>
   <div class="controls">
     <button id="play" type="button">Pause</button>
     <label for="a">a</label>
@@ -47,146 +43,42 @@
   <p id="error" role="alert"></p>
 </main>
 <script type="module">
-  import init, { Player, figure_size } from './pkg/pencil_web.js';
-  import { fit, follow } from './fit.js';
+  import { fromQuery, report, playButton, watch } from './controls.js';
 
-  const BASE = '../corpus/003-unroll/';
-  const canvas = document.getElementById('figure');
-  const stage = document.getElementById('stage');
-  const slider = document.getElementById('a');
-  const value = document.getElementById('a-value');
-  const play = document.getElementById('play');
-  const styleSelect = document.getElementById('style');
-  const readout = document.getElementById('readout');
-  const status = document.getElementById('status');
-  const error = document.getElementById('error');
+  const $ = (id) => document.getElementById(id);
+  const figure = $('figure');
+  fromQuery(figure);
+  report(figure, $('status'), $('error'));
+  playButton(figure, $('play'));
+  // Clicking the figure plays and pauses it too.
+  figure.addEventListener('click', () => (figure.paused ? figure.play() : figure.pause()));
+  // A reader who'd rather it held still sees it partway through.
+  if (figure.paused) figure.time = 5;
 
-  const read = async (name) => {
-    const response = await fetch(BASE + name, { cache: 'no-store' });
-    if (!response.ok) throw new Error(`${name}: ${response.status}`);
-    return response.text();
-  };
-
-  // The window and the sheet's width give the canvas its shape, so the figure draws at its own aspect.
-  const firstDoc = await read('unroll.pen');
-  const dpr = window.devicePixelRatio || 1;
-  await init();
-  fit(canvas, JSON.parse(figure_size(firstDoc, [await read(styleSelect.value)])));
-  const player = await Player.create(canvas, new URLSearchParams(location.search).has('gl'));
-
-  // Reloads when either file changes. A bad edit shows its error and keeps the figure.
-  let loaded = '';
-  let compiles = 0;
-  const reload = async () => {
-    const styleName = styleSelect.value;
-    let doc, style;
-    try {
-      [doc, style] = await Promise.all([read('unroll.pen'), read(styleName)]);
-    } catch (e) {
-      error.textContent = String(e);
-      return;
-    }
-    const key = `${doc}\0${styleName}\0${style}`;
-    if (key === loaded) return;
-    loaded = key;
-    const held = slider.dataset.held === 'true' ? Number(slider.value) : null;
-    try {
-      player.load(doc, [style]);
-      if (held !== null) player.set_param('a', held);
-      const info = JSON.parse(player.info());
-      slider.min = info.params[0].min;
-      slider.max = info.params[0].max;
-      duration = info.duration;
-      error.textContent = '';
-      compiles += 1;
-      status.textContent = `${player.backend}, ${canvas.width}×${canvas.height}, compiled ${compiles} time${compiles === 1 ? '' : 's'}`;
-    } catch (e) {
-      error.textContent = `${styleName} or unroll.pen: ${e.message}`;
-    }
-  };
-
-  let duration = 13;
-  let playing = !matchMedia('(prefers-reduced-motion: reduce)').matches;
-  let time = playing ? 0 : 5;
-  let last = performance.now();
-
-  const setPlaying = (on) => {
-    playing = on;
-    play.textContent = on ? 'Pause' : 'Play';
-    if (on && slider.dataset.held === 'true') {
-      // Carry on from where the reader left the param: its binding takes back over.
-      time = player.time_for('a', Number(slider.value));
-      player.release_param('a');
-      slider.dataset.held = 'false';
-    }
-    last = performance.now();
-  };
-  play.addEventListener('click', () => setPlaying(!playing));
-  stage.addEventListener('click', () => setPlaying(!playing));
-  // Moving the slider takes `a` over from time: same param, a different binding.
-  slider.addEventListener('input', () => {
-    setPlaying(false);
-    slider.dataset.held = 'true';
-    player.set_param('a', Number(slider.value));
+  // Moving the slider takes `a` over from time: same param, a different binding. Playing carries
+  // on from where the reader left it.
+  $('a').addEventListener('input', () => {
+    figure.pause();
+    figure.hold('a', Number($('a').value));
   });
-  styleSelect.addEventListener('change', reload);
-
-  const spans = new Map();
-  const drawLabels = (labels) => {
-    for (const label of labels) {
-      let span = spans.get(label.id);
-      if (!span) {
-        span = document.createElement('span');
-        span.className = 'label';
-        stage.append(span);
-        spans.set(label.id, span);
-      }
-      if (span.textContent !== label.text) span.textContent = label.text;
-      span.classList.toggle('math', label.math);
-      span.style.fontSize = `${label.size / dpr}px`;
-      span.style.color = label.color;
-      span.style.webkitTextStrokeColor = label.haloColor;
-      // Like SVG's stroke-width, `halo` is the full width, centered on the outline.
-      span.style.webkitTextStrokeWidth = `${label.halo / dpr}px`;
-      span.style.opacity = label.opacity;
-      span.style.transform = `translate(${label.x / dpr}px, ${label.y / dpr}px) translate(-50%, -50%)`;
-    }
-  };
-
-  const draw = (t) => {
-    const labels = JSON.parse(player.draw(t, dpr));
-    drawLabels(labels);
-    const a = player.value('a', t);
-    if (slider.dataset.held !== 'true') slider.value = a;
-    value.textContent = `${Math.round(a * 180 / Math.PI)}°`;
-    const triangle = player.value('triangle_area', t);
-    const wedge = player.value('wedge_area', t);
-    readout.textContent = `triangle ${triangle.toFixed(3)} + wedge ${wedge.toFixed(3)} = ${(triangle + wedge).toFixed(3)}`;
-  };
-
-  const frame = (now) => {
-    if (playing) {
-      time = (time + Math.min(now - last, 100) / 1000) % duration;
-    }
-    last = now;
-    try {
-      draw(time);
-    } catch (e) {
-      error.textContent = e.message;
-    }
-    requestAnimationFrame(frame);
-  };
-
-  await reload();
-  setPlaying(playing);
-  setInterval(reload, 500);
-  requestAnimationFrame(frame);
-
-  window.pencil = { player, dpr, draw, seek(t) { setPlaying(false); time = t; } };
-  // A resize clears the canvas, so it draws at once, before the cleared canvas can be shown.
-  follow(canvas, player, () => {
-    try { draw(time); } catch (e) { error.textContent = e.message; }
+  figure.addEventListener('load', () => {
+    const a = figure.info.params.find((p) => p.id === 'a');
+    Object.assign($('a'), { min: a.min, max: a.max });
   });
+  figure.addEventListener('draw', () => {
+    const v = (name) => figure.value(name);
+    const a = v('a');
+    $('a').value = a;
+    $('a-value').textContent = `${Math.round(a * 180 / Math.PI)}°`;
+    const [triangle, wedge] = [v('triangle_area'), v('wedge_area')];
+    $('readout').textContent = `triangle ${triangle.toFixed(3)} + wedge ${wedge.toFixed(3)} = ${(triangle + wedge).toFixed(3)}`;
+  });
+
+  // A new sheet keeps the time and the held param. Edit either file and the figure reloads.
+  $('style').addEventListener('change', () => figure.setAttribute('sheets', `../corpus/003-unroll/${$('style').value}`));
+  watch(figure);
+
+  window.pencil = { figure };
 </script>
 </body>
 </html>
