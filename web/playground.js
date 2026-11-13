@@ -2,6 +2,8 @@
 // as they change. The figure is a `<pencil-figure>`, which owns the GPU, the clock and the handles,
 // and nothing here works out a value of the figure's own: the page only sets and reads bindings.
 import { PencilFigure } from './pencil-figure.js';
+import { ready as readingReady, readingAt, pasteLatex } from './reading.js';
+import { viewing } from './controls.js';
 
 // Each figure with the sheets its own page or video loads, from the repo root, in order.
 const THEME = 'corpus/theme.style';
@@ -194,6 +196,35 @@ textarea.addEventListener('input', () => {
   settle = setTimeout(compile, SETTLE_MS);
 });
 textarea.addEventListener('scroll', syncScroll);
+
+// How the expression at the caret reads, as the caret moves or the text changes.
+function showReading() {
+  const at = textarea.selectionStart === textarea.selectionEnd ? readingAt(textarea.value, textarea.selectionStart) : null;
+  const out = $('reading');
+  out.replaceChildren();
+  if (!at) return;
+  const read = document.createElement('b');
+  read.textContent = at.read;
+  out.append('reads as  ', read);
+  out.title = JSON.stringify(at.mathjson);
+}
+// What a LaTeX paste became, until the next edit.
+let pasting = false;
+pasteLatex(textarea, (text) => {
+  $('pasted').textContent = text;
+  pasting = true;
+  // A paste that stays as written still edits, after this, in the same task.
+  setTimeout(() => (pasting = false));
+});
+textarea.addEventListener('input', () => {
+  if (!pasting) $('pasted').textContent = '';
+});
+readingReady.then(() => {
+  document.addEventListener('selectionchange', () => {
+    if (document.activeElement === textarea) showReading();
+  });
+  textarea.addEventListener('input', showReading);
+});
 textarea.addEventListener('keydown', (e) => {
   if (e.key === 'Tab' && !e.metaKey && !e.ctrlKey && !e.altKey) {
     // Two spaces, through the browser's own editing so undo still works.
@@ -386,8 +417,7 @@ figure.addEventListener('pause', paintPlay);
 figure.addEventListener('draw', (e) => {
   if (e.detail.fresh) lastGood = files.map((f) => f.text);
   readControls();
-  const canvas = figure.shadowRoot.querySelector('canvas');
-  $('status').textContent = `${figure.backend}, ${canvas.width}×${canvas.height}, ${compiled}`;
+  $('status').textContent = `${figure.backend} · ${viewing(figure)} · ${compiled}`;
 });
 figure.addEventListener('error', (e) => {
   const { error, time, fresh } = e.detail;

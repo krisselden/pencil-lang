@@ -2,7 +2,7 @@
   "beats": [],
   "bindings": [
     {
-      "expr": ["Multiply",["Multiply",2.0,"π"],["Subtract",["Smoothstep",1.0,7.0,["Mod","time",13.0]],["Smoothstep",8.5,12.5,["Mod","time",13.0]]]],
+      "expr": ["Multiply",["Multiply",2.0,"Pi"],["Subtract",["Smoothstep",1.0,7.0,["Mod","time",13.0]],["Smoothstep",8.5,12.5,["Mod","time",13.0]]]],
       "id": "a"
     },
     {
@@ -42,7 +42,7 @@
       "id": "triangle_area"
     },
     {
-      "expr": ["Divide",["Subtract",["Multiply",2.0,"π"],"a"],2.0],
+      "expr": ["Divide",["Subtract",["Multiply",2.0,"Pi"],"a"],2.0],
       "id": "wedge_area"
     }
   ],
@@ -59,7 +59,7 @@
           ["O.x","O.y"],
           {
             "point": [["Negate",["Sin","t"]],["Cos","t"]],
-            "range": ["a",["Multiply",2.0,"π"]],
+            "range": ["a",["Multiply",2.0,"Pi"]],
             "var": "t"
           }
         ]
@@ -126,7 +126,7 @@
       "form": {
         "arc": {
           "point": [["Negate",["Sin","t"]],["Cos","t"]],
-          "range": ["a",["Multiply",2.0,"π"]],
+          "range": ["a",["Multiply",2.0,"Pi"]],
           "var": "t"
         },
         "kind": "parametric"

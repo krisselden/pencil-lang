@@ -22,26 +22,31 @@
   /* A rule that sets `display` would otherwise show what's hidden. */
   [hidden] { display: none !important; }
   html, body { height: 100%; }
-  body { margin: 0; background: var(--paper); color: var(--ink); font: 14px/1.45 ui-sans-serif, system-ui, sans-serif; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font: 0.875rem/1.45 ui-sans-serif, system-ui, sans-serif; }
   .app { display: grid; grid-template-columns: minmax(320px, 1fr) minmax(320px, 1fr); grid-template-rows: auto 1fr; height: 100%; }
   header { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--rule); }
-  header h1 { font-size: 14px; font-weight: 600; margin: 0; }
-  header .hint { color: var(--muted); font-size: 12px; margin-left: auto; }
-  button, select { font: inherit; font-size: 13px; }
+  header h1 { font-size: 0.875rem; font-weight: 600; margin: 0; }
+  header .hint { color: var(--muted); font-size: 0.75rem; margin-left: auto; }
+  button, select { font: inherit; font-size: 0.8125rem; }
 
   /* The editor: a textarea over a highlighted copy of its text, so the caret, selection and undo are the browser's own. */
   .editor { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--rule); }
   .tabs { display: flex; flex-wrap: wrap; gap: 2px; padding: 6px 8px 0; border-bottom: 1px solid var(--rule); }
-  .tab { border: 1px solid transparent; border-bottom: 0; background: none; padding: 4px 10px; border-radius: 4px 4px 0 0; color: var(--muted); cursor: pointer; font-family: ui-monospace, monospace; font-size: 12px; }
+  .tab { border: 1px solid transparent; border-bottom: 0; background: none; padding: 4px 10px; border-radius: 4px 4px 0 0; color: var(--muted); cursor: pointer; font-family: ui-monospace, monospace; font-size: 0.75rem; }
   .tab[aria-selected=true] { border-color: var(--rule); background: var(--field); color: var(--ink); margin-bottom: -1px; }
   .tab.edited::after { content: ' •'; }
   .tab.failed { color: var(--bad); }
   .tab.failed::before { content: '✕ '; }
-  .tools { display: flex; gap: 6px; padding: 4px 8px; font-size: 12px; color: var(--muted); align-items: center; }
+  .tools { display: flex; gap: 6px; padding: 4px 8px; font-size: 0.75rem; color: var(--muted); align-items: center; }
   .tools .path { font-family: ui-monospace, monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .tools button { font-size: 12px; white-space: nowrap; }
+  .tools button { font-size: 0.75rem; white-space: nowrap; }
   .tools .spacer { flex: 1; }
-  .code { position: relative; flex: 1; min-height: 0; background: var(--field); overflow: hidden; font: 13px/20px ui-monospace, 'SF Mono', Menlo, monospace; tab-size: 2; }
+  /* How the expression at the caret reads, with every product and name written out. */
+  .reading { margin: 0; padding: 4px 10px; min-height: 26px; border-top: 1px solid var(--rule); font: 0.75rem/1.125rem ui-monospace, 'SF Mono', Menlo, monospace; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .reading b { color: var(--ink); font-weight: 600; }
+  .reading.pasted { border-top: 0; padding-top: 0; min-height: 0; }
+  .reading.pasted:empty { display: none; }
+  .code { position: relative; flex: 1; min-height: 0; background: var(--field); overflow: hidden; font: 0.8125rem/1.25rem ui-monospace, 'SF Mono', Menlo, monospace; tab-size: 2; }
   .gutter, .code pre, .code textarea { position: absolute; top: 0; bottom: 0; margin: 0; padding: 8px 0; font: inherit; white-space: pre; }
   .gutter { left: 0; width: 44px; padding-right: 8px; text-align: right; color: var(--muted); opacity: 0.6; overflow: hidden; user-select: none; }
   .gutter div.bad { color: var(--bad); opacity: 1; font-weight: 600; }
@@ -59,18 +64,18 @@
   /* The figure, with its controls and what went wrong under it. */
   .view { display: flex; flex-direction: column; gap: 10px; padding: 12px; overflow: auto; min-height: 0; }
   pencil-figure { width: 100%; margin: 0 auto; outline: none; }
-  .controls { display: grid; grid-template-columns: auto 1fr auto; gap: 6px 10px; align-items: center; font-size: 13px; }
+  .controls { display: grid; grid-template-columns: auto 1fr auto; gap: 6px 10px; align-items: center; font-size: 0.8125rem; }
   .controls input[type=range] { width: 100%; }
-  .controls label { font-family: ui-monospace, monospace; font-size: 12px; }
+  .controls label { font-family: ui-monospace, monospace; font-size: 0.75rem; }
   .controls .row { grid-column: 1 / -1; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   .controls .held { color: var(--word); }
-  output { font-variant-numeric: tabular-nums; font-family: ui-monospace, monospace; font-size: 12px; min-width: 5ch; }
+  output { font-variant-numeric: tabular-nums; font-family: ui-monospace, monospace; font-size: 0.75rem; min-width: 5ch; }
   #caption { color: var(--muted); font-style: italic; }
-  #errors { margin: 0; padding: 0; list-style: none; font: 12px/1.5 ui-monospace, monospace; }
+  #errors { margin: 0; padding: 0; list-style: none; font: 0.75rem/1.5 ui-monospace, monospace; }
   #errors li { color: var(--bad); white-space: pre-wrap; padding: 6px 8px; border-left: 3px solid var(--bad); background: rgb(181 68 60 / 0.08); margin-bottom: 4px; cursor: pointer; }
   #errors li.stale { cursor: default; }
   #errors li .note { color: var(--muted); }
-  #status { color: var(--muted); font-size: 12px; }
+  #status { color: var(--muted); font-size: 0.75rem; }
   @media (max-width: 800px) { .app { grid-template-columns: 1fr; grid-template-rows: auto 50vh auto; } .editor { border-right: 0; } }
 </style>
 </head>
@@ -95,6 +100,8 @@
       <pre aria-hidden="true"><div class="inner" id="highlight"></div></pre>
       <textarea id="source" spellcheck="false" autocapitalize="off" autocomplete="off" wrap="off" aria-label="Source"></textarea>
     </div>
+    <p class="reading" id="reading" aria-live="polite"></p>
+    <p class="reading pasted" id="pasted" aria-live="polite"></p>
   </section>
   <section class="view" aria-label="Figure">
     <pencil-figure id="figure" tabindex="0"></pencil-figure>

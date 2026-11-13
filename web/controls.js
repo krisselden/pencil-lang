@@ -10,13 +10,44 @@ export function fromQuery(figure) {
 
 /** Shows the backend, and how often the figure compiled, in `status`, and what went wrong in
  * `error`. A compile error leaves the last figure on screen. */
+/**
+ * How big the figure is drawn, against its design, and the page around it: what a reader sees,
+ * in numbers two people can compare, as `drawn 620×429 of 340×235 (1.82×) · em 15px · window
+ * 1280×900 at 2×`. A label is an em at any size, and a stroke scales with the drawing.
+ */
+export function viewing(figure) {
+  const width = figure.getBoundingClientRect().width;
+  const [shapeW, shapeH] = figure.designSize ?? [0, 0];
+  const height = shapeW ? Math.round((width * shapeH) / shapeW) : 0;
+  // A sheet's width is in design pixels, and its height, when it gives none, follows the shape.
+  // A figure with no design width has no design pixels to scale: its `px` is a CSS pixel.
+  const info = figure.info;
+  const panels = info?.panels.length > 1;
+  const designed = info && (panels || info.viewport.width != null);
+  const w = panels ? shapeW : (info?.viewport.width ?? shapeW);
+  const h = panels ? shapeH : (info?.viewport.height ?? Math.round((w * shapeH) / shapeW));
+  const drawn = !w ? ''
+    : designed ? `drawn ${Math.round(width)}×${height} of ${w}×${h} (${(width / w).toFixed(2)}×)`
+    : `drawn ${Math.round(width)}×${height}, no design width, so 1px is a CSS pixel`;
+  const em = `em ${parseFloat(getComputedStyle(figure).fontSize)}px`;
+  const window_ = `window ${innerWidth}×${innerHeight} at ${devicePixelRatio}×`;
+  return [drawn, em, window_].filter(Boolean).join(' · ');
+}
+
 export function report(figure, status, error) {
   let compiles = 0;
+  const paint = () => {
+    if (!compiles) return;
+    status.textContent = [figure.backend, viewing(figure), `compiled ${compiles} time${compiles === 1 ? '' : 's'}`].join(' · ');
+  };
   figure.addEventListener('load', () => {
     compiles += 1;
     error.textContent = '';
-    status.textContent = `${figure.backend}, compiled ${compiles} time${compiles === 1 ? '' : 's'}`;
+    paint();
   });
+  // The figure's size and em, and the window's, which can change while the figure keeps its size.
+  figure.addEventListener('resize', paint);
+  addEventListener('resize', paint);
   figure.addEventListener('error', (e) => {
     const { error: cause } = e.detail;
     error.textContent = String(cause?.message ?? cause);

@@ -8,18 +8,18 @@
   :root { color-scheme: light dark; --ink: #1c1b19; --paper: #fbfaf7; --muted: #6b675f; --rule: #d9d5cc; }
   @media (prefers-color-scheme: dark) { :root { --ink: #ece9e2; --paper: #1a1917; --muted: #a29d93; --rule: #3a3833; } }
   body { margin: 0; padding: 24px 16px; background: var(--paper); color: var(--ink);
-         font: 15px/1.45 ui-sans-serif, system-ui, sans-serif; }
+         font: 0.9375rem/1.45 ui-sans-serif, system-ui, sans-serif; }
   main { max-width: 1320px; margin: 0 auto; }
-  h1 { font-size: 18px; margin: 0 0 4px; }
-  h2 { font-size: 15px; margin: 28px 0 8px; border-top: 1px solid var(--rule); padding-top: 12px; }
+  h1 { font-size: 1.125rem; margin: 0 0 4px; }
+  h2 { font-size: 0.9375rem; margin: 28px 0 8px; border-top: 1px solid var(--rule); padding-top: 12px; }
   p { margin: 4px 0; color: var(--muted); max-width: 70ch; }
   .cells { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
   figure { margin: 0; }
-  figcaption { font-size: 13px; margin: 0 0 4px; font-weight: 600; }
+  figcaption { font-size: 0.8125rem; margin: 0 0 4px; font-weight: 600; }
   canvas.view { display: block; width: 240px; height: 240px; }
   canvas.zoom { display: block; width: 240px; height: 240px; image-rendering: pixelated; margin-top: 4px; }
   .scroll { overflow-x: auto; }
-  table { border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; margin-top: 8px; }
+  table { border-collapse: collapse; font-size: 0.8125rem; font-variant-numeric: tabular-nums; margin-top: 8px; }
   th, td { text-align: right; padding: 2px 10px; border-bottom: 1px solid var(--rule); white-space: nowrap; }
   th:first-child, td:first-child { text-align: left; }
   #source { position: absolute; left: -9999px; width: 1024px; height: 1024px; }

@@ -46,6 +46,14 @@ belongs: `language.md` for the language, the section below for a figure.
 - **The explainer, phases 5 and 6** (`plan-explainer.md`): narration over the drafted cut, then a write-up here and in the
   language reference. `lab/narration` times beats from a script, drafted with a synthesized voice ("Narration timing" below).
   The whole script is drafted, with the glow left silent. Next: a take in Kris's voice.
+- **Names and notation**, agreed with Kris on 2026-11-12, in this order. `web/ast.html` shows how text reads at each step.
+  Subscripts, implicit products, constants a figure can take the name of, and pasting LaTeX are done (`language.md`,
+  decisions of 2026-11-12). Next:
+  1. **Preludes and `use`:** named sets of globals a figure opts into, as TypeScript's `lib` does, rather than everything at
+     once, and a library of functions to `use`. Desmos gives `r`, `θ`, `t` and `τ` meanings that a figure loses once it
+     assigns them, and a letter can be a variable in one field and a constant in another. Waits for a figure to shape it.
+  2. **Labels from expressions:** a label that shows its own expression, as ggplot2 takes axis titles from the unevaluated
+     arguments R passes it. The IR keeps expressions symbolic, so the text is there.
 
 ### Proposed order after that
 
@@ -63,19 +71,6 @@ Proposed by Claude on 2026-11-09, not yet agreed:
 
 ### Questions
 
-- **Names and notation (Kris, 2026-11-12).** `web/ast.html` shows how text reads today, token by token, as a tree and
-  as compiled bindings. What it shows, and what's open:
-  - **Which names are global.** `time`, `pi` and `π` are, and colors, plus every built-in function. A constant's name can't be
-    declared, and only a function's parameter shadows one. Desmos gives `r`, `θ`, `t` and `τ` special meanings that a figure loses
-    once it assigns them. Kris wants named sets of globals a figure opts into, as TypeScript's `lib` does, and a library of
-    functions to `use`, rather than everything at once. φ the golden ratio would be fine as a global if `let` and `param` could
-    take its name.
-  - **Subscripts.** `x1`, `x_1` and `x₁` are three different names, and `x_{1}` doesn't parse. Desmos and LaTeX make them one.
-  - **Implicit multiplication.** `2π`, `2 π` and `2(x + 1)` don't parse. Kris would at least take a space or parentheses as a
-    product, and finds it odd that `2π` isn't one.
-  - **LaTeX.** Pasting from Desmos gives LaTeX (`\frac{a}{b}`, `\left(`, `x_{1}`), and nothing reads it yet.
-  - **Labels from expressions.** A label could be the expression itself, as ggplot2 takes axis titles from the unevaluated
-    arguments R passes it.
 - **Is WebGPU needed?** Not for strokes or fields: both ran the same on WebGL2. Text is the untested part. Vello relies on compute
   shaders, which wgpu's WebGL2 backend lacks, and the winding integral as written needs storage buffers.
 - **How should a `.pen` file name fonts?** `font: math | sans` are roles. Video uses system fonts, which can't be redistributed,
@@ -524,6 +519,12 @@ app's browser pane. The editor is a textarea over a highlighted copy of its text
   now says which bindings time drives ("The element" below).
 - **Not checked:** Kris's own use of it, a phone, other browsers, and the page with the pane showing. The pane was hidden for
   most of the checks, so frames were drawn by hand rather than by the animation loop.
+
+**How the caret's expression reads** (2026-11-12): a strip under the editor writes the expression at the caret back out with
+nothing implicit, so `1/2πr` reads `1/(2·π·r)` and `x1` reads `x_1`, as GeoGebra respaces what it parsed. It finds the expression
+from the line's tokens, between the places one can start and end, and `web/reading.js` does it for the AST page too. Checked in
+the desktop app's pane. The pane is short when narrow, where the editor gets half the height and the header and tabs take most
+of it.
 
 ## The element
 

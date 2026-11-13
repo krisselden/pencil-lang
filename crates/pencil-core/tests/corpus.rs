@@ -499,7 +499,7 @@ fn foil_builds_the_similar_triangle() {
     let get = |n: &str| env.get(n).unwrap();
     let (a, b) = (get("a"), get("b"));
     let (fo, il) = ((get("AZ.x"), get("AZ.y")), (get("BIZ.x"), get("BIZ.y")));
-    let z2 = (get("Z2.x"), get("Z2.y"));
+    let z2 = (get("Z_2.x"), get("Z_2.y"));
     // F.O. is a·z and I.L. is bi·z, so together they're the complex square.
     assert!((z2.0 - (a * a - b * b)).abs() < 1e-12, "{z2:?}");
     assert!((z2.1 - 2.0 * a * b).abs() < 1e-12, "{z2:?}");

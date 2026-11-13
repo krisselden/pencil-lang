@@ -8,9 +8,9 @@
   :root { color-scheme: light dark; --ink: #1c1b19; --paper: #fbfaf7; --muted: #6b675f; --bad: #b5443c; }
   @media (prefers-color-scheme: dark) { :root { --ink: #ece9e2; --paper: #1a1917; --muted: #a29d93; --bad: #e58a80; } }
   body { margin: 0; padding: 24px 16px; background: var(--paper); color: var(--ink);
-         font: 15px/1.45 ui-sans-serif, system-ui, sans-serif; }
+         font: 0.9375rem/1.45 ui-sans-serif, system-ui, sans-serif; }
   main { max-width: 765px; margin: 0 auto; }
-  h1 { font-size: 16px; font-weight: 600; margin: 0 0 12px; }
+  h1 { font-size: 1rem; font-weight: 600; margin: 0 0 12px; }
   .controls { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; margin: 12px 0; }
   .controls input[type=range] { width: 7rem; }
   fieldset { border: 0; padding: 0; margin: 0; display: flex; gap: 8px; align-items: center; }
@@ -20,7 +20,7 @@
   p { margin: 4px 0; color: var(--muted); }
   #caption { color: var(--ink); min-height: 3em; }
   #readout { font-variant-numeric: tabular-nums; }
-  #error { color: var(--bad); white-space: pre-wrap; font-family: ui-monospace, monospace; font-size: 13px; }
+  #error { color: var(--bad); white-space: pre-wrap; font-family: ui-monospace, monospace; font-size: 0.8125rem; }
   pencil-figure { touch-action: none; }
 </style>
 </head>
@@ -45,6 +45,7 @@
   // The figure says what its controls are: q's range and step, and the case's options by name.
   // The page only lays them out, so it can't disagree with the playground, which reads the same.
   import './pencil-figure.js';
+  import { viewing } from './controls.js';
 
   const $ = (id) => document.getElementById(id);
   const figure = $('figure');
@@ -111,13 +112,18 @@
   }
 
   let compiles = 0;
+  const status = () => {
+    if (compiles) $('status').textContent = `${figure.backend ?? 'starting'} · ${viewing(figure)} · compiled ${compiles} time${compiles === 1 ? '' : 's'}`;
+  };
   figure.addEventListener('load', () => {
     compiles += 1;
     $('error').textContent = '';
-    $('status').textContent = `${figure.backend ?? 'starting'}, compiled ${compiles} time${compiles === 1 ? '' : 's'}`;
+    status();
     controls();
     readout();
   });
+  figure.addEventListener('resize', status);
+  addEventListener('resize', status);
   figure.addEventListener('draw', readout);
   figure.addEventListener('error', (e) => { $('error').textContent = String(e.detail.error?.message ?? e.detail.error); });
   $('back').addEventListener('click', () => figure.step(-1));

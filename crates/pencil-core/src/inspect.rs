@@ -4,10 +4,21 @@
 
 use serde_json::{Value, json};
 
+use crate::ir::Expr;
 use crate::{Error, compile, parse};
 
 fn error(e: Error) -> Value {
     json!({ "error": e.message, "line": e.line, "col": e.col })
+}
+
+/// An expression as MathJSON, with its constants by their MathJSON names, as they are when nothing
+/// in a figure has taken their names.
+fn canonical(e: &Expr) -> Expr {
+    match e {
+        Expr::Sym(s) => Expr::sym(compile::written_constant(s).unwrap_or(s)),
+        Expr::App(head, args) => Expr::App(head.clone(), args.iter().map(canonical).collect()),
+        other => other.clone(),
+    }
 }
 
 pub fn inspect(src: &str) -> Value {
@@ -20,7 +31,13 @@ pub fn inspect(src: &str) -> Value {
         Err(e) => return json!({ "tokens": error(e) }),
     };
     let expression = match parse::parse_whole_expression(src) {
-        Ok(e) => return json!({ "tokens": tokens, "expression": e.to_mathjson() }),
+        Ok(e) => {
+            return json!({
+                "tokens": tokens,
+                "expression": e.to_mathjson(),
+                "mathjson": canonical(&e).to_mathjson(),
+            });
+        }
         Err(e) => error(e),
     };
     let document = match parse::parse(src) {
@@ -55,6 +72,11 @@ mod tests {
             seen["expression"],
             json!(["Add", ["Multiply", 2.0, "π"], ["Power", "x", 2.0]])
         );
+        let euler = inspect("e^(iπ) + 1");
+        assert_eq!(
+            euler["mathjson"],
+            json!(["Add", ["Power", "ExponentialE", ["Multiply", "ImaginaryUnit", "Pi"]], 1.0])
+        );
     }
 
     #[test]
@@ -66,8 +88,8 @@ mod tests {
 
     #[test]
     fn what_reads_as_neither_says_where_it_stopped() {
-        let seen = inspect("2π");
-        assert_eq!(seen["expression"]["col"], 2, "{seen}");
+        let seen = inspect("(a + )");
+        assert_eq!(seen["expression"]["col"], 6, "{seen}");
         assert!(seen["document"]["error"].is_string(), "{seen}");
     }
 }

@@ -276,7 +276,7 @@ pub fn emit_expr(e: &Expr) -> String {
         Expr::Num(n) => literal(*n),
         Expr::Sym(s) => match s.as_str() {
             "time" => "u.time".to_string(),
-            "pi" | "π" => literal(std::f64::consts::PI),
+            name if let Some(v) = crate::compile::constant_value(name) => literal(v),
             "white" => "vec3<f32>(1.0)".to_string(),
             "black" => "vec3<f32>(0.0)".to_string(),
             "self.dist" => "self_dist".to_string(),

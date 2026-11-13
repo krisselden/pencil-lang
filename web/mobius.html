@@ -7,15 +7,15 @@
 <style>
   :root { color-scheme: light dark; --ink: rgb(18 17 15); --paper: rgb(242 240 235); --muted: rgb(110 106 99); --bad: #b5443c; }
   @media (prefers-color-scheme: dark) { :root { --ink: rgb(243 240 234); --paper: rgb(23 22 20); --muted: rgb(148 143 134); } }
-  body { margin: 0; padding: 24px 16px; background: var(--paper); color: var(--ink); font: 15px/1.45 ui-sans-serif, system-ui, sans-serif; }
+  body { margin: 0; padding: 24px 16px; background: var(--paper); color: var(--ink); font: 0.9375rem/1.45 ui-sans-serif, system-ui, sans-serif; }
   main { max-width: 640px; margin: 0 auto; }
-  h1 { font-size: 16px; font-weight: 600; margin: 0 0 12px; }
+  h1 { font-size: 1rem; font-weight: 600; margin: 0 0 12px; }
   .controls { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; margin: 12px 0; }
   .controls input[type=range] { width: 8rem; }
   output { font-variant-numeric: tabular-nums; }
   button { font: inherit; }
   p { margin: 4px 0; color: var(--muted); }
-  #error { color: var(--bad); white-space: pre-wrap; font-family: ui-monospace, monospace; font-size: 13px; }
+  #error { color: var(--bad); white-space: pre-wrap; font-family: ui-monospace, monospace; font-size: 0.8125rem; }
 </style>
 </head>
 <body>
@@ -23,7 +23,7 @@
   <h1>Coxeter’s loxodromic sequence, through a Möbius map</h1>
   <pencil-figure id="figure" src="../corpus/010-mobius/mobius.pen" paused
     aria-label="Circles at the powers of w, each touching its neighbors, and their image under a Möbius map, where they still touch."></pencil-figure>
-  <p id="formula" style="color: var(--ink); font: italic 17px Charter, 'Bitstream Charter', Cambria, serif">f(z) = (az − b) / (cz + d)</p>
+  <p id="formula" style="color: var(--ink); font: italic 1.0625rem Charter, 'Bitstream Charter', Cambria, serif">f(z) = (az − b) / (cz + d)</p>
   <div class="controls">
     <button id="play" type="button">Play</button>
     <label><i>n</i> <input data-param id="n" type="range" min="1" max="10" step="1" value="8"> <output></output></label>

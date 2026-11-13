@@ -250,19 +250,75 @@ colors every `a`. A renderer measures the text with its own font, and core says 
 
 ## Expressions
 
-Numbers, names, `+ - * / ^`, `·` for multiply, `²` and `³`, unary `-`, and calls. `(a, b)` is a
-point, which is also a complex number (see below), and `P.x` and `P.y` read one. Names can be Unicode. `time`, `pi` and `π` are
-always available. Coordinates only exist inside the curve that names them.
+Numbers, names, `+ - * / ^`, `·` for multiply, `²` and `³`, unary `-`, and calls. Factors side by side multiply, as `2π`, `2(x + 1)`, `(a + b)(a - b)` and `a b`, and bind
+tighter than `/`, so `1/2π` is 1/(2π). A product doesn't reach past the end of its line or a word that follows an expression,
+such as `for`, `in`, `step` or `tag`. A name right before `(` is a call, and letters together are one name, so `ab` is a name and `a b` is a product. The
+constants' own glyphs `π`, `ℯ`, `ⅈ` and `ⅇ` never join a name, so `2πi`, `2πr` and `iπ` are products, and `π_1` is still a name. `(a, b)` is a
+point, which is also a complex number (see below), and `P.x` and `P.y` read one. Names can be Unicode. A subscript is part of a name, and
+`x1`, `x_1`, `x₁` and `x_{1}` are all the name `x_1`, as in Desmos and LaTeX; digits inside a name, as in `p2q`, aren't one. `time` is always available. `pi` and `π` are π, and `e`
+and `ℯ` are Euler's number, unless the figure takes the name for something of its own, as bounds does with its curve `e`; then
+every `e` in the figure is that, and `exp` is Euler's. In the IR they're MathJSON's `Pi` and `ExponentialE`. `2e` is 2·e, while
+`2e3` is 2000. Coordinates only exist inside the curve that names them.
 
 Points add and subtract, scale by a number, and negate. All of this expands to scalars at
 compile time, so the IR stays symbolic and bindings are evaluated once per frame.
+
+### MathJSON
+
+Expressions compile to [MathJSON](https://mathlive.io/compute-engine/), and where Pencil has something MathJSON names, it uses
+MathJSON's name, as the Compute Engine does: `imag(z)` is `Imaginary`, `conj(z)` is `Conjugate`, `arctanh` is `Artanh`. So are
+the constants, which are defaults (above): a figure that takes the name gets its own value.
+
+| Written | MathJSON | Value |
+|---|---|---|
+| `pi`, `π` | `Pi` | π |
+| `e`, `ℯ`, `ⅇ` | `ExponentialE` | Euler's number. `e^w` is `exp(w)`, for a complex `w` too, so `e^(iπ) + 1` is 0. |
+| `i`, `ⅈ` | `ImaginaryUnit` | The point (0, 1), which compiles away. |
+| `GoldenRatio` | `GoldenRatio` | (1 + √5)/2. Not `φ`, which is an angle as often. |
+| `EulerGamma`, `CatalanConstant`, `Degrees` | the same | γ, Catalan's constant, and π/180, so `30·Degrees` is 30° in radians. |
+
+Where Pencil differs on purpose:
+- **Names are words,** so `eps` is one name, where the Compute Engine's LaTeX reads it as e·p·s. A space splits a product: `e p s`.
+  Nothing splits by what happens to be defined, as GeoGebra does, where a half-typed `ToCo` quietly becomes `T`, `o` and `C`:
+  an unknown name is an error. Only the constants' glyphs split, and they're fixed.
+- **A document has one scope.** The Compute Engine substitutes a constant as it parses, so a variable named `e` has to be declared
+  before anything that uses it. A figure's `let e` applies to every `e` in it, wherever it's written.
+- **`exp(x)` stays `Exp`.** The Compute Engine's canonical form is `["Power", "ExponentialE", x]`, which means the same, and Pencil
+  turns that into `Exp`, so derivatives and complex values take one path.
+
+### Pasting LaTeX
+
+The playground and the AST page read LaTeX pasted from Desmos or MathLive as Pencil text (`latex.rs`), and say what it became.
+Undo takes it back. Text with a backslash, a `^{`, or a leading `$` is LaTeX, and Pencil text never has them.
+
+| Pasted | Becomes |
+|---|---|
+| `y=\frac{1}{2}x^{2}` | `y = 1/2·x^2` |
+| `\frac{1}{2\pi}`, `-\frac{b}{2a}` | `1/(2π)`, `-b/(2a)` |
+| `\exponentialE^{\imaginaryI\pi}+1` | `e^(iπ) + 1` |
+| `\theta_{1}`, `x_{1}y` | `θ_1`, `x_1·y` |
+| `xy`, `2\pi r` | `x·y`, `2πr` |
+| `\left|z\right|`, `\sqrt{x}`, `\operatorname{mod}\left(x,2\right)` | `abs(z)`, `sqrt(x)`, `mod(x, 2)` |
+| `\sin x\cos x`, `\sin^{2}x` | `sin(x)·cos(x)`, `sin(x)^2` |
+| `30^{\circ}` | `30·Degrees` |
+
+- **Letters run together are a product,** as LaTeX means them, so `xy` comes out `x·y`, not the name `xy`. A longer name has to be
+  `\operatorname{…}` or `\mathrm{…}` in LaTeX, and is one name here too.
+- **A letter before parentheses is a call only if it's a function:** a built-in, a `fn` in the document, or the one a line defines,
+  as `f\left(x\right)=x^{2}`. Otherwise it multiplies, so `a\left(x+1\right)` is `a·(x + 1)`, as Desmos reads it.
+- **Brackets go only where Pencil needs them,** with one more: a product in a denominator, `1/(2π)`, which Pencil would read the
+  same way without them but a reader might not.
+- **`\phi` and `\varphi` are both `φ`,** and `\epsilon` and `\varepsilon` both `ε`: the letter a keyboard types, whichever way
+  LaTeX draws it.
+- **What has no Pencil form is an error,** and the LaTeX pastes as written: Desmos's piecewise braces, comparisons, lists, `±`, an
+  n-th root (`x^(1/n)` differs from it for negative x), `\sin^{-1}`, and infinity.
 
 ### Numbers
 
 | Function | Meaning |
 |---|---|
 | `sqrt(x)`, `exp(x)`, `ln(x)`, `abs(x)`, `sign(x)`, `floor(x)` | The usual. `sign(0)` is 0. |
-| `sin(x)`, `cos(x)`, `tan(x)`, `acos(x)`, `atan2(y, x)` | Radians. |
+| `sin(x)`, `cos(x)`, `tan(x)`, `acos(x)` or `arccos(x)`, `atan2(y, x)` | Radians. |
 | `min(a, b)`, `max(a, b)`, `clamp(x, lo, hi)` | Limits. |
 | `mod(x, y)` | Floored, so the result takes `y`'s sign. |
 | `mix(a, b, t)` | `a` at 0 and `b` at 1. Also mixes two colors, in linear light. |
@@ -275,7 +331,7 @@ compile time, so the IR stays symbolic and bindings are evaluated once per frame
 
 | Function | Meaning |
 |---|---|
-| `length(P)`, `dist(A, B)`, `dot(A, B)` | Numbers from points. |
+| `length(P)`, `dist(A, B)`, `dot(A, B)` | Numbers from points. `length(P)` is `abs(P)`, MathJSON's `Abs`. |
 | `midpoint(A, B)` | Halfway between. |
 | `circle(C, T)` | About `C` through `T`. Fields `.x`, `.y`, `.r`. Its disk is its negative side. |
 | `circle(A, B, C)` | Through three points, in order (below). Fields `.a`, which is its signed curvature, and `.x`, `.y`, `.r`, which don't exist on a line. |
@@ -314,7 +370,7 @@ fn spiral(t) = exp(t)
 - **Powers:** `z²` and `z^-3` multiply out, up to a power of 8. Anything else, such as `z^2.5` or `z^i`, is `exp(w·ln(z))`, on the principal branch.
 - **Functions:** `real(z)`, `imag(z)`, `conj(z)`, `abs(z)` and `arg(z)` read it. `exp`, `ln` and `sqrt` take one too, with principal values.
   `ln(0)` and `arg(0)` don't exist, and a figure with one draws what it can (see below). `sin`, `cos` and the rest take numbers only, for now.
-- **Hyperbolic functions:** `sinh(x)`, `cosh(x)`, `tanh(x)`, `coth(x)`, `sech(x)`, `csch(x)` and `arctanh(x)` take numbers and complex numbers. They compile to `exp` and `ln`.
+- **Hyperbolic functions:** `sinh(x)`, `cosh(x)`, `tanh(x)`, `coth(x)`, `sech(x)`, `csch(x)` and `arctanh(x)` (or `artanh(x)`) take numbers and complex numbers. They compile to `exp` and `ln`.
 - **`i` gives way to anything named `i`,** so `for i in 1..q` still counts, and inside it `i` is the count. It's clearer to use another name there.
   It also means a stray `i` outside a loop isn't an unknown name any more.
 - **Exact derivatives see through all of it,** so `solve` and a label's `away` work on complex values. It all compiles to plain numbers, so a
@@ -401,7 +457,7 @@ a distance in design pixels.
 |---|---|---|
 | a bare number | The figure's own units, as in the document. `width: 0.02` is that wide in the plane, so it grows as a `fit` zooms in. | The math |
 | `px` | A design pixel, as SVG's `px` is inside a `viewBox`. `style figure { width }` says how many there are across. | The figure as it's drawn |
-| `em` | The reader's text size. On a page, the page's font size where the figure is, so text matches the text around it at any size the figure is drawn. In a video, `style figure { em }`, 17 px by default. | The reader's text |
+| `em` | The reader's text size. On a page, the page's font size where the figure is, so text matches the text around it at any size the figure is drawn. A reader who changes their text size changes it, and the labels follow at once, so a page sets its text in `rem`, not `px`. In a video, `style figure { em }`, 17 px by default. | The reader's text |
 
 Text goes in `em`, as the theme's does, and strokes, dots and arrows in `px`. A figure's own size and a panel's are design
 pixels, so they can't be in `em`.
@@ -463,6 +519,14 @@ Newest first. "Why" is the reason at the time, so these can be revisited.
 
 | Date | Decision | Why |
 |---|---|---|
+| 2026-11-12 | An unknown name says what was likely meant | A name is only ever itself, so `onetwo` and a half-typed `ToCo` are errors, not the splits GeoGebra makes by what happens to be defined. The error suggests instead: a defined name the typed one starts, or is a typo or two away from, or a split into defined names, as "did you mean `one two`?". Built-ins, the figure's own functions and a sheet's names are all suggested |
+| 2026-11-12 | Constants and built-ins take MathJSON's names | Kris wants expressions to conform to MathJSON, and pastes to read as they do in the Compute Engine. So `Imag`, `Conj`, `Arctanh` and `Length` became `Imaginary`, `Conjugate`, `Artanh` and `Abs`, `i` is `ImaginaryUnit`, MathJSON's constant names read as themselves, and `e^w` is `exp(w)` so Euler's identity holds exactly. `π` and the other constant glyphs stand alone, so `e^(iπ)` reads as written. The differences that stay are listed under MathJSON |
+| 2026-11-12 | `e` is Euler's number, until a figure takes the name | Kris pasted an expression with Euler's `e` and got an error. GeoGebra reads `e` as Euler's until something takes the name, then rewrites the existing `e`s as `ℯ`, so naming three circles changes what a paste means. A document here has one scope, so taking the name is one explicit statement that applies to every `e` in the figure, and nothing is rewritten behind the reader's back |
+| 2026-11-12 | A constant is a default a figure can take the name of | A letter is a constant in one field and a variable in another, and Desmos loses `r` and `t` once a figure assigns them. Here `let pi = …` simply wins, in the document and its sheets. The compiler writes the constant as MathJSON's `Pi`, so a figure's own `pi` is an ordinary name to the CPU and GPU paths alike, and `pi` and `π` become one symbol |
+| 2026-11-12 | Factors side by side multiply, tighter than `/` | Kris wrote `2π` and it didn't parse, and pasting from Desmos brings `2(x+1)` and `a b`. Binding tighter than `/` reads `x / 2π` as the x/(2π) a reader means. Names stay many letters, so juxtaposed letters are still one name, and a space is how to split them. The corpus parses exactly as before |
+| 2026-11-12 | Pasted LaTeX becomes Pencil text, not a second syntax | Kris pasted Euler's identity from Desmos and got an error. Reading LaTeX as it's pasted keeps one syntax in the file, shows what each formula became, and lands on the same names and products that typing would. Letters run together multiply because that's what LaTeX means, and a letter before parentheses calls only a known function, because that's how Desmos decides |
+| 2026-11-12 | An `em` follows the reader's text-size setting | The site's design system sizes labels by role in screen pixels (name 17, note 15, tick 12), which zoom scales but a larger default text size doesn't. Labels are text, and a reader who needs bigger text needs them bigger too. So pages set their text in `rem`, and `<pencil-figure>` watches a 1em box and redraws when it changes, though the figure's size doesn't |
+| 2026-11-12 | A subscript is written one way: `x1`, `x₁` and `x_{1}` are `x_1` | They were three names and an error, while Desmos, LaTeX and a reader take them as one. `x_1` is MathJSON's spelling and has a typed form. Names a page passes to `<pencil-figure>` go through the same rule, so a page can say either |
 | 2026-11-12 | `tau` and `τ` aren't constants; write `2·π` | τ is a variable as often as a constant, as in bipolar coordinates' (σ, τ), and a constant's name can't be declared by `let` or `param`. Hearts only worked because a function's parameters are substituted before constants are read. Constants a figure wants beyond π belong in a library it asks for, which is open |
 | 2026-11-11 | A sheet can define functions | Kris wrote a `glow` in a sheet and got "`glow` doesn't take [Real, Real]": a sheet's `fn` was parsed and then ignored, so its calls reached the type checker as unknown. A falloff or an easing is a sheet's business as much as a color is, and `fn` is how a document already says it, so sheets now take the same statement, and a call to a function nothing defines says so |
 | 2026-11-11 | A focus can follow a choice, and beats with no lengths can have one | Bounds' last beat is about whichever flower the reader's case closes, and the other should recede. Which one is the document's to say, so the focus follows the choice by an option's name, and the sheet only says how receding looks. Its tags became what each beat is (`boundary`, `middle`), not a color, since the sheet decides colors |

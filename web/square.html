@@ -7,15 +7,18 @@
 <style>
   :root { color-scheme: light dark; --ink: #1c1b19; --paper: #fbfaf7; --muted: #6b675f; --bad: #b5443c; }
   @media (prefers-color-scheme: dark) { :root { --ink: #ece9e2; --paper: #1a1917; --muted: #a29d93; --bad: #e58a80; } }
-  body { margin: 0; padding: 24px 16px; background: var(--paper); color: var(--ink); font: 15px/1.45 ui-sans-serif, system-ui, sans-serif; }
+  body { margin: 0; padding: 24px 16px; background: var(--paper); color: var(--ink); font: 0.9375rem/1.45 ui-sans-serif, system-ui, sans-serif; }
   main { max-width: 620px; margin: 0 auto; }
-  h1 { font-size: 16px; font-weight: 600; margin: 0 0 12px; }
+  h1 { font-size: 1rem; font-weight: 600; margin: 0 0 12px; }
+  /* A side figure on the site, designed 340 px wide. Its labels are the page's text size at any width, so drawn twice as
+     wide they'd look half as big. It shrinks to fit, and never grows past its design. */
+  pencil-figure { max-width: 340px; margin: 0 auto; }
   .controls { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; margin: 12px 0; }
   .controls input[type=range] { flex: 1; min-width: 10rem; }
   output { font-variant-numeric: tabular-nums; }
   button { font: inherit; }
   p { margin: 4px 0; color: var(--muted); }
-  #error { color: var(--bad); white-space: pre-wrap; font-family: ui-monospace, monospace; font-size: 13px; }
+  #error { color: var(--bad); white-space: pre-wrap; font-family: ui-monospace, monospace; font-size: 0.8125rem; }
 </style>
 </head>
 <body>

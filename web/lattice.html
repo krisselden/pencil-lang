@@ -7,18 +7,18 @@
 <style>
   /* Its colors come from the figure's sheets, set on the root as it loads. */
   :root { --bad: #b5443c; }
-  body { margin: 0; padding: 24px 16px; background: var(--paper_color); color: var(--ink); font: 15px/1.45 ui-sans-serif, system-ui, sans-serif; }
+  body { margin: 0; padding: 24px 16px; background: var(--paper_color); color: var(--ink); font: 0.9375rem/1.45 ui-sans-serif, system-ui, sans-serif; }
   main { max-width: 860px; margin: 0 auto; }
-  h1 { font-size: 16px; font-weight: 600; margin: 0 0 12px; }
+  h1 { font-size: 1rem; font-weight: 600; margin: 0 0 12px; }
   .controls { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; margin: 12px 0; }
   .controls input[type=range] { flex: 1; min-width: 10rem; }
   output { font-variant-numeric: tabular-nums; }
-  .legend { display: flex; flex-wrap: wrap; gap: 4px 18px; list-style: none; margin: 8px 0; padding: 0; color: var(--muted); font-size: 13px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 4px 18px; list-style: none; margin: 8px 0; padding: 0; color: var(--muted); font-size: 0.8125rem; }
   .legend li::before { content: ''; display: inline-block; width: 14px; height: 3px; margin-right: 6px; vertical-align: middle; background: var(--c); }
-  #readout { color: var(--ink); font: italic 16px Charter, serif; font-variant-numeric: tabular-nums; }
+  #readout { color: var(--ink); font: italic 1rem Charter, serif; font-variant-numeric: tabular-nums; }
   button { font: inherit; }
   p { margin: 4px 0; color: var(--muted); }
-  #error { color: var(--bad); white-space: pre-wrap; font-family: ui-monospace, monospace; font-size: 13px; }
+  #error { color: var(--bad); white-space: pre-wrap; font-family: ui-monospace, monospace; font-size: 0.8125rem; }
 </style>
 </head>
 <body>

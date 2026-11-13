@@ -7,15 +7,15 @@
     },
     {
       "expr": ["Divide",["Add","a",["Divide",1.0,"a"]],2.0],
-      "id": "x0"
+      "id": "x_0"
     },
     {
-      "expr": ["Divide",["Add","x0",1.0],2.0],
-      "id": "x1"
+      "expr": ["Divide",["Add","x_0",1.0],2.0],
+      "id": "x_1"
     },
     {
-      "expr": ["Subtract",["Divide",["Add","a",1.0],2.0],"x1"],
-      "id": "r1"
+      "expr": ["Subtract",["Divide",["Add","a",1.0],2.0],"x_1"],
+      "id": "r_1"
     },
     {
       "expr": 1.0,
@@ -47,15 +47,15 @@
         ],
         "with": [
           {
-            "expr": ["Subtract","time",["Divide",["Multiply",["Multiply","i",2.0],"π"],24.0]],
+            "expr": ["Subtract","time",["Divide",["Multiply",["Multiply","i",2.0],"Pi"],24.0]],
             "id": "angle"
           },
           {
-            "expr": ["Add",["Multiply","r1",["Cos","angle"]],"x1"],
+            "expr": ["Add",["Multiply","r_1",["Cos","angle"]],"x_1"],
             "id": "c.x"
           },
           {
-            "expr": ["Multiply","r1",["Sin","angle"]],
+            "expr": ["Multiply","r_1",["Sin","angle"]],
             "id": "c.y"
           }
         ]

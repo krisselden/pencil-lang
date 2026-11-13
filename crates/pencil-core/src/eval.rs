@@ -115,9 +115,16 @@ pub fn eval(e: &Expr, env: &Env) -> Result<Value, Error> {
     Ok(match e {
         Expr::Num(n) => Real(*n),
         Expr::Sym(s) => match s.as_str() {
-            "pi" | "π" => Real(std::f64::consts::PI),
             "white" => Color([1.0; 3]),
             "black" => Color([0.0; 3]),
+            _ if let Some(v) = crate::compile::constant_value(s) => Real(v),
+            // Text that never went through the compiler can still say `pi` or `e`.
+            _ if let Some(v) = crate::compile::written_constant(s)
+                .filter(|_| !env.vars.contains_key(s))
+                .and_then(crate::compile::constant_value) =>
+            {
+                Real(v)
+            }
             _ => match env.vars.get(s) {
                 Some(Some(v)) => Real(*v),
                 Some(None) => return Err(Error::absent()),

@@ -8,7 +8,7 @@
 
 use std::collections::HashMap;
 
-use crate::compile::{BEAT_PARAM, CONSTANTS, SIGNALS};
+use crate::compile::{BEAT_PARAM, CONSTANTS, SIGNALS, constant_value, written_constant};
 use crate::error::Error;
 use crate::frame::VIEW_WIDTH;
 use crate::ir::{Expr, Form, Scene, Shape};
@@ -343,11 +343,15 @@ pub fn type_of(e: &Expr, names: &[&str], spatial: bool) -> Result<Ty, String> {
         Expr::Sym(s)
             if names.contains(&s.as_str())
                 || SIGNALS.contains(&s.as_str())
-                || CONSTANTS.contains(&s.as_str()) =>
+                || CONSTANTS.contains(&s.as_str())
+                || written_constant(s).and_then(constant_value).is_some() =>
         {
             Ok(Ty::Real)
         }
-        Expr::Sym(s) => Err(format!("unknown name `{s}`")),
+        Expr::Sym(s) => {
+            let known = names.iter().copied().chain(SIGNALS).chain(CONSTANTS).chain(COLORS);
+            Err(crate::suggest::unknown("name", s, known.chain(["pi", "π", "e"])))
+        }
         Expr::App(head, args) => {
             let tys = args
                 .iter()
@@ -358,7 +362,10 @@ pub fn type_of(e: &Expr, names: &[&str], spatial: bool) -> Result<Ty, String> {
                 ("Oklch" | "Rgb", [Real, Real, Real]) => Ok(Color),
                 ("Hue", [Real]) => Ok(Color),
                 ("Mix", [Color, Color, Real]) => Ok(Color),
-                ("Mix" | "Clamp" | "Smoothstep" | "Reveal" | "IfNonnegative", [Real, Real, Real]) => Ok(Real),
+                (
+                    "Mix" | "Clamp" | "Smoothstep" | "Reveal" | "IfNonnegative",
+                    [Real, Real, Real],
+                ) => Ok(Real),
                 ("Multiply", [Color, Real] | [Real, Color]) | ("Divide", [Color, Real]) => {
                     Ok(Color)
                 }
@@ -376,9 +383,15 @@ pub fn type_of(e: &Expr, names: &[&str], spatial: bool) -> Result<Ty, String> {
                 ) => Ok(Real),
                 // Built-ins are capitalized once parsed, so a name still in lowercase is one no
                 // sheet defines.
-                _ if head.starts_with(|c: char| c.is_lowercase()) => Err(format!(
-                    "no function `{head}`: a sheet can define one with `fn {head}(…) = …`"
-                )),
+                _ if head.starts_with(|c: char| c.is_lowercase()) => {
+                    let built_in = crate::parse::FUNCTIONS.iter().map(|(f, _)| *f);
+                    Err(match crate::suggest::suggestion(head, built_in) {
+                        Some(hint) => format!("no function `{head}`: did you mean {hint}?"),
+                        None => format!(
+                            "no function `{head}`: a sheet can define one with `fn {head}(…) = …`"
+                        ),
+                    })
+                }
                 _ => Err(format!("`{head}` doesn't take {tys:?}")),
             }
         }
@@ -392,10 +405,31 @@ type Functions = HashMap<String, (Vec<String>, Expr)>;
 /// reach.
 const CALL_DEPTH: usize = 32;
 
+/// A sheet's `pi` is the constant, unless the figure has a binding of that name.
+fn constants(e: &Expr, names: &[&str]) -> Expr {
+    match e {
+        Expr::Sym(s) if !names.contains(&s.as_str()) => {
+            match written_constant(s).filter(|c| constant_value(c).is_some()) {
+                Some(constant) => Expr::sym(constant),
+                None => e.clone(),
+            }
+        }
+        Expr::App(head, args) => Expr::App(
+            head.clone(),
+            args.iter().map(|a| constants(a, names)).collect(),
+        ),
+        other => other.clone(),
+    }
+}
+
 /// Replaces a style sheet's own names with what they stand for, and its functions' calls with
 /// their bodies, so a theme can name its colors, sizes and curves and nothing downstream needs to
 /// know.
-fn with_names(e: &Expr, names: &HashMap<String, Expr>, functions: &Functions) -> Result<Expr, String> {
+fn with_names(
+    e: &Expr,
+    names: &HashMap<String, Expr>,
+    functions: &Functions,
+) -> Result<Expr, String> {
     with_names_in(e, names, functions, &HashMap::new(), 0)
 }
 
@@ -429,7 +463,9 @@ fn with_names_in(
                         ));
                     }
                     if depth >= CALL_DEPTH {
-                        return Err(format!("`{head}` calls itself, which a sheet's function can't"));
+                        return Err(format!(
+                            "`{head}` calls itself, which a sheet's function can't"
+                        ));
                     }
                     let local = params.iter().cloned().zip(given).collect();
                     with_names_in(body, names, functions, &local, depth + 1)?
@@ -475,7 +511,10 @@ fn sheet_functions(sheets: &[Document]) -> Functions {
     let mut functions = Functions::new();
     for sheet in sheets {
         for item in &sheet.items {
-            if let Item::Fn { name, params, body, .. } = item {
+            if let Item::Fn {
+                name, params, body, ..
+            } = item
+            {
                 functions.insert(name.clone(), (params.clone(), body.clone()));
             }
         }
@@ -589,6 +628,13 @@ pub fn resolve_keeping(
     // The document comes last, and its own `let`s are bindings.
     let sheet_names = sheet_names(&sheets[..sheets.len().saturating_sub(1)])?;
     let functions = sheet_functions(&sheets[..sheets.len().saturating_sub(1)]);
+    // The sheets' own names are gone by the time a value is checked, so they're only here for
+    // an error to suggest.
+    let checked: Vec<&str> = names
+        .iter()
+        .copied()
+        .chain(sheet_names.keys().map(String::as_str))
+        .collect();
 
     for (index, sheet) in sheets.iter().enumerate() {
         // The document comes last, and its errors name no sheet.
@@ -604,7 +650,7 @@ pub fn resolve_keeping(
                 .iter()
                 .map(|(prop, value)| {
                     let value = with_names(value, &sheet_names, &functions).map_err(&at)?;
-                    Ok((prop.clone(), value))
+                    Ok((prop.clone(), constants(&value, &names)))
                 })
                 .collect::<Result<_, Error>>()?;
             for selector in &rule.selectors {
@@ -668,7 +714,7 @@ pub fn resolve_keeping(
                 if selector.target == "formula" && selector.tags.is_empty() {
                     for (prop, value) in &decls {
                         if prop != "fill"
-                            || type_of(value, &names, false).map_err(&at)? != Ty::Color
+                            || type_of(value, &checked, false).map_err(&at)? != Ty::Color
                         {
                             return Err(at(format!("`formula` only takes a `fill`, not `{prop}`")));
                         }
@@ -681,7 +727,7 @@ pub fn resolve_keeping(
                     for (prop, value) in &decls {
                         match (prop.as_str(), value) {
                             ("fill", _) => {
-                                if type_of(value, &names, false).map_err(&at)? != Ty::Color {
+                                if type_of(value, &checked, false).map_err(&at)? != Ty::Color {
                                     return Err(at("`fill` needs a Color".into()));
                                 }
                                 caption.fill = Some(value.clone());
@@ -704,7 +750,7 @@ pub fn resolve_keeping(
                     for (prop, value) in &decls {
                         match prop.as_str() {
                             "fill" => {
-                                if type_of(value, &names, false).map_err(&at)? != Ty::Color {
+                                if type_of(value, &checked, false).map_err(&at)? != Ty::Color {
                                     return Err(at("`fill` needs a Color".into()));
                                 }
                                 styled.title_fill = Some(value.clone());
@@ -725,7 +771,7 @@ pub fn resolve_keeping(
                             styled.tone = match value {
                                 Expr::Sym(word) if word == "clip" => Tone::Clip,
                                 Expr::Sym(word) if word == "tanh" => Tone::Tanh,
-                                _ if type_of(value, &names, false) == Ok(Ty::Real) => {
+                                _ if type_of(value, &checked, false) == Ok(Ty::Real) => {
                                     Tone::Mix(value.clone())
                                 }
                                 _ => {
@@ -741,7 +787,7 @@ pub fn resolve_keeping(
                                 "`paper` only takes `fill` and `tone`, not `{prop}`"
                             )));
                         }
-                        if type_of(value, &names, false).map_err(&at)? != Ty::Color {
+                        if type_of(value, &checked, false).map_err(&at)? != Ty::Color {
                             return Err(at("`fill` needs a Color".into()));
                         }
                         styled.paper = Some(value.clone());
@@ -781,7 +827,7 @@ pub fn resolve_keeping(
                         &mark.id,
                         selector.facet.as_deref(),
                         &decls,
-                        &names,
+                        &checked,
                     )
                     .map_err(&at)?;
                 }
@@ -1031,7 +1077,10 @@ fn apply(
         {
             return Err(format!("`{id}` isn't a segment, so it can't use `{prop}`"));
         }
-        if matches!(prop.as_str(), "leader" | "leader_gap") && !clear && !matches!(form, Form::Label { .. }) {
+        if matches!(prop.as_str(), "leader" | "leader_gap")
+            && !clear
+            && !matches!(form, Form::Label { .. })
+        {
             return Err(format!("`{id}` isn't a label, so it can't use `{prop}`"));
         }
         let slot = match (facet, prop.as_str()) {
@@ -1109,7 +1158,8 @@ mod tests {
     /// `none` takes back what an earlier rule set, so one ray can be solid among dashed ones.
     #[test]
     fn none_takes_a_property_back() {
-        let doc = "let O = (0, 0)\nlet A = (1, 0)\ncurve base = ray(O, A)\ncurve other = ray(O, (0, 1))";
+        let doc =
+            "let O = (0, 0)\nlet A = (1, 0)\ncurve base = ray(O, A)\ncurve other = ray(O, (0, 1))";
         let f = build(
             doc,
             &["style ray { stroke: black; dash: 10px; gap: 8px }\nstyle base { dash: none; stroke: none }"],
@@ -1127,21 +1177,52 @@ mod tests {
     fn a_sheet_can_define_a_function() {
         let doc = "let O = (0, 0)\nlet A = (1, 0)\ncurve base = ray(O, A)";
         let theme = "let soft = 4\nfn glow(d, w) = exp(-d / w) * soft\nlet faint = glow(2, 8)";
-        let f = build(doc, &[theme, "let w = 100\nstyle base { stroke: black; width: glow(1, 2); opacity: faint }"]).unwrap();
+        let f = build(
+            doc,
+            &[
+                theme,
+                "let w = 100\nstyle base { stroke: black; width: glow(1, 2); opacity: faint }",
+            ],
+        )
+        .unwrap();
         let env = crate::eval::Env::new(0.0);
         let value = |e: &Option<Expr>| crate::eval::real(e.as_ref().unwrap(), &env).unwrap();
         let base = &f.styles.marks[0];
-        assert!((value(&base.width) - (-0.5f64).exp() * 4.0).abs() < 1e-12, "`w` is the parameter, not the sheet's 100");
+        assert!(
+            (value(&base.width) - (-0.5f64).exp() * 4.0).abs() < 1e-12,
+            "`w` is the parameter, not the sheet's 100"
+        );
         assert!((value(&base.opacity) - (-0.25f64).exp() * 4.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn an_unknown_name_in_a_sheet_suggests_what_was_meant() {
+        let doc = "let O = (0, 0)\nlet A = (1, 0)\ncurve base = ray(O, A)";
+        for (sheet, wanted) in [
+            ("let ink = black\nstyle base { stroke: inkk }", "did you mean `ink`"),
+            ("style base { stroke: black; width: sqtr(4) }", "did you mean `sqrt`"),
+        ] {
+            let err = build(doc, &[sheet]).unwrap_err().to_string();
+            assert!(err.contains(wanted), "{sheet}: {err}");
+        }
     }
 
     #[test]
     fn a_sheets_function_says_what_went_wrong() {
         let doc = "let O = (0, 0)\nlet A = (1, 0)\ncurve base = ray(O, A)";
         for (sheet, wanted) in [
-            ("style base { stroke: black; width: glow(1, 2) }", "no function `glow`"),
-            ("fn glow(d) = d\nstyle base { stroke: black; width: glow(1, 2) }", "takes 1 argument, not 2"),
-            ("fn glow(d) = glow(d)\nstyle base { stroke: black; width: glow(1) }", "calls itself"),
+            (
+                "style base { stroke: black; width: glow(1, 2) }",
+                "no function `glow`",
+            ),
+            (
+                "fn glow(d) = d\nstyle base { stroke: black; width: glow(1, 2) }",
+                "takes 1 argument, not 2",
+            ),
+            (
+                "fn glow(d) = glow(d)\nstyle base { stroke: black; width: glow(1) }",
+                "calls itself",
+            ),
         ] {
             let error = build(doc, &[sheet]).unwrap_err().to_string();
             assert!(error.contains(wanted), "{sheet}: {error}");
@@ -1152,7 +1233,11 @@ mod tests {
     #[test]
     fn a_dash_of_zero_is_solid() {
         let doc = "let O = (0, 0)\nlet A = (1, 0)\ncurve base = ray(O, A)";
-        let f = build(doc, &["style base { stroke: black; width: 2px; dash: 0; gap: 8px }"]).unwrap();
+        let f = build(
+            doc,
+            &["style base { stroke: black; width: 2px; dash: 0; gap: 8px }"],
+        )
+        .unwrap();
         let p = crate::frame::prepare(&f, &crate::frame::Inputs::at(0.0), 64, 64, 1.0).unwrap();
         let segments = &p.strokes[0];
         assert!(!segments.is_empty());

@@ -190,10 +190,9 @@ fn compile_piece(e: &Expr, slots: &mut Slots, env: &Env) -> Option<(Node, u32)> 
     Some(match e {
         Expr::Num(n) => slots.piece(PieceKey::Number(n.to_bits()), Node::Num(*n)),
         Expr::Sym(s) => match s.as_str() {
-            "pi" | "π" => slots.piece(
-                PieceKey::Number(std::f64::consts::PI.to_bits()),
-                Node::Num(std::f64::consts::PI),
-            ),
+            name if let Some(v) = crate::compile::constant_value(name) => {
+                slots.piece(PieceKey::Number(v.to_bits()), Node::Num(v))
+            }
             "white" | "black" => return None,
             name => {
                 let slot = Node::Slot(slots.slot(name, env));

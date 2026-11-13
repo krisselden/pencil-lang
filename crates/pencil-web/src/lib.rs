@@ -65,6 +65,14 @@ impl TextWidths for PageWidths<'_> {
     }
 }
 
+/// A name as the document reads it, so a page can say `x1` for `x_1` as a figure can.
+fn named(name: &str) -> String {
+    name.split('.')
+        .map(pencil_core::parse::subscripted)
+        .collect::<Vec<_>>()
+        .join(".")
+}
+
 fn js_error(message: impl std::fmt::Display) -> JsError {
     JsError::new(&message.to_string())
 }
@@ -188,12 +196,14 @@ impl Player {
 
     /// Takes a param over from its time binding, at this value.
     pub fn set_param(&mut self, name: &str, value: f64) {
+        let name = &named(name);
         self.params.retain(|(id, _)| id != name);
         self.params.push((name.to_string(), value));
     }
 
     /// Hands a param back to its time binding.
     pub fn release_param(&mut self, name: &str) {
+        let name = &named(name);
         self.params.retain(|(id, _)| id != name);
     }
 
@@ -306,6 +316,7 @@ impl Player {
 
     /// A binding's value this frame, or NaN if it doesn't exist this frame.
     pub fn value(&self, name: &str, time: f32) -> Result<f64, JsError> {
+        let name = &named(name);
         let Some((composition, _)) = &self.figure else {
             return Err(js_error("no figure"));
         };
@@ -322,6 +333,7 @@ impl Player {
     /// The earliest time a param's own binding reaches a value, so play can carry on
     /// from where a reader left it. The binding is sampled, not inverted.
     pub fn time_for(&self, name: &str, value: f64) -> Result<f64, JsError> {
+        let name = &named(name);
         let Some((composition, _)) = &self.figure else {
             return Err(js_error("no figure"));
         };
@@ -489,4 +501,30 @@ pub fn figure_size(doc: &str, sheets: Vec<String>) -> Result<String, JsValue> {
 #[wasm_bindgen]
 pub fn inspect(src: &str) -> String {
     pencil_core::inspect::inspect(src).to_string()
+}
+
+/// The built-in functions as JSON pairs of how they're written and their MathJSON heads, so a page
+/// can write a head back as Pencil text.
+#[wasm_bindgen]
+pub fn functions() -> String {
+    let pairs: Vec<serde_json::Value> = pencil_core::parse::FUNCTIONS
+        .iter()
+        .map(|(written, head)| serde_json::json!([written, head]))
+        .collect();
+    serde_json::Value::Array(pairs).to_string()
+}
+
+/// LaTeX, as Desmos and MathLive copy it, as Pencil text, or the reason it has no Pencil form.
+/// `functions` are the names the figure defines with `fn`, which a letter before parentheses
+/// calls rather than multiplies. A page passes pasted text here when `is_latex` says it's LaTeX.
+#[wasm_bindgen]
+pub fn from_latex(latex: &str, functions: Vec<String>) -> Result<String, JsValue> {
+    let names: Vec<&str> = functions.iter().map(String::as_str).collect();
+    pencil_core::latex::read(latex, &names).map_err(compile_error)
+}
+
+/// Whether pasted text is LaTeX rather than Pencil.
+#[wasm_bindgen]
+pub fn is_latex(text: &str) -> bool {
+    pencil_core::latex::is_latex(text)
 }

@@ -8,9 +8,9 @@
   :root { color-scheme: light dark; --ink: #1c1b19; --paper: #fbfaf7; --muted: #6b675f; --bad: #b5443c; }
   @media (prefers-color-scheme: dark) { :root { --ink: #ece9e2; --paper: #1a1917; --muted: #a29d93; --bad: #e58a80; } }
   body { margin: 0; padding: 24px 16px; background: var(--paper); color: var(--ink);
-         font: 15px/1.45 ui-sans-serif, system-ui, sans-serif; }
+         font: 0.9375rem/1.45 ui-sans-serif, system-ui, sans-serif; }
   main { max-width: 765px; margin: 0 auto; }
-  h1 { font-size: 16px; font-weight: 600; margin: 0 0 12px; }
+  h1 { font-size: 1rem; font-weight: 600; margin: 0 0 12px; }
   pencil-figure { touch-action: none; }
   .controls { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; margin: 12px 0; }
   .controls input[type=range] { width: 14rem; max-width: 100%; }
@@ -18,7 +18,7 @@
   button { font: inherit; }
   p { margin: 4px 0; color: var(--muted); }
   #readout { color: var(--ink); font-variant-numeric: tabular-nums; }
-  #error { color: var(--bad); white-space: pre-wrap; font-family: ui-monospace, monospace; font-size: 13px; }
+  #error { color: var(--bad); white-space: pre-wrap; font-family: ui-monospace, monospace; font-size: 0.8125rem; }
 </style>
 </head>
 <body>

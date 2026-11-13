@@ -15,7 +15,9 @@
 // held as if a reader set them), `paused` to start paused, and `gl` to skip WebGPU.
 // A page that picks its sheets in script, by the reader's theme or width, sets `sheets` as soon as
 // the element is defined: changes made before that script finishes are fetched once.
-// Events: `load` when a figure is compiled, `draw` after each frame drawn, `input` when a reader
+// Its labels are an em of the text where it sits, and follow when a reader changes their text size.
+// Events: `load` when a figure is compiled, `draw` after each frame drawn, `resize` when its drawn
+// size or its em changes (its `detail.em`, in CSS pixels), `input` when a reader
 // drags a param, `play` and `pause`, and `error` (its `detail.error`) when one can't load or draw.
 import init, { Player, figure_size, named_colors } from './pkg/pencil_web.js';
 import { LabelLayer } from './labels.js';
@@ -36,6 +38,7 @@ const CSS = `
 :host([hidden]) { display: none; }
 .stage { position: relative; overflow: hidden; width: 100%; }
 canvas { display: block; width: 100%; aspect-ratio: var(--pencil-aspect, 16 / 9); outline: none; }
+.em { position: absolute; left: 0; top: 0; width: 1em; height: 0; visibility: hidden; pointer-events: none; }
 .label { position: absolute; left: 0; top: 0; white-space: nowrap; font-family: system-ui, -apple-system, sans-serif; line-height: 1; will-change: transform; }
 .label.math { font-family: Charter, 'Bitstream Charter', 'Sitka Text', Cambria, serif; font-style: italic; }
 `;
@@ -58,6 +61,8 @@ export class PencilFigure extends HTMLElement {
 
   #stage;
   #canvas;
+  #em;
+  #emPx = 0;
   #layer;
   #size = null;
   #player = null;
@@ -91,7 +96,12 @@ export class PencilFigure extends HTMLElement {
     this.#stage.setAttribute('part', 'stage');
     root.append(style, this.#stage);
     this.#canvas = this.#makeCanvas();
-    this.#stage.append(this.#canvas);
+    // One em wide and out of sight. A reader changing their text size resizes it, though nothing
+    // else about the figure changes, so the labels follow.
+    this.#em = document.createElement('span');
+    this.#em.className = 'em';
+    this.#em.setAttribute('aria-hidden', 'true');
+    this.#stage.append(this.#canvas, this.#em);
     this.#layer = new LabelLayer(this.#stage, window.devicePixelRatio || 1);
   }
 
@@ -116,6 +126,7 @@ export class PencilFigure extends HTMLElement {
     this.#seen.observe(this);
     this.#resized = new ResizeObserver(() => this.#follow());
     this.#resized.observe(this.#canvas);
+    this.#resized.observe(this.#em);
     this.#queueFetch();
   }
 
@@ -477,6 +488,11 @@ export class PencilFigure extends HTMLElement {
     for (const [name, value] of Object.entries(values)) this.hold(name, value);
   }
 
+  /** The figure's design size, `[width, height]` in design pixels, from its sheets. */
+  get designSize() {
+    return this.#size;
+  }
+
   /** What the figure says of itself: its size, duration, beats, params, which bindings time
    * drives (`timeDriven`), and whether anything reads time (`usesTime`). */
   get info() {
@@ -597,7 +613,11 @@ export class PencilFigure extends HTMLElement {
   /** An `em` is the page's text size where the figure is, so its labels match the text around
    * it at any size it's drawn. */
   #setEm() {
-    this.#player?.set_em(parseFloat(getComputedStyle(this.#canvas).fontSize));
+    const em = parseFloat(getComputedStyle(this.#canvas).fontSize);
+    const changed = em !== this.#emPx;
+    this.#emPx = em;
+    this.#player?.set_em(em);
+    return changed;
   }
 
   /** Keeps the canvas's pixels matched to its laid-out size. A new size clears the canvas, and
@@ -609,8 +629,11 @@ export class PencilFigure extends HTMLElement {
     }
     const [width, height] = [this.#canvas.width, this.#canvas.height];
     this.#player.resize(...match(this.#canvas));
-    this.#setEm();
-    if (this.#canvas.width !== width || this.#canvas.height !== height) this.#paint();
+    const em = this.#setEm();
+    if (em || this.#canvas.width !== width || this.#canvas.height !== height) {
+      this.#paint();
+      this.dispatchEvent(new CustomEvent('resize', { detail: { em: this.#emPx } }));
+    }
   }
 }
 

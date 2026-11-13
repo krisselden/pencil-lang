@@ -314,6 +314,32 @@ const PUNCT: [&str; 16] = [
     "::", "..", "+", "-", "*", "/", "^", "(", ")", "{", "}", ",", ":", "=", ";", ".",
 ];
 
+/// A name with its subscript written one way, as `x_1`: `x1`, `x₁` and `x_{1}` (which the lexer
+/// has already unbraced) are the same name, as they are in Desmos and LaTeX. Digits in the
+/// middle of a name, as in `p2q`, aren't a subscript.
+pub fn subscripted(name: &str) -> String {
+    let mut out = String::with_capacity(name.len() + 1);
+    for c in name.chars() {
+        match c {
+            '₀'..='₉' => {
+                if !out.ends_with('_') && !out.ends_with(|d: char| d.is_ascii_digit()) {
+                    out.push('_');
+                }
+                out.push(char::from_digit(c as u32 - '₀' as u32, 10).unwrap());
+            }
+            _ => out.push(c),
+        }
+    }
+    let stem = out.trim_end_matches(|c: char| c.is_ascii_digit());
+    if stem.len() < out.len() && !stem.is_empty() && !stem.ends_with('_') {
+        out.insert(stem.len(), '_');
+    }
+    out
+}
+
+/// Glyphs that only ever name a constant, so they never join the letters around them.
+const GLYPHS: [char; 4] = ['π', 'ℯ', 'ⅈ', 'ⅇ'];
+
 fn lex(src: &str) -> Result<Vec<Lexed>, Error> {
     let chars: Vec<char> = src.chars().collect();
     let (mut i, mut line, mut col) = (0, 1, 1);
@@ -387,16 +413,44 @@ fn lex(src: &str) -> Result<Vec<Lexed>, Error> {
             }
         } else if c.is_alphabetic() || c == '_' {
             let start = i;
+            // A constant's own glyph is a name by itself, so `iπ` and `2πr` are products. It can
+            // still have a subscript, as `π_1`.
+            let glyph = GLYPHS.contains(&c);
+            if glyph {
+                advance(1, &mut i, &mut col);
+            }
             while i < chars.len() && (chars[i].is_alphanumeric() || chars[i] == '_') {
                 // Superscripts count as alphanumeric, but they are exponents here.
-                if matches!(chars[i], '²' | '³') {
+                if matches!(chars[i], '²' | '³') || GLYPHS.contains(&chars[i]) {
+                    break;
+                }
+                let subscript =
+                    chars[i] == '_' || chars[i].is_ascii_digit() || ('₀'..='₉').contains(&chars[i]);
+                if glyph && !subscript {
                     break;
                 }
                 advance(1, &mut i, &mut col);
             }
-            let name: String = chars[start..i].iter().collect();
+            let mut name: String = chars[start..i].iter().collect();
+            // `x_{1}`, as LaTeX writes a subscript.
+            if name.ends_with('_') && chars.get(i) == Some(&'{') {
+                let inner: String = chars[i + 1..]
+                    .iter()
+                    .take_while(|c| c.is_alphanumeric())
+                    .collect();
+                let close = i + 1 + inner.chars().count();
+                if inner.is_empty() || chars.get(close) != Some(&'}') {
+                    return Err(Error::at(
+                        line,
+                        col,
+                        "a subscript in braces holds letters and digits, as in `x_{1}`",
+                    ));
+                }
+                name.push_str(&inner);
+                advance(close + 1 - i, &mut i, &mut col);
+            }
             out.push(Lexed {
-                tok: Tok::Ident(name),
+                tok: Tok::Ident(subscripted(&name)),
                 line: start_line,
                 col: start_col,
             });
@@ -463,12 +517,13 @@ struct Parser {
 /// Builtin names in source, and their MathJSON heads. Anything else is left under
 /// its own name for `compile` to resolve as a user function. `docs/language.md` must
 /// describe every one, and a test holds it to that.
-pub const FUNCTIONS: [(&str, &str); 47] = [
+pub const FUNCTIONS: [(&str, &str); 49] = [
     ("sqrt", "Sqrt"),
     ("sin", "Sin"),
     ("cos", "Cos"),
     ("tan", "Tan"),
     ("acos", "Arccos"),
+    ("arccos", "Arccos"),
     ("exp", "Exp"),
     ("ln", "Ln"),
     ("abs", "Abs"),
@@ -485,7 +540,7 @@ pub const FUNCTIONS: [(&str, &str); 47] = [
     ("mod", "Mod"),
     ("smoothstep", "Smoothstep"),
     ("reveal", "Reveal"),
-    ("length", "Length"),
+    ("length", "Abs"),
     ("dist", "Distance"),
     ("dot", "Dot"),
     ("midpoint", "Midpoint"),
@@ -500,8 +555,8 @@ pub const FUNCTIONS: [(&str, &str); 47] = [
     ("snap", "Snap"),
     ("timeline", "Timeline"),
     ("real", "Real"),
-    ("imag", "Imag"),
-    ("conj", "Conj"),
+    ("imag", "Imaginary"),
+    ("conj", "Conjugate"),
     ("arg", "Arg"),
     ("sinh", "Sinh"),
     ("cosh", "Cosh"),
@@ -509,8 +564,15 @@ pub const FUNCTIONS: [(&str, &str); 47] = [
     ("coth", "Coth"),
     ("sech", "Sech"),
     ("csch", "Csch"),
-    ("arctanh", "Arctanh"),
+    ("arctanh", "Artanh"),
+    ("artanh", "Artanh"),
     ("flip", "Flip"),
+];
+
+/// Words that can follow an expression on its line, so they end it rather than multiply it.
+const AFTER_EXPRESSIONS: [&str; 19] = [
+    "as", "at", "away", "by", "drop", "focus", "for", "from", "hang", "if", "in", "offset", "sets",
+    "show", "size", "step", "tag", "through", "with",
 ];
 
 /// Words that can follow `beat` in a beat with a length, so none of them can be its name.
@@ -671,11 +733,7 @@ impl Parser {
                 let text = match self.bump() {
                     Tok::Str(text) => text,
                     other => {
-                        return Err(Error::at(
-                            line,
-                            1,
-                            format!("expected text, found {other}"),
-                        ));
+                        return Err(Error::at(line, 1, format!("expected text, found {other}")));
                     }
                 };
                 items.push(Item::Text { name, text, line });
@@ -1129,13 +1187,19 @@ impl Parser {
     /// Where token `i` starts in the source.
     fn offset(&self, i: usize) -> usize {
         let t = &self.toks[i];
-        self.line_starts.get(t.line - 1).map_or(self.src.len(), |s| s + t.col - 1)
+        self.line_starts
+            .get(t.line - 1)
+            .map_or(self.src.len(), |s| s + t.col - 1)
     }
 
     /// The source from token `from` up to token `to`, as written.
     fn text(&self, from: usize, to: usize) -> String {
         let (a, b) = (self.offset(from), self.offset(to).min(self.src.len()));
-        self.src[a..b.max(a)].iter().collect::<String>().trim().to_string()
+        self.src[a..b.max(a)]
+            .iter()
+            .collect::<String>()
+            .trim()
+            .to_string()
     }
 
     fn param(&mut self, line: usize) -> Result<Item, Error> {
@@ -1159,7 +1223,10 @@ impl Parser {
             loop {
                 // An option can have a name, `"q = 2p": 2·acos(…)`, which a page shows instead of
                 // its value as written.
-                let named = match (self.peek().clone(), self.toks.get(self.pos + 1).map(|t| &t.tok)) {
+                let named = match (
+                    self.peek().clone(),
+                    self.toks.get(self.pos + 1).map(|t| &t.tok),
+                ) {
                     (Tok::Str(name), Some(Tok::Punct(":"))) => {
                         self.bump();
                         self.bump();
@@ -1293,11 +1360,7 @@ impl Parser {
             match self.bump() {
                 Tok::Str(text) => Some(text),
                 other => {
-                    return Err(Error::at(
-                        line,
-                        1,
-                        format!("expected text, found {other}"),
-                    ));
+                    return Err(Error::at(line, 1, format!("expected text, found {other}")));
                 }
             }
         } else {
@@ -1422,7 +1485,7 @@ impl Parser {
     }
 
     fn term(&mut self) -> Result<Expr, Error> {
-        let mut left = self.unary()?;
+        let mut left = self.product()?;
         loop {
             let head = if self.eat("*") {
                 "Multiply"
@@ -1431,8 +1494,32 @@ impl Parser {
             } else {
                 return Ok(left);
             };
-            left = Expr::app(head, vec![left, self.unary()?]);
+            left = Expr::app(head, vec![left, self.product()?]);
         }
+    }
+
+    /// Factors written side by side multiply, as `2π`, `2(x + 1)`, `(a + b)(a - b)` and `a b`.
+    /// It binds tighter than `/`, so `1/2π` is 1/(2π), as a reader takes it.
+    fn product(&mut self) -> Result<Expr, Error> {
+        let mut left = self.unary()?;
+        while self.side_by_side() {
+            left = Expr::app("Multiply", vec![left, self.power()?]);
+        }
+        Ok(left)
+    }
+
+    /// Whether the next token starts a factor that multiplies the one before it: on the same
+    /// line, and not one of the words that can follow an expression, such as `for` or `tag`.
+    /// A name right before `(` was already read as a call.
+    fn side_by_side(&self) -> bool {
+        let (before, next) = (&self.toks[self.pos - 1], &self.toks[self.pos]);
+        next.line == before.line
+            && match &next.tok {
+                Tok::Num(_) => true,
+                Tok::Ident(w) => !AFTER_EXPRESSIONS.contains(&w.as_str()),
+                Tok::Punct(p) => *p == "(",
+                _ => false,
+            }
     }
 
     fn unary(&mut self) -> Result<Expr, Error> {
@@ -1494,7 +1581,7 @@ impl Parser {
                 let _ = (line, col);
                 let head = FUNCTIONS
                     .iter()
-                    .find(|(f, _)| *f == name)
+                    .find(|(f, _)| subscripted(f) == name)
                     .map_or(name.as_str(), |(_, head)| head);
                 Ok(Expr::app(head, args))
             }
@@ -1518,7 +1605,12 @@ impl Parser {
     fn new(src: &str) -> Result<Parser, Error> {
         let src: Vec<char> = src.chars().collect();
         let mut line_starts = vec![0];
-        line_starts.extend(src.iter().enumerate().filter(|(_, c)| **c == '\n').map(|(i, _)| i + 1));
+        line_starts.extend(
+            src.iter()
+                .enumerate()
+                .filter(|(_, c)| **c == '\n')
+                .map(|(i, _)| i + 1),
+        );
         Ok(Parser {
             toks: lex(&src.iter().collect::<String>())?,
             pos: 0,
@@ -1635,6 +1727,49 @@ mod tests {
                 parse(&format!("viewport {{ x: -2..2, y: -2..2, {prop}: 640 }}")).unwrap_err();
             assert!(err.message.contains("`style figure"), "{err}");
         }
+    }
+
+    #[test]
+    fn factors_side_by_side_multiply() {
+        let same = |a: &str, b: &str| assert_eq!(expr(a), expr(b), "{a} and {b}");
+        same("2π", "2·π");
+        same("2 π", "2·π");
+        same("2(x + 1)", "2·(x + 1)");
+        same("(a + b)(a - b)", "(a + b)·(a - b)");
+        same("a b", "a·b");
+        same("2x²", "2·x²");
+        same("-2π", "-2·π");
+        same("2πi", "2·π·i");
+        same("2πr", "2·π·r");
+        same("iπ", "i·π");
+        assert_eq!(expr("π_1"), Expr::sym("π_1"));
+        assert_eq!(expr("π₁"), Expr::sym("π_1"));
+        // Tighter than `/`, as a reader takes `1/2π`.
+        same("1/2π", "1/(2·π)");
+        // A name before `(` is a call, and two letters together are one name.
+        assert_eq!(expr("f(x)"), Expr::app("f", vec![Expr::sym("x")]));
+        assert_eq!(expr("ab"), Expr::sym("ab"));
+        assert_eq!(expr("θπ"), expr("θ·π"));
+        // The words that follow an expression end it, and so does the end of a line.
+        let doc = parse("param a in 0..2π step 1\nlet b = 2a\ndot P").unwrap();
+        assert_eq!(doc.items.len(), 3);
+    }
+
+    #[test]
+    fn a_subscript_is_one_name_however_it_is_written() {
+        for written in ["x1", "x_1", "x₁", "x_{1}"] {
+            assert_eq!(expr(written), Expr::sym("x_1"), "{written}");
+        }
+        assert_eq!(expr("σ₁₂"), Expr::sym("σ_12"));
+        assert_eq!(expr("x_{max}"), Expr::sym("x_max"));
+        // Digits inside a name aren't a subscript, and a built-in keeps its own.
+        assert_eq!(expr("p2q"), Expr::sym("p2q"));
+        assert_eq!(
+            expr("atan2(1, 2)"),
+            Expr::app("Arctan2", vec![Expr::Num(1.0), Expr::Num(2.0)])
+        );
+        let err = parse("let v = x_{1 + 2}").unwrap_err();
+        assert!(err.message.contains("subscript in braces"), "{err}");
     }
 
     #[test]

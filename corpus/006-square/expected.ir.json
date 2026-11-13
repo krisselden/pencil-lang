@@ -119,11 +119,11 @@
     },
     {
       "expr": ["Add","AZ.x","BIZ.x"],
-      "id": "Z2.x"
+      "id": "Z_2.x"
     },
     {
       "expr": ["Add","AZ.y","BIZ.y"],
-      "id": "Z2.y"
+      "id": "Z_2.y"
     },
     {
       "expr": ["Arctan2","b","a"],
@@ -138,11 +138,11 @@
       "id": "tip_a.y"
     },
     {
-      "expr": ["Subtract",["Multiply",["Add","Z.x",["Multiply",["Snap","scale_b"],["Subtract","BZ.x","Z.x"]]],["Multiply",["Exp",0.0],["Cos",["Divide",["Multiply",["Snap","rotate"],"pi"],2.0]]]],["Multiply",["Add","Z.y",["Multiply",["Snap","scale_b"],["Subtract","BZ.y","Z.y"]]],["Multiply",["Exp",0.0],["Sin",["Divide",["Multiply",["Snap","rotate"],"pi"],2.0]]]]],
+      "expr": ["Subtract",["Multiply",["Add","Z.x",["Multiply",["Snap","scale_b"],["Subtract","BZ.x","Z.x"]]],["Multiply",["Exp",0.0],["Cos",["Divide",["Multiply",["Snap","rotate"],"Pi"],2.0]]]],["Multiply",["Add","Z.y",["Multiply",["Snap","scale_b"],["Subtract","BZ.y","Z.y"]]],["Multiply",["Exp",0.0],["Sin",["Divide",["Multiply",["Snap","rotate"],"Pi"],2.0]]]]],
       "id": "along.x"
     },
     {
-      "expr": ["Add",["Multiply",["Add","Z.x",["Multiply",["Snap","scale_b"],["Subtract","BZ.x","Z.x"]]],["Multiply",["Exp",0.0],["Sin",["Divide",["Multiply",["Snap","rotate"],"pi"],2.0]]]],["Multiply",["Add","Z.y",["Multiply",["Snap","scale_b"],["Subtract","BZ.y","Z.y"]]],["Multiply",["Exp",0.0],["Cos",["Divide",["Multiply",["Snap","rotate"],"pi"],2.0]]]]],
+      "expr": ["Add",["Multiply",["Add","Z.x",["Multiply",["Snap","scale_b"],["Subtract","BZ.x","Z.x"]]],["Multiply",["Exp",0.0],["Sin",["Divide",["Multiply",["Snap","rotate"],"Pi"],2.0]]]],["Multiply",["Add","Z.y",["Multiply",["Snap","scale_b"],["Subtract","BZ.y","Z.y"]]],["Multiply",["Exp",0.0],["Cos",["Divide",["Multiply",["Snap","rotate"],"Pi"],2.0]]]]],
       "id": "along.y"
     },
     {
@@ -388,7 +388,7 @@
       "form": {
         "arc": {
           "point": [["Multiply",["Cos","t"],["Sqrt",["Add",["Power","BZ.x",2.0],["Power","BZ.y",2.0]]]],["Multiply",["Sin","t"],["Sqrt",["Add",["Power","BZ.x",2.0],["Power","BZ.y",2.0]]]]],
-          "range": ["angle",["Add","angle",["Divide",["Multiply",["Snap","rotate"],"pi"],2.0]]],
+          "range": ["angle",["Add","angle",["Divide",["Multiply",["Snap","rotate"],"Pi"],2.0]]],
           "var": "t"
         },
         "kind": "parametric"
@@ -415,7 +415,7 @@
       "form": {
         "from": ["O.x","O.y"],
         "kind": "arrow",
-        "to": ["Z2.x","Z2.y"]
+        "to": ["Z_2.x","Z_2.y"]
       },
       "id": "square",
       "life": ["Subtract",["Add",0.0,["Clamp",["Subtract","beat",11.0],0.0,1.0]],["Clamp",["Subtract","beat",15.0],0.0,1.0]],
@@ -497,13 +497,13 @@
       "beat": null,
       "focus": ["Add",1.0,["Multiply",-1.0,["Clamp",["Subtract","beat",7.0],0.0,1.0]]],
       "form": {
-        "at": [["Multiply",0.55,"Z2.x"],["Multiply",0.55,"Z2.y"]],
+        "at": [["Multiply",0.55,"Z_2.x"],["Multiply",0.55,"Z_2.y"]],
         "kind": "label",
         "offset": [-18.0,-10.0],
         "text": "|z|²",
         "values": []
       },
-      "id": "length_z2",
+      "id": "length_z_2",
       "life": ["Subtract",["Add",0.0,["Clamp",["Subtract","beat",14.0],0.0,1.0]],["Clamp",["Subtract","beat",15.0],0.0,1.0]],
       "tags": ["label","note"]
     },
@@ -684,7 +684,7 @@
       "offset": [4.0,6.0]
     },
     {
-      "at": ["Z2.x","Z2.y"],
+      "at": ["Z_2.x","Z_2.y"],
       "hang": "end",
       "id": "at_sum",
       "offset": [-8.0,-12.0]

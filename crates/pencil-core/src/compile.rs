@@ -8,8 +8,8 @@ use crate::diff::derivative;
 use crate::error::Error;
 use crate::eval::{self, Env};
 use crate::ir::{
-    Arc, Binding, Choice, Expr, Expression, Form, Handle, Hang, Mark, Param, Part, Piece, Scene, Spot,
-    System, Viewport,
+    Arc, Binding, Choice, Expr, Expression, Form, Handle, Hang, Mark, Param, Part, Piece, Scene,
+    Spot, System, Viewport,
 };
 use crate::parse::{CurveSyntax, Document, Item, ManyKind, PartSyntax};
 
@@ -17,7 +17,47 @@ use crate::parse::{CurveSyntax, Document, Item, ManyKind, PartSyntax};
 /// Beyond this, `z^n` goes through exp and ln rather than multiplying out.
 const MAX_COMPLEX_POWER: f64 = 8.0;
 pub const SIGNALS: [&str; 1] = ["time"];
-pub const CONSTANTS: [&str; 2] = ["pi", "π"];
+/// The constants, by their names in the IR, which are MathJSON's. A figure can't take these names.
+/// The constants that are numbers, by their names in the IR, which are MathJSON's.
+pub const CONSTANTS: [&str; 6] = [
+    "Pi",
+    "ExponentialE",
+    "GoldenRatio",
+    "EulerGamma",
+    "CatalanConstant",
+    "Degrees",
+];
+
+/// A constant as written, when nothing in the figure has taken its name, by its MathJSON name.
+/// `pi` and `π` are `Pi`, `e`, `ℯ` and `ⅇ` are Euler's number, and `i` and `ⅈ` are the imaginary
+/// unit, which isn't a number but the point (0, 1). Each MathJSON name also stands for itself,
+/// so MathJSON reads as written.
+pub fn written_constant(name: &str) -> Option<&'static str> {
+    match name {
+        "pi" | "π" => Some("Pi"),
+        "e" | "ℯ" | "ⅇ" => Some("ExponentialE"),
+        "i" | "ⅈ" => Some("ImaginaryUnit"),
+        _ => CONSTANTS
+            .iter()
+            .chain(&["ImaginaryUnit"])
+            .find(|c| **c == name)
+            .copied(),
+    }
+}
+
+/// A constant's value, by its name in the IR.
+pub fn constant_value(name: &str) -> Option<f64> {
+    use std::f64::consts::{E, PI};
+    match name {
+        "Pi" => Some(PI),
+        "ExponentialE" => Some(E),
+        "GoldenRatio" => Some((1.0 + 5f64.sqrt()) / 2.0),
+        "EulerGamma" => Some(0.577_215_664_901_532_9),
+        "CatalanConstant" => Some(0.915_965_594_177_219),
+        "Degrees" => Some(PI / 180.0),
+        _ => None,
+    }
+}
 /// The discrete param that beats declare.
 pub const BEAT_PARAM: &str = "beat";
 
@@ -398,6 +438,19 @@ fn meet_circles(c1: &[Expr; 2], r1: &Expr, c2: &[Expr; 2], r2: &Expr, which: usi
 type Locals = HashMap<String, Val>;
 
 impl Lowerer {
+    /// That `name` isn't defined here, and what might have been meant.
+    fn unknown_name(&self, name: &str, locals: &Locals) -> String {
+        let known = locals
+            .keys()
+            .chain(self.shapes.keys())
+            .chain(&self.scalars)
+            .map(String::as_str)
+            .chain(SIGNALS)
+            .chain(CONSTANTS)
+            .chain(["pi", "π", "e", "i"]);
+        crate::suggest::unknown("name", name, known)
+    }
+
     fn named(&self, name: &str) -> Option<Val> {
         let field = |f: &str| Expr::sym(format!("{name}.{f}"));
         match self.shapes.get(name)? {
@@ -437,9 +490,12 @@ impl Lowerer {
                     || CONSTANTS.contains(&s.as_str())
                 {
                     Val::Scalar(e.clone())
-                } else if s == "i" {
+                } else if let Some(constant) = written_constant(s) {
                     // Anything named `i` comes first, so a loop can still count with it.
-                    Val::Point(num(0.0), num(1.0))
+                    match constant {
+                        "ImaginaryUnit" => Val::Point(num(0.0), num(1.0)),
+                        _ => Val::Scalar(Expr::sym(constant)),
+                    }
                 } else if let Some((base, axis)) = s.split_once('.') {
                     match (locals.get(base), axis) {
                         // A number is a point on the real axis.
@@ -458,10 +514,10 @@ impl Lowerer {
                         (Some(Val::Cycle { a, bx, .. }), "x") => Val::Scalar(cycle_center(a, bx)),
                         (Some(Val::Cycle { a, by, .. }), "y") => Val::Scalar(cycle_center(a, by)),
                         (Some(Val::Cycle { a, .. }), "r") => Val::Scalar(cycle_radius(a)),
-                        _ => return Err(Error::new(format!("unknown name `{s}`"))),
+                        _ => return Err(Error::new(self.unknown_name(s, locals))),
                     }
                 } else {
-                    return Err(Error::new(format!("unknown name `{s}`")));
+                    return Err(Error::new(self.unknown_name(s, locals)));
                 }
             }
             Expr::App(head, args) => {
@@ -641,6 +697,10 @@ impl Lowerer {
             }
             ("Divide", [Point(a, b), Point(c, d)]) => point(complex_over(a, b, c, d)),
             ("Divide", [Scalar(k), Point(c, d)]) => point(complex_over(k, &num(0.0), c, d)),
+            // e^w is exp(w), for a complex w as well, with no logarithm of e on the way.
+            ("Power", [Scalar(Expr::Sym(base)), w]) if base == "ExponentialE" => {
+                self.builtin("Exp", vec![w.clone()])?
+            }
             // abs(z)²: the root of a sum of squares, squared, is that sum.
             ("Power", [Scalar(Expr::App(root, inner)), Scalar(Expr::Num(n))])
                 if root == "Sqrt" && *n == 2.0 && inner.first().is_some_and(is_sum_of_squares) =>
@@ -668,7 +728,7 @@ impl Lowerer {
                     _ => self.builtin("Divide", vec![two, difference])?,
                 }
             }
-            ("Arctanh", [v @ (Scalar(_) | Point(..))]) => {
+            ("Artanh", [v @ (Scalar(_) | Point(..))]) => {
                 let one = Scalar(num(1.0));
                 let above = self.builtin("Add", vec![one.clone(), v.clone()])?;
                 let below = self.builtin("Subtract", vec![one, v.clone()])?;
@@ -677,10 +737,10 @@ impl Lowerer {
                 self.builtin("Divide", vec![log, Scalar(num(2.0))])?
             }
             ("Real", [Point(x, _)]) | ("Real", [Scalar(x)]) => Scalar(x.clone()),
-            ("Imag", [Point(_, y)]) => Scalar(y.clone()),
-            ("Imag", [Scalar(_)]) => Scalar(num(0.0)),
-            ("Conj", [Point(x, y)]) => Point(x.clone(), negated(y.clone())),
-            ("Conj", [Scalar(x)]) => Scalar(x.clone()),
+            ("Imaginary", [Point(_, y)]) => Scalar(y.clone()),
+            ("Imaginary", [Scalar(_)]) => Scalar(num(0.0)),
+            ("Conjugate", [Point(x, y)]) => Point(x.clone(), negated(y.clone())),
+            ("Conjugate", [Scalar(x)]) => Scalar(x.clone()),
             ("Abs", [Point(x, y)]) => Scalar(length2(&[x.clone(), y.clone()])),
             ("Arg", [Point(x, y)]) => Scalar(Expr::app("Arctan2", vec![y.clone(), x.clone()]))
                 .only_where(&sub(
@@ -741,7 +801,6 @@ impl Lowerer {
                 Expr::app("Negate", vec![x.clone()]),
                 Expr::app("Negate", vec![y.clone()]),
             ),
-            ("Length", [Point(x, y)]) => Scalar(length2(&[x.clone(), y.clone()])),
             ("Distance", [Point(ax, ay), Point(bx, by)]) => Scalar(length2(&[
                 sub(bx.clone(), ax.clone()),
                 sub(by.clone(), ay.clone()),
@@ -856,6 +915,16 @@ impl Lowerer {
                 }
                 Scalar(Expr::app(head, scalars))
             }
+            // A capitalized name close to one of the figure's own functions is a slip, not a
+            // built-in.
+            (head, _)
+                if !is_built_in(head)
+                    && crate::suggest::suggestion(head, self.functions.keys().map(String::as_str))
+                        .is_some() =>
+            {
+                let known = self.functions.keys().map(String::as_str);
+                return Err(Error::new(crate::suggest::unknown("function", head, known)));
+            }
             (head, _) if head.chars().next().is_some_and(char::is_uppercase) => {
                 let kinds: Vec<&str> = low.iter().map(Val::kind).collect();
                 return Err(Error::new(format!(
@@ -864,7 +933,13 @@ impl Lowerer {
                 )));
             }
             (head, _) => {
-                return Err(Error::new(format!("unknown function `{head}`")));
+                let known = self.functions.keys().map(String::as_str);
+                let built_in = crate::parse::FUNCTIONS.iter().map(|(f, _)| *f);
+                return Err(Error::new(crate::suggest::unknown(
+                    "function",
+                    head,
+                    known.chain(built_in),
+                )));
             }
         })
     }
@@ -1169,7 +1244,11 @@ fn focus_over(
             .iter()
             .find(|p| p.choice.as_ref().is_some_and(|c| c.of == choice))
         else {
-            return Err(Error::at(line, 1, format!("`if {choice} = …`: `{choice}` isn't a choice")));
+            return Err(Error::at(
+                line,
+                1,
+                format!("`if {choice} = …`: `{choice}` isn't a choice"),
+            ));
         };
         let options = &param.choice.as_ref().expect("found by its choice").options;
         let written = |s: &str| s.split_whitespace().collect::<String>();
@@ -1184,7 +1263,10 @@ fn focus_over(
             ));
         };
         let off = Expr::app("Abs", vec![sub(Expr::sym(&param.id), num(k as f64))]);
-        Ok(Expr::app("IfNonnegative", vec![sub(num(0.5), off), num(1.0), num(0.0)]))
+        Ok(Expr::app(
+            "IfNonnegative",
+            vec![sub(num(0.5), off), num(1.0), num(0.0)],
+        ))
     };
     let mut focuses: Vec<Option<Expr>> = vec![None; marks.len()];
     let mut was: Vec<Expr> = vec![num(1.0); marks.len()];
@@ -1321,7 +1403,7 @@ fn circle_form(name: &str) -> Result<Form, Error> {
         line: Some(Arc {
             var: var.to_string(),
             point: [around("x", "Cos"), around("y", "Sin")],
-            range: [num(0.0), mul(num(2.0), Expr::sym("pi"))],
+            range: [num(0.0), mul(num(2.0), Expr::sym("Pi"))],
         }),
     })
 }
@@ -1372,9 +1454,18 @@ fn cycle_form(name: &str) -> Form {
         line: Some(Arc {
             var: var.to_string(),
             point: [around("x", "Cos"), around("y", "Sin")],
-            range: [num(0.0), mul(num(2.0), Expr::sym("pi"))],
+            range: [num(0.0), mul(num(2.0), Expr::sym("Pi"))],
         }),
     }
+}
+
+/// Whether a head is one Pencil defines, as opposed to a name a figure wrote.
+fn is_built_in(head: &str) -> bool {
+    crate::parse::FUNCTIONS.iter().any(|(_, h)| *h == head)
+        || matches!(
+            head,
+            "Add" | "Subtract" | "Multiply" | "Divide" | "Power" | "Negate" | "Tuple" | "Pixels" | "Ems"
+        )
 }
 
 /// Below this curvature, an oriented circle has no center or radius of its own.
@@ -2129,7 +2220,11 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
     let none = Locals::new();
     let mut ids: HashSet<String> = HashSet::new();
     let mut claim = |name: &str, line: usize| -> Result<(), Error> {
-        if SIGNALS.contains(&name) || CONSTANTS.contains(&name) || !ids.insert(name.to_string()) {
+        if SIGNALS.contains(&name)
+            || CONSTANTS.contains(&name)
+            || name == "ImaginaryUnit"
+            || !ids.insert(name.to_string())
+        {
             return Err(Error::at(line, 1, format!("`{name}` is already defined")));
         }
         Ok(())
@@ -2349,7 +2444,9 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
                     fields = fields
                         .into_iter()
                         .zip(value.fields())
-                        .map(|(before, here)| Expr::app("IfNonnegative", vec![reached.clone(), here, before]))
+                        .map(|(before, here)| {
+                            Expr::app("IfNonnegative", vec![reached.clone(), here, before])
+                        })
                         .collect();
                 }
                 let chosen = values[0].with_fields(fields);
@@ -2485,10 +2582,8 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
                 let sym = |name: &str| Expr::sym(name);
                 let toward = |end: &str| {
                     let delta = Expr::app("Subtract", vec![sym(end), sym("at")]);
-                    let unit = Expr::app(
-                        "Divide",
-                        vec![delta.clone(), Expr::app("Length", vec![delta])],
-                    );
+                    let unit =
+                        Expr::app("Divide", vec![delta.clone(), Expr::app("Abs", vec![delta])]);
                     Expr::app("Multiply", vec![sym("size"), unit])
                 };
                 let a = Expr::app("Add", vec![sym("at"), toward("from")]);
@@ -3072,7 +3167,11 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
         let reached = |k: usize| {
             Expr::app(
                 "Clamp",
-                vec![add(sub(Expr::sym(BEAT_PARAM), num(k as f64)), num(1.0)), num(0.0), num(1.0)],
+                vec![
+                    add(sub(Expr::sym(BEAT_PARAM), num(k as f64)), num(1.0)),
+                    num(0.0),
+                    num(1.0),
+                ],
             )
         };
         let focuses = focus_over(&scene, &named, reached)?;
@@ -4227,13 +4326,24 @@ mod tests {
                 params: vec![("axis.index".into(), which), ("k.index".into(), which)],
             };
             let env = eval::scene_env(&s, &inputs, None).unwrap();
-            [env.get("P.x").unwrap(), env.get("P.y").unwrap(), env.get("k").unwrap()]
+            [
+                env.get("P.x").unwrap(),
+                env.get("P.y").unwrap(),
+                env.get("k").unwrap(),
+            ]
         };
         let h = 3f64.sqrt();
         // The number 1 is a point on the real axis, offered alongside ω.
-        for (which, want) in [(0.0, [-1.0, h, 2.0]), (1.0, [2.0, 0.0, 3.0]), (2.0, [1.0, h, 5.0])] {
+        for (which, want) in [
+            (0.0, [-1.0, h, 2.0]),
+            (1.0, [2.0, 0.0, 3.0]),
+            (2.0, [1.0, h, 5.0]),
+        ] {
             let got = at(which);
-            assert!(got.iter().zip(want).all(|(g, w)| near(*g, w)), "{which}: {got:?}");
+            assert!(
+                got.iter().zip(want).all(|(g, w)| near(*g, w)),
+                "{which}: {got:?}"
+            );
         }
         // Between options, a reader's value goes to the nearest.
         assert!(near(at(1.4)[0], 2.0));
@@ -4253,21 +4363,32 @@ mod tests {
         .unwrap();
         let index = s.params.iter().find(|p| p.id == "case.index").unwrap();
         // An option with no name shows as written.
-        assert_eq!(index.choice.as_ref().unwrap().options, ["p = 0", "q = 2p", "q"]);
+        assert_eq!(
+            index.choice.as_ref().unwrap().options,
+            ["p = 0", "q = 2p", "q"]
+        );
         let env = env_of(&s, 0.0);
         assert_eq!(env.get("case.index"), Some(1.0));
         let tau = std::f64::consts::TAU;
         let c = ((5.0 + 4.0 * (tau / 6.0).cos()).sqrt() - 1.0) / 2.0;
         assert!(near(env.get("case").unwrap(), 2.0 * c.acos()));
         let err = scene("param n = \"one\" in 0..1").unwrap_err().to_string();
-        assert!(err.contains("names an option, which only a choice has"), "{err}");
+        assert!(
+            err.contains("names an option, which only a choice has"),
+            "{err}"
+        );
     }
 
     #[test]
     fn a_choice_says_what_went_wrong() {
         let err = scene("param k = 4 in {2, 3, 5}").unwrap_err().to_string();
-        assert!(err.contains("starts at 4, which isn't one of its options: 2, 3, 5"), "{err}");
-        let err = scene("let c = circle((0, 0), 1)\nparam k in {c, 1}").unwrap_err().to_string();
+        assert!(
+            err.contains("starts at 4, which isn't one of its options: 2, 3, 5"),
+            "{err}"
+        );
+        let err = scene("let c = circle((0, 0), 1)\nparam k in {c, 1}")
+            .unwrap_err()
+            .to_string();
         assert!(err.contains("offers a circle and a number"), "{err}");
     }
 
@@ -4406,17 +4527,35 @@ mod tests {
             };
             let env = eval::scene_env(&s, &inputs, None).unwrap();
             let mark = s.marks.iter().find(|m| m.id == id).unwrap();
-            mark.focus.as_ref().map_or(1.0, |f| eval::real(f, &env).unwrap())
+            mark.focus
+                .as_ref()
+                .map_or(1.0, |f| eval::real(f, &env).unwrap())
         };
         // Until the beat that names it, everything is in focus.
         for id in ["A", "B", "C"] {
             assert_eq!(focus(id, 1.0, 0.0), 1.0, "{id}");
         }
-        assert_eq!([focus("A", 2.0, 0.0), focus("B", 2.0, 0.0), focus("C", 2.0, 0.0)], [1.0, 0.0, 1.0]);
-        assert_eq!([focus("A", 2.0, 1.0), focus("B", 2.0, 1.0), focus("C", 2.0, 1.0)], [0.0, 1.0, 1.0]);
-        let err = scene("param k = 1 in 0..2\nlet A = (0, 0)\nbeat \"One\" focus A if k = \"x\" {\n dot A\n}")
-            .unwrap_err()
-            .to_string();
+        assert_eq!(
+            [
+                focus("A", 2.0, 0.0),
+                focus("B", 2.0, 0.0),
+                focus("C", 2.0, 0.0)
+            ],
+            [1.0, 0.0, 1.0]
+        );
+        assert_eq!(
+            [
+                focus("A", 2.0, 1.0),
+                focus("B", 2.0, 1.0),
+                focus("C", 2.0, 1.0)
+            ],
+            [0.0, 1.0, 1.0]
+        );
+        let err = scene(
+            "param k = 1 in 0..2\nlet A = (0, 0)\nbeat \"One\" focus A if k = \"x\" {\n dot A\n}",
+        )
+        .unwrap_err()
+        .to_string();
         assert!(err.contains("`k` isn't a choice"), "{err}");
     }
 
@@ -4463,7 +4602,11 @@ mod tests {
     fn a_duration_can_be_written_with_pi() {
         for written in ["2·π", "2·pi"] {
             let s = scene(&format!("duration {written}")).unwrap();
-            assert_eq!(s.duration, Some(std::f64::consts::TAU), "duration {written}");
+            assert_eq!(
+                s.duration,
+                Some(std::f64::consts::TAU),
+                "duration {written}"
+            );
         }
     }
 
@@ -4473,6 +4616,83 @@ mod tests {
         for name in ["tau", "τ"] {
             scene(&format!("param {name} in 0..1")).unwrap();
         }
+    }
+
+    /// A name is only ever itself, but an error says what was likely meant.
+    #[test]
+    fn an_unknown_name_suggests_what_was_meant() {
+        for (doc, wanted) in [
+            ("let one = 3\nlet two = 10\nlet a = onetwo", "did you mean `one two`?"),
+            ("let radius = 1\nlet a = raduis", "did you mean `radius`?"),
+            ("fn ToCoords(z) = z\nlet a = ToCo(1)", "did you mean `ToCoords`?"),
+            ("let a = smoothstp(0, 1, 0.5)", "did you mean `smoothstep`?"),
+            // A built-in that can't take what it's given says so, whatever else is close.
+            ("fn Sinh2(z) = z\nlet P = (1, 2)\nlet a = sin(P)", "Sin needs a number"),
+        ] {
+            let err = scene(doc).unwrap_err().to_string();
+            assert!(err.contains(wanted), "{doc}: {err}");
+        }
+    }
+
+    /// The constants have MathJSON's names, and Euler's identity holds exactly.
+    #[test]
+    fn eulers_identity_holds() {
+        let s = scene(
+            "let z = e^(iπ) + 1
+             let w = ℯ^(ⅈ·Pi) + 1
+             let g = GoldenRatio
+             let d = 30·Degrees
+             let k = imag(conj(2 + 3i))",
+        )
+        .unwrap();
+        let env = env_of(&s, 0.0);
+        for name in ["z.x", "z.y", "w.x", "w.y"] {
+            assert!(
+                env.get(name).unwrap().abs() < 1e-15,
+                "{name}: {:?}",
+                env.get(name)
+            );
+        }
+        assert!(near(env.get("g").unwrap(), 1.618_033_988_749_895));
+        assert!(near(env.get("d").unwrap(), std::f64::consts::PI / 6.0));
+        assert_eq!(env.get("k"), Some(-3.0));
+        // e^w goes straight to exp, with no logarithm of e.
+        let z = &s.bindings.iter().find(|b| b.id == "z.x").unwrap().expr;
+        assert!(!format!("{z:?}").contains("Ln"), "{z:?}");
+        for name in ["ImaginaryUnit", "GoldenRatio"] {
+            assert!(scene(&format!("let {name} = 1")).is_err(), "{name}");
+        }
+    }
+
+    /// A constant is a default: a figure that takes its name gets its own value, everywhere.
+    #[test]
+    fn a_figure_can_take_a_constants_name() {
+        for name in ["pi", "π", "e", "ℯ"] {
+            let s = scene(&format!("param {name} = 3 in 0..5\nlet c = 2{name}")).unwrap();
+            assert_eq!(env_of(&s, 0.0).get("c"), Some(6.0), "{name}");
+            assert!(
+                !crate::wgsl::emit_expr(&Expr::sym(name)).contains("3.14"),
+                "{name}"
+            );
+        }
+        let s = scene("let c = 2π + 0·pi").unwrap();
+        assert!(near(
+            env_of(&s, 0.0).get("c").unwrap(),
+            std::f64::consts::TAU
+        ));
+        let c = &s.bindings.iter().find(|b| b.id == "c").unwrap().expr;
+        assert_eq!(
+            c.to_mathjson().to_string(),
+            r#"["Add",["Multiply",2.0,"Pi"],["Multiply",0.0,"Pi"]]"#
+        );
+        assert!(scene("let Pi = 3").is_err());
+        // Euler's number, as pasted, and `2e3` is still a thousand times 2.
+        let s = scene("let c = e^2 + ℯ\nlet d = 2e\nlet k = 2e3").unwrap();
+        let env = env_of(&s, 0.0);
+        let e = std::f64::consts::E;
+        assert!(near(env.get("c").unwrap(), e * e + e));
+        assert!(near(env.get("d").unwrap(), 2.0 * e));
+        assert_eq!(env.get("k"), Some(2000.0));
     }
 
     /// A scene's value for `name` at a time, with every binding worked out in order.
