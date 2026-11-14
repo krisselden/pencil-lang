@@ -503,7 +503,7 @@
         "text": "|z|²",
         "values": []
       },
-      "id": "length_z_2",
+      "id": "length_z2",
       "life": ["Subtract",["Add",0.0,["Clamp",["Subtract","beat",14.0],0.0,1.0]],["Clamp",["Subtract","beat",15.0],0.0,1.0]],
       "tags": ["label","note"]
     },

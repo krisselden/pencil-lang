@@ -12,6 +12,12 @@ The corpus in `corpus/` has working examples of everything below.
 A `.pen` file is a list of statements. Comments run from `//` to the end of the line. Style
 rules can sit in the document or in separate style files.
 
+**Values can be written after they're used.** A `let`, `fn`, `param`, choice or `solve` used before it's written is worked out
+just before its first use, so a figure can say what it draws first and how its values are found after. What's drawn keeps the
+order it's written in, which is what's on top, and so does the timeline. A curve, circle or line used as a value, such as in
+`intersect(c, l, 0)`, is something drawn, so it comes first. A value defined in terms of itself, through others or not, is an
+error.
+
 | Statement | Meaning |
 |---|---|
 | `doc name` | Names the document. |
@@ -34,7 +40,8 @@ rules can sit in the document or in separate style files.
 | `rightangle m = A, V, B size 0.2` | A right-angle mark at `V`, a world size along each side. |
 | `region r = A, f(t) for t in 0..1` | A filled area bounded by points and arcs. |
 | `dot P, Q` | Draws point bindings. A dot takes its point's name, so a style can target it. |
-| `label n = "−{q}" at P away D` | Text at a point, on the side `D` points to, in the figure's own coordinates. Its style's `distance` says how far. `{expr}` in the text is a value, and a whole number prints as one. Without text, each panel gives it (see Panels). |
+| `label n = "−{q}" at P away D` | Text at a point, on the side `D` points to, in the figure's own coordinates. Its style's `distance` says how far. `{expr}` in the text is a value: a number, written to the style's `digits` and whole if it's whole, or a point, written as its style's `format` says. What a label says about a value is its style's `text`. Without text, each panel gives it (see Panels). A figure without panels needs text, unless the label is a value's. |
+| `label root at P` | A label named after a value is that value's label, as a dot is its point's, so one rule styles both. It's about that value, and its style's `text` says what it shows of it: with no text of its own, the value. A value has one label. A label whose text is one value, `"{q - 1}"`, is about that value in the same way. |
 | `label n = "P" at P offset (12, -12)` | The same, at a fixed shift in `px` with y down. A sheet can't change it, so prefer `away`. |
 | `arrow v = A, B` | A shaft and a head, as one line. |
 | `dots d = P(i) for i in 1..n with z = f(i)` | One mark drawn many times (see below). |
@@ -310,8 +317,12 @@ Undo takes it back. Text with a backslash, a `^{`, or a leading `$` is LaTeX, an
   same way without them but a reader might not.
 - **`\phi` and `\varphi` are both `φ`,** and `\epsilon` and `\varepsilon` both `ε`: the letter a keyboard types, whichever way
   LaTeX draws it.
-- **What has no Pencil form is an error,** and the LaTeX pastes as written: Desmos's piecewise braces, comparisons, lists, `±`, an
-  n-th root (`x^(1/n)` differs from it for negative x), `\sin^{-1}`, and infinity.
+- **Lines pasted together are one graph:** a function any line defines, as `G\left(u,v\right)=u+v`, is a call on every line. Three
+  or more things in parentheses are arguments whatever the name is, since a point has two coordinates.
+- **Desmos's own spellings read as what they mean:** `A.x` and `A.y` stay, `P.\operatorname{real}` is `real(P)`, `\tan^{-1}` is
+  `arctan`, and `\log` is base 10, so `\log_{2}x` is `ln(x)/ln(2)`.
+- **What has no Pencil form is an error,** and the LaTeX pastes as written: Desmos's piecewise braces, `with` and `for`, comparisons, lists, derivatives, `±`, an
+  n-th root (`x^(1/n)` differs from it for negative x), 3D points, and infinity.
 
 ### Numbers
 
@@ -485,6 +496,9 @@ pixels, so they can't be in `em`.
 | `halo` | Labels | Its full width, in the paper's color. |
 | `font` | Labels | A role: `sans` (default) or `math`. |
 | `place` | Labels | `fixed` (default) at its `offset`, or `settle`, tied there by a spring and pushed off what's drawn and other labels. |
+| `format` | Labels | How a point in its text is written: `point` (default) as `(−0.50, −0.87)`, `complex` as `−0.50 − 0.87i`, or `polar` as `e^(−2πi/3)`, with an angle that's a fraction of π up to twelfths written as one. A point and a complex number are one thing in Pencil, so which it reads as is the sheet's. |
+| `text` | Labels | What a label says about the value it's about, as parts joined by `=`: `caption` (its own words, or the value's name if it has none), `name`, `expr` (the expression as written: a `let`'s right side, or what's between the braces) and `value`. `text: expr = value` is `σ(2) = −0.50 − 0.87i`, `text: name = value` is `root = −0.50 − 0.87i`, and `text: caption` is the words alone. Parts that come out the same are said once, so a param's `expr = value` is `q = 3`. Without it, a label says its own words, or its value if it has none. A label that isn't about one value says its words whatever this is. |
+| `digits` | Labels | How many decimal places its values are written to. Defaults to 2. A whole number is written whole, and a part that rounds to zero is left out of a complex number. |
 | `head` | Arrows | The head's length. Defaults to 14 px. |
 | `distance` | Labels | How far a label written with `away` sits from its point. Defaults to 16/17 em. |
 | `show` | Any mark | Draws it only while this is above 0, decided per frame. Can also read `view.width`, the view's width in world units, for zoom levels. |
@@ -524,6 +538,11 @@ Newest first. "Why" is the reason at the time, so these can be revisited.
 | 2026-11-12 | `e` is Euler's number, until a figure takes the name | Kris pasted an expression with Euler's `e` and got an error. GeoGebra reads `e` as Euler's until something takes the name, then rewrites the existing `e`s as `ℯ`, so naming three circles changes what a paste means. A document here has one scope, so taking the name is one explicit statement that applies to every `e` in the figure, and nothing is rewritten behind the reader's back |
 | 2026-11-12 | A constant is a default a figure can take the name of | A letter is a constant in one field and a variable in another, and Desmos loses `r` and `t` once a figure assigns them. Here `let pi = …` simply wins, in the document and its sheets. The compiler writes the constant as MathJSON's `Pi`, so a figure's own `pi` is an ordinary name to the CPU and GPU paths alike, and `pi` and `π` become one symbol |
 | 2026-11-12 | Factors side by side multiply, tighter than `/` | Kris wrote `2π` and it didn't parse, and pasting from Desmos brings `2(x+1)` and `a b`. Binding tighter than `/` reads `x / 2π` as the x/(2π) a reader means. Names stay many letters, so juxtaposed letters are still one name, and a space is how to split them. The corpus parses exactly as before |
+| 2026-11-13 | The LaTeX reader is tested on real graphs | 14,764 expressions from 583 saved Desmos states: 86% read, and all of them parse back as Pencil. They showed what the made-up tests missed: `A.x` and `P.real`, `\tan^{-1}` for arctan, `\log` as base 10, calls to functions another line defines, and `\frac{d}{dx}`, which had read as a product. The rest are things Pencil doesn't have: lists, piecewise, derivatives, `with`, regressions and 3D points |
+| 2026-11-13 | A name has one subscript | `f_{X175}` became `f_X_175`, since the rule that makes `x1` into `x_1` ran again on a name that already had a subscript, and it renamed square's `length_z2` |
+| 2026-11-12 | Values and functions can be written after they're used | Kris: having to define complex functions first puts the in-the-weeds detail before the big picture. Use before definition should be an error only where order means something: what's drawn on top, and the timeline. So a value is pulled forward to just before its first use, and a figure that compiled before compiles in the same order |
+| 2026-11-13 | A sheet says what a label shows of its value: `text: expr = value` | Kris wants labels that show `expr = value`, and wants the sheet to choose between a label's words, its expression and its value, with the number's formatting. So one figure can be read with names in a post and with values while it's being worked out. It's written as it reads, and replaces `{expr=}` in the text, which was a day old and put a sheet's choice in the document |
+| 2026-11-12 | A label can show a point, and the sheet says how | Kris wrote `label root at (0,0)` for a cube root of unity and got nothing: a label without text drew nothing, its name collided with the value's, and `{root}` only took a number. A point and a complex number are one value in Pencil, so whether `(−0.5, −0.87)` reads as a point, `−0.5 − 0.87i` or `e^(−2πi/3)` can't change what it is, and that makes it the sheet's. `point` is the default because it never misreads a geometric point as a complex number |
 | 2026-11-12 | Pasted LaTeX becomes Pencil text, not a second syntax | Kris pasted Euler's identity from Desmos and got an error. Reading LaTeX as it's pasted keeps one syntax in the file, shows what each formula became, and lands on the same names and products that typing would. Letters run together multiply because that's what LaTeX means, and a letter before parentheses calls only a known function, because that's how Desmos decides |
 | 2026-11-12 | An `em` follows the reader's text-size setting | The site's design system sizes labels by role in screen pixels (name 17, note 15, tick 12), which zoom scales but a larger default text size doesn't. Labels are text, and a reader who needs bigger text needs them bigger too. So pages set their text in `rem`, and `<pencil-figure>` watches a 1em box and redraws when it changes, though the figure's size doesn't |
 | 2026-11-12 | A subscript is written one way: `x1`, `x₁` and `x_{1}` are `x_1` | They were three names and an error, while Desmos, LaTeX and a reader take them as one. `x_1` is MathJSON's spelling and has a typed form. Names a page passes to `<pencil-figure>` go through the same rule, so a page can say either |

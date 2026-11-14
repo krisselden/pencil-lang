@@ -176,7 +176,9 @@ pub enum Form {
     Label {
         /// With a `{}` wherever a value goes.
         text: String,
-        values: Vec<Expr>,
+        values: Vec<Shown>,
+        /// What the label is about, if it's about one value.
+        subject: Option<Subject>,
         at: [Expr; 2],
         offset: [Expr; 2],
         /// Which way it sits from its point, in the figure's own coordinates, at the distance
@@ -188,6 +190,48 @@ pub enum Form {
         panel: String,
         view: Option<Box<Viewport>>,
     },
+}
+
+/// A value a label's text shows: a number, or a point, which the label's style writes as a pair,
+/// a complex number or in polar form. A point and a complex number are one thing in Pencil, so
+/// which it reads as is presentation.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Shown {
+    Number(Expr),
+    Point([Expr; 2]),
+}
+
+impl Shown {
+    pub fn exprs(&self) -> &[Expr] {
+        match self {
+            Shown::Number(e) => std::slice::from_ref(e),
+            Shown::Point(p) => p,
+        }
+    }
+
+    pub fn exprs_mut(&mut self) -> &mut [Expr] {
+        match self {
+            Shown::Number(e) => std::slice::from_mut(e),
+            Shown::Point(p) => p,
+        }
+    }
+
+    pub fn to_mathjson(&self) -> serde_json::Value {
+        match self {
+            Shown::Number(e) => e.to_mathjson(),
+            Shown::Point([x, y]) => serde_json::json!(["Tuple", x.to_mathjson(), y.to_mathjson()]),
+        }
+    }
+}
+
+/// The one value a label is about: the value it's named after, or the only thing its text
+/// shows. A style's `text` writes it as its name, its expression, its value, or an equation.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Subject {
+    pub name: String,
+    /// The expression as written: a `let`'s right side, or what's between a text's braces.
+    pub expr: String,
+    pub value: Shown,
 }
 
 /// Something drawn, in document order.
@@ -435,6 +479,7 @@ impl Scene {
                 Form::Label {
                     text,
                     values,
+                    subject,
                     at,
                     offset,
                     away,
@@ -442,12 +487,19 @@ impl Scene {
                     let mut label = json!({
                         "kind": "label",
                         "text": text,
-                        "values": values.iter().map(Expr::to_mathjson).collect::<Vec<_>>(),
+                        "values": values.iter().map(Shown::to_mathjson).collect::<Vec<_>>(),
                         "at": pair(at),
                         "offset": pair(offset),
                     });
                     if let Some(away) = away {
                         label["away"] = pair(away);
+                    }
+                    if let Some(subject) = subject {
+                        label["subject"] = json!({
+                            "name": subject.name,
+                            "expr": subject.expr,
+                            "value": subject.value.to_mathjson(),
+                        });
                     }
                     label
                 }

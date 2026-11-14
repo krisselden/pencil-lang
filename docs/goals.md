@@ -49,11 +49,23 @@ belongs: `language.md` for the language, the section below for a figure.
 - **Names and notation**, agreed with Kris on 2026-11-12, in this order. `web/ast.html` shows how text reads at each step.
   Subscripts, implicit products, constants a figure can take the name of, and pasting LaTeX are done (`language.md`,
   decisions of 2026-11-12). Next:
-  1. **Preludes and `use`:** named sets of globals a figure opts into, as TypeScript's `lib` does, rather than everything at
-     once, and a library of functions to `use`. Desmos gives `r`, `θ`, `t` and `τ` meanings that a figure loses once it
-     assigns them, and a letter can be a variable in one field and a constant in another. Waits for a figure to shape it.
+  1. **Files and libraries.** What Kris wants from it (2026-11-13), which is four things with one mechanism under them:
+     - **Split a long figure.** The limaçon explainer is 223 lines and 32 beats in seven numbered sections, and it's the
+       figure that shapes this.
+     - **Helpers written once.** The corpus defines 25 functions, some twice (`dir`), and two different things are both
+       called `turned`. Sheets want effects the same way: glows, blurs.
+     - **Libraries by area of mathematics,** as TypeScript's `"lib": ["ES2022", "WebWorker"]` names an environment: which
+       built-ins and constants a figure can expect. Written in Pencil. A letter can be a variable in one field and a
+       constant in another, and Desmos gives `r`, `θ`, `t` and `τ` meanings that a figure loses once it assigns them.
+     - **Animated constructions** to import, such as a perpendicular bisector that draws its two arcs and then its line:
+       useful, and too specific to be global. A `group` with arguments can't hold beats yet, so this needs that too.
+
+     The core reads no files, so a host resolves them: the CLI from disk, a page by fetching. `use` already draws a group
+     (`use g(2) through f as up`), so a file needs its own spelling.
   2. **Labels from expressions:** a label that shows its own expression, as ggplot2 takes axis titles from the unevaluated
-     arguments R passes it. The IR keeps expressions symbolic, so the text is there.
+     arguments R passes it. The IR keeps expressions symbolic, so the text is there. A style's `text: expr = value` (2026-11-13) writes the
+     expression as typed and its value as a number; what's left is writing it as math (`σ(2)` set as notation, not code) and
+     an exact value, `−½ − (√3/2)i`, where one exists.
 
 ### Proposed order after that
 

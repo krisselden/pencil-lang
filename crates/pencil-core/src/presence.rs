@@ -9,7 +9,7 @@ use std::collections::HashSet;
 
 use crate::error::Error;
 use crate::eval::{self, Env};
-use crate::ir::{Expr, Form, Mark, Part, Scene, Shape};
+use crate::ir::{Expr, Form, Mark, Part, Scene, Shape, Shown};
 use crate::style::{MarkStyle, Styled};
 
 /// Whether an expression could be absent, given the names that could be. It errs toward
@@ -92,7 +92,7 @@ fn form_exprs(form: &Form) -> Vec<&Expr> {
             out.extend(at);
             out.extend(offset);
             out.extend(away.iter().flatten());
-            out.extend(values);
+            out.extend(values.iter().flat_map(Shown::exprs));
         }
     }
     out
@@ -194,7 +194,7 @@ pub fn present(mark: &Mark, style: &MarkStyle, env: &Env) -> Result<bool, Error>
             at.iter()
                 .chain(offset)
                 .chain(away.iter().flatten())
-                .chain(values),
+                .chain(values.iter().flat_map(Shown::exprs)),
             env,
         ),
     }

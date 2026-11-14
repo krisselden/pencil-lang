@@ -4,7 +4,7 @@
 use std::collections::HashSet;
 
 use crate::compile::SIGNALS;
-use crate::ir::{Arc, Expr, Form, Scene, Shape};
+use crate::ir::{Arc, Expr, Form, Scene, Shape, Shown};
 use crate::style::{CaptionStyle, MarkStyle, PanelStyle, Styled};
 use crate::{Composition, Figure};
 
@@ -114,12 +114,14 @@ fn scene_exprs(scene: &Scene, f: &mut impl FnMut(&Expr)) {
             Form::Term { .. } | Form::Outline { .. } => {}
             Form::Label {
                 values,
+                subject,
                 at,
                 offset,
                 away,
                 ..
             } => {
-                values.iter().for_each(&mut *f);
+                values.iter().flat_map(Shown::exprs).for_each(&mut *f);
+                subject.iter().flat_map(|s| s.value.exprs()).for_each(&mut *f);
                 pair(at, f);
                 pair(offset, f);
                 away.iter().for_each(|p| pair(p, f));
@@ -185,6 +187,9 @@ fn styled_exprs(styled: &Styled, f: &mut impl FnMut(&Expr)) {
             tick,
             leader,
             leader_gap,
+            format: _,
+            digits,
+            text: _,
         } = style;
         [
             negative,
@@ -209,6 +214,7 @@ fn styled_exprs(styled: &Styled, f: &mut impl FnMut(&Expr)) {
             tick,
             leader,
             leader_gap,
+            digits,
         ]
         .into_iter()
         .flatten()

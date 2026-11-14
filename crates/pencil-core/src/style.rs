@@ -32,7 +32,7 @@ pub const SELF_LIFE: &str = "self.life";
 pub const SELF_FOCUS: &str = "self.focus";
 /// Every property a style can set. `docs/language.md` must describe each one, and a test
 /// holds it to that.
-pub const PROPERTIES: [&str; 24] = [
+pub const PROPERTIES: [&str; 27] = [
     "fill",
     "fill_opacity",
     "stroke",
@@ -57,6 +57,9 @@ pub const PROPERTIES: [&str; 24] = [
     "tick",
     "leader",
     "leader_gap",
+    "format",
+    "digits",
+    "text",
 ];
 pub const COLORS: [&str; 2] = ["white", "black"];
 /// The tags that say what kind of mark something is.
@@ -133,6 +136,31 @@ pub enum Font {
     Math,
 }
 
+/// One part of what a label says about its value. A style's `text` lists them, joined by ` = `.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum TextPart {
+    /// The label's own words, or its value's name if it has none.
+    Caption,
+    /// The value's name.
+    Name,
+    /// The value's expression, as written.
+    Expr,
+    /// What it comes to.
+    Value,
+}
+
+/// How a label's text writes a point it shows.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub enum Format {
+    /// `(−0.5, −0.87)`.
+    #[default]
+    Point,
+    /// `−0.5 − 0.87i`.
+    Complex,
+    /// `e^(−2πi/3)`, with π's fractions written as fractions.
+    Polar,
+}
+
 /// How a label finds its spot. See `place.rs`.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub enum Place {
@@ -188,6 +216,13 @@ pub struct MarkStyle {
     pub leader: Option<Expr>,
     /// How far from its point a label's leader stops, in style pixels.
     pub leader_gap: Option<Expr>,
+    /// How a label writes a point it shows.
+    pub format: Format,
+    /// How many decimal places a label writes a value to. A whole number is written whole.
+    pub digits: Option<Expr>,
+    /// What a label says about its value, as `expr = value`. `None` is its caption, or its
+    /// value if it has no words of its own.
+    pub text: Option<Vec<TextPart>>,
 }
 
 impl MarkStyle {
@@ -559,7 +594,7 @@ pub fn sheet_names(sheets: &[Document]) -> Result<HashMap<String, Expr>, Error> 
     let mut written: HashMap<&str, (&Expr, usize, usize)> = HashMap::new();
     for (index, sheet) in sheets.iter().enumerate() {
         for item in &sheet.items {
-            if let Item::Let { name, expr, line } = item {
+            if let Item::Let { name, expr, line, .. } = item {
                 written.insert(name, (expr, *line, index));
             }
         }
@@ -819,8 +854,15 @@ pub fn resolve_keeping(
                     }
                     unmatched.push(at(format!("no mark named `{words}`")));
                 }
-                for index in matches {
+                for &index in &matches {
                     let mark = &scene.marks[index];
+                    // A value's dot and its label share its name, so a rule that names the
+                    // value reaches both, and what's only a label's skips the dot.
+                    let beside_label = !matches!(mark.form, Form::Label { .. })
+                        && matches.iter().any(|&other| {
+                            let other = &scene.marks[other];
+                            other.id == mark.id && matches!(other.form, Form::Label { .. })
+                        });
                     apply(
                         &mut styled.marks[index],
                         mark,
@@ -828,6 +870,7 @@ pub fn resolve_keeping(
                         selector.facet.as_deref(),
                         &decls,
                         &checked,
+                        beside_label,
                     )
                     .map_err(&at)?;
                 }
@@ -903,6 +946,7 @@ fn apply(
     facet: Option<&str>,
     decls: &[(String, Expr)],
     names: &[&str],
+    beside_label: bool,
 ) -> Result<(), String> {
     let form = &mark.form;
     // A collection of circles has sides, one instance at a time.
@@ -941,7 +985,41 @@ fn apply(
         if !PROPERTIES.contains(&prop.as_str()) {
             return Err(format!("unknown property `{prop}`"));
         }
-        if let (None, "draw" | "blend" | "cap" | "font" | "place") = (facet, prop.as_str()) {
+        // What only a label takes passes over the dot that shares its value's name.
+        let label_only = matches!(
+            prop.as_str(),
+            "text" | "format" | "digits" | "leader" | "leader_gap"
+        ) || (prop == "place" && matches!(value, Expr::Sym(w) if w == "settle"));
+        if label_only && beside_label {
+            continue;
+        }
+        if prop == "text" {
+            if !matches!(form, Form::Label { .. }) || facet.is_some() {
+                return Err(format!("`{id}` isn't a label, so it can't use `text`"));
+            }
+            let parts = match value {
+                Expr::App(head, parts) if head == crate::parse::TEXT_PARTS => parts,
+                _ => return Err("`text` is parts joined by `=`, as `expr = value`".into()),
+            };
+            let parts: Result<Vec<TextPart>, String> = parts
+                .iter()
+                .map(|part| match part {
+                    Expr::Sym(word) => match word.as_str() {
+                        "caption" => Ok(TextPart::Caption),
+                        "name" => Ok(TextPart::Name),
+                        "expr" => Ok(TextPart::Expr),
+                        "value" => Ok(TextPart::Value),
+                        other => Err(format!(
+                            "a label's text is made of `caption`, `name`, `expr` and `value`, not `{other}`"
+                        )),
+                    },
+                    _ => Err("`text` is parts joined by `=`, as `expr = value`".into()),
+                })
+                .collect();
+            target.text = Some(parts?);
+            continue;
+        }
+        if let (None, "draw" | "blend" | "cap" | "font" | "place" | "format") = (facet, prop.as_str()) {
             let word = match value {
                 Expr::Sym(word) => word.as_str(),
                 _ => return Err(format!("`{prop}` needs a keyword")),
@@ -971,6 +1049,16 @@ fn apply(
                     }
                     target.place = Place::Settle;
                 }
+                ("format", "point" | "complex" | "polar") => {
+                    if !matches!(form, Form::Label { .. }) {
+                        return Err(format!("`{id}` isn't a label, so it can't use `format`"));
+                    }
+                    target.format = match word {
+                        "point" => Format::Point,
+                        "complex" => Format::Complex,
+                        _ => Format::Polar,
+                    };
+                }
                 _ => return Err(format!("`{prop}` can't be `{word}`")),
             }
             continue;
@@ -997,6 +1085,7 @@ fn apply(
                 | "tick"
                 | "leader"
                 | "leader_gap"
+                | "digits"
         );
         let mut scope = names.to_vec();
         if prop == "width" {
@@ -1077,7 +1166,7 @@ fn apply(
         {
             return Err(format!("`{id}` isn't a segment, so it can't use `{prop}`"));
         }
-        if matches!(prop.as_str(), "leader" | "leader_gap")
+        if matches!(prop.as_str(), "leader" | "leader_gap" | "digits")
             && !clear
             && !matches!(form, Form::Label { .. })
         {
@@ -1086,6 +1175,7 @@ fn apply(
         let slot = match (facet, prop.as_str()) {
             (None, "trim") => &mut target.trim,
             (None, "ticks") => &mut target.ticks,
+            (None, "digits") => &mut target.digits,
             (Some("inside"), "fill") if round => &mut target.inside,
             (Some("outside"), "fill") if round => &mut target.outside,
             (Some("inside" | "negative"), "fill") => &mut target.negative,

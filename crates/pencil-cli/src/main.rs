@@ -21,6 +21,7 @@ usage:
   pencil render DOC.pen [--style FILE]... [--t SECONDS] [--param NAME=VALUE]... [--size WIDTH] [--cpu] --out FRAME.png
   pencil check  DOC.pen [--style FILE]... [--t SECONDS]... [--param NAME=VALUE]... [--size WIDTH] [--out DIR]
   pencil video  DOC.pen [--style FILE]... [--size WIDTH] [--fps N] [--seconds S] [--font FILE] --out MOVIE.mp4
+  pencil latex  FILE.tex...
 ";
 
 /// The most any channel may differ from the CPU oracle, out of 255. The GPU is
@@ -431,12 +432,54 @@ fn check(args: &Args) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+/// Reads files of LaTeX, a formula per line as Desmos and MathLive copy them, as Pencil text.
+/// A file is one graph: a function any of its lines defines is a call on all of them. A line
+/// with no Pencil form comes out as a comment that says why, so the output is still a list of
+/// Pencil lines, and the count of each goes to stderr. Each line that is read is also parsed
+/// as Pencil, which checks that what's printed means what was read.
+fn latex(paths: &[String]) -> Result<(), Box<dyn Error>> {
+    if paths.is_empty() {
+        return Err(format!("`latex` takes a file\n{USAGE}").into());
+    }
+    let (mut read, mut refused, mut unparsed) = (0, 0, 0);
+    for path in paths {
+        let source = std::fs::read_to_string(path)?;
+        let defined = pencil_core::latex::definitions(&source);
+        let functions: Vec<&str> = defined.iter().map(String::as_str).collect();
+        for line in source.lines().filter(|l| !l.trim().is_empty()) {
+            match pencil_core::latex::read(line, &functions) {
+                Ok(text) => {
+                    let parses = text.split(" = ").all(|side| {
+                        pencil_core::parse::parse_whole_expression(side).is_ok()
+                    });
+                    if parses {
+                        read += 1;
+                        println!("{text}");
+                    } else {
+                        unparsed += 1;
+                        println!("// doesn't read back as Pencil: {text}  from  {line}");
+                    }
+                }
+                Err(e) => {
+                    refused += 1;
+                    println!("// {}, column {}: {line}", e.message, e.col);
+                }
+            }
+        }
+    }
+    eprintln!("{read} read, {refused} with no Pencil form, {unparsed} that don't read back");
+    Ok(())
+}
+
 fn run() -> Result<(), Box<dyn Error>> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let Some((command, rest)) = args.split_first() else {
         print!("{USAGE}");
         return Ok(());
     };
+    if command == "latex" {
+        return latex(rest);
+    }
     let parsed = parse_args(rest)?;
     match command.as_str() {
         "ir" => println!(

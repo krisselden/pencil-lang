@@ -47,6 +47,8 @@ pub enum Item {
     Let {
         name: String,
         expr: Expr,
+        /// The expression as written, for a label that shows it. Empty for a `let` nobody wrote.
+        text: String,
         line: usize,
     },
     Fn {
@@ -316,13 +318,14 @@ const PUNCT: [&str; 16] = [
 
 /// A name with its subscript written one way, as `x_1`: `x1`, `x₁` and `x_{1}` (which the lexer
 /// has already unbraced) are the same name, as they are in Desmos and LaTeX. Digits in the
-/// middle of a name, as in `p2q`, aren't a subscript.
+/// middle of a name, as in `p2q`, aren't a subscript, and a name has one subscript, so
+/// `f_X175` stays as it is.
 pub fn subscripted(name: &str) -> String {
     let mut out = String::with_capacity(name.len() + 1);
     for c in name.chars() {
         match c {
             '₀'..='₉' => {
-                if !out.ends_with('_') && !out.ends_with(|d: char| d.is_ascii_digit()) {
+                if !out.contains('_') && !out.ends_with(|d: char| d.is_ascii_digit()) {
                     out.push('_');
                 }
                 out.push(char::from_digit(c as u32 - '₀' as u32, 10).unwrap());
@@ -331,11 +334,14 @@ pub fn subscripted(name: &str) -> String {
         }
     }
     let stem = out.trim_end_matches(|c: char| c.is_ascii_digit());
-    if stem.len() < out.len() && !stem.is_empty() && !stem.ends_with('_') {
+    if stem.len() < out.len() && !stem.is_empty() && !stem.contains('_') {
         out.insert(stem.len(), '_');
     }
     out
 }
+
+/// The head a style's `text: expr = value` is kept under: its parts, in order.
+pub const TEXT_PARTS: &str = "TextParts";
 
 /// Glyphs that only ever name a constant, so they never join the letters around them.
 const GLYPHS: [char; 4] = ['π', 'ℯ', 'ⅈ', 'ⅇ'];
@@ -678,8 +684,16 @@ impl Parser {
             "let" => {
                 let name = self.ident("a name")?;
                 self.expect("=")?;
+                let from = self.pos;
                 let expr = self.expr()?;
-                items.push(Item::Let { name, expr, line });
+                // As written, less any comment after it.
+                let written = self.text(from, self.pos);
+                let text: Vec<&str> = written
+                    .lines()
+                    .map(|l| l.split("//").next().unwrap_or(l).trim())
+                    .collect();
+                let text = text.join(" ").trim().to_string();
+                items.push(Item::Let { name, expr, text, line });
             }
             "fn" => items.push(self.function(line)?),
             "param" => items.push(self.param(line)?),
@@ -1460,6 +1474,16 @@ impl Parser {
         while !self.eat("}") {
             let prop = self.ident("a property")?;
             self.expect(":")?;
+            // What a label's text is made of, written as it reads: `text: expr = value`.
+            if prop == "text" {
+                let mut parts = vec![Expr::Sym(self.ident("a part of a label's text")?)];
+                while self.eat("=") {
+                    parts.push(Expr::Sym(self.ident("a part of a label's text")?));
+                }
+                decls.push((prop, Expr::app(TEXT_PARTS, parts)));
+                self.eat(";");
+                continue;
+            }
             decls.push((prop, self.expr()?));
             self.eat(";");
         }
@@ -1762,6 +1786,9 @@ mod tests {
         }
         assert_eq!(expr("σ₁₂"), Expr::sym("σ_12"));
         assert_eq!(expr("x_{max}"), Expr::sym("x_max"));
+        // A name has one subscript, so digits at the end of one aren't another.
+        assert_eq!(expr("f_{X175}"), Expr::sym("f_X175"));
+        assert_eq!(expr("f_X175"), Expr::sym("f_X175"));
         // Digits inside a name aren't a subscript, and a built-in keeps its own.
         assert_eq!(expr("p2q"), Expr::sym("p2q"));
         assert_eq!(

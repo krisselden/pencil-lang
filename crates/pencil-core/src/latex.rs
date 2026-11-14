@@ -18,8 +18,12 @@ pub fn is_latex(text: &str) -> bool {
 }
 
 /// Each line of `latex` as a line of Pencil text. `functions` are the names a figure defines
-/// with `fn`, which a letter before parentheses calls rather than multiplies.
+/// with `fn`, which a letter before parentheses calls rather than multiplies. So are the
+/// functions the pasted lines define themselves, on whichever line.
 pub fn read(latex: &str, functions: &[&str]) -> Result<String, Error> {
+    let defined = definitions(latex);
+    let mut known: Vec<&str> = functions.to_vec();
+    known.extend(defined.iter().map(String::as_str));
     let lines: Result<Vec<String>, Error> = latex
         .lines()
         .enumerate()
@@ -27,12 +31,25 @@ pub fn read(latex: &str, functions: &[&str]) -> Result<String, Error> {
             if line.trim().is_empty() {
                 return Ok(String::new());
             }
-            Reader::new(line, n + 1, functions)?.line()
+            Reader::new(line, n + 1, &known)?.line()
         })
         .collect();
     // Lines copied whole end with a line break, and so does what they paste as.
     let end = if latex.ends_with('\n') { "\n" } else { "" };
     Ok(lines?.join("\n") + end)
+}
+
+/// The functions that lines of LaTeX define, as `f\left(x\right)=x^{2}` defines `f`.
+pub fn definitions(latex: &str) -> Vec<String> {
+    let mut names = Vec::new();
+    for line in latex.lines() {
+        let Ok(mut reader) = Reader::new(line, 1, &[]) else { continue };
+        reader.defining = reader.toks.iter().any(|(t, _)| *t == T::Ch('='));
+        // Only its left side matters, and whatever it finds before anything it can't read.
+        let _ = reader.expr();
+        names.append(&mut reader.functions);
+    }
+    names
 }
 
 // ---- Tokens ----
@@ -261,6 +278,23 @@ fn pencil_function(latex: &str) -> &str {
     }
 }
 
+/// The inverse a `^{-1}` on a function means, by the name Pencil or MathJSON gives it.
+fn inverse_function(name: &str) -> Option<&'static str> {
+    Some(match name {
+        "sin" => "arcsin",
+        "cos" => "arccos",
+        "tan" => "arctan",
+        "sec" => "arcsec",
+        "csc" => "arccsc",
+        "cot" => "arccot",
+        "sinh" => "arsinh",
+        "cosh" => "arcosh",
+        "tanh" => "artanh",
+        "coth" => "arcoth",
+        _ => return None,
+    })
+}
+
 struct Reader<'a> {
     toks: Vec<(T, usize)>,
     pos: usize,
@@ -422,6 +456,13 @@ impl<'a> Reader<'a> {
                     continue;
                 }
                 base = op("^", vec![base, self.argument()?]);
+            } else if *self.peek() == T::Ch('.') {
+                // A part of anything but a name, as `T\left(t\right).y`: Pencil's `imag(T(t))`.
+                let part = match self.part_name()? {
+                    "x" | "real" => "real",
+                    _ => "imag",
+                };
+                base = Node::Call(part.into(), vec![base]);
             } else if *self.peek() == T::Ch('_') {
                 return Err(self.error("a subscript can only follow a name, as in `x_{1}`"));
             } else if matches!(self.peek(), T::Ch('!' | '\'')) {
@@ -563,8 +604,16 @@ impl<'a> Reader<'a> {
                 Ok(Node::Name("i".into()))
             }
             "operatorname" => {
+                let col = self.toks[self.pos].1;
                 self.bump();
                 let word = self.word()?;
+                if word == "with" || word == "for" {
+                    return Err(Error::at(
+                        self.line,
+                        col,
+                        format!("Desmos's `{word}` has no Pencil form yet: name the value with `let`"),
+                    ));
+                }
                 self.function(pencil_function(&word).to_string())
             }
             "mathrm" | "mathit" | "text" | "textrm" | "textit" | "mathbf" => {
@@ -575,8 +624,14 @@ impl<'a> Reader<'a> {
             }
             "frac" | "dfrac" | "tfrac" | "cfrac" => {
                 self.bump();
+                let col = self.toks[self.pos - 1].1;
                 let top = self.argument()?;
                 let bottom = self.argument()?;
+                // `\frac{d}{dx}` is the derivative, not d over d·x.
+                let d = Node::Name("d".into());
+                if top == d && matches!(&bottom, Node::Op("·", f) if f[0] == d) {
+                    return Err(Error::at(self.line, col, "a derivative has no Pencil form yet"));
+                }
                 Ok(op("/", vec![top, bottom]))
             }
             "sqrt" => {
@@ -642,40 +697,125 @@ impl<'a> Reader<'a> {
     }
 
     /// A name, called if it's a function and parentheses follow it. `first` is whether it
-    /// starts the line.
+    /// starts the line. Three or more things in the parentheses make it a call whatever it is,
+    /// since a point has two coordinates.
     fn name_or_call(&mut self, name: String, first: bool) -> Result<Node, Error> {
+        if *self.peek() == T::Ch('.') {
+            return self.part(name);
+        }
         if !matches!(self.peek(), T::Open('(')) {
             return Ok(Node::Name(name));
         }
         if first && self.defining {
             self.functions.push(name.clone());
         }
-        if self.is_function(&name) {
+        if self.is_function(&name) || self.commas_ahead() >= 2 {
             let args = self.arguments()?;
             return Ok(Node::Call(name, args));
         }
         Ok(Node::Name(name))
     }
 
+    /// A point's part, as Desmos writes it: `A.x` and `A.y`, which Pencil writes the same way,
+    /// and `A.\operatorname{real}` and `.imag`, which are `real(A)` and `imag(A)`.
+    fn part(&mut self, name: String) -> Result<Node, Error> {
+        Ok(match self.part_name()? {
+            part @ ("x" | "y") => Node::Name(format!("{name}.{part}")),
+            part => Node::Call(part.into(), vec![Node::Name(name)]),
+        })
+    }
+
+    /// The part after a `.`: `x`, `y`, `real` or `imag`.
+    fn part_name(&mut self) -> Result<&'static str, Error> {
+        let part = match self.toks.get(self.pos + 1).map(|t| t.0.clone()) {
+            Some(T::Ch('x')) => "x",
+            Some(T::Ch('y')) => "y",
+            Some(T::Ch('z')) => {
+                return Err(self.error("`.z` has no Pencil form: a point in Pencil has two coordinates"));
+            }
+            Some(T::Cmd(c)) if c == "operatorname" => {
+                self.pos += 2;
+                let word = self.word()?;
+                return match word.as_str() {
+                    "real" => Ok("real"),
+                    "imag" => Ok("imag"),
+                    _ => Err(self.error(format!("`.{word}` has no Pencil form yet"))),
+                };
+            }
+            _ => {
+                return Err(
+                    self.error("expected a point's part after `.`: `x`, `y`, `real` or `imag`")
+                );
+            }
+        };
+        self.pos += 2;
+        Ok(part)
+    }
+
+    /// How many commas the parentheses that start here hold, between their own two ends.
+    fn commas_ahead(&self) -> usize {
+        let (mut depth, mut commas) = (0usize, 0);
+        for (t, _) in &self.toks[self.pos..] {
+            match t {
+                T::Open(_) => depth += 1,
+                T::Close(_) => {
+                    depth = depth.saturating_sub(1);
+                    if depth == 0 {
+                        break;
+                    }
+                }
+                T::Ch(',') if depth == 1 => commas += 1,
+                _ => {}
+            }
+        }
+        commas
+    }
+
     /// A function written as an operator, `\sin`, with its argument in parentheses or not:
     /// `\sin\left(x\right)`, `\sin x`, `\sin^{2}x`.
     fn function(&mut self, name: String) -> Result<Node, Error> {
+        let mut name = name;
+        // `\log_{2}`: a logarithm's base. Without one, `\log` is base 10, in Desmos and MathLive.
+        let mut base = None;
+        if name == "log" {
+            base = Some(if self.eat(&T::Ch('_')) {
+                self.argument()?
+            } else {
+                Node::Num("10".into())
+            });
+        }
         let mut power = None;
         if self.eat(&T::Ch('^')) {
             let p = self.argument()?;
+            // `\tan^{-1}` is the inverse, which is how Desmos writes arctan.
             if p == op("neg", vec![Node::Num("1".into())]) {
-                return Err(self.error(format!(
-                    "`\\{name}^{{-1}}` is an inverse, not a power: write `\\arc{name}` or the inverse's name"
-                )));
+                let Some(inverse) = inverse_function(&name) else {
+                    return Err(self.error(format!(
+                        "`\\{name}^{{-1}}` is an inverse, which has no Pencil form yet"
+                    )));
+                };
+                name = inverse.to_string();
+            } else {
+                power = Some(p);
             }
-            power = Some(p);
         }
-        let call = if matches!(self.peek(), T::Open('(')) {
-            Node::Call(name, self.arguments()?)
+        let args = if matches!(self.peek(), T::Open('(')) {
+            self.arguments()?
         } else if self.starts_factor(true) {
-            Node::Call(name, vec![self.run(true)?])
+            vec![self.run(true)?]
         } else {
             return Err(self.error(format!("`{name}` needs an argument")));
+        };
+        let call = match (base, args.as_slice()) {
+            // log_b(x) is ln(x)/ln(b).
+            (Some(base), [x]) => op(
+                "/",
+                vec![
+                    Node::Call("ln".into(), vec![x.clone()]),
+                    Node::Call("ln".into(), vec![base]),
+                ],
+            ),
+            _ => Node::Call(name, args),
         };
         Ok(match power {
             Some(p) => op("^", vec![call, p]),
@@ -866,6 +1006,31 @@ mod tests {
         assert_eq!(pencil(r"\sin 2x+1"), "sin(2x) + 1");
     }
 
+    /// Forms that only showed up in real graphs: 10,000 expressions from Desmos states.
+    #[test]
+    fn what_real_desmos_graphs_write_reads_as_pencil() {
+        // A point's parts.
+        assert_eq!(pencil(r"a_{2}=C.y-A.y"), "a_2 = C.y - A.y");
+        assert_eq!(pencil(r"x_{0}.x+P.\operatorname{real}"), "x_0.x + real(P)");
+        assert_eq!(pencil(r"\left(\sqrt{z_{1}}\right).\operatorname{real}"), "real(sqrt(z_1))");
+        assert_eq!(read(r"T\left(t\right).y", &["T"]).unwrap(), "imag(T(t))");
+        assert!(error(r"p.z").contains("two coordinates"));
+        // Desmos writes an inverse as a power of −1.
+        assert_eq!(pencil(r"\tan^{-1}\left(x\right)"), "arctan(x)");
+        assert_eq!(pencil(r"\tanh^{-1}x"), "artanh(x)");
+        // A logarithm is base 10 unless it says.
+        assert_eq!(pencil(r"\log_{2}\left(x\right)"), "ln(x)/ln(2)");
+        assert_eq!(pencil(r"\log x"), "ln(x)/ln(10)");
+        // Three things in parentheses are arguments, whatever the name is.
+        assert_eq!(pencil(r"E\left(tw,u_{0},v_{0}\right)"), "E(t·w, u_0, v_0)");
+        // A function one line defines is a call on every line.
+        assert_eq!(
+            pencil("G\\left(x,y\\right)^{2}\nG\\left(u,v\\right)=u+v"),
+            "G(x, y)^2\nG(u, v) = u + v"
+        );
+        assert_eq!(definitions("f\\left(x\\right)=x\ny=2x\ng_{1}\\left(t\\right)=t"), ["f", "g_1"]);
+    }
+
     #[test]
     fn brackets_go_where_pencil_needs_them() {
         assert_eq!(pencil(r"\frac{1}{2\pi}"), "1/(2π)");
@@ -975,7 +1140,10 @@ mod tests {
         assert!(error(r"\left\{x<0:-x,x\right\}").contains("piecewise"));
         assert!(error(r"x\le1").contains("comparison"));
         assert!(error(r"\sqrt[3]{x}").contains("n-th root"));
-        assert!(error(r"\sin^{-1}x").contains("inverse"));
+        assert!(error(r"\ln^{-1}x").contains("inverse"));
+        assert!(error(r"\frac{d}{dx}f\left(x\right)").contains("derivative"));
+        assert!(error(r"x^{2}\operatorname{with}x=3").contains("`with`"));
+        assert!(error(r"A.\operatorname{count}").contains("`.count`"));
         let e = read("x\n2\\foo", &[]).unwrap_err();
         assert_eq!((e.line, e.col), (2, 2), "{e}");
     }

@@ -9,7 +9,7 @@ use crate::error::Error;
 use crate::eval::{self, Env};
 use crate::ir::{
     Arc, Binding, Choice, Expr, Expression, Form, Handle, Hang, Mark, Param, Part, Piece, Scene,
-    Spot, System, Viewport,
+    Shown, Spot, Subject, System, Viewport,
 };
 use crate::parse::{CurveSyntax, Document, Item, ManyKind, PartSyntax};
 
@@ -1585,10 +1585,11 @@ fn renamed_items(
                 },
                 None,
             ),
-            Item::Let { name, expr, line } => (
+            Item::Let { name, expr, text, line } => (
                 Item::Let {
                     name: renamed(&name),
                     expr: rename(&expr, names),
+                    text,
                     line,
                 },
                 None,
@@ -1986,6 +1987,7 @@ fn expanded(items: &[Item], doc: &Document, out: &mut Vec<Item>) -> Result<(), E
                     body.push(Item::Let {
                         name: own,
                         expr: arg.clone(),
+                        text: String::new(),
                         line: *line,
                     });
                 }
@@ -2010,9 +2012,237 @@ fn expanded(items: &[Item], doc: &Document, out: &mut Vec<Item>) -> Result<(), E
     Ok(())
 }
 
-/// Gives each label its text in this panel. One with none is a thing this space has no name
+/// Every name an expression refers to, including the functions it calls, and before a `.` for
+/// a point's part, so `root.x` is `root`.
+fn refers(e: &Expr, out: &mut Vec<String>) {
+    match e {
+        Expr::Num(_) => {}
+        Expr::Sym(s) => out.push(s.split('.').next().unwrap_or(s).to_string()),
+        Expr::App(head, args) => {
+            out.push(head.clone());
+            args.iter().for_each(|a| refers(a, out));
+        }
+    }
+}
+
+/// The names in a label's `{expr}`s.
+fn refers_in_text(text: &str, out: &mut Vec<String>) {
+    let mut rest = text;
+    while let Some((_, after)) = rest.split_once('{') {
+        let Some((inner, tail)) = after.split_once('}') else { return };
+        if let Ok(e) = crate::parse::parse_expression(inner) {
+            refers(&e, out);
+        }
+        rest = tail;
+    }
+}
+
+/// What a statement needs defined first: every name it refers to, less the ones it binds
+/// itself, such as a function's parameters. It can name more than it needs, as a loop's own
+/// variable, which only ever moves a definition earlier.
+fn needs(item: &Item) -> Vec<String> {
+    let mut out = Vec::new();
+    let all = |es: &mut dyn Iterator<Item = &Expr>, out: &mut Vec<String>| {
+        es.for_each(|e| refers(e, out));
+    };
+    let mut own: Vec<&str> = Vec::new();
+    match item {
+        Item::Let { expr, .. } | Item::Bind { expr, .. } => refers(expr, &mut out),
+        Item::Fn { params, body, .. } => {
+            refers(body, &mut out);
+            own.extend(params.iter().map(String::as_str));
+        }
+        Item::Param { default, range, step, .. } => {
+            all(&mut [default].into_iter().chain(range).chain(step), &mut out)
+        }
+        Item::Choice { options, .. } => all(&mut options.iter().map(|(e, _)| e), &mut out),
+        Item::Duration(e) | Item::Pause(e) => refers(e, &mut out),
+        Item::Curve { form, .. } => match form {
+            CurveSyntax::Implicit { lhs, rhs, .. } => all(&mut [lhs, rhs].into_iter(), &mut out),
+            CurveSyntax::Sdf { field, .. } => refers(field, &mut out),
+            CurveSyntax::Parametric { point, range, .. } => {
+                all(&mut [point].into_iter().chain(range), &mut out)
+            }
+            CurveSyntax::Value(e) => refers(e, &mut out),
+        },
+        Item::Segment { points, .. } => all(&mut points.iter(), &mut out),
+        Item::RightAngle { points, size, .. } => all(&mut points.iter().chain([size]), &mut out),
+        Item::Region { parts, .. } => {
+            for part in parts {
+                match part {
+                    PartSyntax::Point(e) => refers(e, &mut out),
+                    PartSyntax::Arc { point, range, .. } => {
+                        all(&mut [point].into_iter().chain(range), &mut out)
+                    }
+                }
+            }
+        }
+        Item::Dots { names, .. } => out.extend(names.iter().cloned()),
+        Item::Label { name, text, at, offset, away, .. } => {
+            all(&mut [at].into_iter().chain(offset).chain(away), &mut out);
+            if let Some(text) = text {
+                refers_in_text(text, &mut out);
+            }
+            // A label named after a value with no text shows it.
+            if text.is_none() {
+                out.push(name.clone());
+            }
+        }
+        Item::Text { text, .. } => refers_in_text(text, &mut out),
+        Item::DotAt { at, .. } => refers(at, &mut out),
+        Item::ArcSegment { point, .. } => refers(point, &mut out),
+        Item::Solve { unknowns, start, equations, .. } => {
+            all(
+                &mut start.iter().chain(equations.iter().flat_map(|(a, b)| [a, b])),
+                &mut out,
+            );
+            own.extend(unknowns.iter().map(String::as_str));
+        }
+        Item::Many { value, param, vars, lets, .. } => {
+            all(
+                &mut [value]
+                    .into_iter()
+                    .chain(param.iter().flat_map(|(_, r)| r))
+                    .chain(vars.iter().flat_map(|(_, r)| r))
+                    .chain(lets.iter().map(|(_, e)| e)),
+                &mut out,
+            );
+        }
+        Item::Place { at, offset, .. } => all(&mut [at].into_iter().chain(offset), &mut out),
+        Item::Expression { by, .. } => refers(by, &mut out),
+        Item::Arrow { from, to, .. } => all(&mut [from, to].into_iter(), &mut out),
+        Item::Move(m) => {
+            refers(&m.length, &mut out);
+            out.extend(m.focus.iter().filter_map(|f| f.when.as_ref().map(|(c, _)| c.clone())));
+        }
+        Item::Beat { focus, .. } => {
+            out.extend(focus.iter().filter_map(|f| f.when.as_ref().map(|(c, _)| c.clone())));
+        }
+        Item::Handle { param, inverse, .. } => {
+            out.push(param.clone());
+            refers(inverse, &mut out);
+        }
+        // What a view fits is found at the end, so it needs nothing defined early.
+        Item::Viewport { x, y, pad, .. } => {
+            all(&mut x.iter().flatten().chain(y.iter().flatten()).chain(pad), &mut out);
+        }
+        Item::Style(rule) => all(&mut rule.decls.iter().map(|(_, e)| e), &mut out),
+        Item::Outline { .. }
+        | Item::Tag(_)
+        | Item::EndBeat
+        | Item::Panel { .. }
+        | Item::Group { .. }
+        | Item::Use { .. } => {}
+    }
+    if let Item::Bind { name, .. } = item {
+        out.push(name.clone());
+    }
+    out.retain(|n| !own.contains(&n.as_str()));
+    out
+}
+
+/// The names a value definition gives: `let`, `fn`, `param`, a choice, `solve`.
+fn defines(item: &Item) -> Vec<&str> {
+    match item {
+        Item::Let { name, .. }
+        | Item::Fn { name, .. }
+        | Item::Param { name, .. }
+        | Item::Choice { name, .. } => vec![name.as_str()],
+        Item::Solve { unknowns, .. } => unknowns.iter().map(String::as_str).collect(),
+        _ => Vec::new(),
+    }
+}
+
+/// The statements in the order they compile in: as written, except that a value or function
+/// used before it's written is defined just before its first use. So a figure can say what it
+/// draws first and how the values are worked out after. What's drawn keeps its order, which is
+/// what's on top, and so does the timeline.
+fn in_order(items: Vec<Item>) -> Result<Vec<Item>, Error> {
+    let mut definer: HashMap<String, usize> = HashMap::new();
+    for (i, item) in items.iter().enumerate() {
+        for name in defines(item) {
+            definer.entry(name.to_string()).or_insert(i);
+        }
+    }
+    if definer.is_empty() {
+        return Ok(items);
+    }
+    #[derive(Clone, Copy, PartialEq)]
+    enum State {
+        Waiting,
+        Visiting,
+        Done,
+    }
+    fn visit(
+        i: usize,
+        items: &[Item],
+        definer: &HashMap<String, usize>,
+        state: &mut [State],
+        order: &mut Vec<usize>,
+    ) -> Result<(), Error> {
+        match state[i] {
+            State::Done => return Ok(()),
+            State::Visiting => {
+                let name = defines(&items[i]).first().copied().unwrap_or_default().to_string();
+                return Err(Error::new(format!("`{name}` is defined in terms of itself")));
+            }
+            State::Waiting => {}
+        }
+        state[i] = State::Visiting;
+        for name in needs(&items[i]) {
+            if let Some(&j) = definer.get(&name)
+                && j != i
+            {
+                visit(j, items, definer, state, order).map_err(|e| {
+                    if e.line == 0 { Error { line: line_of(&items[i]), col: 1, ..e } } else { e }
+                })?;
+            }
+        }
+        state[i] = State::Done;
+        order.push(i);
+        Ok(())
+    }
+    let mut state = vec![State::Waiting; items.len()];
+    let mut order = Vec::with_capacity(items.len());
+    for i in 0..items.len() {
+        visit(i, &items, &definer, &mut state, &mut order)?;
+    }
+    let mut slots: Vec<Option<Item>> = items.into_iter().map(Some).collect();
+    Ok(order.into_iter().map(|i| slots[i].take().unwrap()).collect())
+}
+
+fn line_of(item: &Item) -> usize {
+    match item {
+        Item::Let { line, .. }
+        | Item::Fn { line, .. }
+        | Item::Param { line, .. }
+        | Item::Choice { line, .. }
+        | Item::Solve { line, .. } => *line,
+        _ => 0,
+    }
+}
+
+/// The names that hold values: what `let`, `param`, a choice and `solve` define. A label can
+/// share one, as that value's label.
+fn value_names(items: &[Item]) -> HashSet<&str> {
+    let mut names = HashSet::new();
+    for item in items {
+        match item {
+            Item::Let { name, .. } | Item::Param { name, .. } | Item::Choice { name, .. } => {
+                names.insert(name.as_str());
+            }
+            Item::Solve { unknowns, .. } => names.extend(unknowns.iter().map(String::as_str)),
+            _ => {}
+        }
+    }
+    names
+}
+
+/// Gives each label its text in this panel. A label named after a value needs none: it shows
+/// the value, as `label root at P` does. Any other with none is a thing this space has no name
 /// for, so it isn't drawn, and the tags written after it go with it.
 fn with_texts(items: &[Item]) -> Result<Vec<Item>, Error> {
+    let values = value_names(items);
     let texts: HashMap<&str, (&str, usize)> = items
         .iter()
         .filter_map(|item| match item {
@@ -2046,7 +2276,8 @@ fn with_texts(items: &[Item]) -> Result<Vec<Item>, Error> {
                     .get(name.as_str())
                     .map(|(text, _)| text.to_string())
                     .or_else(|| text.clone());
-                dropping = text.is_none();
+                // A value's label has something to show without any text.
+                dropping = text.is_none() && !values.contains(name.as_str());
                 if !dropping {
                     out.push(Item::Label {
                         name: name.clone(),
@@ -2074,6 +2305,24 @@ pub fn compile(doc: &Document) -> Result<Scene, Error> {
     }
     let mut items = Vec::new();
     expanded(&doc.items, doc, &mut items)?;
+    // With no panels to give it words, a label without text would quietly draw nothing. A
+    // `text` for a label that doesn't exist is the clearer mistake, so it's reported first.
+    with_texts(&items)?;
+    let values = value_names(&items);
+    for item in &items {
+        if let Item::Label { name, text: None, line, .. } = item
+            && !values.contains(name.as_str())
+            && !items.iter().any(|i| matches!(i, Item::Text { name: n, .. } if n == name))
+        {
+            return Err(Error::at(
+                *line,
+                1,
+                format!(
+                    "label `{name}` has no text and isn't a value's: write `label {name} = \"…\" at …`"
+                ),
+            ));
+        }
+    }
     compile_flat(doc.name.clone(), &items)
 }
 
@@ -2201,7 +2450,18 @@ pub fn fill_outlines<'a>(
 }
 
 fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
-    let items = &with_texts(items)?;
+    let items = &in_order(with_texts(items)?)?;
+    let value_names = value_names(items);
+    // How each `let` was written, for a label that shows its expression.
+    let written_as: HashMap<&str, &str> = items
+        .iter()
+        .filter_map(|item| match item {
+            Item::Let { name, text, .. } => Some((name.as_str(), text.as_str())),
+            _ => None,
+        })
+        .collect();
+    // Labels that share a value's name, which only one label may do.
+    let mut value_labels: HashSet<&str> = HashSet::new();
     let mut lowerer = Lowerer::default();
     let mut scene = Scene {
         name,
@@ -2492,7 +2752,7 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
                 });
                 lowerer.scalars.insert(name.clone());
             }
-            Item::Let { name, expr, line } => {
+            Item::Let { name, expr, line, .. } => {
                 claim(name, *line)?;
                 let val = lowerer.lower(expr, &none, 0).map_err(at_line(*line))?;
                 lowerer.bind(&mut scene, name, val);
@@ -2665,7 +2925,12 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
                 away,
                 line,
             } => {
-                claim(name, *line)?;
+                // A label can be its value's: `label root at P` shares `root`'s name.
+                if !value_names.contains(name.as_str()) {
+                    claim(name, *line)?;
+                } else if !value_labels.insert(name.as_str()) {
+                    return Err(Error::at(*line, 1, format!("`{name}` already has a label")));
+                }
                 let fail = at_line(*line);
                 let at = lowerer.point(at, &none).map_err(&fail)?;
                 let offset = match offset {
@@ -2677,25 +2942,56 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
                     .map(|e| lowerer.point(e, &none).map_err(&fail))
                     .transpose()?;
                 // `{expr}` in the text is a value, worked out each frame.
+                let shown = |source: &str| -> Result<Shown, Error> {
+                    let value = crate::parse::parse_expression(source).map_err(&fail)?;
+                    match lowerer.lower(&value, &none, 0).map_err(&fail)? {
+                        Val::Scalar(v) => Ok(Shown::Number(v)),
+                        Val::Point(x, y) => Ok(Shown::Point([x, y])),
+                        other => Err(fail(Error::new(format!(
+                            "a label shows a number or a point, not {}",
+                            other.kind()
+                        )))),
+                    }
+                };
                 let mut written = String::new();
                 let mut values = Vec::new();
+                let mut sources = Vec::new();
                 let mut rest = text.as_deref().unwrap_or_default();
                 while let Some((before, after)) = rest.split_once('{') {
                     let Some((inner, tail)) = after.split_once('}') else {
                         return Err(fail(Error::new("a `{` in a label's text isn't closed")));
                     };
-                    let value = crate::parse::parse_expression(inner).map_err(&fail)?;
-                    values.push(lowerer.scalar(&value, &none).map_err(&fail)?);
+                    values.push(shown(inner)?);
+                    sources.push(inner.trim());
                     written.push_str(before);
                     written.push_str("{}");
                     rest = tail;
                 }
                 written.push_str(rest);
+                // What the label is about, which its style can write as a name, an expression,
+                // a value, or an equation of them: the value it's named after, or else the one
+                // thing its text shows.
+                let subject = if value_names.contains(name.as_str()) {
+                    let expr = match written_as.get(name.as_str()) {
+                        Some(text) if !text.is_empty() => text.to_string(),
+                        _ => name.clone(),
+                    };
+                    Some(Subject { name: name.clone(), expr, value: shown(name)? })
+                } else if written == "{}" {
+                    Some(Subject {
+                        name: sources[0].to_string(),
+                        expr: sources[0].to_string(),
+                        value: values[0].clone(),
+                    })
+                } else {
+                    None
+                };
                 mark!(
                     name.clone(),
                     Form::Label {
                         text: written,
                         values,
+                        subject,
                         at,
                         offset,
                         away,
@@ -4408,6 +4704,71 @@ mod tests {
         assert!(err.message.contains("isn't closed"), "{err}");
         let err = scene("label n = \"{nope}\" at (0, 0)").unwrap_err();
         assert!(err.message.contains("unknown name"), "{err}");
+        // A point is a value too, which the label's style writes.
+        let s = scene("let z = (1, 2)\nlabel n = \"{z}\" at (0, 0)").unwrap();
+        let Form::Label { values, .. } = &s.marks[0].form else {
+            panic!();
+        };
+        assert!(matches!(values[0], Shown::Point(_)), "{values:?}");
+    }
+
+    #[test]
+    fn a_label_named_after_a_value_is_its_label() {
+        // It's about that value: its name, how it was written, and what it comes to.
+        let s = scene("let root = 2·3 // six\nlabel root at (0, 0)").unwrap();
+        let Form::Label { text, subject, .. } = &s.marks[0].form else {
+            panic!();
+        };
+        let subject = subject.as_ref().unwrap();
+        assert_eq!((text.as_str(), subject.name.as_str(), subject.expr.as_str()), ("", "root", "2·3"));
+        // So is a label whose text is one value.
+        let s = scene("param q = 3 in 1..9\nlabel n = \"{q - 1}\" at (0, 0)").unwrap();
+        let Form::Label { subject, .. } = &s.marks[0].form else {
+            panic!();
+        };
+        assert_eq!(subject.as_ref().unwrap().expr, "q - 1");
+        // A `place` is not a label, and keeps a name of its own.
+        let err = scene("let P = (1, 2)\nplace P = P").unwrap_err();
+        assert!(err.message.contains("already defined"), "{err}");
+        // With text, it's that value's label, saying whatever it says.
+        scene("let P = (1, 2)\nlabel P = \"P\" at P").unwrap();
+        let err = scene("let P = (1, 2)\nlabel P at P\nlabel P = \"P\" at P").unwrap_err();
+        assert!(err.message.contains("already has a label"), "{err}");
+        // Like a dot, it takes its point's name, so one rule styles both.
+        let s = scene("let P = (1, 2)\ndot P\nlabel P = \"P\" at P").unwrap();
+        assert!(s.marks.iter().all(|m| m.id == "P"), "{:?}", s.marks);
+    }
+
+    /// The big picture first, and how its values are worked out after.
+    #[test]
+    fn a_value_or_function_can_be_written_after_its_use() {
+        let s = scene(
+            "dot root
+             label root at root away (0, -1)
+             let root = σ(2)
+             fn σ(n) = exp(2πi·(n/q))
+             param q = 3 in 1..9",
+        )
+        .unwrap();
+        let ids: Vec<&str> = s.marks.iter().map(|m| m.id.as_str()).collect();
+        assert_eq!(ids, ["root", "root"]);
+        assert_eq!(s.params[0].id, "q");
+        // What's drawn keeps its order, which is what's on top.
+        let s = scene("dot P\ndot Q\nlet Q = (1, 0)\nlet P = Q").unwrap();
+        let ids: Vec<&str> = s.marks.iter().map(|m| m.id.as_str()).collect();
+        assert_eq!(ids, ["P", "Q"]);
+        // A function's parameter isn't the value of the same name.
+        scene("let x = f(2)\nfn f(x) = x^2").unwrap();
+        let err = scene("let a = b + 1\nlet b = a").unwrap_err();
+        assert!(err.message.contains("in terms of itself"), "{err}");
+    }
+
+    #[test]
+    fn a_label_without_text_in_a_figure_without_panels_is_a_mistake() {
+        let err = scene("let a = 2\nlabel n at (0, 0)").unwrap_err();
+        assert!(err.message.contains("has no text"), "{err}");
+        assert_eq!(err.line, 2);
+        scene("label n at (0, 0)\ntext n = \"P\"").unwrap();
     }
 
     #[test]

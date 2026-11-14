@@ -5,12 +5,12 @@ use crate::Figure;
 use crate::error::Error;
 use crate::eval::{self, Env};
 use crate::fast;
-use crate::ir::{Expr, Form, Part, Viewport};
+use crate::ir::{Expr, Form, Part, Shown, Subject, Viewport};
 use crate::nearest;
 use crate::place;
 use crate::presence;
 use crate::stroke;
-use crate::style::{Font, MarkStyle, Place};
+use crate::style::{Font, MarkStyle, Place, TextPart};
 use crate::terms;
 
 /// Sizes of the uniform arrays in `wgsl.rs`.
@@ -470,22 +470,140 @@ pub fn drag_value(
     Ok((handle.param.clone(), value))
 }
 
-/// A label's text, with its values in it. A whole number prints as one.
-fn filled(text: &str, values: &[Expr], env: &Env) -> Result<String, Error> {
+/// What a label says: its caption, or what its style's `text` makes of the value it's about,
+/// as `expr = value`. A label with no words of its own shows its value. Parts that come out
+/// the same aren't said twice, so a param's `name = expr = value` is `q = 3`.
+fn label_text(
+    text: &str,
+    values: &[Shown],
+    subject: Option<&Subject>,
+    style: &MarkStyle,
+    env: &Env,
+) -> Result<String, Error> {
+    let digits = match &style.digits {
+        Some(d) => eval::real(d, env)?.round().clamp(0.0, 10.0) as usize,
+        None => 2,
+    };
+    let caption = |subject: Option<&Subject>| -> Result<String, Error> {
+        match subject {
+            Some(subject) if text.is_empty() => Ok(subject.name.clone()),
+            _ => filled(text, values, style, digits, env),
+        }
+    };
+    let default = [if text.is_empty() { TextPart::Value } else { TextPart::Caption }];
+    let parts = style.text.as_deref().unwrap_or(&default);
+    let mut said: Vec<String> = Vec::new();
+    for part in parts {
+        let piece = match (part, subject) {
+            (TextPart::Caption, _) => caption(subject)?,
+            // A label that isn't about a value just says what it says.
+            (_, None) => caption(None)?,
+            (TextPart::Name, Some(subject)) => subject.name.replace('-', "−"),
+            (TextPart::Expr, Some(subject)) => subject.expr.replace('-', "−"),
+            (TextPart::Value, Some(subject)) => written(&subject.value, style, digits, env)?,
+        };
+        if said.last() != Some(&piece) {
+            said.push(piece);
+        }
+    }
+    Ok(said.join(" = "))
+}
+
+/// A value as a label writes it: to `digits` places, and a point in the style's `format`.
+fn written(value: &Shown, style: &MarkStyle, digits: usize, env: &Env) -> Result<String, Error> {
+    let printed = match value {
+        Shown::Number(v) => number(eval::real(v, env)?, digits),
+        Shown::Point([x, y]) => {
+            let (x, y) = (eval::real(x, env)?, eval::real(y, env)?);
+            written_point(x, y, style.format, digits)
+        }
+    };
+    Ok(printed.replace('-', "−"))
+}
+
+/// A label's own words, with its values in them.
+fn filled(
+    text: &str,
+    values: &[Shown],
+    style: &MarkStyle,
+    digits: usize,
+    env: &Env,
+) -> Result<String, Error> {
     let mut out = String::new();
     let mut pieces = text.split("{}");
     out.push_str(pieces.next().unwrap_or(""));
     for (value, piece) in values.iter().zip(pieces) {
-        let v = eval::real(value, env)?;
-        let printed = if (v - v.round()).abs() < 1e-9 {
-            format!("{}", v.round() as i64)
-        } else {
-            format!("{v:.2}")
-        };
-        out.push_str(&printed.replace('-', "−"));
+        out.push_str(&written(value, style, digits, env)?);
         out.push_str(piece);
     }
     Ok(out)
+}
+
+/// A number to `digits` places, or whole if it's a whole number.
+fn number(v: f64, digits: usize) -> String {
+    let printed = if (v - v.round()).abs() < 1e-9 {
+        format!("{}", v.round() as i64)
+    } else {
+        format!("{v:.digits$}")
+    };
+    // Rounding can leave a sign on nothing.
+    if printed.trim_start_matches('-').chars().all(|c| c == '0' || c == '.') {
+        printed.trim_start_matches('-').to_string()
+    } else {
+        printed
+    }
+}
+
+/// A point as a label writes it, with ASCII minus signs, which the caller turns into `−`.
+fn written_point(x: f64, y: f64, format: crate::style::Format, digits: usize) -> String {
+    use crate::style::Format;
+    // A part that would print as zero is left out of a sum, as `i` rather than `0 + 1i`.
+    let zero = |v: f64| number(v, digits).chars().all(|c| c == '0' || c == '.' || c == '-');
+    let imaginary = |v: f64| match number(v, digits).as_str() {
+        "1" => "i".to_string(),
+        "-1" => "-i".to_string(),
+        n => format!("{n}i"),
+    };
+    match format {
+        Format::Point => format!("({}, {})", number(x, digits), number(y, digits)),
+        Format::Complex => match (zero(x), zero(y)) {
+            (_, true) => number(x, digits),
+            (true, false) => imaginary(y),
+            (false, false) => {
+                let sign = if y < 0.0 { '-' } else { '+' };
+                format!("{} {sign} {}", number(x, digits), imaginary(y.abs()))
+            }
+        },
+        Format::Polar => {
+            let r = x.hypot(y);
+            if zero(r) {
+                return "0".into();
+            }
+            let modulus = match number(r, digits).as_str() {
+                "1" => String::new(),
+                n => n.to_string(),
+            };
+            let angle = y.atan2(x);
+            // A fraction of π with a small denominator is written as one: e^(2πi/3).
+            let turn = (1..=12).find_map(|q| {
+                let p = angle / std::f64::consts::PI * q as f64;
+                ((p - p.round()).abs() < 1e-9).then(|| (p.round() as i64, q))
+            });
+            let exponent = match turn {
+                Some((0, _)) => return number(r, digits),
+                Some((p, q)) => {
+                    let p = match p {
+                        1 => String::new(),
+                        -1 => "-".into(),
+                        p => p.to_string(),
+                    };
+                    if q == 1 { format!("{p}πi") } else { format!("{p}πi/{q}") }
+                }
+                None => format!("{}i", number(angle, digits)),
+            };
+            format!("{modulus}e^({exponent})")
+        }
+    }
 }
 
 /// Computes a frame's CPU side, with labels where they settle. For motion that doesn't
@@ -669,6 +787,7 @@ pub fn prepare_with(
         let Form::Label {
             text,
             values,
+            subject,
             at,
             offset,
             away,
@@ -703,7 +822,7 @@ pub fn prepare_with(
         };
         labels.push(Label {
             id: mark.id.clone(),
-            text: filled(text, values, &env)?,
+            text: label_text(text, values, subject.as_ref(), style, &env)?,
             x: dx + ox,
             y: dy + oy,
             size: length_or_em(&style.size, DEFAULT_LABEL_SIZE, &env)?,
@@ -754,6 +873,81 @@ pub fn prepare_with(
 
 #[cfg(test)]
 mod tests {
+
+    /// Kris's figure: a cube root of unity, as each format writes it.
+    #[test]
+    fn a_label_writes_a_complex_value_as_its_style_says() {
+        let doc = "fn σ(n) = exp(2πi·(n/q))\nlet q = 3\nlet root = σ(2)\n\
+                   label n = \"{root}\" at (0, 0)\nlabel half = \"{root/2}\" at (0, 0)\nlabel one = \"{σ(0)}\" at (0, 0)\n\
+                   label i = \"{σ(3/4)}\" at (0, 0)";
+        let shown = |sheet: &str| -> Vec<String> {
+            let figure = crate::build(doc, &[sheet]).unwrap();
+            let prepared = prepare(&figure, &Inputs::at(0.0), 100, 100, 1.0).unwrap();
+            prepared.labels.iter().map(|l| l.text.clone()).collect()
+        };
+        assert_eq!(shown(""), ["(−0.50, −0.87)", "(−0.25, −0.43)", "(1, 0)", "(0, 1)"]);
+        assert_eq!(
+            shown("style label { format: complex }"),
+            ["−0.50 − 0.87i", "−0.25 − 0.43i", "1", "i"]
+        );
+        assert_eq!(
+            shown("style label { format: polar }"),
+            ["e^(−2πi/3)", "0.50e^(−2πi/3)", "1", "e^(πi/2)"]
+        );
+        assert_eq!(
+            shown("style label { format: complex; digits: 3 }")[0],
+            "−0.500 − 0.866i"
+        );
+    }
+
+    /// The sheet says what a label shows of the value it's about.
+    #[test]
+    fn a_style_says_what_a_label_shows() {
+        let doc = "fn σ(n) = exp(2πi·(n/q))\nparam q = 3 in 1..9\nlet root = σ(2)\n\
+                   label root at root\nlabel q = \"arms\" at (0, 0)\nlabel n = \"{q - 1}\" at (0, 0)\n\
+                   label m = \"{q} of them\" at (0, 0)";
+        let shown = |sheet: &str| -> Vec<String> {
+            let sheet = format!("style label {{ format: complex }} {sheet}");
+            let figure = crate::build(doc, &[&sheet]).unwrap();
+            let prepared = prepare(&figure, &Inputs::at(0.0), 100, 100, 1.0).unwrap();
+            prepared.labels.iter().map(|l| l.text.clone()).collect()
+        };
+        // With no `text`, a label says its own words, or its value if it has none.
+        assert_eq!(shown(""), ["−0.50 − 0.87i", "arms", "2", "3 of them"]);
+        assert_eq!(
+            shown("style label { text: expr = value }"),
+            ["σ(2) = −0.50 − 0.87i", "q = 3", "q − 1 = 2", "3 of them"]
+        );
+        assert_eq!(
+            shown("style label { text: name = value; digits: 1 }"),
+            ["root = −0.5 − 0.9i", "q = 3", "q − 1 = 2", "3 of them"]
+        );
+        assert_eq!(shown("style label { text: caption }"), ["root", "arms", "2", "3 of them"]);
+        assert_eq!(
+            shown("style label { text: caption = value } style root { text: name = expr = value; format: polar }"),
+            ["root = σ(2) = e^(−2πi/3)", "arms = 3", "2", "3 of them"]
+        );
+        let err = crate::build(doc, &["style label { text: nope }"]).unwrap_err();
+        assert!(err.message.contains("made of `caption`"), "{err}");
+        // A rule that names the value reaches its dot and its label, each taking what's its own.
+        let figure = crate::build(
+            "let P = (1, 2)\ndot P\nlabel P at P",
+            &["style P { radius: 4px; text: name = value; digits: 1; leader: 1px }"],
+        )
+        .unwrap();
+        let prepared = prepare(&figure, &Inputs::at(0.0), 100, 100, 1.0).unwrap();
+        assert_eq!(prepared.labels[0].text, "P = (1, 2)");
+        // With no label beside it, a dot still can't take a label's property.
+        let err = crate::build("let P = (1, 2)\ndot P", &["style P { text: name }"]).unwrap_err();
+        assert!(err.message.contains("isn't a label"), "{err}");
+    }
+
+    #[test]
+    fn a_number_rounded_to_nothing_has_no_sign() {
+        assert_eq!(super::number(-0.001, 2), "0.00");
+        assert_eq!(super::number(-1e-12, 2), "0");
+        assert_eq!(super::written_point(1e-17, -2.0, crate::style::Format::Complex, 2), "-2i");
+    }
 
     #[test]
     fn a_leader_runs_from_its_gap_to_short_of_its_text() {
