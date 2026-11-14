@@ -1,0 +1,70 @@
+---
+import '../styles/site.css';
+import { REPO } from '../lib/figures';
+
+interface Props {
+  title?: string;
+  description?: string;
+  /** Which nav item is this page's. */
+  section?: 'docs' | 'demos' | 'playground';
+  /** Whether the page draws figures, and so loads the element. */
+  figures?: boolean;
+  /** A page that fills the window, such as the playground's. */
+  full?: boolean;
+}
+
+const {
+  title,
+  description = 'Pencil is a declarative language for mathematical figures. A figure is a text file that says what’s in it, and style sheets say how it looks.',
+  section,
+  figures = false,
+  full = false,
+} = Astro.props;
+const fullTitle = title ? `${title} · Pencil` : 'Pencil: a language for mathematical figures';
+const nav = [
+  { href: '/docs/', label: 'Docs', key: 'docs' },
+  { href: '/demos/', label: 'Demos', key: 'demos' },
+  { href: '/playground/', label: 'Playground', key: 'playground' },
+];
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <title>{fullTitle}</title>
+    <meta name="description" content={description} />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    {figures && <link rel="modulepreload" href="/web/pencil-figure.js" />}
+  </head>
+  <body class:list={{ full }}>
+    <a class="skip" href="#main">Skip to content</a>
+    <header class="site">
+      <a class="mark" href="/" aria-label="Pencil, home">Pencil</a>
+      <nav aria-label="Site">
+        {nav.map((item) => (
+          <a href={item.href} aria-current={section === item.key ? 'page' : undefined}>{item.label}</a>
+        ))}
+        <a href={REPO}>GitHub</a>
+      </nav>
+    </header>
+    <main id="main">
+      <slot />
+    </main>
+    {!full && (
+      <footer class="site">
+        <p>
+          Pencil is early, and its syntax will change. <a href={REPO}>Source on GitHub</a>, under the
+          MIT license.
+        </p>
+      </footer>
+    )}
+    {figures && (
+      <>
+        <script src="../scripts/figure-controls.js"></script>
+        <script type="module" src="/web/pencil-figure.js" is:inline></script>
+      </>
+    )}
+  </body>
+</html>

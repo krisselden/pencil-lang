@@ -1,0 +1,130 @@
+---
+import Docs from '../../layouts/Docs.astro';
+import { REPO } from '../../lib/figures';
+
+const headings = [
+  { depth: 2, slug: 'what-you-need', text: 'What you need' },
+  { depth: 2, slug: 'render-a-frame', text: 'Render a frame' },
+  { depth: 2, slug: 'gpu-against-cpu', text: 'Compare the GPU with the CPU' },
+  { depth: 2, slug: 'video', text: 'Export a video' },
+  { depth: 2, slug: 'browser', text: 'Figures in a browser' },
+  { depth: 2, slug: 'latex', text: 'Bring formulas from LaTeX' },
+  { depth: 2, slug: 'tests', text: 'Run the tests' },
+  { depth: 2, slug: 'pencil-command', text: 'The pencil command' },
+  { depth: 2, slug: 'next', text: 'Where next' },
+];
+---
+<Docs
+  title="Getting started"
+  description="Build Pencil from source, render a frame, compare the GPU with the CPU, export a video and run figures in a browser."
+  path="/docs/getting-started/"
+  headings={headings}
+>
+  <h1>Getting started</h1>
+  <p class="lede">
+    Pencil is built from source for now: there are no releases or packages. Everything below runs
+    from a checkout of the repository.
+  </p>
+  <p class="status">
+    The syntax and the compiled form change freely while the project is young, so a figure written
+    today may need edits later.
+  </p>
+
+  <h2 id="what-you-need">What you need</h2>
+  <ul>
+    <li><a href="https://rustup.rs">Rust</a>, for everything.</li>
+    <li>The <code>wasm32-unknown-unknown</code> target, only to draw figures in a browser.</li>
+    <li><code>ffmpeg</code>, only for video.</li>
+    <li>Python 3, only for <code>scripts/serve.py</code>.</li>
+  </ul>
+  <pre><code>git clone {REPO}.git
+cd pencil-lang</code></pre>
+
+  <h2 id="render-a-frame">Render a frame</h2>
+  <p>
+    A figure is a <code>.pen</code> document, drawn with one or more <code>.style</code> sheets in
+    order. <code>--t</code> picks a moment in seconds.
+  </p>
+  <pre><code>cargo run --release -p pencil-cli -- render corpus/012-limacon/limacon.pen \
+  --style corpus/012-limacon/plain.style --t 1 --out out/limacon.png</code></pre>
+  <p>
+    The same document takes a different sheet without changing. The breathing circle, banded by
+    distance:
+  </p>
+  <pre><code>cargo run -p pencil-cli -- render corpus/001-circle/circle.pen \
+  --style corpus/001-circle/bands.style --t 1.25 --out out/frame.png</code></pre>
+
+  <h2 id="gpu-against-cpu">Compare the GPU with the CPU</h2>
+  <p>
+    Every figure has two renderers: shaders on the GPU, and a simple CPU interpreter that defines
+    what each pixel should be. <code>check</code> draws both and fails if they differ by more than a
+    few levels in any channel.
+  </p>
+  <pre><code>cargo run --release -p pencil-cli -- check corpus/012-limacon/limacon.pen \
+  --style corpus/012-limacon/plain.style</code></pre>
+
+  <h2 id="video">Export a video</h2>
+  <p>
+    Video is the same figure with time running. <code>--size</code> is the width in pixels.
+  </p>
+  <pre><code>cargo run --release -p pencil-cli -- video corpus/003-unroll/unroll.pen \
+  --style corpus/003-unroll/blog.style --size 1280 --out out/unroll.mp4</code></pre>
+
+  <h2 id="browser">Figures in a browser</h2>
+  <p>
+    The core compiles to WebAssembly, and <code>&lt;pencil-figure&gt;</code> in
+    <code>web/pencil-figure.js</code> draws a figure on a page with WebGPU, or WebGL2 where the
+    browser has no WebGPU. The first build installs a matching <code>wasm-bindgen</code> and takes a
+    few minutes.
+  </p>
+  <pre><code>rustup target add wasm32-unknown-unknown
+scripts/build-web.sh
+scripts/serve.py</code></pre>
+  <p>
+    Then open <code>http://localhost:8741/web/playground.html</code>. <code>web/</code> has a page
+    for most figures, and adding <code>?gl</code> to a page’s address uses WebGL2.
+  </p>
+  <p>On a page of your own, the element needs only the figure and its sheets:</p>
+  <pre><code>&lt;script type="module" src="web/pencil-figure.js"&gt;&lt;/script&gt;
+&lt;pencil-figure src="corpus/012-limacon/limacon.pen"
+  sheets="corpus/012-limacon/plain.style"&gt;&lt;/pencil-figure&gt;</code></pre>
+  <p>
+    It starts the GPU only when the figure comes near the viewport, and lets it go when the figure
+    leaves the page. Its attributes, methods and events are described at the top of
+    <a href={`${REPO}/blob/main/web/pencil-figure.js`}><code>web/pencil-figure.js</code></a>.
+  </p>
+
+  <h2 id="latex">Bring formulas from LaTeX</h2>
+  <p>
+    Formulas copied from Desmos or MathLive, one per line, come back as Pencil text:
+  </p>
+  <pre><code>cargo run -p pencil-cli -- latex formulas.tex</code></pre>
+  <p>The playground does the same when LaTeX is pasted into it.</p>
+
+  <h2 id="tests">Run the tests</h2>
+  <pre><code>cargo test --workspace</code></pre>
+  <p>
+    Each figure in <code>corpus/</code> has its expected compiled form beside it. After a change that
+    is meant to alter it, write the new ones:
+  </p>
+  <pre><code>UPDATE_GOLDENS=1 cargo test -p pencil-core --test corpus</code></pre>
+
+  <h2 id="pencil-command">The pencil command</h2>
+  <pre><code>pencil ir     DOC.pen
+pencil wgsl   DOC.pen [--style FILE]...
+pencil render DOC.pen [--style FILE]... [--t SECONDS] [--param NAME=VALUE]... [--size WIDTH] [--cpu] --out FRAME.png
+pencil check  DOC.pen [--style FILE]... [--t SECONDS]... [--param NAME=VALUE]... [--size WIDTH] [--out DIR]
+pencil video  DOC.pen [--style FILE]... [--size WIDTH] [--fps N] [--seconds S] [--font FILE] --out MOVIE.mp4
+pencil latex  FILE.tex...</code></pre>
+  <p>
+    <code>cargo run -p pencil-cli --</code> stands in for <code>pencil</code> in a checkout.
+    <code>ir</code> prints a figure’s compiled form, and <code>wgsl</code> the shader it becomes.
+  </p>
+
+  <h2 id="next">Where next</h2>
+  <ul>
+    <li>The <a href="/docs/language/">language reference</a>, for the statements, built-ins and styles.</li>
+    <li>The <a href="/demos/">demos</a>, for every figure in the corpus with its source.</li>
+    <li>The <a href="/playground/">playground</a>, to edit one and watch it recompile.</li>
+  </ul>
+</Docs>

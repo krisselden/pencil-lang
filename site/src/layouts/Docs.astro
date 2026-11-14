@@ -1,0 +1,73 @@
+---
+// A docs page: a side column with the docs and this page's contents, and the page beside it.
+// On a narrow screen the column folds into a disclosure above the page.
+import Base from './Base.astro';
+import { BLOB } from '../lib/figures';
+
+interface Heading {
+  depth: number;
+  slug: string;
+  text: string;
+}
+
+interface Props {
+  title: string;
+  description?: string;
+  /** This page's path, to mark it in the list. */
+  path: string;
+  headings?: Heading[];
+  /** The repo file this page is rendered from, if any. */
+  source?: string;
+}
+
+const { title, description, path, headings = [], source } = Astro.props;
+const pages = [
+  { href: '/docs/getting-started/', label: 'Getting started' },
+  { href: '/docs/language/', label: 'Language reference' },
+];
+const contents = headings.filter((h) => h.depth === 2 || h.depth === 3);
+---
+<Base title={title} description={description} section="docs">
+  <div class="page docs">
+    <aside aria-label="Documentation">
+      <details open>
+        <summary>Contents</summary>
+        <h2>Docs</h2>
+        <ul>
+          {pages.map((p) => <li><a href={p.href} aria-current={p.href === path ? 'page' : undefined}>{p.label}</a></li>)}
+        </ul>
+        {contents.length > 0 && (
+          <>
+            <h2>On this page</h2>
+            <ul>
+              {contents.map((h) => <li class={`depth-${h.depth}`}><a href={`#${h.slug}`}>{h.text}</a></li>)}
+            </ul>
+          </>
+        )}
+        {source && (
+          <>
+            <h2>Source</h2>
+            <ul><li><a href={`${BLOB}/${source}`}>{source}</a></li></ul>
+          </>
+        )}
+      </details>
+    </aside>
+    <article>
+      <slot />
+    </article>
+  </div>
+</Base>
+
+<script>
+  // The contents start folded on a narrow screen, and open on a wide one, where they're a column.
+  const narrow = matchMedia('(max-width: 60rem)');
+  const fold = () => document.querySelector('.docs aside details')?.toggleAttribute('open', !narrow.matches);
+  fold();
+  narrow.addEventListener('change', fold);
+  // Picking a heading on a narrow screen folds the contents again.
+  document.querySelector('.docs aside')?.addEventListener('click', (e) => {
+    if (narrow.matches && (e.target as Element).closest('a[href^="#"]')) {
+      document.querySelector('.docs aside details')?.removeAttribute('open');
+    }
+  });
+</script>
