@@ -235,6 +235,8 @@ pub enum Item {
         y: Option<[Expr; 2]>,
         fit: Vec<String>,
         pad: Option<Expr>,
+        /// How far the view is turned about its vertical axis, for points in space.
+        yaw: Option<Expr>,
     },
     Style(StyleRule),
 }
@@ -1425,7 +1427,7 @@ impl Parser {
             self.bump();
         }
         self.expect("{")?;
-        let (mut x, mut y, mut pad) = (None, None, None);
+        let (mut x, mut y, mut pad, mut yaw) = (None, None, None, None);
         let mut fit = Vec::new();
         while !self.eat("}") {
             let prop = self.ident("a viewport property")?;
@@ -1440,6 +1442,7 @@ impl Parser {
                     )));
                 }
                 "pad" => pad = Some(self.expr()?),
+                "yaw" => yaw = Some(self.expr()?),
                 "fit" => {
                     while matches!(self.peek(), Tok::Ident(_)) {
                         fit.push(self.ident("a mark")?);
@@ -1454,7 +1457,7 @@ impl Parser {
         if fit.is_empty() && (x.is_none() || y.is_none()) {
             return Err(self.error("a viewport needs both `x` and `y`, or `fit`"));
         }
-        Ok(Item::Viewport { x, y, fit, pad })
+        Ok(Item::Viewport { x, y, fit, pad, yaw })
     }
 
     fn style(&mut self, line: usize) -> Result<StyleRule, Error> {
@@ -1629,9 +1632,13 @@ impl Parser {
             _ if self.eat("(") => {
                 let inner = self.expr()?;
                 if self.eat(",") {
-                    let second = self.expr()?;
+                    let mut parts = vec![inner, self.expr()?];
+                    // A third part is a point in space.
+                    if self.eat(",") {
+                        parts.push(self.expr()?);
+                    }
                     self.expect(")")?;
-                    return Ok(Expr::app("Tuple", vec![inner, second]));
+                    return Ok(Expr::app("Tuple", parts));
                 }
                 self.expect(")")?;
                 Ok(inner)
@@ -1775,6 +1782,7 @@ mod tests {
                 y: Some([Expr::Num(-1.5), Expr::Num(1.5)]),
                 fit: Vec::new(),
                 pad: None,
+                yaw: None,
             }
         );
     }

@@ -1,0 +1,16 @@
+// The tube on the site's paper. What's on its far side is drawn fainter and thinner, which
+// is this sheet's choice: the figure only says where each point is.
+style figure { width: 640px; height: 524px }
+
+// How much of a point faces the reader: 1 on the near side of the tube and 0 on the far side,
+// changing over the last sliver of a turn at its edge.
+fn near(z) = smoothstep(-0.04, 0.04, z)
+
+style .edge { stroke: muted; width: 1.25px; opacity: mix(0.25, 1, near(self.z)) }
+style .row { width: 1.5px + 1px·near(self.z); opacity: mix(0.25, 1, near(self.z)) }
+style .blue { stroke: blue }
+style .green { stroke: green }
+style .red { stroke: red }
+style points { fill: ink; radius: 3px·near(self.z) }
+style period { stroke: accent; width: 2px; dash: 6px; gap: 5px; head: 16px; opacity: mix(0.3, 1, near(self.z)) }
+style name_period { fill: accent }

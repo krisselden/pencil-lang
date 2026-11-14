@@ -127,6 +127,9 @@ pub struct Arc {
     pub var: String,
     pub point: [Expr; 2],
     pub range: [Expr; 2],
+    /// The point's third coordinate, for a curve of points in space. `point` is where it's drawn,
+    /// through the view, and this is its `z` as written, which a style reads as `self.z`.
+    pub depth: Option<Expr>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -395,11 +398,15 @@ fn pair(p: &[Expr; 2]) -> Value {
 }
 
 fn arc_json(a: &Arc) -> Value {
-    json!({
+    let mut arc = json!({
         "var": a.var,
         "point": pair(&a.point),
         "range": pair(&a.range),
-    })
+    });
+    if let Some(depth) = &a.depth {
+        arc["depth"] = depth.to_mathjson();
+    }
+    arc
 }
 
 impl Scene {

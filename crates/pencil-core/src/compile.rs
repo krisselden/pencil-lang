@@ -105,6 +105,9 @@ const RAY_START: f64 = 1e-9;
 enum Val {
     Scalar(Expr),
     Point(Expr, Expr),
+    /// A point in space. It isn't a complex number: it adds, subtracts and scales, and a mark
+    /// draws it where the view puts it.
+    Point3(Expr, Expr, Expr),
     Circle {
         x: Expr,
         y: Expr,
@@ -131,6 +134,7 @@ impl Val {
         match self {
             Val::Scalar(_) => "a number",
             Val::Point(..) => "a point",
+            Val::Point3(..) => "a point in space",
             Val::Circle { .. } | Val::Cycle { .. } => "a circle",
             Val::Line { .. } => "a line",
         }
@@ -140,6 +144,7 @@ impl Val {
         match self {
             Val::Scalar(e) => vec![e.clone()],
             Val::Point(x, y) => vec![x.clone(), y.clone()],
+            Val::Point3(x, y, z) => vec![x.clone(), y.clone(), z.clone()],
             Val::Circle { x, y, r } => vec![x.clone(), y.clone(), r.clone()],
             Val::Cycle { a, bx, by, c } => vec![a.clone(), bx.clone(), by.clone(), c.clone()],
             Val::Line { a, b, .. } => vec![a[0].clone(), a[1].clone(), b[0].clone(), b[1].clone()],
@@ -153,6 +158,7 @@ impl Val {
         match self {
             Val::Scalar(_) => Val::Scalar(next()),
             Val::Point(..) => Val::Point(next(), next()),
+            Val::Point3(..) => Val::Point3(next(), next(), next()),
             Val::Circle { .. } => Val::Circle {
                 x: next(),
                 y: next(),
@@ -199,6 +205,7 @@ struct Function {
 #[derive(Clone, Copy, PartialEq)]
 enum Shape {
     Point,
+    Point3,
     Circle,
     Cycle,
     Line,
@@ -211,6 +218,27 @@ struct Lowerer {
     shapes: HashMap<String, Shape>,
     /// Scalar names known at this point in the document.
     scalars: HashSet<String>,
+    /// Whether the viewport turns the view, so a point in space is drawn through `VIEW_YAW`.
+    turned: bool,
+}
+
+/// The binding that holds a viewport's `yaw`. A mark's point in space is projected through it,
+/// so the view can turn with a param or with time like anything else.
+const VIEW_YAW: &str = "view.yaw";
+
+/// Where a point in space is drawn: looking down z, which comes toward the reader, after the
+/// view turns about its vertical axis. Without a turn that's the point's own x and y, so a
+/// figure that never writes a z is the same figure.
+fn projected(x: &Expr, y: &Expr, z: &Expr, turned: bool) -> [Expr; 2] {
+    if !turned {
+        return [x.clone(), y.clone()];
+    }
+    let yaw = Expr::sym(VIEW_YAW);
+    let across = plus(
+        times(x, &Expr::app("Cos", vec![yaw.clone()])),
+        times(z, &Expr::app("Sin", vec![yaw])),
+    );
+    [across, y.clone()]
 }
 
 // Small builders, so the construction formulas below read like formulas.
@@ -455,6 +483,7 @@ impl Lowerer {
         let field = |f: &str| Expr::sym(format!("{name}.{f}"));
         match self.shapes.get(name)? {
             Shape::Point => Some(Val::Point(field("x"), field("y"))),
+            Shape::Point3 => Some(Val::Point3(field("x"), field("y"), field("z"))),
             Shape::Circle => Some(Val::Circle {
                 x: field("x"),
                 y: field("y"),
@@ -509,6 +538,9 @@ impl Lowerer {
                         (Some(Val::Point(_, y)), "y") | (Some(Val::Circle { y, .. }), "y") => {
                             Val::Scalar(y.clone())
                         }
+                        (Some(Val::Point3(x, ..)), "x") => Val::Scalar(x.clone()),
+                        (Some(Val::Point3(_, y, _)), "y") => Val::Scalar(y.clone()),
+                        (Some(Val::Point3(.., z)), "z") => Val::Scalar(z.clone()),
                         (Some(Val::Circle { r, .. }), "r") => Val::Scalar(r.clone()),
                         (Some(Val::Cycle { a, .. }), "a") => Val::Scalar(a.clone()),
                         (Some(Val::Cycle { a, bx, .. }), "x") => Val::Scalar(cycle_center(a, bx)),
@@ -626,7 +658,7 @@ impl Lowerer {
     }
 
     fn builtin(&self, head: &str, low: Vec<Val>) -> Result<Val, Error> {
-        use Val::{Circle, Cycle, Line, Point, Scalar};
+        use Val::{Circle, Cycle, Line, Point, Point3, Scalar};
         // Where a function wants points, a number is one on the real axis.
         let low = if matches!(
             head,
@@ -671,6 +703,38 @@ impl Lowerer {
                 )
             }
             ("Tuple", [Scalar(x), Scalar(y)]) => Point(x.clone(), y.clone()),
+            // A point in space is a vector, and not a number: it adds, subtracts and scales.
+            ("Tuple", [Scalar(x), Scalar(y), Scalar(z)]) => {
+                Point3(x.clone(), y.clone(), z.clone())
+            }
+            ("Add", [Point3(ax, ay, az), Point3(bx, by, bz)]) => Point3(
+                plus(ax.clone(), bx.clone()),
+                plus(ay.clone(), by.clone()),
+                plus(az.clone(), bz.clone()),
+            ),
+            ("Subtract", [Point3(ax, ay, az), Point3(bx, by, bz)]) => Point3(
+                less(ax.clone(), bx.clone()),
+                less(ay.clone(), by.clone()),
+                less(az.clone(), bz.clone()),
+            ),
+            ("Multiply", [Scalar(k), Point3(x, y, z)])
+            | ("Multiply", [Point3(x, y, z), Scalar(k)]) => {
+                Point3(times(k, x), times(k, y), times(k, z))
+            }
+            ("Divide", [Point3(x, y, z), Scalar(k)]) => Point3(
+                div(x.clone(), k.clone()),
+                div(y.clone(), k.clone()),
+                div(z.clone(), k.clone()),
+            ),
+            ("Negate", [Point3(x, y, z)]) => {
+                Point3(negated(x.clone()), negated(y.clone()), negated(z.clone()))
+            }
+            ("Add" | "Subtract" | "Multiply" | "Divide" | "Power", [Point3(..), _])
+            | ("Add" | "Subtract" | "Multiply" | "Divide" | "Power", [_, Point3(..)]) => {
+                return Err(Error::new(
+                    "a point in space adds to and subtracts from another, and scales by a number: it isn't a complex number",
+                ));
+            }
             ("Add", [Point(ax, ay), Point(bx, by)]) => {
                 Point(plus(ax.clone(), bx.clone()), plus(ay.clone(), by.clone()))
             }
@@ -954,10 +1018,17 @@ impl Lowerer {
         }
     }
 
+    /// Where a point is drawn. A point in space goes through the view.
     fn point(&self, e: &Expr, locals: &Locals) -> Result<[Expr; 2], Error> {
+        Ok(self.placed(e, locals)?.0)
+    }
+
+    /// Where a point is drawn, and its `z` as written if it's a point in space.
+    fn placed(&self, e: &Expr, locals: &Locals) -> Result<([Expr; 2], Option<Expr>), Error> {
         match self.lower(e, locals, 0)? {
-            Val::Point(x, y) => Ok([x, y]),
-            Val::Scalar(x) => Ok([x, num(0.0)]),
+            Val::Point(x, y) => Ok(([x, y], None)),
+            Val::Scalar(x) => Ok(([x, num(0.0)], None)),
+            Val::Point3(x, y, z) => Ok((projected(&x, &y, &z, self.turned), Some(z))),
             other => Err(Error::new(format!(
                 "expected a point, found {}",
                 other.kind()
@@ -968,9 +1039,11 @@ impl Lowerer {
     fn arc(&self, var: &str, point: &Expr, range: &[Expr; 2]) -> Result<Arc, Error> {
         let mut locals = Locals::new();
         locals.insert(var.to_string(), Val::Scalar(Expr::sym(var)));
+        let (point, depth) = self.placed(point, &locals)?;
         Ok(Arc {
             var: var.to_string(),
-            point: self.point(point, &locals)?,
+            point,
+            depth,
             range: [
                 self.scalar(&range[0], &Locals::new())?,
                 self.scalar(&range[1], &Locals::new())?,
@@ -997,6 +1070,12 @@ impl Lowerer {
                 push(Some("x"), x, &mut self.scalars);
                 push(Some("y"), y, &mut self.scalars);
                 Some(Shape::Point)
+            }
+            Val::Point3(x, y, z) => {
+                push(Some("x"), x, &mut self.scalars);
+                push(Some("y"), y, &mut self.scalars);
+                push(Some("z"), z, &mut self.scalars);
+                Some(Shape::Point3)
             }
             Val::Cycle { a, bx, by, c } => {
                 let (x, y, r) = (
@@ -1404,6 +1483,7 @@ fn circle_form(name: &str) -> Result<Form, Error> {
             var: var.to_string(),
             point: [around("x", "Cos"), around("y", "Sin")],
             range: [num(0.0), mul(num(2.0), Expr::sym("Pi"))],
+            depth: None,
         }),
     })
 }
@@ -1455,6 +1535,7 @@ fn cycle_form(name: &str) -> Form {
             var: var.to_string(),
             point: [around("x", "Cos"), around("y", "Sin")],
             range: [num(0.0), mul(num(2.0), Expr::sym("Pi"))],
+            depth: None,
         }),
     }
 }
@@ -2127,8 +2208,11 @@ fn needs(item: &Item) -> Vec<String> {
             refers(inverse, &mut out);
         }
         // What a view fits is found at the end, so it needs nothing defined early.
-        Item::Viewport { x, y, pad, .. } => {
-            all(&mut x.iter().flatten().chain(y.iter().flatten()).chain(pad), &mut out);
+        Item::Viewport { x, y, pad, yaw, .. } => {
+            all(
+                &mut x.iter().flatten().chain(y.iter().flatten()).chain(pad).chain(yaw),
+                &mut out,
+            );
         }
         Item::Style(rule) => all(&mut rule.decls.iter().map(|(_, e)| e), &mut out),
         Item::Outline { .. }
@@ -2507,7 +2591,10 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
         .collect();
     // Labels that share a value's name, which only one label may do.
     let mut value_labels: HashSet<&str> = HashSet::new();
-    let mut lowerer = Lowerer::default();
+    let mut lowerer = Lowerer {
+        turned: items.iter().any(|item| matches!(item, Item::Viewport { yaw: Some(_), .. })),
+        ..Lowerer::default()
+    };
     let mut scene = Scene {
         name,
         params: Vec::new(),
@@ -3183,10 +3270,12 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
                     ];
                     let mut own = locals.clone();
                     own.insert(var.clone(), Val::Scalar(Expr::sym(var)));
+                    let (point, depth) = lowerer.placed(value, &own)?;
                     Ok::<_, Error>(Arc {
                         var: var.clone(),
-                        point: lowerer.point(value, &own)?,
+                        point,
                         range,
+                        depth,
                     })
                 });
                 let lowered_value = match curve {
@@ -3205,6 +3294,17 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
                     (ManyKind::Dots, Val::Point(x, y)) => {
                         named.push(("self.x".to_string(), x));
                         named.push(("self.y".to_string(), y));
+                        (
+                            crate::ir::Shape::Dots([Expr::sym("self.x"), Expr::sym("self.y")]),
+                            "dots",
+                        )
+                    }
+                    // In space, a dot is drawn through the view, and a style can read its `z`.
+                    (ManyKind::Dots, Val::Point3(x, y, z)) => {
+                        let [across, up] = projected(&x, &y, &z, lowerer.turned);
+                        named.push(("self.x".to_string(), across));
+                        named.push(("self.y".to_string(), up));
+                        named.push((crate::style::SELF_Z.to_string(), z));
                         (
                             crate::ir::Shape::Dots([Expr::sym("self.x"), Expr::sym("self.y")]),
                             "dots",
@@ -3415,7 +3515,14 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
                     inverse,
                 });
             }
-            Item::Viewport { x, y, fit, pad } => {
+            Item::Viewport { x, y, fit, pad, yaw } => {
+                if let Some(yaw) = yaw {
+                    let turn = lowerer.scalar(yaw, &none)?;
+                    scene.bindings.push(Binding {
+                        id: VIEW_YAW.to_string(),
+                        expr: turn,
+                    });
+                }
                 let bound =
                     |range: &Option<[Expr; 2]>, fallback: [f64; 2]| -> Result<[f64; 2], Error> {
                         match range {
@@ -4838,6 +4945,101 @@ mod tests {
         let err = scene("let a = b\nlet O = (0, 0)\nbeat b for 1 {\n  dot O\n}").unwrap_err();
         assert!(err.message.contains("can't come early"), "{err}");
         assert_eq!(err.line, 1);
+    }
+
+    /// Where the scene's first dot is drawn.
+    fn dot_at(s: &Scene) -> (f64, f64) {
+        let env = env_of(s, 0.0);
+        let Some(Form::Dot(at)) = s.marks.iter().map(|m| &m.form).find(|f| matches!(f, Form::Dot(_)))
+        else {
+            panic!("no dot");
+        };
+        (eval::real(&at[0], &env).unwrap(), eval::real(&at[1], &env).unwrap())
+    }
+
+    #[test]
+    fn a_point_in_space_is_drawn_looking_down_z() {
+        // With no view, its x and y are where it is, so nothing with only two parts changes.
+        let s = scene("let P = (1, 2, 3)\ndot P").unwrap();
+        assert_eq!(dot_at(&s), (1.0, 2.0));
+        assert_eq!(s.to_json()["marks"][0]["form"]["at"], serde_json::json!(["P.x", "P.y"]));
+        let env = env_of(&s, 0.0);
+        assert_eq!(env.get("P.z"), Some(3.0));
+
+        // A view turned about its vertical axis brings z round toward x, and leaves y alone.
+        let turned = "viewport { x: -4..4, y: -4..4, yaw: a }\nparam a = 0.3 in 0..1\n\
+                      let P = (1, 2, 3)\ndot P";
+        let (x, y) = dot_at(&scene(turned).unwrap());
+        assert!(near(x, 0.3f64.cos() + 3.0 * 0.3f64.sin()), "{x}");
+        assert_eq!(y, 2.0);
+        // A quarter turn puts what was toward the reader on the right.
+        let side = "viewport { x: -4..4, y: -4..4, yaw: π / 2 }\nlet P = (1, 2, 3)\ndot P";
+        let (x, _) = dot_at(&scene(side).unwrap());
+        assert!(near(x, 3.0), "{x}");
+    }
+
+    #[test]
+    fn points_in_space_add_and_scale_and_arent_complex_numbers() {
+        let s = scene(
+            "fn lifted(w, h) = (w.x, w.y, h)
+             let P = lifted((1, 2), 3) + 2·(1, 0, -1) - (0, 1, 0) / 2
+             let Q = -P
+             let depth = P.z",
+        )
+        .unwrap();
+        let env = env_of(&s, 0.0);
+        let at = |name: &str| ["x", "y", "z"].map(|f| env.get(&format!("{name}.{f}")).unwrap());
+        assert_eq!(at("P"), [3.0, 1.5, 1.0]);
+        assert_eq!(at("Q"), [-3.0, -1.5, -1.0]);
+        assert_eq!(env.get("depth"), Some(1.0));
+
+        for wrong in ["(1, 2, 3)·(1, 2, 3)", "(1, 2, 3) + (1, 2)", "(1, 2, 3) + 1", "exp((1, 2, 3))"] {
+            let err = scene(&format!("let P = {wrong}")).unwrap_err();
+            assert!(
+                err.message.contains("a point in space"),
+                "{wrong}: {}",
+                err.message
+            );
+        }
+    }
+
+    #[test]
+    fn a_curve_in_space_keeps_its_depth_for_a_style() {
+        let s = scene("curve c = parametric (u): (cos(u), u, sin(u)) for u in 0..1").unwrap();
+        let Form::Parametric(arc) = &s.marks[0].form else {
+            panic!();
+        };
+        assert_eq!(arc.depth.as_ref().unwrap().to_mathjson().to_string(), r#"["Sin","u"]"#);
+        assert_eq!(s.to_json()["marks"][0]["form"]["arc"]["depth"].to_string(), r#"["Sin","u"]"#);
+        // A curve in the plane has none, and its IR says nothing of one.
+        let flat = scene("curve c = parametric (u): (cos(u), u) for u in 0..1").unwrap();
+        assert!(flat.to_json()["marks"][0]["form"]["arc"].get("depth").is_none());
+
+        // A sheet can read it there, and nowhere else.
+        let space = "curve c = parametric (u): (cos(u), u, sin(u)) for u in 0..1";
+        let plane = "curve c = parametric (u): (cos(u), u) for u in 0..1";
+        let sheet = "style c { stroke: black; opacity: 0.6 + 0.4·sign(self.z); width: 1px + 1px·sign(self.z) }";
+        crate::build(space, &[sheet]).unwrap();
+        let err = crate::build(plane, &[sheet]).unwrap_err();
+        assert!(err.message.contains("self.z"), "{}", err.message);
+    }
+
+    #[test]
+    fn dots_in_space_name_their_depth() {
+        let s = scene("dots d = (k, 0, k - 2) for k in 0..4").unwrap();
+        let Form::Many { lets, .. } = &s.marks[0].form else {
+            panic!();
+        };
+        let names: Vec<&str> = lets.iter().map(|(name, _)| name.as_str()).collect();
+        assert_eq!(names, ["self.x", "self.y", "self.z"]);
+        // So a sheet can size each by it: the two behind have no size, and aren't drawn.
+        let figure = crate::build(
+            "viewport { x: -1..5, y: -1..1 }\ndots d = (k, 0, k - 2.5) for k in 0..4",
+            &["style d { fill: black; radius: 2px + 2px·sign(self.z) }"],
+        )
+        .unwrap();
+        let prepared = crate::frame::prepare(&figure, &crate::frame::Inputs::at(0.0), 300, 100, 1.0).unwrap();
+        assert_eq!(prepared.strokes[0].len() / crate::stroke::FLOATS_PER_SEGMENT, 2);
     }
 
     #[test]

@@ -41,6 +41,7 @@ fn form_exprs(form: &Form) -> Vec<&Expr> {
         Form::Parametric(arc) => {
             out.extend(&arc.point);
             out.extend(&arc.range);
+            out.extend(&arc.depth);
         }
         Form::Polyline { points, .. } => out.extend(points.iter().flatten()),
         Form::Region(parts) => {
@@ -50,6 +51,7 @@ fn form_exprs(form: &Form) -> Vec<&Expr> {
                     Part::Arc(arc) => {
                         out.extend(&arc.point);
                         out.extend(&arc.range);
+                        out.extend(&arc.depth);
                     }
                 }
             }
@@ -71,6 +73,7 @@ fn form_exprs(form: &Form) -> Vec<&Expr> {
                 Shape::Curves(arc) => {
                     out.extend(&arc.point);
                     out.extend(&arc.range);
+                    out.extend(&arc.depth);
                 }
                 Shape::Cycles { a, b, c } => {
                     out.push(a);

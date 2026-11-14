@@ -18,6 +18,9 @@ use crate::parse::{Document, Item};
 pub const SELF_DIST: &str = "self.dist";
 /// Arc-length position along a stroke, 0 to 1. Only legal in `width`.
 pub const SELF_T: &str = "self.t";
+/// A point's third coordinate as written, along a curve of points in space and for each dot of
+/// a collection of them.
+pub const SELF_Z: &str = "self.z";
 /// How big a device pixel is, in world units, wherever `self.dist` can be read.
 pub const SELF_PIXEL: &str = "self.pixel";
 /// A circle's signed curvature, which is below 0 when it runs clockwise and 0 on a line.
@@ -304,11 +307,28 @@ impl MarkStyle {
     }
 
     /// Dashes and tapers depend on position along the curve, which a field can't give.
+    /// The opacity of a line stroke that varies along it, with `self.t` or `self.z`. It's worked
+    /// out where the stroke is built and drawn into its coverage, so shading leaves it alone.
+    pub fn ink(&self) -> Option<&Expr> {
+        self.opacity
+            .as_ref()
+            .filter(|o| uses(o, SELF_T) || uses(o, SELF_Z))
+    }
+
+    /// Whether a stroke's width or opacity reads its points' third coordinate.
+    pub fn reads_depth(&self) -> bool {
+        [&self.width, &self.opacity]
+            .into_iter()
+            .flatten()
+            .any(|e| uses(e, SELF_Z))
+    }
+
     pub fn needs_arc_length(&self) -> bool {
         self.trim.is_some()
             || self.dash.is_some()
             || self.gap.is_some()
             || self.width.as_ref().is_some_and(|w| uses(w, SELF_T))
+            || self.opacity.as_ref().is_some_and(|o| uses(o, SELF_T))
     }
 }
 
@@ -1090,6 +1110,22 @@ fn apply(
         let mut scope = names.to_vec();
         if prop == "width" {
             scope.push(SELF_T);
+        }
+        // A curve's opacity can vary along it too, and for a curve of points in space both
+        // can follow the points' third coordinate.
+        let curve = match form {
+            Form::Parametric(arc) => Some(arc),
+            Form::Many {
+                shape: Shape::Curves(arc),
+                ..
+            } => Some(arc),
+            _ => None,
+        };
+        if let (Some(arc), "width" | "opacity") = (curve, prop.as_str()) {
+            scope.push(SELF_T);
+            if arc.depth.is_some() {
+                scope.push(SELF_Z);
+            }
         }
         if prop == "show" {
             scope.push(VIEW_WIDTH);

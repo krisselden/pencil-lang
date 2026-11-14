@@ -24,6 +24,7 @@ const FIGURES = [
   ['mobius', '010 Möbius', 'corpus/010-mobius/mobius.pen', [THEME, 'corpus/010-mobius/plain.style']],
   ['circumcircle', '011 circumcircle', 'corpus/011-circumcircle/circumcircle.pen', ['corpus/011-circumcircle/plain.style']],
   ['limacon', '012 limaçon', 'corpus/012-limacon/limacon.pen', ['corpus/012-limacon/plain.style']],
+  ['tube', '013 tube', 'corpus/013-tube/tube.pen', [THEME, 'corpus/013-tube/plain.style']],
   ['explainer', 'Explainer: limaçon', 'lab/explainer/limacon.pen',
     [THEME, 'corpus/dark.style', 'lab/explainer/limacon.style', 'lab/explainer/caption.style']],
 ].map(([id, name, pen, sheets]) => ({ id, name, pen, sheets }));

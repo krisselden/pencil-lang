@@ -12,7 +12,7 @@ use crate::eval::{self, Env};
 use crate::fast;
 use crate::frame::{self, DEFAULT_STROKE_WIDTH};
 use crate::ir::{Arc, Expr, Form, Part, Shape, Viewport};
-use crate::style::{Cap, MarkStyle, SELF_SCALE, SELF_T};
+use crate::style::{Cap, MarkStyle, SELF_SCALE, SELF_T, SELF_Z};
 use crate::trace::{Polyline, trace};
 
 pub const FLOATS_PER_SEGMENT: usize = 12;
@@ -59,6 +59,8 @@ pub fn box_coverage(t: f64, nx: f64, ny: f64) -> f64 {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Sampled {
     pub pieces: Vec<Vec<[f64; 2]>>,
+    /// The parameter at each point of each piece.
+    pub params: Vec<Vec<f64>>,
     /// Whether the point exists across the whole range, as far as sampling can tell.
     pub complete: bool,
 }
@@ -94,6 +96,7 @@ fn sample_within(
     if hi == lo {
         return Ok(Sampled {
             pieces: Vec::new(),
+            params: Vec::new(),
             complete: true,
         });
     }
@@ -133,7 +136,9 @@ fn sample_within(
     }
     let first = at(lo)?;
     let mut current: Vec<[f64; 2]> = first.into_iter().collect();
+    let mut current_at: Vec<f64> = first.map(|_| lo).into_iter().collect();
     let mut pieces = Vec::new();
+    let mut params = Vec::new();
     let mut complete = first.is_some();
     let mut stack = Vec::new();
     let mut previous = first;
@@ -196,23 +201,36 @@ fn sample_within(
         match (span.p0, span.p1) {
             (Some(_), Some(p1)) if jump => {
                 pieces.push(std::mem::take(&mut current));
+                params.push(std::mem::take(&mut current_at));
                 current = vec![p1];
+                current_at = vec![span.t1];
             }
-            (Some(_), Some(p1)) => current.push(p1),
+            (Some(_), Some(p1)) => {
+                current.push(p1);
+                current_at.push(span.t1);
+            }
             (Some(_), None) => {
                 complete = false;
                 pieces.push(std::mem::take(&mut current));
+                params.push(std::mem::take(&mut current_at));
             }
             (None, Some(p1)) => {
                 complete = false;
                 current = vec![p1];
+                current_at = vec![span.t1];
             }
             (None, None) => {}
         }
     }
     pieces.push(current);
+    params.push(current_at);
+    params.retain(|piece| piece.len() >= 2);
     pieces.retain(|piece| piece.len() >= 2);
-    Ok(Sampled { pieces, complete })
+    Ok(Sampled {
+        pieces,
+        params,
+        complete,
+    })
 }
 
 /// Whether an expression can't change between frames: it uses no bindings or signals.
@@ -269,6 +287,7 @@ pub fn lines(
             Ok(vec![Polyline {
                 points: world,
                 closed: *closed,
+                params: Vec::new(),
             }])
         }
         Form::Region(parts) => {
@@ -291,6 +310,7 @@ pub fn lines(
             Ok(vec![Polyline {
                 points: world,
                 closed: true,
+                params: Vec::new(),
             }])
         }
         // An arrow is built in device pixels, where its head has its size.
@@ -465,7 +485,7 @@ pub fn build(
             } else {
                 line
             };
-            push_line(&line, style, env, dpr, &to_device, &mut segments)?;
+            push_line(&line, style, env, dpr, &to_device, None, &mut segments)?;
         }
         layers.push(segments);
     }
@@ -492,6 +512,7 @@ fn trimmed(arc: &Arc, style: &MarkStyle, env: &Env) -> Result<Option<Arc>, Error
         var: arc.var.clone(),
         point: arc.point.clone(),
         range: [Expr::Num(lo), Expr::Num(lo + (hi - lo) * trim)],
+        depth: arc.depth.clone(),
     }))
 }
 
@@ -538,8 +559,9 @@ fn push_ticks(
                 [c[0] + uy * long / 2.0, c[1] - ux * long / 2.0],
             ],
             closed: false,
+            params: Vec::new(),
         };
-        push_line(&tick, &plain, env, dpr, &|p| p, segments)?;
+        push_line(&tick, &plain, env, dpr, &|p| p, None, segments)?;
     }
     Ok(())
 }
@@ -566,6 +588,7 @@ fn trim_line(line: &Polyline, fraction: f64) -> Polyline {
     Polyline {
         points,
         closed: false,
+        params: Vec::new(),
     }
 }
 
@@ -586,9 +609,14 @@ fn arc_lines(
     Ok(sampled
         .pieces
         .into_iter()
-        .map(|points| {
+        .zip(sampled.params)
+        .map(|(points, params)| {
             let closed = fixed && close_enough(points[0], points[points.len() - 1]);
-            Polyline { points, closed }
+            Polyline {
+                points,
+                closed,
+                params,
+            }
         })
         .collect())
 }
@@ -613,7 +641,7 @@ fn push_arc(
         // Dashes and tapers measure along the line, so they need all of it.
         let frame_only = !style.needs_arc_length();
         for line in arc_lines(arc, env, view, width, height, frame_only)? {
-            push_line(&line, style, env, dpr, &to_device, segments)?;
+            push_line(&line, style, env, dpr, &to_device, Along::of(arc), segments)?;
         }
         return Ok(());
     };
@@ -644,7 +672,16 @@ fn push_arc(
             }
             None => wanted,
         };
-        push_curve_arrow(&points, wanted.min(limit), style, env, dpr, segments)?;
+        push_curve_arrow(
+            &points,
+            &line.params,
+            wanted.min(limit),
+            style,
+            env,
+            dpr,
+            Along::of(arc),
+            segments,
+        )?;
     }
     Ok(())
 }
@@ -683,19 +720,23 @@ fn push_outline(
     let line = Polyline {
         points: vec![[x0, y0], [x1, y0], [x1, y1], [x0, y1], [x0, y0]],
         closed: true,
+        params: Vec::new(),
     };
-    push_line(&line, style, env, dpr, &|p| p, segments)
+    push_line(&line, style, env, dpr, &|p| p, None, segments)
 }
 
 /// A line in device pixels that ends in a head. The stroke stops inside the head, so its cap
 /// doesn't poke past the tip, and the head points along the chord from there, so the stroke
 /// ends on its axis even where the curve bends.
+#[allow(clippy::too_many_arguments)]
 fn push_curve_arrow(
     points: &[[f64; 2]],
+    params: &[f64],
     head: f64,
     style: &MarkStyle,
     env: &Env,
     dpr: f64,
+    along: Option<Along>,
     segments: &mut Vec<f32>,
 ) -> Result<(), Error> {
     let Some(&tip) = points.last() else {
@@ -721,11 +762,24 @@ fn push_curve_arrow(
     let end = at(lo);
     let mut stroke: Vec<[f64; 2]> = points[..=outer].to_vec();
     stroke.push(end);
+    // The curve's parameter where the stroke stops, so a style can still read along it.
+    let mut stroke_params = Vec::new();
+    if params.len() == points.len() {
+        stroke_params.extend_from_slice(&params[..=outer]);
+        stroke_params.push(params[outer] + (params[outer + 1] - params[outer]) * lo);
+    }
     let line = Polyline {
         points: stroke,
         closed: false,
+        params: stroke_params,
     };
-    push_line(&line, style, env, dpr, &|p| p, segments)?;
+    let before = segments.len();
+    push_line(&line, style, env, dpr, &|p| p, along, segments)?;
+    // The head has the ink the stroke ends with, so it fades with it.
+    let faded = match segments.len() > before {
+        true => segments[segments.len() - 1],
+        false => 0.0,
+    };
     let (dx, dy) = (tip[0] - end[0], tip[1] - end[1]);
     let len = dx.hypot(dy);
     if len <= 0.0 {
@@ -744,7 +798,7 @@ fn push_curve_arrow(
         0.0,
         0.0,
         head as f32,
-        0.0,
+        faded,
     ]);
     Ok(())
 }
@@ -1031,9 +1085,10 @@ fn push_instance(
             let line = Polyline {
                 points: vec![end(-reach), end(reach)],
                 closed: false,
+                params: Vec::new(),
             };
             instance(lets, shape, env)?;
-            return push_line(&line, style, env, frame.dpr, &|p| p, segments);
+            return push_line(&line, style, env, frame.dpr, &|p| p, None, segments);
         }
     };
     // A size that reads the instance needs its `with` names, which only `eval` looks at.
@@ -1081,8 +1136,9 @@ fn push_instance(
                         .map(|i| at(std::f64::consts::TAU * i as f64 / pieces as f64))
                         .collect(),
                     closed: true,
+                    params: Vec::new(),
                 };
-                return push_line(&line, style, env, frame.dpr, &|p| p, segments);
+                return push_line(&line, style, env, frame.dpr, &|p| p, None, segments);
             }
             // Only the arc that can be on the frame, as seen from a circle around the frame. A
             // huge circle is nearly all off it, and this keeps what's left to the flatness.
@@ -1155,8 +1211,9 @@ fn push_arrow(
     let shaft = Polyline {
         points: vec![a, [b[0] - ux * head * 0.8, b[1] - uy * head * 0.8]],
         closed: false,
+        params: Vec::new(),
     };
-    push_line(&shaft, style, env, dpr, &|p| p, segments)?;
+    push_line(&shaft, style, env, dpr, &|p| p, None, segments)?;
     segments.extend_from_slice(&[
         (b[0] - ux * head) as f32,
         (b[1] - uy * head) as f32,
@@ -1185,9 +1242,14 @@ pub fn half_width(style: &MarkStyle, env: &Env, dpr: f64) -> Result<f64, Error> 
     };
     let mut env = env.clone();
     let mut widest: f64 = 0.0;
-    for k in 0..=16 {
-        env.set(SELF_T, k as f64 / 16.0);
-        widest = widest.max(pixels(width, &env)?);
+    // A width that follows depth is tried far behind, at the middle and far in front.
+    let depths: &[f64] = if style.reads_depth() { &[-1e9, 0.0, 1e9] } else { &[0.0] };
+    for depth in depths {
+        env.set(SELF_Z, *depth);
+        for k in 0..=16 {
+            env.set(SELF_T, k as f64 / 16.0);
+            widest = widest.max(pixels(width, &env)?);
+        }
     }
     Ok(widest / 2.0)
 }
@@ -1197,12 +1259,47 @@ fn pixels(e: &Expr, env: &Env) -> Result<f64, Error> {
     frame::length(e, env)
 }
 
+/// A curve's own parameter and its points' third coordinate, for a style that reads `self.z`.
+#[derive(Clone, Copy)]
+struct Along<'a> {
+    var: &'a str,
+    depth: &'a Expr,
+}
+
+impl<'a> Along<'a> {
+    fn of(arc: &'a Arc) -> Option<Along<'a>> {
+        arc.depth.as_ref().map(|depth| Along {
+            var: &arc.var,
+            depth,
+        })
+    }
+}
+
+/// How finely a stroke is cut where its style changes along it: a piece is no longer than this,
+/// in device pixels, where the change is, so a step lands where it happens and not at the
+/// nearest sample.
+const CUT_PX: f64 = 0.25;
+/// How much a piece's ink can differ end to end before it's cut again. A piece has one ink.
+const INK_STEP: f64 = 1.0 / 64.0;
+const CUT_DEPTH: usize = 16;
+
+/// A place on a stroke: where, how far along, and its half width and ink there.
+#[derive(Clone, Copy)]
+struct Spot {
+    at: [f64; 2],
+    run: f64,
+    param: f64,
+    radius: f64,
+    ink: f64,
+}
+
 fn push_line(
     line: &Polyline,
     style: &MarkStyle,
     env: &Env,
     dpr: f64,
     to_device: &impl Fn([f64; 2]) -> [f64; 2],
+    along: Option<Along>,
     segments: &mut Vec<f32>,
 ) -> Result<(), Error> {
     let points: Vec<[f64; 2]> = line.points.iter().map(|p| to_device(*p)).collect();
@@ -1217,15 +1314,76 @@ fn push_line(
         return Ok(());
     }
 
+    // What the style reads along the stroke. Its `z` needs the curve's own parameter at each
+    // point, which only a curve of points in space has.
+    let along = along.filter(|_| line.params.len() == points.len());
+    let by_depth = style.reads_depth();
+    if by_depth && along.is_none() {
+        return Err(Error::new(
+            "`self.z` is a point's third coordinate, and this isn't a curve of points in space",
+        ));
+    }
+    let ink = style.ink();
     let mut env = env.clone();
-    let mut radii = Vec::with_capacity(points.len());
-    for s in &lengths {
-        env.set(SELF_T, s / total);
+    let mut spot = |at: [f64; 2], run: f64, param: f64| -> Result<Spot, Error> {
+        env.set(SELF_T, run / total);
+        if let (true, Some(along)) = (by_depth, along) {
+            env.set(along.var, param);
+            let z = eval::real(along.depth, &env)?;
+            env.set(SELF_Z, z);
+        }
         let width = match &style.width {
             Some(w) => pixels(w, &env)?,
             None => DEFAULT_STROKE_WIDTH * dpr,
         };
-        radii.push((width / 2.0).max(0.0));
+        let ink = match ink {
+            Some(ink) => eval::real(ink, &env)?.clamp(0.0, 1.0),
+            None => 1.0,
+        };
+        Ok(Spot {
+            at,
+            run,
+            param,
+            radius: (width / 2.0).max(0.0),
+            ink,
+        })
+    };
+    let param = |i: usize| line.params.get(i).copied().unwrap_or(0.0);
+    let mut spots = Vec::with_capacity(points.len());
+    for (i, point) in points.iter().enumerate() {
+        spots.push(spot(*point, lengths[i], param(i))?);
+    }
+    // Where ink changes, or a width that follows depth, cut the stroke until each piece is
+    // even, so the change is where the curve says and not where a sample happened to fall.
+    if ink.is_some() || by_depth {
+        let mut cut = Vec::with_capacity(spots.len());
+        cut.push(spots[0]);
+        for pair in spots.windows(2) {
+            // Last first, so they come off the stack in order.
+            let mut stack = vec![(pair[0], pair[1], 0)];
+            while let Some((a, b, depth)) = stack.pop() {
+                let long = b.run - a.run > CUT_PX && depth < CUT_DEPTH;
+                let stepped = (a.ink - b.ink).abs() > INK_STEP;
+                if !long || !(stepped || by_depth) {
+                    cut.push(b);
+                    continue;
+                }
+                let middle = spot(
+                    [(a.at[0] + b.at[0]) / 2.0, (a.at[1] + b.at[1]) / 2.0],
+                    (a.run + b.run) / 2.0,
+                    (a.param + b.param) / 2.0,
+                )?;
+                // A width that runs straight from one end to the other needs no cut.
+                let bent = (middle.radius - (a.radius + b.radius) / 2.0).abs() > 0.02;
+                if stepped || bent {
+                    stack.push((middle, b, depth + 1));
+                    stack.push((a, middle, depth + 1));
+                } else {
+                    cut.push(b);
+                }
+            }
+        }
+        spots = cut;
     }
 
     let (mut on, mut period) = (0.0, 0.0);
@@ -1249,26 +1407,29 @@ fn push_line(
     }
 
     // A loop of constant width has no ends. A taper's seam does: the width jumps there.
-    let seamless = line.closed && (radii[0] - radii[radii.len() - 1]).abs() < 1e-6;
+    let seamless = line.closed && (spots[0].radius - spots[spots.len() - 1].radius).abs() < 1e-6;
     let clip = if seamless || style.cap == Cap::Round {
         0.0
     } else {
         total
     };
-    for i in 0..points.len() - 1 {
+    for pair in spots.windows(2) {
+        let (a, b) = (pair[0], pair[1]);
         segments.extend_from_slice(&[
-            points[i][0] as f32,
-            points[i][1] as f32,
-            points[i + 1][0] as f32,
-            points[i + 1][1] as f32,
-            radii[i] as f32,
-            radii[i + 1] as f32,
-            lengths[i] as f32,
-            lengths[i + 1] as f32,
+            a.at[0] as f32,
+            a.at[1] as f32,
+            b.at[0] as f32,
+            b.at[1] as f32,
+            a.radius as f32,
+            b.radius as f32,
+            a.run as f32,
+            b.run as f32,
             on as f32,
             period as f32,
             clip as f32,
-            0.0,
+            // How much of its ink the piece is missing, so that none missing is 0, as it is
+            // for everything that isn't a line.
+            (1.0 - (a.ink + b.ink) / 2.0) as f32,
         ]);
     }
     Ok(())
@@ -1317,7 +1478,9 @@ pub fn segment_coverage(s: &[f32], px: f64, py: f64) -> f64 {
         coverage *= (0.5 + position).clamp(0.0, 1.0);
         coverage *= (0.5 + f(10) - position).clamp(0.0, 1.0);
     }
-    coverage
+    // A piece's ink, for an opacity that varies along a stroke. Where pieces overlap, the
+    // most ink wins, so what's faded never dims what's drawn in full over it.
+    coverage * (1.0 - f(11))
 }
 
 /// The CPU equivalent of the coverage pass: each segment's quad, combined by maximum.
@@ -1768,6 +1931,7 @@ mod tests {
         let line = Polyline {
             points: vec![[0.0, 0.0], [2.0, 0.0], [2.0, 2.0], [0.0, 0.0]],
             closed: true,
+            params: Vec::new(),
         };
         let half = trim_line(&line, 0.4);
         assert!(!half.closed);
@@ -1836,6 +2000,78 @@ mod tests {
         let segments: Vec<&[f32]> = s.chunks(FLOATS_PER_SEGMENT).collect();
         assert!((segments[0][4] - 0.5).abs() < 1e-3);
         assert!((segments.last().unwrap()[5] - 5.0).abs() < 1e-3);
+    }
+
+    /// A line across the view, in space: its z is its x less `c`, so it crosses z = 0 at x = c.
+    fn crossing(c: f64, sheet: &str) -> Vec<f32> {
+        let doc = format!(
+            "viewport {{ x: -1..1, y: -1..1 }}\nlet c = {c}\n\
+             curve l = parametric (u): (u, 0, u - c) for u in -1..1"
+        );
+        layer_of(&doc, sheet, 400)
+    }
+
+    #[test]
+    fn an_opacity_that_follows_depth_cuts_the_stroke_at_the_crossing() {
+        // The line is straight, so it's sampled every 12.5 pixels, and the cut still lands on
+        // the crossing, wherever that is between samples.
+        for c in [-0.613, 0.0, 0.2071, 0.75] {
+            let s = crossing(c, "style l { stroke: black; width: 2px; opacity: 0.6 + 0.4·sign(self.z) }");
+            let at = (c + 1.0) * 200.0;
+            let (mut behind, mut ahead) = (0, 0);
+            for g in s.chunks(FLOATS_PER_SEGMENT) {
+                let (x0, x1, faded) = (g[0] as f64, g[2] as f64, g[11] as f64);
+                if x1 <= at - CUT_PX {
+                    assert!((faded - 0.8).abs() < 1e-6, "c = {c}: {faded} at {x0}..{x1}");
+                    behind += 1;
+                } else if x0 >= at + CUT_PX {
+                    assert!(faded.abs() < 1e-6, "c = {c}: {faded} at {x0}..{x1}");
+                    ahead += 1;
+                }
+            }
+            assert!(behind > 0 && ahead > 0, "c = {c}");
+            // And coverage carries it: full ink ahead of the crossing, a fifth behind.
+            let coverage = rasterize(&s, 400, 400);
+            let on_line = |x: f64| coverage[200 * 400 + x as usize];
+            assert!((on_line(at + 6.0) - 1.0).abs() < 1e-6, "c = {c}");
+            assert!((on_line(at - 6.0) - 0.2).abs() < 1e-6, "c = {c}");
+        }
+    }
+
+    #[test]
+    fn a_width_that_follows_depth_steps_at_the_crossing() {
+        let s = crossing(0.2071, "style l { stroke: black; width: 4px + 2px·sign(self.z) }");
+        let at = 1.2071 * 200.0;
+        for g in s.chunks(FLOATS_PER_SEGMENT) {
+            let (x0, x1) = (g[0] as f64, g[2] as f64);
+            if x1 <= at - CUT_PX {
+                assert_eq!((g[4], g[5]), (1.0, 1.0), "{x0}..{x1}");
+            } else if x0 >= at + CUT_PX {
+                assert_eq!((g[4], g[5]), (3.0, 3.0), "{x0}..{x1}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_stroke_that_reads_nothing_along_it_is_cut_nowhere() {
+        // The same line with a plain style is its samples and no more, with all its ink.
+        let plain = crossing(0.2071, "style l { stroke: black; width: 2px; opacity: 0.5 }");
+        assert_eq!(plain.len() / FLOATS_PER_SEGMENT, INITIAL_INTERVALS);
+        assert!(plain.chunks(FLOATS_PER_SEGMENT).all(|g| g[11] == 0.0));
+        // And a taper, which runs straight between samples, isn't cut either.
+        let taper = crossing(0.2071, "style l { stroke: black; width: 1px + 3px·self.t }");
+        assert_eq!(taper.len() / FLOATS_PER_SEGMENT, INITIAL_INTERVALS);
+    }
+
+    #[test]
+    fn an_arrows_head_fades_with_its_stroke() {
+        // The curve ends behind, at z = -1, so its head is as faint as the stroke there.
+        let doc = "viewport { x: -1..1, y: -1..1 }\n\
+                   curve l = parametric (u): (u, 0, -u) for u in -0.8..0.8";
+        let s = layer_of(doc, "style l { stroke: black; width: 2px; head: 12px; opacity: 0.6 + 0.4·sign(self.z) }", 400);
+        let head = &s[s.len() - FLOATS_PER_SEGMENT..];
+        assert_eq!(head[5], 0.0, "the head comes to a point");
+        assert!((head[11] - 0.8).abs() < 1e-6, "{}", head[11]);
     }
 
     #[test]

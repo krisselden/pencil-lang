@@ -1329,6 +1329,100 @@ fn limacon_ir_matches_golden() {
     assert_eq!(actual, std::fs::read_to_string(golden).unwrap());
 }
 
+fn tube_sheets() -> [String; 2] {
+    [square_read("theme.style"), square_read("013-tube/plain.style")]
+}
+
+#[test]
+fn tube_ir_matches_golden() {
+    let [theme, plain] = tube_sheets();
+    let figure = build(&square_read("013-tube/tube.pen"), &[&theme, &plain]).unwrap();
+    let actual = golden_text(&figure.scene.to_json());
+    let golden =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus/013-tube/expected.ir.json");
+    if std::env::var_os("UPDATE_GOLDENS").is_some() {
+        std::fs::write(&golden, &actual).unwrap();
+    }
+    assert_eq!(actual, std::fs::read_to_string(golden).unwrap());
+}
+
+/// What the tube is for: a row that runs off the top of the strip comes back in at the bottom as
+/// the row p along, which is the next row of its own arm, so rolled up they're one line.
+#[test]
+fn a_row_off_the_top_of_the_tube_comes_back_as_the_next_of_its_arm() {
+    for p in 1..=3 {
+        let doc = square_read("013-tube/tube.pen")
+            + "\nlet out = row(0, last(0, height))
+               let back = row(p, first(p, height))
+               let other = row(1, first(1, height))
+               let out_rolled = rolled(out)
+               let back_rolled = rolled(back)";
+        let figure = build(&doc, &[]).unwrap();
+        // Fully rolled, and partly, which the seam hasn't closed yet.
+        for roll in [1.0, 0.5] {
+            let env = pencil_core::eval::frame_env(
+                &figure,
+                &pencil_core::frame::Inputs {
+                    time: 0.0,
+                    params: vec![("p".to_string(), p as f64), ("roll".to_string(), roll)],
+                },
+            )
+            .unwrap();
+            let get = |name: &str| env.get(name).unwrap();
+            let tau = 2.0 * std::f64::consts::PI;
+            // Row 0 leaves through the top, and row p comes in through the bottom, right below.
+            assert!((get("out.y") - tau).abs() < 1e-9, "p = {p}: out at {}", get("out.y"));
+            assert!(get("back.y").abs() < 1e-9, "p = {p}: back at {}", get("back.y"));
+            assert!((get("out.x") - get("back.x")).abs() < 1e-9, "p = {p}");
+            // The row beside it is another arm's unless there's only one arm, and comes in elsewhere.
+            if p > 1 {
+                assert!((get("out.x") - get("other.x")).abs() > 0.1, "p = {p}");
+            }
+            let apart = ["x", "y", "z"]
+                .map(|f| get(&format!("out_rolled.{f}")) - get(&format!("back_rolled.{f}")))
+                .iter()
+                .map(|d| d * d)
+                .sum::<f64>()
+                .sqrt();
+            // The seam is closed once it's fully rolled: top and bottom are one line of the tube.
+            match roll == 1.0 {
+                true => assert!(apart < 1e-9, "p = {p}: {apart} apart when rolled"),
+                false => assert!(apart > 0.1, "p = {p}: {apart} apart when half rolled"),
+            }
+        }
+    }
+}
+
+/// The far side is `z < 0` however far it's rolled: the strip's middle faces the reader, and what
+/// a turn carries to the back has gone behind the axis.
+#[test]
+fn the_tubes_far_side_is_behind_its_axis() {
+    let doc = square_read("013-tube/tube.pen")
+        + "\nlet middle = rolled(π·i)\nlet seam = rolled(0)";
+    let figure = build(&doc, &[]).unwrap();
+    let at = |roll: f64, turn: f64| {
+        let env = pencil_core::eval::frame_env(
+            &figure,
+            &pencil_core::frame::Inputs {
+                time: 0.0,
+                params: vec![("roll".to_string(), roll), ("turn".to_string(), turn)],
+            },
+        )
+        .unwrap();
+        (env.get("middle.z").unwrap(), env.get("seam.z").unwrap())
+    };
+    // Not turned, the middle faces the reader at every stage, and nothing is behind until the
+    // strip is rolled more than half way round.
+    for roll in [0.01, 0.3, 0.5, 1.0] {
+        let (middle, seam) = at(roll, 0.0);
+        assert!((middle - 1.0 / roll).abs() < 1e-9, "roll = {roll}");
+        assert_eq!(seam < -1e-9, roll > 0.5, "roll = {roll}: the seam is at z = {seam}");
+    }
+    // Rolled and turned half way, they've changed places.
+    let (middle, seam) = at(1.0, 180.0);
+    assert!((middle + 1.0).abs() < 1e-9 && (seam - 1.0).abs() < 1e-9);
+}
+
 // Complex numbers here are worked out by hand, apart from anything the compiler does.
 type Z = (f64, f64);
 fn z_mul(a: Z, b: Z) -> Z {

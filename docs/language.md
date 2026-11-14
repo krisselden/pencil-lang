@@ -101,6 +101,8 @@ direction. A collection's `for i in a..b` counts up, and is empty when `b` is be
 - `fit: a b c`: bounds these points and circles each frame instead of a fixed window, ignoring
   any param a handle has taken over, so a drag doesn't rescale the figure under the pointer.
 - `pad: 0.04`: extra space around a `fit`, as a fraction of its size.
+- `yaw: 0.45·roll`: how far the view is turned about its vertical axis, for points in space (see Points in space). It can
+  read params and `time`, so a view can turn as a figure plays.
 
 A viewport says what part of the plane the figure shows, and not how big it's drawn. That depends on where it's drawn, so it's
 a sheet's: `style figure { width: 640px; height: 400px }` (see Styles). The same figure can be 16:9 in a video's sheet and fit a
@@ -357,6 +359,29 @@ Undo takes it back. Text with a backslash, a `^{`, or a leading `$` is LaTeX, an
 | `snap(x)`, `snap(x, power)` | 0 at or before 0, and 1 at or after 1: gets there fast, then eases in. `power` defaults to 5. |
 | `timeline(time, start, end, …)` | Which step of a list of moves a time is in: whole while holding, and between two, linearly, while moving. |
 
+### Points in space
+
+`(x, y, z)` is a point in space. A mark draws it looking down z, which comes toward the reader, so it's drawn at its `x`
+and `y`, and a figure that never writes a `z` is the same figure it was. The view is orthographic: nothing gets smaller
+with distance.
+
+- **It's a vector, and not a complex number.** It adds to and subtracts from another, scales by a number, and has `.x`,
+  `.y` and `.z`. Multiplying two, or passing one to `exp`, is an error. A function can build one from a point in the
+  plane: `fn rolled(w) = (w.x, r·sin(w.y), r·cos(w.y))`.
+- **Any mark can take one where it takes a point:** a dot, a curve's point, a segment's ends, a label's place.
+- **A viewport's `yaw` turns the view** about its vertical axis, so `z` comes round toward `x`:
+  a point is drawn at `x·cos(yaw) + z·sin(yaw)`, and its `y`.
+- **A sheet can read a point's `z`, as `self.z`,** along a `curve` or `curves` of points in space, in `width` and `opacity`,
+  and for each of a collection of `dots`, in `radius`. It's the `z` the figure wrote, before the view turns. So a figure
+  that puts a tube's axis at `z = 0` has its far side at `z < 0`, and its sheet can say
+  `opacity: mix(0.25, 1, smoothstep(-0.04, 0.04, self.z))`. Where that changes along a curve, the stroke is cut there, to a
+  quarter of a pixel, and not at the nearest sample, so the cut moves evenly as the figure does.
+- **Nothing is hidden behind anything.** Marks are drawn in the order they're written, as in the plane. Where strokes of one
+  curve or one collection overlap, the one with more ink shows, so a faded far side never dims a near side that crosses it.
+
+`corpus/013-tube` is the example. Not built: a view that pitches or that a reader turns by dragging, `self.z` on segments,
+polygons and single dots, a color that follows depth, and drawing by depth.
+
 ### Points and constructions
 
 | Function | Meaning |
@@ -475,7 +500,8 @@ the color stays with the disk. A style can tell which it is from `self.curvature
 | `self.dist` | Distance to the mark, in `fill`, `stroke` and `fill_opacity`, on marks that have one, and negative inside. It's a true distance: an implicit curve's is measured to the curve as traced in view, so `cos(24·self.dist)` makes even bands. |
 | `self.pixel` | How big a device pixel is in world units, wherever `self.dist` is, so that a glow can be a number of the screen's pixels across. It's what the screen can resolve, not the design: `1px` is a device pixel only at the design size on a 1× screen. |
 | `self.curvature` | A circle's signed curvature: above 0 counterclockwise, below 0 clockwise, and 0 on a line. |
-| `self.t` | Position along a stroke, 0 to 1, in `width`. |
+| `self.t` | Position along a stroke, 0 to 1, in `width`, and in a curve's `opacity`. |
+| `self.z` | A point's third coordinate as the figure wrote it: along a curve of points in space, in `width` and `opacity`, and for each dot of a collection of them, in `radius`. See Points in space. |
 | `self.age` | See Beats. |
 | `self.life` | How present the mark is, from 0 before a beat shows it to 1, and back to 0 as one drops it, moving with those beats. 1 for a mark no beat names. |
 | `self.focus` | How much the beats are about the mark, from 0 to 1, changing as a beat that names something moves. 1 until a beat names anything. |
@@ -500,14 +526,14 @@ pixels, so they can't be in `em`.
 | `fill` | Regions, dots, labels, facets | A color. A field's `fill` needs a facet. |
 | `fill_opacity` | Anything filled | Scales only the fill, on top of `opacity`. |
 | `stroke` | Curves, lines, regions, dots | A color. |
-| `width` | Strokes | A length. Can vary along the stroke with `self.t`. |
+| `width` | Strokes | A length. Can vary along the stroke with `self.t`, and with `self.z` on a curve of points in space. |
 | `head`, `head_span` | Curves | With `head: 13px`, a curve ends in an arrowhead. `head_span: 1` holds it to 60% of the last 1 of the curve's parameter, so it can't dwarf a spiral's tight turns. |
 | `dash`, `gap` | Lines | Lengths. A loop gets a whole number of dashes, stretched to fit. `dash: 0`, like `dash: none`, is solid. |
 | `cap` | Lines | `butt` (default) or `round`. |
 | `draw` | Strokes | A hint: `auto` (default), `line` or `field`. |
 | `blend` | Edges, sides | `gamma` (default, as SVG does), `linear`, or `add`, which adds to what's there in display values and never covers it. |
 | `tone` | `paper` | `clip` (default) or `tanh`, which runs the finished picture through `tanh` in display values, so that what `blend: add` piles up stays in range. Or a number from 0 to 1 between them, which can change, so a figure can turn into one that adds light: `tone: glow` with a beat named `glow`. |
-| `opacity` | Any mark | Scales the whole mark. |
+| `opacity` | Any mark | Scales the whole mark. On a `curve` or `curves` it can vary along the stroke, with `self.t` and `self.z`: each part of the stroke has that much ink, and where parts overlap the most ink shows. |
 | `ticks`, `tick` | Segments | How many short marks cross its middle, saying it's as long as another with as many, and how long each is, 10 px by default. Drawn in its stroke without its dashes, once a trimmed segment reaches its middle. |
 | `leader`, `leader_gap` | Labels | A line from its point to its text, this wide, in the text's color. It starts `leader_gap` from the point, so it can meet a ring, and stops a little short of the text, wherever the label settles. |
 | `radius` | Dots, circles, outlines | A length. A dot's size, a cap on a collection's circles, or an outline's least half-size. |
@@ -552,6 +578,11 @@ Newest first. "Why" is the reason at the time, so these can be revisited.
 
 | Date | Decision | Why |
 |---|---|---|
+| 2026-11-14 | A point can have a `z`, and a mark draws it looking down z | Kris wants the blog's 3D figures in Pencil. All three are orthographic strokes and flat fills, with no lighting, so a third coordinate that drawing drops covers them, and a figure with no `z` doesn't change. The projection is worked out when a mark is compiled, so no renderer learned anything new |
+| 2026-11-14 | A point in space isn't a complex number | A point in the plane multiplies and goes through `exp`, which is why the lattice and the Möbius figures are short. None of that has a meaning in space, so it's an error there, and space gets only what a vector has |
+| 2026-11-14 | The far side of a surface is a sheet's choice, read from `self.z` | The site's tube split each row into front and back paths at the nearest of 48 samples, which Kris found jumpy and hacky, and wanted as a style: "something like z < 0". The figure says where each point is, and puts the tube's axis at z = 0, so z < 0 is the side facing away however far it's rolled. The sheet fades it. The stroke is cut where the style changes, so the cut is at the crossing |
+| 2026-11-14 | A stroke's `opacity` can vary along it, and overlapping parts show the most ink | A stroke had one opacity. Varying it per part, drawn into the stroke's coverage, costs no new texture or pass, and since coverage already combines by maximum, a near strand always shows over a far one it crosses, with no sorting by depth. The cost: the color can't vary along a stroke, only how much of it there is |
+| 2026-11-14 | `self.z` is the figure's `z`, not the distance from the eye | With the view turned by `yaw`, distance from the eye mixes in `x`, and isn't which side of the tube a point is on. Which side faces the reader is the surface's normal against the view, and for a tube about the x axis that's the sign of `z` for any `yaw` short of a quarter turn. A figure knows its surface, so it's the one to say |
 | 2026-11-14 | `use "file"` puts another file's statements in the figure, in the one set of names | Kris: the limaçon explainer's 32 beats were already a lot in one file, and helpers are written again in each figure. One namespace, because the parts of a story aren't independent: a later part drops and moves what an earlier one drew. The alternative, modules with their own names and imports, would make every part list what it takes from the others. Libraries with their own names are the next step, and build on this |
 | 2026-11-14 | A used file joins once | So two parts can both `use` the helpers they need without defining them twice. Nothing has needed the same file twice, and its names would collide if it did |
 | 2026-11-14 | The core says which files it needs and a host reads them | The same core runs natively and in a page, where reading is a fetch. A name is the path from the using file, so the command and a page find the same file |

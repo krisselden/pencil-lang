@@ -237,6 +237,8 @@ fn fs(in: Varying) -> @location(0) vec4<f32> {
         c *= clamp(0.5 + position, 0.0, 1.0);
         c *= clamp(0.5 + in.dash.z - position, 0.0, 1.0);
     }
+    // A piece's ink, as in `segment_coverage`.
+    c *= 1.0 - in.dash.w;
     return vec4<f32>(c, 0.0, 0.0, 1.0);
 }
 "#
@@ -341,6 +343,8 @@ pub fn emit_expr(e: &Expr) -> String {
 
 fn opacity_of(style: &MarkStyle) -> String {
     match &style.opacity {
+        // One that varies along a stroke is already in its coverage.
+        Some(_) if style.ink().is_some() => "1.0".to_string(),
         Some(o) => format!("clamp({}, 0.0, 1.0)", emit_expr(o)),
         None => "1.0".to_string(),
     }

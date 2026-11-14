@@ -75,6 +75,44 @@ belongs: `language.md` for the language, the section below for a figure.
      expression as typed and its value as a number; what's left is writing it as math (`σ(2)` set as notation, not code) and
      an exact value, `−½ − (√3/2)i`, where one exists.
 
+### The blog on Pencil
+
+Planned with Kris on 2026-11-14. The goal is the site's figures drawn by Pencil, and `pencil-lang.dev` as the project's own
+site. The site has 33 figure placements from 31 sources: 20 interactive, 9 animated, 1 still and 3 in 3D. All but the five
+GLSL shaders draw through one SVG system (`src/lib/plot.ts`), and nothing is made at build time: each figure ships as an empty
+`<svg>` or `<canvas>`, with no poster and no fallback, and its social image is captured by hand in dev and committed.
+
+1. **3D, as far as the site's three figures go.** All three (`RollTube`, `LevelCurve`, `NewtonDoyle`) are orthographic, and
+   only strokes and flat fills: no lighting, no perspective, no depth sorting.
+   - **Built 2026-11-14: points in space, and `RollTube` as `corpus/013-tube`** (`web/tube.html`; `language.md`, Points in
+     space). `(x, y, z)` is drawn looking down z, a viewport's `yaw` turns the view, and a sheet reads `self.z` along a
+     curve, in `width` and `opacity`, and per dot, in `radius`.
+     - **What "behind" means while it rolls:** the tube's axis is the x axis and the strip is wrapped on a cylinder of
+       radius 1/roll about it, so the side facing away is `z < 0` at every stage, and nothing switches. Half rolled, what
+       fades is the part of the sheet seen from its back. Turning the tube slides the strip around it, and the view `fit`s
+       the strip, so it stays in frame as it rolls, in place of the site's zoom of 1 + 0.4·roll.
+     - **What the site's did,** from its source: a row was cut at the nearest of 48 samples, so the cut jumped; front and
+       back was the sign of `z` after the turn, which is only the tube's back when it's fully rolled; everything counted as
+       front below `roll = 0.05`, so rows faded at once as it passed; dots were drawn on the front only, so they popped; and
+       the period arrow was never cut. Here the cut is at the crossing, to a quarter of a pixel, the dots shrink away at
+       the edge, and the arrow and its head fade with the rest.
+     - **Checked:** a row off the top comes back as the row p along for p = 1, 2 and 3, and the seam closes only when fully
+       rolled; the GPU matches the oracle within 1/255 at four settings; 183 frames across every `p`, `roll` and `turn` draw
+       in a browser at 1633×919 and at phone size. **Not checked by Kris:** how it looks moving.
+     - **Left out:** `roll` stops at 0.01, since the cylinder's radius is 1/roll and Pencil has no way to write the flat
+       limit. A color can't follow depth, only width and opacity.
+   - **Next, a view that turns:** pitch as well as yaw, bound like any param so a drag orbits, for `LevelCurve` and
+     `NewtonDoyle` (the site's `wire3d.ts`, which has z up and turns about it). Their planes are translucent polygons, so
+     what's drawn over what needs an answer there, and their surfaces are grid lines, which `curves` already draws.
+2. **The host: what a page and a build do with a figure.** Designed on 2026-11-14 ("The host" below), and not built, apart
+   from the compiled figure, which a session is writing. In short: a build makes a compiled figure, a poster and what the
+   page needs to know about the figure, for each set of sheets a page can pick. The element shows the poster until its
+   first frame and picks the set by media query. An Astro component does both for a page.
+3. **`pencil-lang.dev`:** the docs, the playground and the corpus as demos. An Astro site in `site/`, so it's the first user of
+   the integration, before the blog.
+4. **A migration table,** `docs/migration.md`: each of the site's 31 figures, the corpus figure that covers it if one does, and
+   what Pencil lacks for it. The shaders and the bar chart (`DigitsChart`) are the ones to look at first.
+
 ### Proposed order after that
 
 Proposed by Claude on 2026-11-09, not yet agreed:
@@ -606,6 +644,58 @@ the M1 Pro, on WebGPU and `?gl`.
   `iterations: Infinity` doesn't suit a scroll range, which wants one pass. Keyboard on a focused figure is still the page's.
 - **Not checked:** a phone, other browsers, the site, which still sets itself up, the pages with the pane showing (it was
   hidden, so a screenshot drew each frame), and a draw that fails after compiling, which the playground handles from the element's `error` event but no edit has reached.
+
+## The host
+
+What a page and a build do with a figure. Designed on 2026-11-14 for moving Kris's site to Pencil, and proposed, not agreed:
+the choices that are his are marked.
+
+**What a reader gets today.** `<pencil-figure src sheets>` fetches the document, each sheet and each used file, then the 5.2 MB
+of WASM, and starts the GPU when it's near the viewport. Until its first frame it's an empty box of the right shape, and it
+stays one where there's no GPU, no WASM or no script. The site is the same today: each figure ships as an empty `<svg>`.
+
+**What a build makes,** for a figure and each set of sheets a page can pick, such as light, dark and narrow:
+
+- **A compiled figure,** one file. One request instead of the explainer's 12, and a mistake stops the build and not a reader.
+  It isn't for speed: compiling the explainer in a browser takes 19 ms.
+- **A poster,** a still at the design width and at twice it.
+- **What the page needs to know:** the figure's shape, its duration, its params with their ranges and steps, its beats and
+  captions, and the colors its sheets name. That's what `info` gives a script today, as a file, so a page can lay out its
+  controls and captions and take its colors before any script runs.
+- **A card for sharing,** 1200×630, the figure on its paper, and on request a clip, which `pencil video` already makes.
+
+One command writes them, with a manifest, into a folder keyed by what went in, so nothing is made twice.
+
+- **A poster needs a GPU.** The CPU oracle is the referee and not a renderer: a 1280-pixel still of the tube takes it 10 s,
+  one frame of the explainer 108 s, and it doesn't draw panels at all, where the GPU takes 0.13 to 0.21 s for any of
+  them. So the build runs where there's a GPU, which is Kris's machine, where the site is deployed from today. **His call:**
+  if the site should ever build somewhere without one, the folder of outputs gets committed, or the build needs a software
+  GPU, which is untried.
+- **Which moment is the poster. His call, since it's syntax.** A figure knows its most telling state, and it's a binding of
+  time and params like any other, so the document says: `poster { time: 3.5, roll: 0.6 }`. Without one: the end of the story
+  for a figure whose beats have lengths, where everything has arrived, and time 0 otherwise. The alternative is a sheet's
+  `style figure { poster: 3.5 }`, which lets a video's sheet and a page's differ, and can't set a param.
+
+**The element.**
+
+- **Its children are the poster.** `<pencil-figure compiled="tube.penc"><img src="tube.png" alt="…"></pencil-figure>` shows the
+  image until the first frame is drawn, and keeps it where a figure can't run, or is printed. Nothing moves when it swaps,
+  since both have the figure's shape.
+- **`<source>` children pick the sheets, as in `<picture>`:** `<source media="(prefers-color-scheme: dark)" compiled="tube.dark.penc">`,
+  or `sheets="…"` with a `src`. Four pages in `web/` pick sheets in script today, by theme and by width, and each wrote it again.
+- **It waits for the reader.** The WASM is fetched when a figure is near the viewport, not when the page loads, and a figure
+  starts paused under `prefers-reduced-motion`, which each page does for itself today.
+- **It's a package** a site can import: the element, its labels, and the WASM.
+- Controls and captions stay the page's, as they are.
+
+**Astro.** A `<Figure src sheets dark narrow alt>` component, in this repo beside the element. At build it runs the command
+above and writes the element with its sources and poster. In `astro dev` it hands the element the sources, so a figure
+reloads as it's edited. A function gives a post its card, in place of the site's dev-only capture. The site's tiers and
+captions wrap it, in the site.
+
+**Order.** The compiled figure (in a session now). Then the poster and what the page needs to know, from the CLI. Then the
+element's children and `<source>`. Then the component, tried on `pencil-lang.dev` first. Then one post: the involute's has a
+single figure, which is `corpus/003-unroll`.
 
 ## Distance to a curve
 

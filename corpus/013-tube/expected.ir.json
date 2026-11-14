@@ -1,0 +1,304 @@
+{
+  "beats": [],
+  "bindings": [
+    {
+      "expr": 1.0,
+      "id": "p"
+    },
+    {
+      "expr": 1.0,
+      "id": "roll"
+    },
+    {
+      "expr": 150.0,
+      "id": "turn"
+    },
+    {
+      "expr": ["Multiply",0.45,"roll"],
+      "id": "view.yaw"
+    },
+    {
+      "expr": 7.0,
+      "id": "q"
+    },
+    {
+      "expr": ["Divide",-1.0,2.0],
+      "id": "omega.x"
+    },
+    {
+      "expr": ["Divide",["Sqrt",3.0],2.0],
+      "id": "omega.y"
+    },
+    {
+      "expr": ["Add",["Multiply",["Subtract","q","p"],"omega.x"],["Negate","p"]],
+      "id": "A.x"
+    },
+    {
+      "expr": ["Multiply",["Subtract","q","p"],"omega.y"],
+      "id": "A.y"
+    },
+    {
+      "expr": 3.0,
+      "id": "half"
+    },
+    {
+      "expr": ["Multiply",2.0,"Pi"],
+      "id": "height"
+    },
+    {
+      "expr": ["Divide",1.0,"roll"],
+      "id": "radius"
+    },
+    {
+      "expr": ["Divide",["Multiply",["Multiply",2.0,"Pi"],"A.y"],["Add",["Power","A.x",2.0],["Power","A.y",2.0]]],
+      "id": "one.x"
+    },
+    {
+      "expr": ["Divide",["Multiply",["Multiply",2.0,"Pi"],"A.x"],["Add",["Power","A.x",2.0],["Power","A.y",2.0]]],
+      "id": "one.y"
+    },
+    {
+      "expr": ["Divide",["Add",["Multiply",["Negate",["Multiply",["Multiply",2.0,"Pi"],"omega.y"]],"A.x"],["Multiply",["Multiply",["Multiply",2.0,"Pi"],"omega.x"],"A.y"]],["Add",["Power","A.x",2.0],["Power","A.y",2.0]]],
+      "id": "along.x"
+    },
+    {
+      "expr": ["Divide",["Subtract",["Multiply",["Multiply",["Multiply",2.0,"Pi"],"omega.x"],"A.x"],["Multiply",["Negate",["Multiply",["Multiply",2.0,"Pi"],"omega.y"]],"A.y"]],["Add",["Power","A.x",2.0],["Power","A.y",2.0]]],
+      "id": "along.y"
+    },
+    {
+      "expr": ["Subtract","height",1e-6],
+      "id": "below_top"
+    }
+  ],
+  "doc": "tube",
+  "duration": null,
+  "expressions": [],
+  "handles": [],
+  "marks": [
+    {
+      "beat": null,
+      "form": {
+        "arc": {
+          "depth": ["Multiply","radius",["Cos",["Multiply","roll",["Subtract",["Subtract",0.0,"Pi"],["Divide",["Multiply","turn","Pi"],180.0]]]]],
+          "point": [["Add",["Multiply","u",["Cos","view.yaw"]],["Multiply",["Multiply","radius",["Cos",["Multiply","roll",["Subtract",["Subtract",0.0,"Pi"],["Divide",["Multiply","turn","Pi"],180.0]]]]],["Sin","view.yaw"]]],["Multiply","radius",["Sin",["Multiply","roll",["Subtract",["Subtract",0.0,"Pi"],["Divide",["Multiply","turn","Pi"],180.0]]]]]],
+          "range": [["Negate","half"],"half"],
+          "var": "u"
+        },
+        "kind": "parametric"
+      },
+      "id": "bottom",
+      "tags": ["curve","edge"]
+    },
+    {
+      "beat": null,
+      "form": {
+        "arc": {
+          "depth": ["Multiply","radius",["Cos",["Multiply","roll",["Subtract",["Subtract","height","Pi"],["Divide",["Multiply","turn","Pi"],180.0]]]]],
+          "point": [["Add",["Multiply","u",["Cos","view.yaw"]],["Multiply",["Multiply","radius",["Cos",["Multiply","roll",["Subtract",["Subtract","height","Pi"],["Divide",["Multiply","turn","Pi"],180.0]]]]],["Sin","view.yaw"]]],["Multiply","radius",["Sin",["Multiply","roll",["Subtract",["Subtract","height","Pi"],["Divide",["Multiply","turn","Pi"],180.0]]]]]],
+          "range": [["Negate","half"],"half"],
+          "var": "u"
+        },
+        "kind": "parametric"
+      },
+      "id": "top",
+      "tags": ["curve","edge"]
+    },
+    {
+      "beat": null,
+      "form": {
+        "arc": {
+          "depth": ["Multiply","radius",["Cos",["Multiply","roll",["Subtract",["Subtract","v","Pi"],["Divide",["Multiply","turn","Pi"],180.0]]]]],
+          "point": [["Add",["Multiply",["Negate","half"],["Cos","view.yaw"]],["Multiply",["Multiply","radius",["Cos",["Multiply","roll",["Subtract",["Subtract","v","Pi"],["Divide",["Multiply","turn","Pi"],180.0]]]]],["Sin","view.yaw"]]],["Multiply","radius",["Sin",["Multiply","roll",["Subtract",["Subtract","v","Pi"],["Divide",["Multiply","turn","Pi"],180.0]]]]]],
+          "range": [0.0,"height"],
+          "var": "v"
+        },
+        "kind": "parametric"
+      },
+      "id": "left",
+      "tags": ["curve","edge"]
+    },
+    {
+      "beat": null,
+      "form": {
+        "arc": {
+          "depth": ["Multiply","radius",["Cos",["Multiply","roll",["Subtract",["Subtract","v","Pi"],["Divide",["Multiply","turn","Pi"],180.0]]]]],
+          "point": [["Add",["Multiply","half",["Cos","view.yaw"]],["Multiply",["Multiply","radius",["Cos",["Multiply","roll",["Subtract",["Subtract","v","Pi"],["Divide",["Multiply","turn","Pi"],180.0]]]]],["Sin","view.yaw"]]],["Multiply","radius",["Sin",["Multiply","roll",["Subtract",["Subtract","v","Pi"],["Divide",["Multiply","turn","Pi"],180.0]]]]]],
+          "range": [0.0,"height"],
+          "var": "v"
+        },
+        "kind": "parametric"
+      },
+      "id": "right",
+      "tags": ["curve","edge"]
+    },
+    {
+      "beat": null,
+      "form": {
+        "kind": "many",
+        "shape": {
+          "curves": {
+            "depth": ["Multiply","radius",["Cos",["Multiply","roll",["Subtract",["Subtract",["Add",["Multiply","a","one.y"],["Multiply","u","along.y"]],"Pi"],["Divide",["Multiply","turn","Pi"],180.0]]]]],
+            "point": [["Add",["Multiply",["Add",["Multiply","a","one.x"],["Multiply","u","along.x"]],["Cos","view.yaw"]],["Multiply",["Multiply","radius",["Cos",["Multiply","roll",["Subtract",["Subtract",["Add",["Multiply","a","one.y"],["Multiply","u","along.y"]],"Pi"],["Divide",["Multiply","turn","Pi"],180.0]]]]],["Sin","view.yaw"]]],["Multiply","radius",["Sin",["Multiply","roll",["Subtract",["Subtract",["Add",["Multiply","a","one.y"],["Multiply","u","along.y"]],"Pi"],["Divide",["Multiply","turn","Pi"],180.0]]]]]],
+            "range": [["Max",["Min",["Divide",["Subtract",["Negate","half"],["Multiply","a","one.x"]],"along.x"],["Divide",["Subtract","half",["Multiply","a","one.x"]],"along.x"]],["Min",["Divide",["Multiply",["Negate","a"],"one.y"],"along.y"],["Divide",["Subtract","height",["Multiply","a","one.y"]],"along.y"]]],["Max",["Max",["Min",["Divide",["Subtract",["Negate","half"],["Multiply","a","one.x"]],"along.x"],["Divide",["Subtract","half",["Multiply","a","one.x"]],"along.x"]],["Min",["Divide",["Multiply",["Negate","a"],"one.y"],"along.y"],["Divide",["Subtract","height",["Multiply","a","one.y"]],"along.y"]]],["Min",["Max",["Divide",["Subtract",["Negate","half"],["Multiply","a","one.x"]],"along.x"],["Divide",["Subtract","half",["Multiply","a","one.x"]],"along.x"]],["Max",["Divide",["Multiply",["Negate","a"],"one.y"],"along.y"],["Divide",["Subtract","height",["Multiply","a","one.y"]],"along.y"]]]]],
+            "var": "u"
+          }
+        },
+        "vars": [
+          {
+            "range": [-12.0,["Subtract",12.0,["Multiply",100.0,["Subtract",1.0,["Clamp",["Subtract","p",0.0],0.0,1.0]]]]],
+            "var": "m"
+          }
+        ],
+        "with": [
+          {
+            "expr": ["Multiply","p","m"],
+            "id": "a"
+          }
+        ]
+      },
+      "id": "arm_0",
+      "tags": ["curves","row","blue"]
+    },
+    {
+      "beat": null,
+      "form": {
+        "kind": "many",
+        "shape": {
+          "curves": {
+            "depth": ["Multiply","radius",["Cos",["Multiply","roll",["Subtract",["Subtract",["Add",["Multiply","a","one.y"],["Multiply","u","along.y"]],"Pi"],["Divide",["Multiply","turn","Pi"],180.0]]]]],
+            "point": [["Add",["Multiply",["Add",["Multiply","a","one.x"],["Multiply","u","along.x"]],["Cos","view.yaw"]],["Multiply",["Multiply","radius",["Cos",["Multiply","roll",["Subtract",["Subtract",["Add",["Multiply","a","one.y"],["Multiply","u","along.y"]],"Pi"],["Divide",["Multiply","turn","Pi"],180.0]]]]],["Sin","view.yaw"]]],["Multiply","radius",["Sin",["Multiply","roll",["Subtract",["Subtract",["Add",["Multiply","a","one.y"],["Multiply","u","along.y"]],"Pi"],["Divide",["Multiply","turn","Pi"],180.0]]]]]],
+            "range": [["Max",["Min",["Divide",["Subtract",["Negate","half"],["Multiply","a","one.x"]],"along.x"],["Divide",["Subtract","half",["Multiply","a","one.x"]],"along.x"]],["Min",["Divide",["Multiply",["Negate","a"],"one.y"],"along.y"],["Divide",["Subtract","height",["Multiply","a","one.y"]],"along.y"]]],["Max",["Max",["Min",["Divide",["Subtract",["Negate","half"],["Multiply","a","one.x"]],"along.x"],["Divide",["Subtract","half",["Multiply","a","one.x"]],"along.x"]],["Min",["Divide",["Multiply",["Negate","a"],"one.y"],"along.y"],["Divide",["Subtract","height",["Multiply","a","one.y"]],"along.y"]]],["Min",["Max",["Divide",["Subtract",["Negate","half"],["Multiply","a","one.x"]],"along.x"],["Divide",["Subtract","half",["Multiply","a","one.x"]],"along.x"]],["Max",["Divide",["Multiply",["Negate","a"],"one.y"],"along.y"],["Divide",["Subtract","height",["Multiply","a","one.y"]],"along.y"]]]]],
+            "var": "u"
+          }
+        },
+        "vars": [
+          {
+            "range": [-12.0,["Subtract",12.0,["Multiply",100.0,["Subtract",1.0,["Clamp",["Subtract","p",1.0],0.0,1.0]]]]],
+            "var": "m"
+          }
+        ],
+        "with": [
+          {
+            "expr": ["Add",1.0,["Multiply","p","m"]],
+            "id": "a"
+          }
+        ]
+      },
+      "id": "arm_1",
+      "tags": ["curves","row","green"]
+    },
+    {
+      "beat": null,
+      "form": {
+        "kind": "many",
+        "shape": {
+          "curves": {
+            "depth": ["Multiply","radius",["Cos",["Multiply","roll",["Subtract",["Subtract",["Add",["Multiply","a","one.y"],["Multiply","u","along.y"]],"Pi"],["Divide",["Multiply","turn","Pi"],180.0]]]]],
+            "point": [["Add",["Multiply",["Add",["Multiply","a","one.x"],["Multiply","u","along.x"]],["Cos","view.yaw"]],["Multiply",["Multiply","radius",["Cos",["Multiply","roll",["Subtract",["Subtract",["Add",["Multiply","a","one.y"],["Multiply","u","along.y"]],"Pi"],["Divide",["Multiply","turn","Pi"],180.0]]]]],["Sin","view.yaw"]]],["Multiply","radius",["Sin",["Multiply","roll",["Subtract",["Subtract",["Add",["Multiply","a","one.y"],["Multiply","u","along.y"]],"Pi"],["Divide",["Multiply","turn","Pi"],180.0]]]]]],
+            "range": [["Max",["Min",["Divide",["Subtract",["Negate","half"],["Multiply","a","one.x"]],"along.x"],["Divide",["Subtract","half",["Multiply","a","one.x"]],"along.x"]],["Min",["Divide",["Multiply",["Negate","a"],"one.y"],"along.y"],["Divide",["Subtract","height",["Multiply","a","one.y"]],"along.y"]]],["Max",["Max",["Min",["Divide",["Subtract",["Negate","half"],["Multiply","a","one.x"]],"along.x"],["Divide",["Subtract","half",["Multiply","a","one.x"]],"along.x"]],["Min",["Divide",["Multiply",["Negate","a"],"one.y"],"along.y"],["Divide",["Subtract","height",["Multiply","a","one.y"]],"along.y"]]],["Min",["Max",["Divide",["Subtract",["Negate","half"],["Multiply","a","one.x"]],"along.x"],["Divide",["Subtract","half",["Multiply","a","one.x"]],"along.x"]],["Max",["Divide",["Multiply",["Negate","a"],"one.y"],"along.y"],["Divide",["Subtract","height",["Multiply","a","one.y"]],"along.y"]]]]],
+            "var": "u"
+          }
+        },
+        "vars": [
+          {
+            "range": [-12.0,["Subtract",12.0,["Multiply",100.0,["Subtract",1.0,["Clamp",["Subtract","p",2.0],0.0,1.0]]]]],
+            "var": "m"
+          }
+        ],
+        "with": [
+          {
+            "expr": ["Add",2.0,["Multiply","p","m"]],
+            "id": "a"
+          }
+        ]
+      },
+      "id": "arm_2",
+      "tags": ["curves","row","red"]
+    },
+    {
+      "beat": null,
+      "form": {
+        "kind": "many",
+        "shape": {
+          "dots": ["self.x","self.y"]
+        },
+        "vars": [
+          {
+            "range": [-12.0,12.0],
+            "var": "a"
+          },
+          {
+            "range": [["Max",["Min",["Divide",["Subtract",["Negate","half"],["Multiply","a","one.x"]],"along.x"],["Divide",["Subtract","half",["Multiply","a","one.x"]],"along.x"]],["Min",["Divide",["Multiply",["Negate","a"],"one.y"],"along.y"],["Divide",["Subtract","below_top",["Multiply","a","one.y"]],"along.y"]]],["Min",["Max",["Divide",["Subtract",["Negate","half"],["Multiply","a","one.x"]],"along.x"],["Divide",["Subtract","half",["Multiply","a","one.x"]],"along.x"]],["Max",["Divide",["Multiply",["Negate","a"],"one.y"],"along.y"],["Divide",["Subtract","below_top",["Multiply","a","one.y"]],"along.y"]]]],
+            "var": "b"
+          }
+        ],
+        "with": [
+          {
+            "expr": ["Add",["Multiply",["Add",["Multiply","a","one.x"],["Multiply","b","along.x"]],["Cos","view.yaw"]],["Multiply",["Multiply","radius",["Cos",["Multiply","roll",["Subtract",["Subtract",["Add",["Multiply","a","one.y"],["Multiply","b","along.y"]],"Pi"],["Divide",["Multiply","turn","Pi"],180.0]]]]],["Sin","view.yaw"]]],
+            "id": "self.x"
+          },
+          {
+            "expr": ["Multiply","radius",["Sin",["Multiply","roll",["Subtract",["Subtract",["Add",["Multiply","a","one.y"],["Multiply","b","along.y"]],"Pi"],["Divide",["Multiply","turn","Pi"],180.0]]]]],
+            "id": "self.y"
+          },
+          {
+            "expr": ["Multiply","radius",["Cos",["Multiply","roll",["Subtract",["Subtract",["Add",["Multiply","a","one.y"],["Multiply","b","along.y"]],"Pi"],["Divide",["Multiply","turn","Pi"],180.0]]]]],
+            "id": "self.z"
+          }
+        ]
+      },
+      "id": "points",
+      "tags": ["dots"]
+    },
+    {
+      "beat": null,
+      "form": {
+        "arc": {
+          "depth": ["Multiply","radius",["Cos",["Multiply","roll",["Subtract",["Subtract","v","Pi"],["Divide",["Multiply","turn","Pi"],180.0]]]]],
+          "point": [["Multiply",["Multiply","radius",["Cos",["Multiply","roll",["Subtract",["Subtract","v","Pi"],["Divide",["Multiply","turn","Pi"],180.0]]]]],["Sin","view.yaw"]],["Multiply","radius",["Sin",["Multiply","roll",["Subtract",["Subtract","v","Pi"],["Divide",["Multiply","turn","Pi"],180.0]]]]]],
+          "range": [0.0,"height"],
+          "var": "v"
+        },
+        "kind": "parametric"
+      },
+      "id": "period",
+      "tags": ["curve","accent"]
+    },
+    {
+      "beat": null,
+      "form": {
+        "at": [["Multiply",["Multiply","radius",["Cos",["Multiply","roll",["Subtract",["Subtract","Pi","Pi"],["Divide",["Multiply","turn","Pi"],180.0]]]]],["Sin","view.yaw"]],["Multiply","radius",["Sin",["Multiply","roll",["Subtract",["Subtract","Pi","Pi"],["Divide",["Multiply","turn","Pi"],180.0]]]]]],
+        "away": [1.0,0.0],
+        "kind": "label",
+        "offset": [0.0,0.0],
+        "text": "A",
+        "values": []
+      },
+      "id": "name_period",
+      "tags": ["label","accent"]
+    }
+  ],
+  "params": [
+    {
+      "id": "p",
+      "range": [1.0,3.0],
+      "step": 1.0
+    },
+    {
+      "id": "roll",
+      "range": [0.01,1.0]
+    },
+    {
+      "id": "turn",
+      "range": [0.0,360.0]
+    }
+  ],
+  "places": [],
+  "systems": [],
+  "viewport": {
+    "fit": 4,
+    "pad": 0.06,
+    "x": [-2.0,2.0],
+    "y": [-2.0,2.0]
+  }
+}

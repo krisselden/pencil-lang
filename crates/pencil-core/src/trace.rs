@@ -18,6 +18,9 @@ pub struct Polyline {
     /// World coordinates. A closed polyline repeats its first point at the end.
     pub points: Vec<[f64; 2]>,
     pub closed: bool,
+    /// A parametric curve's parameter at each point, for what a style works out along it.
+    /// Empty for a line that has none.
+    pub params: Vec<f64>,
 }
 
 /// A grid edge: `(0, i, j)` runs right from corner `(i, j)`, `(1, i, j)` runs up.
@@ -202,7 +205,11 @@ pub fn trace(
         if closed {
             points = canonical_start(points, &mut field)?;
         }
-        lines.push(Polyline { points, closed });
+        lines.push(Polyline {
+            points,
+            closed,
+            params: Vec::new(),
+        });
     }
     Ok(lines)
 }

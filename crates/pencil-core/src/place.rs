@@ -64,6 +64,8 @@ const EDGE_EVERY: usize = 8;
 
 fn opacity_of(style: &crate::style::MarkStyle, env: &Env) -> Result<f64, Error> {
     match &style.opacity {
+        // One that varies along a stroke has no single value: the stroke is there.
+        Some(_) if style.ink().is_some() => Ok(1.0),
         Some(o) => eval::real(o, env),
         None => Ok(1.0),
     }

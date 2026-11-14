@@ -60,6 +60,9 @@ fn pair(p: &[Expr; 2], f: &mut impl FnMut(&Expr)) {
 fn arc(a: &Arc, f: &mut impl FnMut(&Expr)) {
     pair(&a.point, f);
     pair(&a.range, f);
+    if let Some(depth) = &a.depth {
+        f(depth);
+    }
 }
 
 /// Every expression a scene draws from, outside its bindings.

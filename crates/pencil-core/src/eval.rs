@@ -656,6 +656,8 @@ impl<'a> Frame<'a> {
                 | Form::Many { .. } => None,
             };
             let opacity = match &style.opacity {
+                // One that varies along a stroke is already in its coverage.
+                Some(_) if style.ink().is_some() => 1.0,
                 Some(o) => real(o, &env)?.clamp(0.0, 1.0),
                 None => 1.0,
             };

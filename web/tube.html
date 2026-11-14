@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rolling the strip into a tube</title>
+<style>
+  :root { color-scheme: light dark; --ink: rgb(18 17 15); --paper: rgb(242 240 235); --muted: rgb(110 106 99); --bad: #b5443c; }
+  @media (prefers-color-scheme: dark) { :root { --ink: rgb(243 240 234); --paper: rgb(23 22 20); --muted: rgb(148 143 134); } }
+  body { margin: 0; padding: 24px 16px; background: var(--paper); color: var(--ink); font: 0.9375rem/1.45 ui-sans-serif, system-ui, sans-serif; }
+  main { max-width: 640px; margin: 0 auto; }
+  h1 { font-size: 1rem; font-weight: 600; margin: 0 0 12px; }
+  .controls { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; margin: 12px 0; }
+  .controls input[type=range] { width: 8rem; }
+  output { font-variant-numeric: tabular-nums; }
+  p { margin: 4px 0; color: var(--muted); }
+  #error { color: var(--bad); white-space: pre-wrap; font-family: ui-monospace, monospace; font-size: 0.8125rem; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Rolling the one-turn strip into a tube</h1>
+  <pencil-figure id="figure" src="../corpus/013-tube/tube.pen"
+    aria-label="The one-turn strip of the triangular grid, with rows colored by arm, rolling up into a tube whose seam joins each row to another row of the same arm."></pencil-figure>
+  <div class="controls">
+    <label>arms, <i>p</i> <input data-param id="p" type="range"> <output></output></label>
+    <label>roll <input data-param id="roll" type="range"></label>
+    <label>turn the tube <input data-param id="turn" type="range"> <output></output></label>
+  </div>
+  <p id="status">Starting…</p>
+  <p id="error" role="alert"></p>
+</main>
+<script type="module">
+  import { fromQuery, report, watch } from './controls.js';
+
+  const $ = (id) => document.getElementById(id);
+  const figure = $('figure');
+  fromQuery(figure);
+  report(figure, $('status'), $('error'));
+  watch(figure);
+
+  // The reader's theme picks the sheets.
+  const dark = matchMedia('(prefers-color-scheme: dark)');
+  const pick = () => figure.setAttribute('sheets',
+    ['../corpus/theme.style', '../corpus/013-tube/plain.style', ...(dark.matches ? ['../corpus/dark.style'] : [])].join(' '));
+  pick();
+  dark.addEventListener('change', pick);
+
+  // The figure says what each slider's range and step are, and where it starts.
+  const inputs = [...document.querySelectorAll('[data-param]')];
+  const show = (input) => {
+    const out = input.nextElementSibling;
+    if (out) out.textContent = input.id === 'turn' ? `${Number(input.value).toFixed(0)}°` : Number(input.value).toFixed(0);
+  };
+  figure.addEventListener('load', () => {
+    for (const input of inputs) {
+      const param = figure.info.params.find((p) => p.id === input.id);
+      Object.assign(input, { min: param.min, max: param.max, step: param.step ?? 'any' });
+      input.value = figure.value(input.id);
+      show(input);
+    }
+  });
+  for (const input of inputs) {
+    input.addEventListener('input', () => {
+      figure.hold(input.id, Number(input.value));
+      show(input);
+    });
+  }
+
+  window.pencil = { figure };
+</script>
+</body>
+</html>
