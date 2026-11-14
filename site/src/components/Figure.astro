@@ -1,0 +1,45 @@
+---
+// A live figure: a `<pencil-figure>` with the sheets its page in `web/` loads, and, unless
+// `controls` is false, what a reader can set on it (and either way, why it can't draw if it can't), built from the figure once it loads.
+import { url, type Look } from '../lib/figures';
+
+interface Props {
+  id: string;
+  looks: Look[];
+  label: string;
+  params?: string;
+  paused?: boolean;
+  start?: number;
+  controls?: boolean;
+  /** What a choice between `looks` is called: a style, by default. */
+  choose?: string;
+  class?: string;
+}
+
+const { id, looks, label, params, paused, start, controls = true, choose, class: className } = Astro.props;
+const [look] = looks;
+// A look whose sheets follow the reader's theme or width is picked in script, with its `src` set
+// after, so the figure is fetched once.
+const picked = Boolean(look.dark?.length || look.narrow?.length);
+const sheets = look.sheets.map(url);
+const pick = picked
+  ? JSON.stringify({ base: sheets, narrow: (look.narrow ?? []).map(url), dark: (look.dark ?? []).map(url) })
+  : undefined;
+const choices = looks.length > 1
+  ? JSON.stringify(looks.map((l) => ({ name: l.name, src: url(l.pen), sheets: l.sheets.map(url).join(' '), playground: l.playground })))
+  : undefined;
+---
+<div class:list={['live', className]}>
+  <pencil-figure
+    id={id}
+    src={picked ? undefined : url(look.pen)}
+    sheets={picked ? undefined : sheets.join(' ')}
+    data-src={picked ? url(look.pen) : undefined}
+    data-sheets={pick}
+    data-start={start}
+    params={params}
+    paused={paused ? '' : undefined}
+    aria-label={label}
+  ></pencil-figure>
+  <figure-controls for={id} looks={choices} looks-label={choose} bare={controls ? undefined : ''} hidden></figure-controls>
+</div>

@@ -1,0 +1,143 @@
+---
+import Base from '../layouts/Base.astro';
+import Figure from '../components/Figure.astro';
+import Source from '../components/Source.astro';
+import { DEMOS, REPO } from '../lib/figures';
+
+const limacon = DEMOS.find((d) => d.id === 'limacon')!;
+const circle = DEMOS.find((d) => d.id === 'circle')!;
+const [plainCircle, bandedCircle] = circle.looks;
+---
+<Base figures>
+  <div class="page">
+    <section class="hero">
+      <div>
+        <h1>Pencil</h1>
+        <p class="lede">
+          A declarative language for mathematical figures. A figure is a text file that says what’s
+          in it and what each thing means, and style sheets say how it looks. The same file renders
+          as an interactive figure on the web and as video.
+        </p>
+        <p class="status">
+          <strong>It’s early, and the syntax will change.</strong> Pencil is being built to make math
+          explainers, one real figure at a time, and nothing about the language is stable yet.
+        </p>
+        <div class="actions">
+          <a class="primary" href="/docs/getting-started/">Get started</a>
+          <a href="/demos/">See the demos</a>
+          <a href="/playground/">Open the playground</a>
+          <a href={REPO}>GitHub</a>
+        </div>
+      </div>
+      <figure class="plate" style="margin: 0">
+        <Figure id="hero" looks={limacon.looks} label={limacon.label} controls={false} />
+        <figcaption>
+          Twenty-four circles through one point, each warm inside and cool outside, adding up. Their
+          envelope is a limaçon. <a href="/demos/#limacon">Its document</a> is nine lines, and its sheet four rules.
+        </figcaption>
+      </figure>
+    </section>
+
+    <section aria-labelledby="example">
+      <h2 id="example">One figure, two style sheets</h2>
+      <div class="example-doc">
+        <div class="prose">
+          <p>
+            A document names things and says what they are. This one says there’s a curve <code>c</code>, the points at distance <var>r</var> from the origin, and that <var>r</var> breathes with time. It holds no colors and no sizes.
+          </p>
+          <p>
+            A sheet targets the name <code>c</code>. Because the curve is implicit, it has a signed distance, so a sheet can style its inside and outside. The second sheet bands both sides by that distance and moves the hue with time, and not a line of the document changes.
+          </p>
+        </div>
+        <Source path={plainCircle.pen} />
+      </div>
+      <div class="example">
+        <div class="look">
+          <Figure id="circle-plain" looks={[plainCircle]} label={circle.label} controls={false} />
+          <Source path={plainCircle.sheets[0]} />
+        </div>
+        <div class="look">
+          <Figure id="circle-bands" looks={[bandedCircle]} label={`${circle.label} Its sides are banded by their distance from it.`} controls={false} />
+          <Source path={bandedCircle.sheets[0]} />
+        </div>
+      </div>
+    </section>
+
+    <section aria-labelledby="whats-in-it">
+      <h2 id="whats-in-it">What’s in it</h2>
+      <ul class="features">
+        <li>
+          <strong>Expressions, not drawing calls.</strong>
+          Points are complex numbers, derivatives are exact, and a <code>solve</code> can find
+          unknowns each frame. A figure compiles to an IR with its expressions in MathJSON, so it
+          isn’t locked into this tool.
+        </li>
+        <li>
+          <strong>Time and input are the same thing.</strong>
+          Animation and interaction both bind the params of one figure, so what a reader drags and
+          what a video plays are one description.
+        </li>
+        <li>
+          <strong>Collections and maps.</strong>
+          One declaration can draw thousands of dots, circles or curves, and can go through a
+          function, so one thing can appear in several panels.
+        </li>
+        <li>
+          <strong>Strokes and sides that follow the math.</strong>
+          A circle has a handedness and can pass through a line, and both of its sides can be drawn
+          at once. A taper can follow arc length.
+        </li>
+        <li>
+          <strong>Description, style and rendering stay apart.</strong>
+          A figure holds no colors, sizes or renderer-specific calls. Styles target its names, with
+          CSS-like rules and math-specific properties.
+        </li>
+        <li>
+          <strong>Two renderers that check each other.</strong>
+          A Rust core compiles figures to WGSL for WebGPU and WebGL2, and a separate CPU interpreter
+          defines what each pixel should be. <code>pencil check</code> compares them.
+        </li>
+      </ul>
+    </section>
+
+    <section aria-labelledby="where">
+      <h2 id="where">Where to go</h2>
+      <ul class="paths">
+        <li>
+          <a href="/docs/getting-started/">Getting started</a>
+          <p>Build it, render a frame, compare the GPU with the CPU, and export video.</p>
+        </li>
+        <li>
+          <a href="/docs/language/">Language reference</a>
+          <p>Statements, curve forms, built-ins, styles, and the decisions behind them.</p>
+        </li>
+        <li>
+          <a href="/demos/">Demos</a>
+          <p>Every figure in the corpus, drawn live, with its source.</p>
+        </li>
+        <li>
+          <a href="/playground/">Playground</a>
+          <p>Edit any figure and its sheets in the browser, and watch it recompile.</p>
+        </li>
+        <li>
+          <a href={REPO}>Source</a>
+          <p>The Rust core, the renderer, the command and the browser host, under MIT.</p>
+        </li>
+      </ul>
+    </section>
+
+    <section aria-labelledby="status" class="prose">
+      <h2 id="status">Where it stands</h2>
+      <p>
+        Pencil is built from a corpus of real figures, and a feature goes in only when a figure needs
+        it. The syntax and the IR change freely while that goes on, so expect files written today to
+        need edits later.
+      </p>
+      <p>
+        Figures here are drawn on your GPU, through WebGPU where the browser has it and WebGL2
+        otherwise. They’ve been checked mostly in Chrome on a Mac; other browsers and phones much
+        less. If a figure doesn’t draw, the page says why under it.
+      </p>
+    </section>
+  </div>
+</Base>

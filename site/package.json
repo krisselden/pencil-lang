@@ -1,0 +1,19 @@
+{
+  "name": "pencil-lang-site",
+  "type": "module",
+  "version": "0.0.1",
+  "private": true,
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "packageManager": "pnpm@11.17.0",
+  "scripts": {
+    "dev": "astro dev --port 4321",
+    "build": "astro build",
+    "preview": "astro preview --port 4322",
+    "astro": "astro"
+  },
+  "dependencies": {
+    "astro": "^7.3.4"
+  }
+}

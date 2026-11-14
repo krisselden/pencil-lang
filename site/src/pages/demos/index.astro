@@ -1,0 +1,76 @@
+---
+import Base from '../../layouts/Base.astro';
+import Figure from '../../components/Figure.astro';
+import { DEMOS, TREE, BLOB } from '../../lib/figures';
+
+// An entry's text, with its backticks as code.
+const prose = (text: string) =>
+  text.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!).replace(/`([^`]+)`/g, '<code>$1</code>');
+
+// Every file an entry's looks load, once each.
+const files = (demo: (typeof DEMOS)[number]) => [
+  ...new Set(demo.looks.flatMap((look) => [look.pen, ...look.sheets, ...(look.narrow ?? []), ...(look.dark ?? [])])),
+];
+---
+<Base title="Demos" section="demos" figures description="Every figure in Pencil’s corpus, drawn live, with its source and a link into the playground.">
+  <div class="page">
+    <div class="prose">
+      <h1>Demos</h1>
+      <p class="lede">
+        Every figure in the corpus, drawn live from its source. The corpus is also the project’s
+        test suite, with each figure’s compiled form checked in, and many of its figures were ported
+        from graphs, shaders and blog figures made by other means.
+      </p>
+      <p class="muted ui" style="font-size: 0.9375rem">
+        Figures start drawing as they come near the screen. Controls are built from what each figure
+        declares: a play button if anything follows time, a slider for each param, and arrows for
+        beats. Some figures also have handles to drag.
+      </p>
+    </div>
+    <nav aria-label="Figures">
+      <ul class="toc-demos">
+        {DEMOS.map((demo) => <li><a href={`#${demo.id}`}>{demo.number} {demo.title.replace(/:.*/, '')}</a></li>)}
+      </ul>
+    </nav>
+    <ol class="demos">
+      {DEMOS.map((demo) => (
+        <li class="demo" id={demo.id}>
+          <Figure
+            id={`figure-${demo.id}`}
+            looks={demo.looks}
+            label={demo.label}
+            params={demo.params}
+            paused={demo.paused}
+            start={demo.start}
+            choose={demo.choose}
+          />
+          <div>
+            <span class="number">{demo.number}</span>
+            <h2><a href={`#${demo.id}`}>{demo.title}</a></h2>
+            <p set:html={prose(demo.about)} />
+            <ul class="links" data-links>
+              <li><a href={`${TREE}/${demo.folder}`}>Source on GitHub</a></li>
+              <li>
+                <a href={`/playground/?figure=${demo.looks[0].playground}`} data-playground>Open in the playground</a>
+              </li>
+            </ul>
+            <p class="files">
+              {files(demo).map((file, i) => (
+                <>{i > 0 && ' · '}<a href={`${BLOB}/${file}`}>{file.split('/').pop()}</a></>
+              ))}
+            </p>
+          </div>
+        </li>
+      ))}
+    </ol>
+  </div>
+</Base>
+
+<script>
+  // A demo shown in another style opens in the playground in that style.
+  document.addEventListener('look', (e) => {
+    const look = (e as CustomEvent).detail;
+    const link = (e.target as Element).closest('.demo')?.querySelector<HTMLAnchorElement>('[data-playground]');
+    if (link && look.playground) link.href = `/playground/?figure=${look.playground}`;
+  });
+</script>

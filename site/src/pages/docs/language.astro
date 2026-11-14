@@ -1,0 +1,34 @@
+---
+// `docs/language.md`, rendered at build. It's the one source: the site keeps no copy.
+import Docs from '../../layouts/Docs.astro';
+import { compiledContent, getHeadings } from '../../../../docs/language.md';
+import { BLOB, TREE } from '../../lib/figures';
+
+const SOURCE = 'docs/language.md';
+
+// Links in the file are written for GitHub, relative to `docs/`, so they go there.
+const repoLink = (href: string) => {
+  if (/^(?:[a-z]+:|#|\/)/i.test(href)) return href;
+  const target = new URL(href, 'https://repo.invalid/docs/');
+  const path = target.pathname.slice(1);
+  return `${path.endsWith('/') ? TREE : BLOB}/${path}${target.hash}`;
+};
+
+const html = (await compiledContent())
+  // Wide tables scroll on their own rather than widening the page.
+  .replace(/<table>/g, '<div class="table-scroll" tabindex="0" role="region" aria-label="Table"><table>')
+  .replace(/<\/table>/g, '</table></div>')
+  .replace(/href="([^"]*)"/g, (_, href) => `href="${repoLink(href)}"`);
+
+const headings = getHeadings();
+---
+<Docs
+  title="Language reference"
+  description="The Pencil language: statements, curve forms, built-ins, styles and the decisions behind them."
+  path="/docs/language/"
+  headings={headings}
+  source={SOURCE}
+>
+  <p class="kicker">Rendered from <a href={`${BLOB}/${SOURCE}`}>{SOURCE}</a></p>
+  <Fragment set:html={html} />
+</Docs>

@@ -1,0 +1,27 @@
+---
+import Docs from '../../layouts/Docs.astro';
+import { BLOB } from '../../lib/figures';
+---
+<Docs title="Docs" path="/docs/" description="Pencil’s documentation: getting started and the language reference.">
+  <h1>Docs</h1>
+  <ul class="paths">
+    <li>
+      <a href="/docs/getting-started/">Getting started</a>
+      <p>Build it from source, render a frame, compare the GPU with the CPU, export video, and draw figures in a browser.</p>
+    </li>
+    <li>
+      <a href="/docs/language/">Language reference</a>
+      <p>What exists today: statements, curve forms, expressions, built-ins, styles, and the decisions behind them.</p>
+    </li>
+  </ul>
+  <h2>In the repository</h2>
+  <p>
+    The project’s working documents live beside the code and change often. They’re written for the
+    people building Pencil, so they’re less polished than these pages.
+  </p>
+  <ul>
+    <li><a href={`${BLOB}/docs/goals.md`}><code>docs/goals.md</code></a>: what Pencil is for, what’s still open, and how each figure went.</li>
+    <li><a href={`${BLOB}/docs/design-notes.md`}><code>docs/design-notes.md</code></a>: background on the design.</li>
+    <li><a href={`${BLOB}/README.md`}><code>README.md</code></a>: the short version.</li>
+  </ul>
+</Docs>

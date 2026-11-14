@@ -26,6 +26,7 @@ cargo run -p pencil-cli -- latex formulas.tex   # LaTeX from Desmos or MathLive,
 scripts/build-web.sh
 cargo run --release -p pencil-cli -- video corpus/003-unroll/unroll.pen --style corpus/003-unroll/blog.style --size 1280 --out out/unroll.mp4
 scripts/serve.py              # port 8741, no caching; then open /web/playground.html, /web/unroll.html, /web/bounds.html, /web/strokes.html, /web/text.html or /web/ast.html (add ?gl for WebGL2)
+cd site && pnpm install && pnpm build   # the pencil-lang.dev site into site/dist, after scripts/build-web.sh; pnpm dev serves it on 4321
 ```
 
 ## Layout
@@ -37,6 +38,9 @@ scripts/serve.py              # port 8741, no caching; then open /web/playground
   `video`.
 - `crates/pencil-web`, `web/`: the WASM host and live-reloading playground.
 - `corpus/`: figures and their golden IR, which are the contract.
+- `site/`: the pencil-lang.dev site, in Astro with static output. It renders `docs/language.md`, draws
+  the corpus through `<pencil-figure>`, and frames `web/playground.html`, reading and serving those
+  files from the repo rather than copying them in (`site/README.md`).
 - `lab/text`: its own workspace, a test bench for text renderers. `cargo run --release` there writes
   images and results for `/web/text.html`.
 

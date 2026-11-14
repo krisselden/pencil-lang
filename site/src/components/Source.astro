@@ -1,0 +1,33 @@
+---
+// A file from the repo, read at build so the site never holds a copy, shown with its name.
+// Highlighting is only what needs no grammar, as in the playground: comments, and a line's
+// first word when a statement or rule starts with it.
+import { readRepo } from '../lib/repo';
+import { BLOB } from '../lib/figures';
+
+interface Props {
+  path: string;
+  /** What to call it, when its path is too long. */
+  name?: string;
+}
+
+const { path, name = path.split('/').pop() } = Astro.props;
+const text = (await readRepo(path)).replace(/\n+$/, '');
+
+const escape = (s: string) => s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!);
+const line = (raw: string) => {
+  const comment = raw.indexOf('//');
+  const [code, rest] = comment >= 0 ? [raw.slice(0, comment), raw.slice(comment)] : [raw, ''];
+  const lead = /^(\s*)([a-z_]+)(?=\s)/.exec(code);
+  const body = lead
+    ? `${lead[1]}<span class="t-word">${escape(lead[2])}</span>${escape(code.slice(lead[0].length))}`
+    : escape(code);
+  return body + (rest ? `<span class="t-comment">${escape(rest)}</span>` : '');
+};
+// A line to a block, so a sheet shown narrow can wrap each one with a hanging indent.
+const html = text.split('\n').map((raw) => `<span class="l">${line(raw)}</span>`).join('');
+---
+<figure class="source">
+  <figcaption><span>{name}</span><a href={`${BLOB}/${path}`}>on GitHub</a></figcaption>
+  <pre><code set:html={html} /></pre>
+</figure>
