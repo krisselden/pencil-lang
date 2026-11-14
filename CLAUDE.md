@@ -22,6 +22,8 @@ cargo test --workspace
 UPDATE_GOLDENS=1 cargo test -p pencil-core --test corpus   # after an intended IR change
 cargo run -p pencil-cli -- check corpus/001-circle/circle.pen --style corpus/001-circle/circle.style
 cargo run -p pencil-cli -- render corpus/001-circle/circle.pen --style corpus/001-circle/bands.style --t 1.25 --out out/frame.png
+cargo run -p pencil-cli -- compile corpus/001-circle/circle.pen --style corpus/001-circle/circle.style --out out/circle.pfig   # one file a page loads without parsing; only this build can read it
+cargo run -p pencil-cli -- render out/circle.pfig --t 1.25 --out out/frame.png   # render, check, video, ir and wgsl take a compiled file too
 cargo run -p pencil-cli -- latex formulas.tex   # LaTeX from Desmos or MathLive, a formula per line, as Pencil text
 scripts/build-web.sh
 cargo run --release -p pencil-cli -- video corpus/003-unroll/unroll.pen --style corpus/003-unroll/blog.style --size 1280 --out out/unroll.mp4
@@ -31,7 +33,7 @@ scripts/serve.py              # port 8741, no caching; then open /web/playground
 ## Layout
 
 - `crates/pencil-core`: parser, IR, symbolic derivatives, styles, tracing, strokes, CPU oracle,
-  WGSL emitter.
+  WGSL emitter, and `compiled` (a Composition as bytes, stamped with a hash of the core's source by `build.rs`).
 - `crates/pencil-render`: wgpu pipeline shared by the native and browser paths.
 - `crates/pencil-cli`: the `pencil` command, including `check` (GPU against the oracle) and
   `video`.

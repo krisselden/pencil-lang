@@ -83,7 +83,7 @@ const MARK_TYPES: [&str; 14] = [
 /// The space a mark's edges blend in. The default is gamma-encoded sRGB, because
 /// that's what SVG and CSS do and SVG's look is the quality bar. Linear light makes
 /// dark lines on a light ground visibly thinner.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum Blend {
     #[default]
     Gamma,
@@ -94,7 +94,7 @@ pub enum Blend {
 }
 
 /// What a figure does with its finished color, for a figure that adds light.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum Tone {
     /// Past 1 is white.
     #[default]
@@ -108,7 +108,7 @@ pub enum Tone {
 
 /// A rendering hint. It chooses how a stroke is drawn, never what it means, so every
 /// choice has to agree with the others within tolerance.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum Draw {
     /// The form's fast path: an exact SDF per pixel, anything else as a line.
     #[default]
@@ -120,7 +120,7 @@ pub enum Draw {
 }
 
 /// How a line ends. Square is SVG's default, and round is what the blog uses.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum Cap {
     #[default]
     Butt,
@@ -128,7 +128,7 @@ pub enum Cap {
 }
 
 /// A label's typeface, as a role. What each role maps to belongs to the renderer.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum Font {
     #[default]
     Sans,
@@ -137,7 +137,7 @@ pub enum Font {
 }
 
 /// One part of what a label says about its value. A style's `text` lists them, joined by ` = `.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum TextPart {
     /// The label's own words, or its value's name if it has none.
     Caption,
@@ -150,7 +150,7 @@ pub enum TextPart {
 }
 
 /// How a label's text writes a point it shows.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum Format {
     /// `(−0.5, −0.87)`.
     #[default]
@@ -162,7 +162,7 @@ pub enum Format {
 }
 
 /// How a label finds its spot. See `place.rs`.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum Place {
     /// At its offset from its point.
     #[default]
@@ -171,7 +171,7 @@ pub enum Place {
     Settle,
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct MarkStyle {
     pub negative: Option<Expr>,
     pub positive: Option<Expr>,
@@ -312,7 +312,7 @@ impl MarkStyle {
     }
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Styled {
     /// One entry per `scene.marks`, in the same order.
     pub marks: Vec<MarkStyle>,
@@ -330,7 +330,7 @@ pub struct Styled {
 /// How panels sit on the canvas, in design pixels: `style panels` for the whole, and
 /// `style panel` for each. A figure without panels takes its `width` and `height` from
 /// `style figure`.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct PanelStyle {
     pub columns: Option<Expr>,
     pub gap: Option<Expr>,
@@ -558,7 +558,7 @@ fn sheet_functions(sheets: &[Document]) -> Functions {
 }
 
 /// How a beat's caption looks, when a sheet asks for it with `style caption { … }`.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct CaptionStyle {
     pub fill: Option<Expr>,
     pub size: Option<Expr>,

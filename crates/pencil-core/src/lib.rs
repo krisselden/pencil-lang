@@ -6,6 +6,7 @@
 //! one place each and compared by `pencil check`.
 
 pub mod clock;
+pub mod compiled;
 pub mod compile;
 pub mod diff;
 pub mod error;
@@ -30,13 +31,15 @@ pub mod wgsl;
 pub use error::Error;
 
 /// A document compiled against its stylesheets, ready to evaluate or emit.
-#[derive(Debug)]
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct Figure {
     pub scene: ir::Scene,
     pub styles: style::Styled,
     /// For each mark, whether it can stop existing. Most can't, and those cost nothing.
     pub conditional: Vec<bool>,
     /// Its systems' last answers. See `eval::Solved`. Panels with the same systems share them.
+    /// A cache, so a compiled figure doesn't carry it: `compiled` shares it again on reading.
+    #[serde(skip)]
     pub solved: std::sync::Arc<eval::Solved>,
 }
 
@@ -221,7 +224,7 @@ pub fn build(doc: &str, sheets: &[&str]) -> Result<Figure, Error> {
 }
 
 /// One view of a document, and where it sits, as fractions of the whole: `x y width height`.
-#[derive(Debug)]
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct Panel {
     pub id: String,
     pub title: Option<String>,
@@ -232,7 +235,7 @@ pub struct Panel {
 }
 
 /// What a document draws: one view, or several side by side on one canvas.
-#[derive(Debug)]
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct Composition {
     pub panels: Vec<Panel>,
     /// The whole thing's design size, for its shape.
