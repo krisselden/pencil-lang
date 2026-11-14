@@ -8,7 +8,7 @@
 
 use serde_json::{Value, json};
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum Expr {
     Num(f64),
     Sym(String),
@@ -65,7 +65,7 @@ impl Expr {
 
 /// A named scalar, which is what mints identity (SPEC/15). A point-valued binding
 /// `P` appears as the two scalars `P.x` and `P.y`.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Binding {
     pub id: String,
     pub expr: Expr,
@@ -73,7 +73,7 @@ pub struct Binding {
 
 /// A root that time or a reader can drive. Its binding holds the time expression,
 /// and an input overrides that for the frame.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Param {
     pub id: String,
     pub range: [f64; 2],
@@ -85,7 +85,7 @@ pub struct Param {
     pub choice: Option<Choice>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Choice {
     /// The name the document reads, which is the chosen value.
     pub of: String,
@@ -115,14 +115,14 @@ impl Param {
 }
 
 /// A piece of a region's boundary.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum Part {
     Point([Expr; 2]),
     Arc(Arc),
 }
 
 /// A curve given by a parameter over a range.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Arc {
     pub var: String,
     pub point: [Expr; 2],
@@ -132,7 +132,7 @@ pub struct Arc {
     pub depth: Option<Expr>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum Form {
     /// The zero set of `field`. Orientation comes from the gradient convention: +∇
     /// points to the positive side, so the negative side is inside. Writing an
@@ -198,7 +198,7 @@ pub enum Form {
 /// A value a label's text shows: a number, or a point, which the label's style writes as a pair,
 /// a complex number or in polar form. A point and a complex number are one thing in Pencil, so
 /// which it reads as is presentation.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum Shown {
     Number(Expr),
     Point([Expr; 2]),
@@ -229,7 +229,7 @@ impl Shown {
 
 /// The one value a label is about: the value it's named after, or the only thing its text
 /// shows. A style's `text` writes it as its name, its expression, its value, or an equation.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Subject {
     pub name: String,
     /// The expression as written: a `let`'s right side, or what's between a text's braces.
@@ -238,7 +238,7 @@ pub struct Subject {
 }
 
 /// Something drawn, in document order.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Mark {
     pub id: String,
     pub form: Form,
@@ -255,7 +255,7 @@ pub struct Mark {
 
 /// Unknowns defined by equations, each a binding `["Solved", system, k]`. Newton's method runs
 /// on these from `start`, with `jacobian` holding each equation's derivative by each unknown.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct System {
     pub unknowns: Vec<String>,
     pub start: Vec<Expr>,
@@ -266,7 +266,7 @@ pub struct System {
 }
 
 /// What a collection draws, for each combination of its variables.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum Shape {
     Dots([Expr; 2]),
     Circles {
@@ -285,7 +285,7 @@ pub enum Shape {
 }
 
 /// Which end of an expression sits at its place.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum Hang {
     #[default]
     Start,
@@ -294,7 +294,7 @@ pub enum Hang {
 }
 
 /// Where an expression can sit: a moving point, and an offset from it in `px`.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Spot {
     pub id: String,
     pub at: [Expr; 2],
@@ -303,7 +303,7 @@ pub struct Spot {
 }
 
 /// One written expression in a state.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Piece {
     pub spot: usize,
     pub keys: Vec<String>,
@@ -311,7 +311,7 @@ pub struct Piece {
 
 /// A list of states, driven by a binding: at 3.4 it's 40% of the way from state 3 to state 4
 /// by time, before easing. State 0 is the empty one before the first that's written.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Expression {
     pub id: String,
     pub by: Expr,
@@ -320,7 +320,7 @@ pub struct Expression {
 
 /// A mark a reader can drag. `inverse` maps `pointer.x`, `pointer.y` to the param, and
 /// the param's range is the constraint: an explicit inverse, in SPEC/16's terms.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Handle {
     pub mark: String,
     pub param: String,
@@ -328,7 +328,7 @@ pub struct Handle {
     pub inverse: Expr,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Family {
     pub vars: Vec<(String, [Expr; 2])>,
     pub lets: Vec<(String, Expr)>,
@@ -338,7 +338,7 @@ pub struct Family {
 /// `1em` where nothing says otherwise: the site's size for naming a point.
 pub const DEFAULT_EM: f64 = 17.0;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Viewport {
     pub x: [f64; 2],
     pub y: [f64; 2],
@@ -375,7 +375,7 @@ impl Default for Viewport {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Scene {
     pub name: Option<String>,
     pub params: Vec<Param>,

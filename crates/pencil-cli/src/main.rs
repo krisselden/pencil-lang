@@ -8,6 +8,7 @@ use std::process::{Command, Stdio};
 
 mod text;
 
+use pencil_core::compiled;
 use pencil_core::frame::{self, Inputs};
 use pencil_core::ir::Form;
 use pencil_core::terms::{Estimate, TextWidths};
@@ -16,12 +17,16 @@ use pencil_render::{FigurePipeline, Offscreen};
 
 const USAGE: &str = "\
 usage:
+  pencil compile DOC.pen [--style FILE]... --out FIGURE.pfig
   pencil ir     DOC.pen
   pencil wgsl   DOC.pen [--style FILE]...
   pencil render DOC.pen [--style FILE]... [--t SECONDS] [--param NAME=VALUE]... [--size WIDTH] [--cpu] --out FRAME.png
   pencil check  DOC.pen [--style FILE]... [--t SECONDS]... [--param NAME=VALUE]... [--size WIDTH] [--out DIR]
   pencil video  DOC.pen [--style FILE]... [--size WIDTH] [--fps N] [--seconds S] [--font FILE] --out MOVIE.mp4
   pencil latex  FILE.tex...
+
+ir, wgsl, render, check and video take a compiled figure (the file `compile` writes, which has its
+sheets in it) in place of DOC.pen.
 ";
 
 /// The most any channel may differ from the CPU oracle, out of 255. The GPU is
@@ -84,12 +89,27 @@ fn parse_args(args: &[String]) -> Result<Args, Box<dyn Error>> {
     Ok(parsed)
 }
 
-/// Compiles the document against its sheets. A file one of them uses is read from where its
-/// name says, which is its path from here, since the document's and sheets' names are theirs.
+/// Compiles the document against its sheets, or reads a figure that was compiled already. A file
+/// one of them uses is read from where its name says, which is its path from here, since the
+/// document's and sheets' names are theirs.
 fn load(args: &Args) -> Result<Composition, Box<dyn Error>> {
     let read = |p: &Path| fs::read_to_string(p).map_err(|e| format!("{}: {e}", p.display()));
     let name = |p: &Path| p.to_string_lossy().into_owned();
-    let doc = (name(&args.doc), read(&args.doc)?);
+    let bytes = fs::read(&args.doc).map_err(|e| format!("{}: {e}", args.doc.display()))?;
+    if compiled::is_compiled(&bytes) {
+        if !args.styles.is_empty() {
+            return Err(format!(
+                "{} is compiled, and has its sheets in it: compile it again to change them",
+                args.doc.display()
+            )
+            .into());
+        }
+        return Composition::from_bytes(&bytes)
+            .map_err(|e| format!("{}: {e}", args.doc.display()).into());
+    }
+    let text = String::from_utf8(bytes)
+        .map_err(|_| format!("{}: not a Pencil document or a compiled figure", args.doc.display()))?;
+    let doc = (name(&args.doc), text);
     let sheets = args
         .styles
         .iter()
@@ -332,6 +352,19 @@ fn video(args: &Args) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+/// Compiles the document against its sheets and writes the result to one file, which a page or
+/// `render` can read without parsing anything. It is only readable by this build of Pencil.
+fn compile(args: &Args) -> Result<(), Box<dyn Error>> {
+    let out = args.out.as_ref().ok_or("compile needs --out")?;
+    let bytes = load(args)?.to_bytes()?;
+    if let Some(parent) = out.parent().filter(|p| !p.as_os_str().is_empty()) {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(out, &bytes).map_err(|e| format!("{}: {e}", out.display()))?;
+    println!("wrote {} ({} bytes)", out.display(), bytes.len());
+    Ok(())
+}
+
 struct Diff {
     max: u8,
     mean: f64,
@@ -511,6 +544,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                 print!("{}", wgsl::emit(&panel.figure));
             }
         }
+        "compile" => compile(&parsed)?,
         "render" => render(&parsed)?,
         "check" => check(&parsed)?,
         "video" => video(&parsed)?,

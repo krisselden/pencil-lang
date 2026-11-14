@@ -214,6 +214,20 @@ impl Player {
         let composition = sources(doc, &sheets, &names, files)
             .and_then(|sources| sources.compose())
             .map_err(compile_error)?;
+        self.show(composition);
+        Ok(())
+    }
+
+    /// Takes a figure that `pencil compile` wrote, in place of sources: nothing is parsed. A
+    /// file from another build of Pencil is an error that says to compile it again, and as with
+    /// `load`, the previous figure stays on screen.
+    pub fn load_compiled(&mut self, bytes: &[u8]) -> Result<(), JsValue> {
+        let composition = Composition::from_bytes(bytes).map_err(compile_error)?;
+        self.show(composition);
+        Ok(())
+    }
+
+    fn show(&mut self, composition: Composition) {
         let pipelines = composition
             .panels
             .iter()
@@ -222,7 +236,6 @@ impl Player {
         self.figure = Some((composition, pipelines));
         self.params.clear();
         self.grabbed = None;
-        Ok(())
     }
 
     /// Takes a param over from its time binding, at this value.
@@ -536,6 +549,13 @@ pub fn figure_size(
     let composition = sources(doc, &sheets, &names, files)
         .and_then(|sources| sources.compose())
         .map_err(compile_error)?;
+    Ok(serde_json::json!(composition.size).to_string())
+}
+
+/// A compiled figure's design size, as `figure_size` gives a document's.
+#[wasm_bindgen]
+pub fn figure_size_compiled(bytes: &[u8]) -> Result<String, JsValue> {
+    let composition = Composition::from_bytes(bytes).map_err(compile_error)?;
     Ok(serde_json::json!(composition.size).to_string())
 }
 
