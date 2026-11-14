@@ -104,14 +104,18 @@ GLSL shaders draw through one SVG system (`src/lib/plot.ts`), and nothing is mad
    - **Next, a view that turns:** pitch as well as yaw, bound like any param so a drag orbits, for `LevelCurve` and
      `NewtonDoyle` (the site's `wire3d.ts`, which has z up and turns about it). Their planes are translucent polygons, so
      what's drawn over what needs an answer there, and their surfaces are grid lines, which `curves` already draws.
-2. **The host: what a page and a build do with a figure.** Designed on 2026-11-14 ("The host" below), and not built, apart
-   from the compiled figure, which a session is writing. In short: a build makes a compiled figure, a poster and what the
+2. **The host: what a page and a build do with a figure.** Designed on 2026-11-14 ("The host" below). The compiled figure is
+   built, and nothing else of it. In short: a build makes a compiled figure, a poster and what the
    page needs to know about the figure, for each set of sheets a page can pick. The element shows the poster until its
    first frame and picks the set by media query. An Astro component does both for a page.
 3. **`pencil-lang.dev`:** the docs, the playground and the corpus as demos. An Astro site in `site/`, so it's the first user of
-   the integration, before the blog.
-4. **A migration table,** `docs/migration.md`: each of the site's 31 figures, the corpus figure that covers it if one does, and
-   what Pencil lacks for it. The shaders and the bar chart (`DigitsChart`) are the ones to look at first.
+   the integration, before the blog. **A first version is built (2026-11-14)** and not deployed: a landing page, the language
+   reference rendered from `docs/language.md`, the corpus and the explainer drawn live, and the playground in a frame
+   (`site/README.md`). It loads figures through the element as it is. Kris hasn't looked at it.
+4. **A migration table,** `docs/migration.md`, written on 2026-11-14: each of the site's 31 figures, the corpus figure that covers
+   it if one does, and what Pencil lacks for it. 5 are done, 9 are ports with what exists, 12 need one or two features, and 5
+   need design. What most figures lack is around the figure and not in it: arrow keys (12 figures), dragging a point in two
+   dimensions (5), Newton's steps as values (4) and panels of different sizes (4).
 
 ### Proposed order after that
 
@@ -657,7 +661,17 @@ stays one where there's no GPU, no WASM or no script. The site is the same today
 **What a build makes,** for a figure and each set of sheets a page can pick, such as light, dark and narrow:
 
 - **A compiled figure,** one file. One request instead of the explainer's 12, and a mistake stops the build and not a reader.
-  It isn't for speed: compiling the explainer in a browser takes 19 ms.
+  It isn't for speed: compiling the explainer in a browser takes 19 ms. **Built 2026-11-14:** `pencil compile DOC.pen --style …
+  --out FILE` writes it, the other commands take it in place of a document, and `Player::load_compiled` reads it in a page.
+  - **Only the build that wrote a file can read it.** Its header holds a fingerprint of the core's source, so there's no
+    version to forget, and any change to the core makes old files an error that says to compile again. The element has to
+    show that, and not retry.
+  - **It's faster to read and no smaller.** Natively, reading takes a third to a twentieth of compiling: 0.4 ms against 1.8 ms
+    for the explainer. Before compression it's bigger than its sources, up to 970 KB for the lattice against 9 KB, since every
+    expression is written out as a tree, and derivatives and inlined functions multiply them. After brotli it's about the
+    size of its sources: 5.0 KB against 5.3 KB for the explainer, and 5.2 KB against 2.9 KB for the lattice. Naming each
+    head once, or sharing equal subtrees, would shrink it. Not done, while the IR is still moving.
+  - **The WASM grew 1.6%.** A page that only loads compiled figures still carries the parser.
 - **A poster,** a still at the design width and at twice it.
 - **What the page needs to know:** the figure's shape, its duration, its params with their ranges and steps, its beats and
   captions, and the colors its sheets name. That's what `info` gives a script today, as a file, so a page can lay out its
@@ -693,7 +707,7 @@ above and writes the element with its sources and poster. In `astro dev` it hand
 reloads as it's edited. A function gives a post its card, in place of the site's dev-only capture. The site's tiers and
 captions wrap it, in the site.
 
-**Order.** The compiled figure (in a session now). Then the poster and what the page needs to know, from the CLI. Then the
+**Order.** The compiled figure (built). Then the poster and what the page needs to know, from the CLI. Then the
 element's children and `<source>`. Then the component, tried on `pencil-lang.dev` first. Then one post: the involute's has a
 single figure, which is `corpus/003-unroll`.
 

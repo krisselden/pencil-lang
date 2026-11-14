@@ -4,6 +4,9 @@ Written on 2026-11-14, from the site's components and Pencil as of `e62e58e`. Th
 in the site's posts, what each one is as mathematics, what a reader does with it, what Pencil already has for it, and what it
 lacks. `goals.md` still holds what's open in general; this file is only about the site.
 
+**Since then:** points in space, a viewport's `yaw` and `self.z` along a curve were built the same day, and `RollTube` is
+`corpus/013-tube`. Its entries below are updated, and the counts with them. Nothing else here has been reread.
+
 **How it was checked.** Every component was read, with the libraries it draws through (`plot.ts`, `construction.ts`, `wire3d.ts`,
 `doyle.ts`, `Shader.astro`). On the Pencil side, every "lacks" claim below was checked against `language.md` and the code, and the
 ones marked *(tried)* were written as small `.pen` files outside the repo and run through `pencil ir` or `pencil render`. The
@@ -45,7 +48,7 @@ The home page's hero canvas and the header's logo are listed apart, at the end. 
 | `ArmColors` | doyle-spiral-shader, doyle-spiral-period | primary | Related: `007-lattice` | A color per instance in `curves` and `dots` | Feature |
 | `ZoomLoop` | doyle-spiral-shader | primary | None | A clock that doesn't loop, and a chart | Design |
 | `LatticeMapping` | doyle-spiral-period | primary | Same: `007-lattice` | Nothing | Done |
-| `RollTube` | doyle-spiral-period | primary | None | 3D: style that changes front to back along a line | Design |
+| `RollTube` | doyle-spiral-period | primary | Same: `013-tube` | Nothing | Done |
 | `CameraLog` | doyle-spiral-period | primary | Related: `007-lattice` | Nothing | Port |
 | `LimaconTangency` | doyle-spiral-touch | primary | None | Nothing | Port |
 | `LevelCurve` | doyle-spiral-touch | supporting | None | 3D: a view the reader turns | Design |
@@ -191,13 +194,14 @@ today as 2D curves of projected points, with yaw and pitch as params on sliders.
 
 - **A view the reader turns:** a drag that isn't on a mark and sets two params. A handle is on a mark and sets one (`handle P sets
   a = …`, with no second `sets`, and a `grab` holds one handle).
-- **Style that changes along a line** with depth (`RollTube`'s front and back). A mark's style is per mark per frame, and a curve
-  can only be broken where a construction is absent.
+- **Style that changes along a line** with depth (`RollTube`'s front and back). Built: a curve's `width` and `opacity` read
+  `self.z`, and the stroke is cut where they change (`language.md`, Points in space).
 - **Linked views:** two panels share params already, so `NewtonDoyle`'s linked yaw and pitch would follow from the first item.
 - **A polygon clipped to a box** in 3D. In 2D after projection, a region can be clipped by writing its corners, but not generally.
 
-A 3D form (points with three coordinates and a camera in the viewport) would replace the hand projection. A point with three
-coordinates doesn't parse today *(tried)*. Which way to go is the design question.
+A 3D form (points with three coordinates and a camera in the viewport) replaces the hand projection. Built: `(x, y, z)`, drawn
+looking down z, with a viewport's `yaw`. Still to design for the other two: a pitch, with z up as `wire3d.ts` has it, and a view
+the reader turns.
 
 ## Keyboard, hover and linked panels
 
@@ -454,9 +458,10 @@ replaced that.
 - **Draws:** the strip 0 ≤ Im < 2π of log space, bent onto a cylinder of radius 1/roll and turned, with rows along ω colored by
   row mod p, lattice dots, and the period A as a dashed arrow. Back faint, front strong.
 - **Reader:** sliders p (1–3), roll (0–1) and turn (0–360°).
-- **Pencil:** the projection is explicit, so each row can be a parametric curve of projected points today. Color by row mod p, for
-  p up to 3, is three collections.
-- **Lacks:** style that changes along a line with depth. See "The three 3D figures".
+- **Pencil:** done as `013-tube` (`web/tube.html`). Each row is a curve of points in space, color by row mod p is three
+  collections, and the sheet fades and thins the far side from `self.z`. The view `fit`s the strip in place of the site's zoom,
+  and `roll` stops at 0.01, since Pencil can't write the flat limit of a cylinder of radius 1/roll.
+- **Lacks:** nothing.
 
 **`CameraLog`** (primary): two panels.
 
@@ -569,13 +574,13 @@ replaced that.
 
 **Coverage today, of 31 sources:**
 
-- **Done: 4.** `Unroll`, `BoundsConstruction`, `SquareZ` and `LatticeMapping`, which are corpus figures.
+- **Done: 5.** `Unroll`, `BoundsConstruction`, `SquareZ`, `LatticeMapping` and `RollTube`, which are corpus figures.
 - **Port: 9.** Everything they need exists, and they aren't written yet: `circumcircle.glsl` (by extending `011`), `CircumCot`,
   `TriangleLayers`, `MedianConstruction`, `ScaledCopy`, `UnwrapMorph`, `LogNearest`, `CameraLog` and `LimaconTangency`.
 - **One feature: 9.** `CircumcircleDemo`, `CircumNormals`, `FloorCell`, `gradient.glsl`, `circle-distance.glsl`, `ArmColors`,
   `DoyleSpiral`, `NewtonLine` and `DoyleFlower`.
 - **Two features: 3.** `FollowPixel`, `PowerViews` and `DigitsChart`.
-- **Design: 6.** `LimaconConstruction`, `ZoomLoop`, `RollTube`, `LevelCurve`, `NewtonDoyle` and `SkewSliders`. The hero and the logo
+- **Design: 5.** `LimaconConstruction`, `ZoomLoop`, `LevelCurve`, `NewtonDoyle` and `SkewSliders`. The hero and the logo
   are design too.
 
 **Missing features, by how many figures need each.** The table counts the 31 sources plus the hero and logo. "Alone" means the figure
@@ -587,7 +592,7 @@ is ported once this exists and nothing else does.
 | Dragging a point in two dimensions | 5: `CircumcircleDemo`, `CircumNormals`, `FloorCell`, `FollowPixel`, `PowerViews` | 3 | Language: a handle that sets two params, or a point-valued param |
 | Newton's steps as values (or derivatives a figure can name) | 4: `DoyleFlower`, `DigitsChart`, `NewtonDoyle`, `SkewSliders` | 1 | Language |
 | Panels of different sizes and layouts (a wide strip over two) | 4: `FollowPixel`, `PowerViews`, `NewtonDoyle`, `FloorCell` (or two figures) | 0 | Sheet: a known limit |
-| 3D: a view the reader turns, and style along a line by depth | 3: `LevelCurve`, `RollTube`, `NewtonDoyle` | 0 | Design |
+| 3D: a view that pitches and that the reader turns | 2: `LevelCurve`, `NewtonDoyle` | 1 | Design |
 | A fill that reads the pixel's position | 2: `gradient.glsl`, `circle-distance.glsl` | 2 | Style |
 | A field that names its nearest circle, or sides past the 256 cap | 2: `DoyleSpiral`, hero (and maybe `ZoomLoop`) | 1 | Core and shader |
 | Unequal axis scales | 2: `NewtonLine`, `DigitsChart` | 1 | Viewport: decided against on 2026-11-06, unless asked for |
@@ -634,7 +639,7 @@ feature (`DigitsChart` is marks), clipping (`in clip(…)`), and general lists.
    decided). Then `NewtonLine`, once unequal scales are settled one way or the other.
 7. **The nearest-circle field,** or sides past the cap: `DoyleSpiral`, the shader post's hero.
 8. **Design, one figure each:**
-   - 3D, starting with `LevelCurve` (one view, fixed drawing order), then `RollTube`
+   - 3D: `LevelCurve` (one view, fixed drawing order), now that `RollTube` is done
    - beats per panel or linked elements for `LimaconConstruction`
    - `ZoomLoop`'s clock and chart
    - `SkewSliders`' actions

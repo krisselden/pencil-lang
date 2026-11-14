@@ -198,6 +198,17 @@ export const DEMOS: Demo[] = [
     looks: [{ pen: 'corpus/012-limacon/limacon.pen', sheets: ['corpus/012-limacon/plain.style'], playground: 'limacon' }],
   },
   {
+    id: 'tube',
+    number: '013',
+    title: 'Rolling the strip into a tube',
+    about:
+      'The one-turn strip of the grid, with rows colored by arm, rolling up into a tube. Each row runs off the top and comes back in at the bottom as the next row of its arm, so an arm is one line wound around. Its points are in space, and the sheet fades the far side from `self.z`.',
+    label:
+      'The one-turn strip of the triangular grid, with rows colored by arm, rolling up into a tube whose seam joins each row to another row of the same arm.',
+    folder: 'corpus/013-tube',
+    looks: [{ pen: 'corpus/013-tube/tube.pen', sheets: [THEME, 'corpus/013-tube/plain.style'], dark: [DARK], playground: 'tube' }],
+  },
+  {
     id: 'explainer',
     number: 'Lab',
     title: 'Explainer: the limaçon from its central circle',
