@@ -271,11 +271,31 @@ POINT = re.compile(r"(?<![\w'’])([A-Z][′']?|\d+)(?![\w′])")
 NUMBERS = {"zero": "0", "one": "1", "two": "2", "three": "3"}
 
 
+USE = re.compile(r'^\s*use\s+"([^"]+)"\s*(?://.*)?$')
+
+
+def flat(pen, seen=None):
+    """A `.pen` as the lines the figure reads: each `use "file"` line replaced by that file's
+    lines, once, found from the file that says it. The retimed copy is written this way, as one
+    file, so it stands alone in `out/`."""
+    pen = Path(pen)
+    seen = {pen.resolve()} if seen is None else seen
+    lines = []
+    for line in pen.read_text().splitlines():
+        used = USE.match(line)
+        if not used:
+            lines.append(line)
+        elif (pen.parent / used[1]).resolve() not in seen:
+            seen.add((pen.parent / used[1]).resolve())
+            lines += flat(pen.parent / used[1], seen)
+    return lines
+
+
 def unlabeled(pen, script):
     """Points a caption or the narration names that the figure doesn't label. What's said should
     be seen: a label is how a reader knows which letter was meant, and it settles letters that
     sound alike, as C and E do."""
-    text = Path(pen).read_text()
+    text = "\n".join(flat(pen))
     labels = set(re.findall(r'^\s*label\s+\w+\s*=\s*"([^"]*)"', text, re.M))
     said = [("caption", c) for c in re.findall(r'^beat\s+(?:\w+\s+)?"([^"]+)"', text, re.M)]
     said += [("narration", ANCHOR.sub("", line)) for line in lines_of(Path(script).read_text())]
@@ -326,8 +346,8 @@ def retime(pen, timing, out):
     cuts = [0.0] + [(spans[i][1] + spans[i + 1][0]) / 2 for i in range(count - 1)]
     cuts.append(take["duration"])
 
-    text = Path(pen).read_text().splitlines()
-    items = []  # (line of the file, kind, name, seconds)
+    text = flat(pen)
+    items = []  # (line of the figure, kind, name, seconds)
     for i, line in enumerate(text):
         m = ITEM.match(line)
         if m:

@@ -4,6 +4,7 @@
 import { PencilFigure } from './pencil-figure.js';
 import { ready as readingReady, readingAt, pasteLatex } from './reading.js';
 import { viewing } from './controls.js';
+import { uses } from './pkg/pencil_web.js';
 
 // Each figure with the sheets its own page or video loads, from the repo root, in order.
 const THEME = 'corpus/theme.style';
@@ -48,7 +49,9 @@ const fetchText = async (path) => {
 // ---- Sources and the editor ----
 
 /** One file: what's on disk, and what's being edited. Edits are kept per path, so a shared sheet
- * like `theme.style` carries its edits to every figure that loads it. */
+ * like `theme.style` carries its edits to every figure that loads it. A `root` is the document or
+ * one of its sheets, in order. The others are files those `use`, each after the file that first
+ * uses it. */
 let files = [];
 let active = 0;
 let failure = null; // { file, line, col, message }
@@ -145,6 +148,7 @@ function paintTabs() {
       tab.title = file.path;
       tab.setAttribute('aria-selected', String(i === active));
       tab.classList.toggle('edited', file.text !== file.disk);
+      tab.classList.toggle('used', !file.root);
       tab.classList.toggle('failed', failure?.file === i);
       tab.addEventListener('click', () => show(i));
       return tab;
@@ -268,14 +272,60 @@ const info = () => figure.info;
 // Beats with lengths count beats done, from 0 to n. Untimed ones say which beat it's on.
 const timed = () => (info()?.beatLengths?.length ?? 0) > 0;
 
+const roots = () => files.filter((f) => f.root);
+/** What `figure.load` takes: the document, its sheets, and the files they use, by path. */
+const sources = () => {
+  const [doc, ...sheets] = roots();
+  const used = Object.fromEntries(files.filter((f) => !f.root).map((f) => [f.path, f.text]));
+  return [doc.text, sheets.map((f) => f.text), { names: roots().map((f) => f.path), files: used }];
+};
+
+/** Opens a tab for each file the sources `use`, after the file that uses it, and closes the tab
+ * of one that's no longer used. Says whether that changed what's open. */
+let following = 0;
+async function follow() {
+  const turn = ++following;
+  const next = [];
+  const seen = new Set();
+  const visit = async (file) => {
+    next.push(file);
+    for (const path of uses(file.path, file.text)) {
+      if (seen.has(path)) continue;
+      seen.add(path);
+      let used = files.find((f) => !f.root && f.path === path);
+      if (!used) {
+        try {
+          const disk = await fetchText(path);
+          used = { path, disk, text: stored(path) ?? disk };
+        } catch {
+          // No such file. Compiling says which line wanted it.
+          continue;
+        }
+      }
+      await visit(used);
+    }
+  };
+  for (const root of roots()) await visit(root);
+  if (turn !== following) return false;
+  if (next.length === files.length && next.every((f, i) => f === files[i])) return false;
+  const shown = files[active];
+  files = next;
+  active = files.indexOf(shown);
+  if (active < 0) show(0);
+  return true;
+}
+
 /** Compiles the editor's sources. A failed compile leaves the last good figure on screen. */
 function compile() {
-  const [doc, ...sheets] = files.map((f) => f.text);
+  // An edit can add a `use` or take one away. Once its file is here, or gone, compile again.
+  follow().then((changed) => changed && compile());
   const started = performance.now();
   try {
-    figure.load(doc, sheets);
+    figure.load(...sources());
   } catch (e) {
-    const file = e.sheet === null || e.sheet === undefined ? 0 : e.sheet + 1;
+    // In a used file, by its name. Otherwise in a sheet, by its place, or in the document.
+    const root = roots()[e.sheet === null || e.sheet === undefined ? 0 : e.sheet + 1];
+    const file = Math.max(0, files.indexOf(files.find((f) => !f.root && f.path === e.file) ?? root));
     failure = { file, line: e.line ?? 0, col: e.col ?? 0, message: e.text ?? e.message };
     paintErrors();
     paintTabs();
@@ -415,7 +465,7 @@ figure.addEventListener('load', paintControls);
 figure.addEventListener('play', paintPlay);
 figure.addEventListener('pause', paintPlay);
 figure.addEventListener('draw', (e) => {
-  if (e.detail.fresh) lastGood = files.map((f) => f.text);
+  if (e.detail.fresh) lastGood = sources();
   readControls();
   $('status').textContent = `${figure.backend} · ${viewing(figure)} · ${compiled}`;
 });
@@ -425,8 +475,7 @@ figure.addEventListener('error', (e) => {
   warning = `It compiled, but drawing failed at ${time.toFixed(2)} s: ${error.message}`;
   if (fresh && lastGood) {
     try {
-      const [doc, ...sheets] = lastGood;
-      figure.load(doc, sheets);
+      figure.load(...lastGood);
       warning += '\nShowing the last figure that drew.';
     } catch {}
   }
@@ -447,9 +496,10 @@ async function open(entry) {
   }
   files = paths.map((path, i) => {
     const text = stored(path) ?? disks[i];
-    return { path, disk: disks[i], text };
+    return { path, disk: disks[i], text, root: true };
   });
   active = 0;
+  await follow();
   lastGood = null;
   warning = null;
   textarea.value = '';

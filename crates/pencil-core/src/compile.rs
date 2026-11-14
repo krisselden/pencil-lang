@@ -1949,6 +1949,10 @@ fn expanded(items: &[Item], doc: &Document, out: &mut Vec<Item>) -> Result<(), E
     for item in items {
         match item {
             Item::Panel { .. } | Item::Group { .. } => {}
+            // `files::load` reads these in. One that's left came by a way that has no files.
+            Item::UseFile { path, line, col } => {
+                return Err(Error::at(*line, *col, format!("no file `{path}`")));
+            }
             Item::Use {
                 name,
                 args,
@@ -2132,7 +2136,8 @@ fn needs(item: &Item) -> Vec<String> {
         | Item::EndBeat
         | Item::Panel { .. }
         | Item::Group { .. }
-        | Item::Use { .. } => {}
+        | Item::Use { .. }
+        | Item::UseFile { .. } => {}
     }
     if let Item::Bind { name, .. } = item {
         out.push(name.clone());
@@ -2157,11 +2162,26 @@ fn defines(item: &Item) -> Vec<&str> {
 /// used before it's written is defined just before its first use. So a figure can say what it
 /// draws first and how the values are worked out after. What's drawn keeps its order, which is
 /// what's on top, and so does the timeline.
+///
+/// A beat's name is how far through it the story is, and a value can read that before the beat
+/// is written too, as a part of a figure does when a later part moves what it drew. Beats and
+/// pauses can't pass each other, so a beat that's needed early brings along every beat and pause
+/// before it. One with a block holds marks, which stay where they are, so it can't come early.
 fn in_order(items: Vec<Item>) -> Result<Vec<Item>, Error> {
     let mut definer: HashMap<String, usize> = HashMap::new();
+    // For each beat or pause, the one before it.
+    let mut earlier: Vec<Option<usize>> = vec![None; items.len()];
+    let mut last = None;
     for (i, item) in items.iter().enumerate() {
         for name in defines(item) {
             definer.entry(name.to_string()).or_insert(i);
+        }
+        if let Item::Move(crate::parse::Move { name: Some(name), .. }) = item {
+            definer.entry(name.clone()).or_insert(i);
+        }
+        if matches!(item, Item::Move(_) | Item::Pause(_) | Item::Beat { .. } | Item::EndBeat) {
+            earlier[i] = last;
+            last = Some(i);
         }
     }
     if definer.is_empty() {
@@ -2173,40 +2193,65 @@ fn in_order(items: Vec<Item>) -> Result<Vec<Item>, Error> {
         Visiting,
         Done,
     }
-    fn visit(
-        i: usize,
-        items: &[Item],
-        definer: &HashMap<String, usize>,
-        state: &mut [State],
-        order: &mut Vec<usize>,
-    ) -> Result<(), Error> {
-        match state[i] {
-            State::Done => return Ok(()),
-            State::Visiting => {
-                let name = defines(&items[i]).first().copied().unwrap_or_default().to_string();
-                return Err(Error::new(format!("`{name}` is defined in terms of itself")));
+    struct Order<'a> {
+        items: &'a [Item],
+        definer: &'a HashMap<String, usize>,
+        earlier: &'a [Option<usize>],
+        state: Vec<State>,
+        order: Vec<usize>,
+    }
+    impl Order<'_> {
+        /// Puts statement `i` next, after what it needs. `early` says something written before
+        /// it needs it.
+        fn visit(&mut self, i: usize, early: bool) -> Result<(), Error> {
+            let item = &self.items[i];
+            match self.state[i] {
+                State::Done => return Ok(()),
+                State::Visiting => {
+                    let name = match item {
+                        Item::Move(crate::parse::Move { name: Some(name), .. }) => name.as_str(),
+                        _ => defines(item).first().copied().unwrap_or_default(),
+                    };
+                    return Err(Error::new(format!("`{name}` is defined in terms of itself")));
+                }
+                State::Waiting => {}
             }
-            State::Waiting => {}
-        }
-        state[i] = State::Visiting;
-        for name in needs(&items[i]) {
-            if let Some(&j) = definer.get(&name)
-                && j != i
-            {
-                visit(j, items, definer, state, order).map_err(|e| {
-                    if e.line == 0 { Error { line: line_of(&items[i]), col: 1, ..e } } else { e }
+            let holds_marks = matches!(
+                item,
+                Item::Move(crate::parse::Move { block: true, .. }) | Item::Beat { .. } | Item::EndBeat
+            );
+            if early && holds_marks {
+                return Err(Error::new(
+                    "this reads a beat that's written after it, and a beat with a block, or one after it, can't come early",
+                ));
+            }
+            self.state[i] = State::Visiting;
+            let wanted = needs(item)
+                .into_iter()
+                .filter_map(|name| self.definer.get(&name).copied())
+                .filter(|j| *j != i);
+            for j in self.earlier[i].into_iter().chain(wanted) {
+                self.visit(j, true).map_err(|e| match e.line {
+                    0 => Error { line: line_of(item), col: 1, ..e },
+                    _ => e,
                 })?;
             }
+            self.state[i] = State::Done;
+            self.order.push(i);
+            Ok(())
         }
-        state[i] = State::Done;
-        order.push(i);
-        Ok(())
     }
-    let mut state = vec![State::Waiting; items.len()];
-    let mut order = Vec::with_capacity(items.len());
+    let mut order = Order {
+        items: &items,
+        definer: &definer,
+        earlier: &earlier,
+        state: vec![State::Waiting; items.len()],
+        order: Vec::with_capacity(items.len()),
+    };
     for i in 0..items.len() {
-        visit(i, &items, &definer, &mut state, &mut order)?;
+        order.visit(i, false)?;
     }
+    let order = order.order;
     let mut slots: Vec<Option<Item>> = items.into_iter().map(Some).collect();
     Ok(order.into_iter().map(|i| slots[i].take().unwrap()).collect())
 }
@@ -2999,7 +3044,11 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
                     "label"
                 );
             }
-            Item::Text { .. } | Item::Panel { .. } | Item::Group { .. } | Item::Use { .. } => {
+            Item::Text { .. }
+            | Item::Panel { .. }
+            | Item::Group { .. }
+            | Item::Use { .. }
+            | Item::UseFile { .. } => {
                 unreachable!("`expanded` took these out")
             }
             Item::Outline { name, panel, line } => {
@@ -4761,6 +4810,34 @@ mod tests {
         scene("let x = f(2)\nfn f(x) = x^2").unwrap();
         let err = scene("let a = b + 1\nlet b = a").unwrap_err();
         assert!(err.message.contains("in terms of itself"), "{err}");
+    }
+
+    #[test]
+    fn a_value_can_read_a_beat_written_after_it() {
+        // As one part of a figure does when a later part moves what it drew.
+        let early = "beat arrive for 1 show P
+             let P = (leave, 0)
+             dot P
+             pause 0.5
+             beat leave for 2 drop P";
+        let late = "beat arrive for 1 show P
+             pause 0.5
+             beat leave for 2 drop P
+             let P = (leave, 0)
+             dot P";
+        let (early, late) = (scene(early).unwrap(), scene(late).unwrap());
+        // The same story, in the same order, with the pause still between its beats.
+        assert_eq!(early.beat_lengths, late.beat_lengths);
+        assert_eq!(early.to_json()["marks"], late.to_json()["marks"]);
+        assert_eq!(early.to_json()["duration"], late.to_json()["duration"]);
+
+        // A beat's length can't wait on a value that waits on the beat.
+        let err = scene("let a = b\nbeat b for a").unwrap_err();
+        assert!(err.message.contains("in terms of itself"), "{err}");
+        // A beat with a block holds marks, which stay where they're written.
+        let err = scene("let a = b\nlet O = (0, 0)\nbeat b for 1 {\n  dot O\n}").unwrap_err();
+        assert!(err.message.contains("can't come early"), "{err}");
+        assert_eq!(err.line, 1);
     }
 
     #[test]

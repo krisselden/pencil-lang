@@ -37,6 +37,8 @@
   .tab.edited::after { content: ' •'; }
   .tab.failed { color: var(--bad); }
   .tab.failed::before { content: '✕ '; }
+  /* A file the one before it uses. */
+  .tab.used { font-style: italic; }
   .tools { display: flex; gap: 6px; padding: 4px 8px; font-size: 0.75rem; color: var(--muted); align-items: center; }
   .tools .path { font-family: ui-monospace, monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .tools button { font-size: 0.75rem; white-space: nowrap; }

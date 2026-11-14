@@ -17,6 +17,24 @@ just before its first use, so a figure can say what it draws first and how its v
 order it's written in, which is what's on top, and so does the timeline. A curve, circle or line used as a value, such as in
 `intersect(c, l, 0)`, is something drawn, so it comes first. A value defined in terms of itself, through others or not, is an
 error.
+A beat's name can be read before its beat is written too. Beats and pauses can't pass each other, so they stay in order, and a
+beat with a block holds marks, which stay where they are, so only a beat without one can be read early.
+
+**A figure can be more than one file.** `use "limacon/mirror.pen"` puts that file's statements where the line is, as if
+they were written there. Everything is still one figure with one set of names, so a part can show, drop or move what
+another part drew, and a name defined twice is an error wherever the two are.
+
+- **The path is from the file that says it,** with `/` between folders and `..` to step out of one: `use "arms.pen"` in
+  `limacon/mirror.pen` is `limacon/arms.pen`. A path can't start at a root or be a URL.
+- **A file joins once.** A second `use` of it adds nothing, so two parts can each use the helpers they need.
+- **A file can't use itself,** directly or through another.
+- **A used file is whole statements,** so a `beat { … }` block can't open in one file and close in another. It can be a
+  figure by itself too: its `doc` name is ignored when it's used.
+- **A sheet can use files the same way,** for names and functions several sheets share.
+- **An error says which file it's in,** with the line in that file: `limacon/mirror.pen:12:3: unknown name …`.
+
+The core never opens a file. The command reads them from disk, and `<pencil-figure>` fetches them from beside the file
+that names them. `lab/explainer/limacon.pen` is the example: a file to each part of its story.
 
 | Statement | Meaning |
 |---|---|
@@ -49,6 +67,7 @@ error.
 | `curves c = parametric (t): P(t, i) for t in a..b for i in 1..n` | The same, as curves. |
 | `group g(k) { … }` | Things to draw in more than one place, declared once in their own coordinates. |
 | `use g(2)`, `use g(2) through f as up` | Draws a group here, optionally through a function and under a prefix (see Panels). |
+| `use "parts/mirror.pen"` | Another file's statements, here (see Documents). |
 | `text n = "1"` | What a label says in this panel (see Panels). |
 | `outline o = detail` | The rectangle another panel is looking at. |
 | `panel p "Title" { … }` | One view of the figure, with its own marks (see below). |
@@ -533,6 +552,10 @@ Newest first. "Why" is the reason at the time, so these can be revisited.
 
 | Date | Decision | Why |
 |---|---|---|
+| 2026-11-14 | `use "file"` puts another file's statements in the figure, in the one set of names | Kris: the limaçon explainer's 32 beats were already a lot in one file, and helpers are written again in each figure. One namespace, because the parts of a story aren't independent: a later part drops and moves what an earlier one drew. The alternative, modules with their own names and imports, would make every part list what it takes from the others. Libraries with their own names are the next step, and build on this |
+| 2026-11-14 | A used file joins once | So two parts can both `use` the helpers they need without defining them twice. Nothing has needed the same file twice, and its names would collide if it did |
+| 2026-11-14 | The core says which files it needs and a host reads them | The same core runs natively and in a page, where reading is a fetch. A name is the path from the using file, so the command and a page find the same file |
+| 2026-11-14 | A value can read a beat written after it | Splitting the explainer by part put `let phi`, in part 2, before the beats of parts 3 to 6 that move it. Beats keep their order, so one needed early brings the beats and pauses before it. The compiled figure differs from the single file only in the order of its bindings, and its frames are the same |
 | 2026-11-12 | An unknown name says what was likely meant | A name is only ever itself, so `onetwo` and a half-typed `ToCo` are errors, not the splits GeoGebra makes by what happens to be defined. The error suggests instead: a defined name the typed one starts, or is a typo or two away from, or a split into defined names, as "did you mean `one two`?". Built-ins, the figure's own functions and a sheet's names are all suggested |
 | 2026-11-12 | Constants and built-ins take MathJSON's names | Kris wants expressions to conform to MathJSON, and pastes to read as they do in the Compute Engine. So `Imag`, `Conj`, `Arctanh` and `Length` became `Imaginary`, `Conjugate`, `Artanh` and `Abs`, `i` is `ImaginaryUnit`, MathJSON's constant names read as themselves, and `e^w` is `exp(w)` so Euler's identity holds exactly. `π` and the other constant glyphs stand alone, so `e^(iπ)` reads as written. The differences that stay are listed under MathJSON |
 | 2026-11-12 | `e` is Euler's number, until a figure takes the name | Kris pasted an expression with Euler's `e` and got an error. GeoGebra reads `e` as Euler's until something takes the name, then rewrites the existing `e`s as `ℯ`, so naming three circles changes what a paste means. A document here has one scope, so taking the name is one explicit statement that applies to every `e` in the figure, and nothing is rewritten behind the reader's back |

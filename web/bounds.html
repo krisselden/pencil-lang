@@ -45,7 +45,7 @@
   // The figure says what its controls are: q's range and step, and the case's options by name.
   // The page only lays them out, so it can't disagree with the playground, which reads the same.
   import './pencil-figure.js';
-  import { viewing } from './controls.js';
+  import { viewing, watch } from './controls.js';
 
   const $ = (id) => document.getElementById(id);
   const figure = $('figure');
@@ -135,22 +135,8 @@
     e.preventDefault();
   });
 
-  // Live reload while editing the figure: recompile when either file changes.
-  const read = async (url) => (await fetch(url, { cache: 'no-store' })).text();
-  let loaded = null;
-  setInterval(async () => {
-    try {
-      const texts = await Promise.all([read(figure.getAttribute('src')), read(figure.getAttribute('sheets'))]);
-      const key = texts.join('\0');
-      if (loaded === null) loaded = key;
-      else if (key !== loaded) {
-        loaded = key;
-        figure.load(texts[0], [texts[1]]);
-      }
-    } catch (e) {
-      $('error').textContent = e.message;
-    }
-  }, 500);
+  // Live reload while editing the figure.
+  watch(figure);
 
   window.pencil = { figure };
 </script>

@@ -1,0 +1,27 @@
+// Where 0 comes from.
+pause 0.3
+beat draw_central "The tangent from 0 touches this circle right above 1." for 0.9 show central, center
+pause 0.15
+beat draw_tangent for 0.6 show from_zero, B
+beat draw_drop for 0.5 show above_one, at_B
+pause 1
+
+let s = ln(sqrt(8))
+let O = (0, 0)
+let one = (1, 0)
+let A = (cosh(s)², 0)
+let R = sinh(s)·cosh(s)
+
+segment axis = (-1.2, 0), (9.4, 0)
+curve central = circle(A, A + (R, 0))
+let center = A
+dot center
+
+// The tangent from 0 touches the central circle at B, right above 1.
+let B = (1, sqrt(R² - (1 - cosh(s)²)²))
+segment from_zero = O, B
+segment above_one = one, B
+rightangle at_B = O, B, A size 0.32
+dot O, one, B
+label name_zero = "0" at O away (0, -1) tag tick
+label name_one = "1" at one away (0, -1) tag tick

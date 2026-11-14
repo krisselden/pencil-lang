@@ -11,7 +11,7 @@ mod text;
 use pencil_core::frame::{self, Inputs};
 use pencil_core::ir::Form;
 use pencil_core::terms::{Estimate, TextWidths};
-use pencil_core::{Composition, PanelFrame, compose, eval::Frame, place, wgsl};
+use pencil_core::{Composition, PanelFrame, Source, Sources, eval::Frame, place, wgsl};
 use pencil_render::{FigurePipeline, Offscreen};
 
 const USAGE: &str = "\
@@ -84,19 +84,31 @@ fn parse_args(args: &[String]) -> Result<Args, Box<dyn Error>> {
     Ok(parsed)
 }
 
+/// Compiles the document against its sheets. A file one of them uses is read from where its
+/// name says, which is its path from here, since the document's and sheets' names are theirs.
 fn load(args: &Args) -> Result<Composition, Box<dyn Error>> {
     let read = |p: &Path| fs::read_to_string(p).map_err(|e| format!("{}: {e}", p.display()));
-    let doc = read(&args.doc)?;
+    let name = |p: &Path| p.to_string_lossy().into_owned();
+    let doc = (name(&args.doc), read(&args.doc)?);
     let sheets = args
         .styles
         .iter()
-        .map(|p| read(p))
-        .collect::<Result<Vec<_>, _>>()?;
-    let refs: Vec<&str> = sheets.iter().map(String::as_str).collect();
-    compose(&doc, &refs).map_err(|e| {
-        let file = e.sheet.map_or(&args.doc, |i| &args.styles[i]);
-        format!("{}:{e}", file.display()).into()
-    })
+        .map(|p| Ok((name(p), read(p)?)))
+        .collect::<Result<Vec<_>, String>>()?;
+    fn source((name, text): &(String, String)) -> Source<'_> {
+        Source { name, text }
+    }
+    let sheet_sources: Vec<Source> = sheets.iter().map(source).collect();
+    Sources::read(source(&doc), &sheet_sources, &|file| fs::read_to_string(file).ok())
+        .and_then(|sources| sources.compose())
+        .map_err(|e| match e.file {
+            // A used file's error says its own name.
+            Some(_) => e.to_string().into(),
+            None => {
+                let file = e.sheet.map_or(&args.doc, |i| &args.styles[i]);
+                format!("{}:{e}", file.display()).into()
+            }
+        })
 }
 
 /// The frame's height for a width, following the figure's shape. Even, because video

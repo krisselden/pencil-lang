@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use pencil_core::frame::{self, Inputs};
 use pencil_core::style::Font;
 use pencil_core::terms::{Estimate, TextWidths};
-use pencil_core::{Composition, clock, compose, eval};
+use pencil_core::{Composition, Source, Sources, clock, eval};
 use pencil_render::{FigurePipeline, FrameInputs};
 use wasm_bindgen::prelude::*;
 use web_sys::HtmlCanvasElement;
@@ -73,12 +73,35 @@ fn named(name: &str) -> String {
         .join(".")
 }
 
+/// A document and its sheets, with the files they use, as a page hands them over. `names` are
+/// where the document and then each sheet came from, which their files are found from: any it
+/// leaves out have none. `files` is an object from a used file's name to its text, as
+/// `uses` named it.
+fn sources(
+    doc: &str,
+    sheets: &[String],
+    names: &[String],
+    files: &JsValue,
+) -> Result<Sources, pencil_core::Error> {
+    let name = |i: usize| names.get(i).map_or("", String::as_str);
+    let sheets: Vec<Source> = sheets
+        .iter()
+        .enumerate()
+        .map(|(i, text)| Source { name: name(i + 1), text })
+        .collect();
+    let read = |file: &str| {
+        js_sys::Reflect::get(files, &JsValue::from_str(file)).ok()?.as_string()
+    };
+    Sources::read(Source { name: name(0), text: doc }, &sheets, &read)
+}
+
 fn js_error(message: impl std::fmt::Display) -> JsError {
     JsError::new(&message.to_string())
 }
 
 /// A compile error as a JS `Error` that also says where it is: `line` and `col`, 1-based or 0
-/// for nowhere, and `sheet`, the index of the style sheet it's in, or `null` for the document.
+/// for nowhere, `sheet`, the index of the style sheet it's in, or `null` for the document, and
+/// `file`, the name of the file it's in when that's one the document or sheet uses, or `null`.
 fn compile_error(error: pencil_core::Error) -> JsValue {
     let js = js_sys::Error::new(&error.to_string());
     let set = |key: &str, value: JsValue| {
@@ -88,6 +111,7 @@ fn compile_error(error: pencil_core::Error) -> JsValue {
     set("col", JsValue::from_f64(error.col as f64));
     set("text", JsValue::from_str(&error.message));
     set("sheet", error.sheet.map_or(JsValue::NULL, |i| JsValue::from_f64(i as f64)));
+    set("file", error.file.as_deref().map_or(JsValue::NULL, JsValue::from_str));
     js.into()
 }
 
@@ -180,9 +204,16 @@ impl Player {
     /// Compiles new sources. On an error the previous figure stays on screen, so a
     /// half-typed edit doesn't blank the canvas.
     /// The error says where it is (see `compile_error`).
-    pub fn load(&mut self, doc: &str, sheets: Vec<String>) -> Result<(), JsValue> {
-        let refs: Vec<&str> = sheets.iter().map(String::as_str).collect();
-        let composition = compose(doc, &refs).map_err(compile_error)?;
+    pub fn load(
+        &mut self,
+        doc: &str,
+        sheets: Vec<String>,
+        names: Vec<String>,
+        files: &JsValue,
+    ) -> Result<(), JsValue> {
+        let composition = sources(doc, &sheets, &names, files)
+            .and_then(|sources| sources.compose())
+            .map_err(compile_error)?;
         let pipelines = composition
             .panels
             .iter()
@@ -477,9 +508,15 @@ fn css(c: [f64; 3]) -> String {
 /// The colors these sheets name, as a JSON object of CSS colors, so a page can match the figure
 /// it holds without its own copy of the palette.
 #[wasm_bindgen]
-pub fn named_colors(sheets: Vec<String>) -> Result<String, JsError> {
-    let refs: Vec<&str> = sheets.iter().map(String::as_str).collect();
-    let colors: serde_json::Map<String, serde_json::Value> = pencil_core::named_colors(&refs)
+pub fn named_colors(
+    sheets: Vec<String>,
+    names: Vec<String>,
+    files: &JsValue,
+) -> Result<String, JsError> {
+    // There's no document here, so the names are the sheets' alone.
+    let names: Vec<String> = std::iter::once(String::new()).chain(names).collect();
+    let colors: serde_json::Map<String, serde_json::Value> = sources("", &sheets, &names, files)
+        .and_then(|sources| sources.named_colors())
         .map_err(js_error)?
         .into_iter()
         .map(|(name, color)| (name, css(color).into()))
@@ -490,10 +527,23 @@ pub fn named_colors(sheets: Vec<String>) -> Result<String, JsError> {
 /// A document's design size, as JSON `[width, height]`, to shape its canvas before a player
 /// exists to draw on it.
 #[wasm_bindgen]
-pub fn figure_size(doc: &str, sheets: Vec<String>) -> Result<String, JsValue> {
-    let refs: Vec<&str> = sheets.iter().map(String::as_str).collect();
-    let composition = compose(doc, &refs).map_err(compile_error)?;
+pub fn figure_size(
+    doc: &str,
+    sheets: Vec<String>,
+    names: Vec<String>,
+    files: &JsValue,
+) -> Result<String, JsValue> {
+    let composition = sources(doc, &sheets, &names, files)
+        .and_then(|sources| sources.compose())
+        .map_err(compile_error)?;
     Ok(serde_json::json!(composition.size).to_string())
+}
+
+/// The files a text uses itself, by name, each found from `name`, which is where the text came
+/// from. A page fetches them, asks the same of each, and hands them all to `load`.
+#[wasm_bindgen]
+pub fn uses(name: &str, text: &str) -> Vec<String> {
+    pencil_core::files::uses(name, text)
 }
 
 /// How text reads, stage by stage, as JSON: its tokens, then the expression it is or the

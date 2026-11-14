@@ -60,8 +60,16 @@ belongs: `language.md` for the language, the section below for a figure.
      - **Animated constructions** to import, such as a perpendicular bisector that draws its two arcs and then its line:
        useful, and too specific to be global. A `group` with arguments can't hold beats yet, so this needs that too.
 
-     The core reads no files, so a host resolves them: the CLI from disk, a page by fetching. `use` already draws a group
-     (`use g(2) through f as up`), so a file needs its own spelling.
+     **Built 2026-11-14: `use "file"`,** which is the first two. A used file's statements join the figure where the line
+     is, once, in the figure's one set of names (`language.md`, Documents). The core says which files it needs and a host
+     reads them: the CLI from disk, and `<pencil-figure>` and the playground by fetching, where each used file gets a tab.
+     The explainer is now `lab/explainer/limacon.pen` and a file to each of its seven parts, and its frames are the same
+     as before. A sheet can use a file too, which is where shared effects would go. Still to do:
+     - **Share the corpus's helpers.** `dir` is the only function two corpus figures both define (`004-bounds` and
+       `005-tangents`). Nothing was moved, since a corpus figure and its golden IR are one file each today.
+     - **Named libraries:** `lib complex, hyperbolic`, shipped with Pencil and written in it, whose names are defaults a
+       figure can take. A figure that names its libraries gets only those, so `lib geometry` leaves `i` and `e` free.
+     - **Groups that hold beats,** for constructions that animate.
   2. **Labels from expressions:** a label that shows its own expression, as ggplot2 takes axis titles from the unevaluated
      arguments R passes it. The IR keeps expressions symbolic, so the text is there. A style's `text: expr = value` (2026-11-13) writes the
      expression as typed and its value as a number; what's left is writing it as math (`σ(2)` set as notation, not code) and

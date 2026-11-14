@@ -260,7 +260,7 @@ fn styled_exprs(styled: &Styled, f: &mut impl FnMut(&Expr)) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::compose;
+    use crate::{Source, Sources, compose};
 
     fn compiled(doc: &str, sheets: &[&str]) -> Composition {
         compose(doc, sheets).unwrap()
@@ -296,10 +296,16 @@ mod tests {
 
     fn figure(pen: &str, sheets: &[&str]) -> Composition {
         let root = concat!(env!("CARGO_MANIFEST_DIR"), "/../../");
-        let read = |p: &str| std::fs::read_to_string(format!("{root}{p}")).unwrap();
-        let sheets: Vec<String> = sheets.iter().map(|s| read(s)).collect();
-        let refs: Vec<&str> = sheets.iter().map(String::as_str).collect();
-        compose(&read(pen), &refs).unwrap()
+        let read = |p: &str| std::fs::read_to_string(format!("{root}{p}")).ok();
+        let texts: Vec<String> = sheets.iter().map(|s| read(s).unwrap()).collect();
+        let sheets: Vec<Source> = (sheets.iter().zip(&texts))
+            .map(|(name, text)| Source { name, text })
+            .collect();
+        let doc = read(pen).unwrap();
+        // The explainer is a file to a part, each read from beside it.
+        Sources::read(Source { name: pen, text: &doc }, &sheets, &read)
+            .and_then(|sources| sources.compose())
+            .unwrap()
     }
 
     #[test]

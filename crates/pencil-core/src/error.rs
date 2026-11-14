@@ -9,6 +9,9 @@ pub struct Error {
     /// Which style sheet it's in, by its place in the list a figure was built with. `None` is
     /// the document itself, or no source at all.
     pub sheet: Option<usize>,
+    /// The file it's in, when that's one the document or a sheet uses, not the document or sheet
+    /// itself. `line` and `col` are in that file.
+    pub file: Option<String>,
     /// Not a failure: a value that doesn't exist this frame, such as where two curves
     /// don't meet. It travels like an error so that anything built from it is absent too.
     pub absent: bool,
@@ -21,6 +24,7 @@ impl Error {
             col,
             message: message.into(),
             sheet: None,
+            file: None,
             absent: false,
         }
     }
@@ -45,6 +49,9 @@ impl Error {
 
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if let Some(file) = &self.file {
+            write!(f, "{file}:")?;
+        }
         if self.line > 0 {
             write!(f, "{}:{}: {}", self.line, self.col, self.message)
         } else {

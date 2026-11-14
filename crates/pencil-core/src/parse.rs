@@ -173,6 +173,14 @@ pub enum Item {
         alias: Option<String>,
         line: usize,
     },
+    /// `use "file"`: another file's statements, here. `files` reads them in, so `compile` never
+    /// sees one.
+    UseFile {
+        /// As written, from the file that says it.
+        path: String,
+        line: usize,
+        col: usize,
+    },
     /// The rectangle another panel is looking at.
     Outline {
         name: String,
@@ -518,6 +526,8 @@ struct Parser {
     /// The source, and where each line starts in it, so a piece can be quoted as written.
     src: Vec<char>,
     line_starts: Vec<usize>,
+    /// How far this text's lines are numbered on from 1, when it's one file of several.
+    base: usize,
 }
 
 /// Builtin names in source, and their MathJSON heads. Anything else is left under
@@ -824,8 +834,15 @@ impl Parser {
                     items: inner,
                 });
             }
+            "use" if matches!(self.peek(), Tok::Str(_)) => {
+                let col = self.toks[self.pos].col;
+                if let Tok::Str(path) = self.bump() {
+                    items.push(Item::UseFile { path, line, col });
+                }
+                return Ok(());
+            }
             "use" => {
-                let group = self.ident("a group")?;
+                let group = self.ident("a group or a file's name in quotes")?;
                 self.expect("(")?;
                 let mut args = Vec::new();
                 while !self.eat(")") {
@@ -1202,7 +1219,7 @@ impl Parser {
     fn offset(&self, i: usize) -> usize {
         let t = &self.toks[i];
         self.line_starts
-            .get(t.line - 1)
+            .get(t.line - self.base - 1)
             .map_or(self.src.len(), |s| s + t.col - 1)
     }
 
@@ -1627,6 +1644,11 @@ impl Parser {
 /// One expression, as written inside a label's text.
 impl Parser {
     fn new(src: &str) -> Result<Parser, Error> {
+        Self::numbered_from(src, 0)
+    }
+
+    /// A parser whose lines count on from `base`, so each file of a figure has lines of its own.
+    fn numbered_from(src: &str, base: usize) -> Result<Parser, Error> {
         let src: Vec<char> = src.chars().collect();
         let mut line_starts = vec![0];
         line_starts.extend(
@@ -1635,11 +1657,19 @@ impl Parser {
                 .filter(|(_, c)| **c == '\n')
                 .map(|(i, _)| i + 1),
         );
+        let mut toks = lex(&src.iter().collect::<String>()).map_err(|mut e| {
+            e.line += base;
+            e
+        })?;
+        for t in &mut toks {
+            t.line += base;
+        }
         Ok(Parser {
-            toks: lex(&src.iter().collect::<String>())?,
+            toks,
             pos: 0,
             src,
             line_starts,
+            base,
         })
     }
 }
@@ -1694,6 +1724,11 @@ pub fn tokens(src: &str) -> Result<Vec<Token>, Error> {
 
 pub fn parse(src: &str) -> Result<Document, Error> {
     Parser::new(src)?.document()
+}
+
+/// A document whose lines are numbered on from `base`, as one file of several. See `files`.
+pub fn parse_numbered_from(src: &str, base: usize) -> Result<Document, Error> {
+    Parser::numbered_from(src, base)?.document()
 }
 
 #[cfg(test)]

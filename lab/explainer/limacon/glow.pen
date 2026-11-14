@@ -1,0 +1,8 @@
+// The glow. Everything goes but the 24 circles, the paper goes black, and they light up on both
+// sides, so the curve they all touch is there without being drawn.
+beat quiet "" for 0.8 drop hub_arm, slow_arm, fast_arm, A2, name_E, pascal, pascal_radius, L, reach_out, E, C, name_C, through_one, center, central, limacon, axis, O, one, name_zero, name_one
+beat glow for 3 show rings
+pause 5
+
+// The same 24 circles as the trail, to be lit.
+circles rings = circle(A + R·(cos(start + 2·π·k / 24), sin(start + 2·π·k / 24)), one) for k in 0..23

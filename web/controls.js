@@ -1,7 +1,7 @@
 // What the figure pages in `web/` share around a `<pencil-figure>`: a play button, a time slider,
 // a status line, and reloading as the files change. Each is only calls on the element and its
 // events, so a page shows what a reader of the site could do with the same element.
-import './pencil-figure.js';
+import { gather } from './pencil-figure.js';
 
 /** `?gl` on the page's URL tests the WebGL2 path. Set before the GPU starts. */
 export function fromQuery(figure) {
@@ -84,7 +84,8 @@ export function timeSlider(figure, input, output, format = (t) => t.toFixed(2)) 
   figure.addEventListener('draw', paint);
 }
 
-/** Compiles the figure again when its `.pen` or any sheet changes on disk, while editing. */
+/** Compiles the figure again when its `.pen`, a sheet, or a file one of them uses changes on
+ * disk, while editing. */
 export function watch(figure, every = 500) {
   const read = async (url) => {
     const response = await fetch(new URL(url, document.baseURI), { cache: 'no-store' });
@@ -103,13 +104,15 @@ export function watch(figure, every = 500) {
       loaded = null;
     }
     try {
-      const [doc, ...texts] = await Promise.all([src, ...sheets].map(read));
-      const key = [doc, ...texts].join('\0');
+      const names = [src, ...sheets];
+      const [doc, ...texts] = await Promise.all(names.map(read));
+      const used = await gather(names, [doc, ...texts], read);
+      const key = JSON.stringify([doc, texts, used.files]);
       if (urls !== now) return;
       if (loaded === null) loaded = key;
       else if (key !== loaded) {
         loaded = key;
-        figure.load(doc, texts);
+        figure.load(doc, texts, used);
       }
     } catch (e) {
       figure.dispatchEvent(new CustomEvent('error', { detail: { error: e } }));

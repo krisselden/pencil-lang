@@ -11,6 +11,9 @@
 // and both are let go when it leaves the page, since browsers cap how many contexts can be live.
 // A figure that never reads time gets no clock at all. Nothing draws while nothing changes.
 //
+// A document or sheet that says `use "parts/arms.pen"` gets that file fetched too, from beside the
+// file that says it.
+//
 // Attributes: `src` and `sheets` (space-separated URLs, in order), `params` (`a: 0.5; beat: 2`,
 // held as if a reader set them), `paused` to start paused, and `gl` to skip WebGPU.
 // A page that picks its sheets in script, by the reader's theme or width, sets `sheets` as soon as
@@ -19,7 +22,7 @@
 // Events: `load` when a figure is compiled, `draw` after each frame drawn, `resize` when its drawn
 // size or its em changes (its `detail.em`, in CSS pixels), `input` when a reader
 // drags a param, `play` and `pause`, and `error` (its `detail.error`) when one can't load or draw.
-import init, { Player, figure_size, named_colors } from './pkg/pencil_web.js';
+import init, { Player, figure_size, named_colors, uses } from './pkg/pencil_web.js';
 import { LabelLayer } from './labels.js';
 import { match } from './fit.js';
 
@@ -32,6 +35,40 @@ const NEAR = '200px';
 
 let wasm = null;
 const ready = () => (wasm ??= init());
+
+const fetchText = async (url) => {
+  const response = await fetch(new URL(url, document.baseURI));
+  if (!response.ok) throw new Error(`${url}: ${response.status}`);
+  return response.text();
+};
+
+/**
+ * Reads every file a document and its sheets `use`, and every file those use, for `load`.
+ * `names` say where the document and then each sheet came from: URLs, which can be relative to
+ * the page. A used file is found from the file that names it, so its own name is a URL too, and
+ * `read` is given that. A file that can't be read is left out, and compiling says which line
+ * wanted it. `have` are files already at hand, by name, such as ones being edited.
+ */
+export async function gather(names, texts, read = fetchText, have = {}) {
+  await ready();
+  const files = {};
+  const visit = (name, text) =>
+    Promise.all(
+      uses(name, text).map(async (file) => {
+        if (file in files) return;
+        files[file] = null;
+        try {
+          files[file] = have[file] ?? (await read(file));
+        } catch {
+          return;
+        }
+        await visit(file, files[file]);
+      }),
+    );
+  await Promise.all(texts.map((text, i) => visit(names[i] ?? '', text)));
+  for (const [file, text] of Object.entries(files)) if (text === null) delete files[file];
+  return { names, files };
+}
 
 const CSS = `
 :host { display: block; }
@@ -68,7 +105,7 @@ export class PencilFigure extends HTMLElement {
   #player = null;
   #starting = false;
   #generation = 0;
-  #sources = null; // { doc, sheets }, compiled or waiting for the GPU
+  #sources = null; // { doc, sheets, names, files }, compiled or waiting for the GPU
   #fetched = null;
   #fetching = false;
   #info = null;
@@ -240,17 +277,12 @@ export class PencilFigure extends HTMLElement {
     this.#fetched = key;
     if (this.#clock) this.#clock.id = this.#clockName();
     try {
-      const texts = await Promise.all(
-        [src, ...sheets].map(async (url) => {
-          const response = await fetch(new URL(url, document.baseURI));
-          if (!response.ok) throw new Error(`${url}: ${response.status}`);
-          return response.text();
-        }),
-      );
-      await ready();
+      const names = [src, ...sheets];
+      const texts = await Promise.all(names.map(fetchText));
+      const used = await gather(names, texts);
       if (key !== this.#fetched) return;
       const [doc, ...sheetTexts] = texts;
-      this.load(doc, sheetTexts);
+      this.load(doc, sheetTexts, used);
     } catch (error) {
       this.#fail(error);
     }
@@ -259,13 +291,16 @@ export class PencilFigure extends HTMLElement {
   /** Compiles a figure from its `.pen` text and its sheets' texts, in order. A compile error is
    * thrown, with `line`, `col` and `sheet` saying where, and leaves the last figure on screen.
    * Before the GPU starts it's only checked, and shapes the element; it's drawn once the GPU is up.
-   * Params held before keep their values if the new figure has them. */
-  load(doc, sheets = []) {
-    const sources = { doc, sheets };
+   * Params held before keep their values if the new figure has them.
+   *
+   * `used` is what `gather` read: the files these texts `use`. Without it, a `use "file"` is an
+   * error. An error in a used file says so in `file`, its name. */
+  load(doc, sheets = [], used = {}) {
+    const sources = { doc, sheets, names: used.names ?? [], files: used.files ?? {} };
     if (this.#player) {
       this.#compile(sources);
     } else if (wasm) {
-      this.#shape(JSON.parse(figure_size(doc, sheets)));
+      this.#shape(JSON.parse(figure_size(doc, sheets, sources.names, sources.files)));
       this.#sources = sources;
     } else {
       this.#sources = sources;
@@ -273,7 +308,7 @@ export class PencilFigure extends HTMLElement {
   }
 
   #compile(sources) {
-    this.#player.load(sources.doc, sources.sheets);
+    this.#player.load(sources.doc, sources.sheets, sources.names, sources.files);
     this.#sources = sources;
     const info = JSON.parse(this.#player.info());
     this.#info = info;
@@ -503,7 +538,8 @@ export class PencilFigure extends HTMLElement {
    * `{ paper_color: 'rgb(…)', … }`. Empty until the figure has loaded. */
   get colors() {
     if (!this.#info || !this.#sources) return {};
-    return JSON.parse(named_colors(this.#sources.sheets));
+    const { sheets, names, files } = this.#sources;
+    return JSON.parse(named_colors(sheets, names.slice(1), files));
   }
 
   /** The WASM host, for measuring and debugging. */
