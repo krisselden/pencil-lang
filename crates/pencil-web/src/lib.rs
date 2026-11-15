@@ -312,6 +312,76 @@ impl Player {
         self.grabbed = None;
     }
 
+    /// Which handle is grabbed, counting through every panel's as `info`'s `handles` does, or −1.
+    pub fn grabbed(&self) -> i32 {
+        let (Some((panel, handle)), Some((composition, _))) = (self.grabbed, &self.figure) else {
+            return -1;
+        };
+        let before: usize = composition.panels[..panel]
+            .iter()
+            .map(|p| p.figure.scene.handles.len())
+            .sum();
+        (before + handle) as i32
+    }
+
+    /// Which panel a handle is in, and which of that panel's it is, counting as `info` does.
+    fn handle(&self, index: usize) -> Option<(usize, usize)> {
+        let (composition, _) = self.figure.as_ref()?;
+        let mut left = index;
+        for (panel, p) in composition.panels.iter().enumerate() {
+            let count = p.figure.scene.handles.len();
+            if left < count {
+                return Some((panel, left));
+            }
+            left -= count;
+        }
+        None
+    }
+
+    /// Where each handle is this frame, as `x, y` pairs in the canvas's device pixels, in the
+    /// order of `info`'s `handles`. A handle whose mark doesn't exist this frame is NaN.
+    pub fn handle_places(&self, time: f32) -> Result<Vec<f64>, JsError> {
+        let Some((composition, _)) = &self.figure else {
+            return Ok(Vec::new());
+        };
+        let inputs = self.inputs(time);
+        let mut out = Vec::new();
+        for (i, panel) in composition.panels.iter().enumerate() {
+            let [px, py, w, h] = composition.rect_px(i, self.config.width, self.config.height);
+            for place in frame::handle_places(&panel.figure, &inputs, w, h).map_err(js_error)? {
+                match place {
+                    Some((x, y)) => out.extend([px as f64 + x, py as f64 + y]),
+                    None => out.extend([f64::NAN, f64::NAN]),
+                }
+            }
+        }
+        Ok(out)
+    }
+
+    /// Moves a handle by this many device pixels from where it is, through its inverse, as an
+    /// arrow key does. Returns the param it set, if the handle's mark exists this frame.
+    pub fn nudge(&mut self, time: f32, index: usize, dx: f64, dy: f64) -> Result<Option<String>, JsError> {
+        let (Some((panel, handle)), Some((composition, _))) = (self.handle(index), &self.figure)
+        else {
+            return Ok(None);
+        };
+        let [_, _, w, h] = composition.rect_px(panel, self.config.width, self.config.height);
+        let moved = frame::nudge_value(
+            &composition.panels[panel].figure,
+            &self.inputs(time),
+            handle,
+            w,
+            h,
+            dx,
+            dy,
+        )
+        .map_err(js_error)?;
+        Ok(moved.map(|(param, value)| {
+            self.set_param(&param, value);
+            param
+        }))
+    }
+
     /// The figure's params and duration, as JSON. `timeDriven` names the bindings whose values
     /// change with time, so a page knows whether stepping one seeks time or sets it, and
     /// `usesTime` says whether anything does, so a figure that never moves needs no clock.

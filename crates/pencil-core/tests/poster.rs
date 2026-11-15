@@ -58,3 +58,19 @@ fn what_a_page_needs_to_know_survives_being_compiled() {
     assert_eq!(read.info(), info);
     assert_eq!(read.colors, composition.colors);
 }
+
+#[test]
+fn a_page_is_told_what_a_reader_can_move() {
+    // Each handle, in every panel, in the order a page asks where they are.
+    let doc = "param a = 0 in -1..1\nparam b = 0 in -1..1\nlet P = (a, 0)\nlet Q = (0, b)\ndot P, Q\n\
+               handle P sets a = pointer.x\nhandle Q sets b = pointer.y";
+    let info = compose(doc, &[]).unwrap().info();
+    assert_eq!(
+        info["handles"],
+        serde_json::json!([
+            { "panel": 0, "mark": "P", "param": "a" },
+            { "panel": 0, "mark": "Q", "param": "b" },
+        ])
+    );
+    assert_eq!(compose("let P = (0, 0)\ndot P", &[]).unwrap().info()["handles"], serde_json::json!([]));
+}

@@ -113,10 +113,13 @@ GLSL shaders draw through one SVG system (`src/lib/plot.ts`), and nothing is mad
    the integration, before the blog. **A first version is built (2026-11-14)** and not deployed: a landing page, the language
    reference rendered from `docs/language.md`, the corpus and the explainer drawn live, and the playground in a frame
    (`site/README.md`). It loads figures through the element as it is. Kris hasn't looked at it.
-4. **A migration table,** `docs/migration.md`, written on 2026-11-14: each of the site's 31 figures, the corpus figure that covers
-   it if one does, and what Pencil lacks for it. 5 are done, 9 are ports with what exists, 12 need one or two features, and 5
-   need design. What most figures lack is around the figure and not in it: arrow keys (12 figures), dragging a point in two
-   dimensions (5), Newton's steps as values (4) and panels of different sizes (4).
+4. **The move itself is tracked in `docs/migration.md`:** the order, what's done, and each of the site's 31 figures with the
+   corpus figure that covers it and what Pencil lacks for it. **The Doyle series goes first** (Kris, 2026-11-14), in its own
+   order, and the shader post's three GLSL figures stay GLSL, since that post is about writing a shader. Keyboard use comes
+   with the host, before the posts: handles a reader can tab to, and arrow keys. 5 figures are done, 9
+   are ports with what exists, 9 need one or two features, 5 need design and 3 stay. What most figures lack is around the figure
+   and not in it: arrow keys (12 figures), dragging a point in two dimensions (5), Newton's steps as values (4) and panels of
+   different sizes (4).
 
 ### Proposed order after that
 
@@ -197,11 +200,10 @@ Built, and wrong or short in a known way. None has blocked a figure.
 
 ### Not built
 
-What a figure has pointed at but not needed yet. `language.md` lists what the specs have that isn't built.
+What a figure has pointed at but not needed yet. `decisions.md` lists what the specs have that isn't built.
 
 - Statements like `zbi = zb · i` that drive an arrow and its label from one line.
 - Pointing at a thing in one panel and seeing it in the others.
-- Moving a point with the keyboard, which the blog's bounds figure has.
 - Lists as general values (39% of Kris's Desmos graphs), and piecewise values beyond `where` and `otherwise` (26%).
 - `polar` and function graphs as forms. Both reduce to parametric.
 - Dashes anchored at a range's far end.
@@ -279,9 +281,10 @@ that refits on those but not during a drag.
   hidden marks still cost shader time because their opacity is computed per pixel.
 - **Absent values came next**, with `corpus/005-tangents` as the test figure (below). This figure's numbers
   didn't change, to 12 places across θ's whole range, and it's still defined throughout.
-- **Not done:** moving P with the keyboard, which the blog has, and a touch check on a real phone.
+- **Not done:** a touch check on a real phone. Moving P with the keyboard, which the blog has, was built on 2026-11-14
+  ("The element").
 
-Syntax, built-ins and language decisions now live in `docs/language.md`.
+Syntax and built-ins now live in `docs/language.md`, and language decisions in `docs/decisions.md`.
 
 ## Values that may not exist
 
@@ -646,7 +649,26 @@ the M1 Pro, on WebGPU and `?gl`.
   - **A param held before the figure loads** stays held when play is pressed before the load too, since the element doesn't
     know yet what time drives. Only a reader faster than the GPU's start could reach it. Not fixed.
 - **Not built:** a `ScrollTimeline` or `ViewTimeline` as the clock, which would let scrolling scrub a figure. The element's
-  `iterations: Infinity` doesn't suit a scroll range, which wants one pass. Keyboard on a focused figure is still the page's.
+  `iterations: Infinity` doesn't suit a scroll range, which wants one pass.
+- **Keys are the element's (2026-11-14).** Kris: accessibility matters, so what a reader can do with a pointer they can do
+  without one, and a page doesn't have to write it.
+  - **Each handle is a tab stop.** Something a reader can focus sits over each handle's mark, with a focus ring of two tones
+    that shows on any paper. It's a slider to a screen reader: named for its mark, with the param's value and the range as it
+    stands, read as `theta = 1.047`. The pointer passes through it to the canvas, and grabbing a handle with a pointer
+    focuses it, so the keys carry on from there.
+  - **Arrow keys move it the way they point,** by a hundredth of the figure's shorter side, or a tenth with Shift, through the
+    handle's own inverse (`frame::nudge_value`), as a drag that far would. So on the bounds figure ← takes P counterclockwise
+    at the top of its circle, and ↑ there does nothing, since P can't leave the circle. A param with steps goes to its next
+    step that way: the move is doubled until the param changes. Home and End go to the ends of the param's range, and
+    Page Up and Page Down move it a tenth of the range.
+  - **A figure with beats is a tab stop itself,** unless the page gave it a `tabindex`. ← and → step its beats, and Home and
+    End go to the first and last. What it came to is said for a screen reader, with the beat's caption: "Step 3 of 10: …".
+  - **A figure with handles or beats is a `group`,** so the page's `aria-label` for it is read.
+  - **Checked** with real key presses at 1633×919 and 375×812 on `004-bounds` (a handle and steps), `005-tangents` (a handle)
+    and `006-square` (beats with lengths, one step a key). `web/bounds.html` and the playground no longer step in page script.
+    **Not checked:** a screen reader, a touch screen, and a browser other than the app's.
+  - **Not built:** keys for a figure that only plays (Space to pause), which the playground does in page script, and a nicer
+    name for a handle than its mark's, such as its label's text.
 - **Not checked:** a phone, other browsers, the site, which still sets itself up, the pages with the pane showing (it was
   hidden, so a screenshot drew each frame), and a draw that fails after compiling, which the playground handles from the element's `error` event but no edit has reached.
 
@@ -733,8 +755,9 @@ reloads as it's edited. A function gives a post its card, in place of the site's
 captions wrap it, in the site.
 
 **Order.** The compiled figure, the poster and what the page needs to know, and the element's children and `<source>` are
-built. Next the element as a package, and the component, tried on `pencil-lang.dev` first. Then one post: the involute's has a
-single figure, which is `corpus/003-unroll`.
+built. Next the element as a package, and the component, tried on `pencil-lang.dev` first. Then the Doyle series, which goes first
+(`migration.md`, Order): the component is tried there on a figure that's already done, `SquareZ` in the shader post or
+`LatticeMapping` and `RollTube` in the period post.
 
 ## Distance to a curve
 

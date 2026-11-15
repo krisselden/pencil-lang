@@ -28,7 +28,7 @@
 <main>
   <h1>Bounds: the two boundary flowers, by ruler and compass</h1>
   <pencil-figure id="figure" src="../corpus/004-bounds/bounds.pen" sheets="../corpus/004-bounds/blog.style" paused
-    tabindex="0" aria-label="A ruler-and-compass construction of the two boundary Doyle flowers around the circle at 1, one step at a time. Left and right arrow keys step through it."></pencil-figure>
+    aria-label="A ruler-and-compass construction of the two boundary Doyle flowers around the circle at 1, one step at a time. Left and right arrow keys step through it."></pencil-figure>
   <div class="controls">
     <button id="back" type="button">Back</button>
     <span id="count"></span>
@@ -128,12 +128,7 @@
   figure.addEventListener('error', (e) => { $('error').textContent = String(e.detail.error?.message ?? e.detail.error); });
   $('back').addEventListener('click', () => figure.step(-1));
   $('next').addEventListener('click', () => figure.step(1));
-  figure.addEventListener('keydown', (e) => {
-    if (e.key === 'ArrowRight') figure.step(1);
-    else if (e.key === 'ArrowLeft') figure.step(-1);
-    else return;
-    e.preventDefault();
-  });
+  // The element steps on ← and → itself when it's focused, and moves P with the arrows when P is.
 
   // Live reload while editing the figure.
   watch(figure);

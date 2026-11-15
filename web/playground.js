@@ -454,7 +454,8 @@ $('time').addEventListener('input', () => {
 $('back').addEventListener('click', () => figure.step(-1));
 $('next').addEventListener('click', () => figure.step(1));
 document.addEventListener('keydown', (e) => {
-  if (e.target === textarea || e.target instanceof HTMLSelectElement || e.metaKey || e.ctrlKey || e.altKey) return;
+  // The figure takes its own keys when it or one of its handles is focused, and a slider keeps its arrows.
+  if (e.defaultPrevented || e.target === figure || e.target === textarea || e.target instanceof HTMLSelectElement || e.target instanceof HTMLInputElement || e.metaKey || e.ctrlKey || e.altKey) return;
   if (e.key === 'ArrowRight') figure.step(1);
   else if (e.key === 'ArrowLeft') figure.step(-1);
   else if (e.key === ' ' && !(e.target instanceof HTMLButtonElement) && info()?.usesTime) figure.paused ? figure.play() : figure.pause();

@@ -1,11 +1,98 @@
 # Moving the site's figures to Pencil
 
-Written on 2026-11-14, from the site's components and Pencil as of `e62e58e`. This is the list to work from: every figure source
-in the site's posts, what each one is as mathematics, what a reader does with it, what Pencil already has for it, and what it
-lacks. `goals.md` still holds what's open in general; this file is only about the site.
+This is where the move is tracked: the order to work in, what's done, and under that every figure source in the site's posts,
+what each one is as mathematics, what a reader does with it, what Pencil already has for it, and what it lacks. `goals.md` holds
+what's open in the language and the host in general, and points here for the site.
 
-**Since then:** points in space, a viewport's `yaw` and `self.z` along a curve were built the same day, and `RollTube` is
-`corpus/013-tube`. Its entries below are updated, and the counts with them. Nothing else here has been reread.
+The inventory was written on 2026-11-14 by a session that read the site's components against Pencil as of `e62e58e`. The order
+and the log below are kept by hand since. A figure's entry is updated when it's ported or when what it lacks is built, and
+nothing else in the inventory has been reread.
+
+## Order
+
+Set with Kris on 2026-11-14. **The Doyle series goes first:** it's the furthest along and likely the first to be
+published. Its four posts are worked in the series' order: `doyle-spiral-shader`, `doyle-spiral-period`, `doyle-spiral-touch`,
+`doyle-spiral-solve`.
+
+**The shader post's three GLSL figures stay GLSL:** `doyle.glsl` (`DoyleSpiral`, the hero), `gradient.glsl` and
+`circle-distance.glsl`. The post is about writing a shader, so the shader is the subject and not a way to draw one. They keep the
+site's `Shader.astro`, beside Pencil figures on the same page. That takes two features off the list, since nothing else in the
+posts needs them: a fill that reads the pixel's position, and a field that names its nearest circle.
+
+A post doesn't have to move all at once. A figure that isn't ported keeps drawing through the site's own system, so each step
+below can ship when it's done.
+
+0. **The host, before any post:** the element as a package and the Astro component (`goals.md`, The host). Tried on
+   `pencil-lang.dev`, then on a figure that's already done. `SquareZ` in the shader post is the smallest, and `LatticeMapping`
+   and `RollTube` in the period post are the ones with controls.
+1. **Keyboard use, with the host.** Kris: accessibility matters, so a ported figure keeps the keys it has on the site, and none
+   is ported without them. Twelve figures have them (see "Keyboard, hover and linked panels").
+   1. Each handle is something a reader can tab to, named for its point, with a visible focus.
+   2. Arrow keys move the focused handle, a small step, and a larger one with Shift, as the site does. The core takes the nudge
+      through the handle's own inverse, which `drag_value` already does for a pointer, and keeps the param in its range.
+   3. ← and → step beats.
+
+   **Built 2026-11-14** in the element, and tried on `004-bounds`, which has both a handle and steps (`goals.md`, The
+   element). Left: a screen reader hasn't been tried on it.
+2. **`doyle-spiral-shader`.** Of its 12 sources, 3 stay GLSL and `SquareZ` is done. The other 8:
+   1. Ports with what exists: `ScaledCopy`, `LogNearest`, then `UnwrapMorph`, whose one-circle-per-period selection is untried.
+   2. A color per instance in `curves` and `dots`: `ArmColors`, which the period post places too.
+   3. Dragging a point in two dimensions (see below for its shape): `FloorCell`, as two figures.
+   4. Panels of different sizes, which with the drag ports `FollowPixel` and `PowerViews`.
+   5. `ZoomLoop`, which needs design: a clock that doesn't loop, and a chart whose axis rescales. Its spiral half is a port.
+3. **`doyle-spiral-period`.** `LatticeMapping` and `RollTube` are done, and `ArmColors` comes from step 2. That leaves one port,
+   `CameraLog`. It's the first post that can be all Pencil, and it can be done before the shader post's later steps.
+4. **`doyle-spiral-touch`.** `BoundsConstruction` is done, and `ScaledCopy` comes from step 2.
+   1. Port: `LimaconTangency`.
+   2. Newton's steps as values: `DoyleFlower`.
+   3. A view that pitches and that the reader turns: `LevelCurve`. Turning it needs keys too.
+   4. `SkewSliders`, which needs design: a button that runs a step and writes params. It needs Newton's steps too.
+5. **`doyle-spiral-solve`.** Nothing is done and nothing is a port.
+   1. `NewtonLine`, once unequal axis scales are settled one way or the other.
+   2. `DigitsChart`: Newton's steps from step 4, scaling y in the document, and without hover until that's decided. What hover
+      shows has to be reachable by keys.
+   3. `NewtonDoyle` last, since it needs Newton's steps, the turning view, panels of different sizes and moves between views.
+6. **After the series,** by what's closest:
+   - `limacon`: `MedianConstruction` and `TriangleLayers` are ports. `LimaconConstruction` needs beats per panel, or linked
+     elements.
+   - `circumcenter`: `circumcircle.glsl` is a port by extending `011-circumcircle`, which was written from it and is close.
+     `CircumCot` is a port. `CircumcircleDemo` and `CircumNormals` are ports once step 2's drag exists.
+   - `involute`: `Unroll` is done, so the post only needs the host.
+
+**Not being ported:** the shader post's three GLSL figures, and the home page's hero (`hero.glsl`), which Kris wouldn't bother
+with either. The logo can stay the site's own.
+
+**How a point is dragged in two dimensions.** From Kris, on what Desmos does and how it feels:
+
+- **A point written from two params is dragged by setting them.** Desmos allows this only for a point that is `(a, b)` or
+  `a + b·i`, and that's the rule to take: the point's coordinates are the params, so there's nothing to invert, and each param
+  stops at its own range. `FloorCell`'s free point, `CircumcircleDemo`'s and `CircumNormals`' corners, and `FollowPixel`'s w are
+  all this.
+- **Anything else keeps an explicit inverse,** as `handle P sets a = …` has now, extended to give a point for two params:
+  `FollowPixel`'s z in the spiral sets w through the inverse map, and `PowerViews`' z is dragged in two panels.
+- **No inverse is solved for.** Desmos also drags a point that's a function of one param by solving for it, which is convenient,
+  and has two faults Kris has met: the param can jump out of its range, and when several handles share a param, some one-to-one
+  and some many-to-one, dragging a many-to-one handle makes the others jump between its solutions. The explicit conversion is
+  easier to understand. So "automatic inverses" (`decisions.md`, Not built from the specs) stays not built.
+
+**A field, and what a style can read of it.** The inventory asked for "a field that names its nearest circle" so that
+`DoyleSpiral`'s arms could be colored. Kris's point: that shader isn't a list of circles drawn fast. It samples a pixel and asks
+which circle of infinitely many is nearest, and nothing in it could be traced, so it doesn't reconcile with styling a mark by its
+instances. Nothing in the posts needs this now. If something does, the direction is that what a style can read of a mark depends
+on the mark's form, as it already does in practice: a field offers `self.dist`, a curve `self.t`, a curve in space `self.z`, a
+dot `self.x` and `self.y`. A field would offer the pixel's position and values it computes there, such as which cell it's in,
+and a form that can't offer a name says so. That's a set of names per form, and not every form has every one.
+
+**Done so far**
+
+| Date | What | For |
+|---|---|---|
+| 2026-11-05 | `corpus/003-unroll`, `004-bounds` | `Unroll`, `BoundsConstruction` |
+| 2026-11-06 | `corpus/006-square`, `007-lattice` | `SquareZ`, `LatticeMapping` |
+| 2026-11-14 | Points in space, a viewport's `yaw`, `self.z` along a curve, and `corpus/013-tube` | `RollTube` |
+| 2026-11-14 | A range that follows other params: `param p = 2 in 0..q step 1` | The p ≤ q of `LatticeMapping`, `ArmColors`, `DoyleFlower` |
+| 2026-11-14 | `pencil build`, posters, and the element's poster and `<source>` children | Every figure (`goals.md`, The host) |
+| 2026-11-14 | Handles a reader can tab to, arrow keys that move them, and ← → for beats | The 12 figures with keys on the site |
 
 **How it was checked.** Every component was read, with the libraries it draws through (`plot.ts`, `construction.ts`, `wire3d.ts`,
 `doyle.ts`, `Shader.astro`). On the Pencil side, every "lacks" claim below was checked against `language.md` and the code, and the
@@ -22,6 +109,7 @@ The home page's hero canvas and the header's logo are listed apart, at the end. 
 - **Port:** everything it needs exists today.
 - **Feature:** a port once one named feature exists (or two, where said).
 - **Design:** needs a decision about the language or the model before it can be built.
+- **Stays:** stays the site's own shader, by Kris's choice (see Order).
 
 ## The whole list
 
@@ -35,11 +123,11 @@ The home page's hero canvas and the header's logo are listed apart, at the end. 
 | `LimaconConstruction` | limacon | primary | Related: `lab/explainer` | Separate beats per panel | Design |
 | `TriangleLayers` | limacon | primary | None | Nothing | Port |
 | `MedianConstruction` | limacon | primary | Related: `lab/explainer/limacon/pedal.pen` | Nothing | Port |
-| `DoyleSpiral` (`doyle.glsl`) | doyle-spiral-shader | hero | Related: `007-lattice`'s spiral | Coloring a field by which circle is nearest | Feature |
+| `DoyleSpiral` (`doyle.glsl`) | doyle-spiral-shader | hero | Related: `007-lattice`'s spiral | Not being ported. It would lack coloring a field by which circle is nearest | Stays |
 | `ScaledCopy` | doyle-spiral-shader, doyle-spiral-touch | aside | Related: `010-mobius` | Nothing | Port |
 | `FollowPixel` | doyle-spiral-shader | primary | Related: `007-lattice` | Two-dimensional drag, panels of different sizes | Feature (two) |
-| `gradient.glsl` | doyle-spiral-shader | aside | None | A fill that reads the pixel's position | Feature |
-| `circle-distance.glsl` | doyle-spiral-shader | supporting | Related: `001-circle` with `bands.style` | A fill that reads the pixel's position | Feature |
+| `gradient.glsl` | doyle-spiral-shader | aside | None | Not being ported. It would lack a fill that reads the pixel's position | Stays |
+| `circle-distance.glsl` | doyle-spiral-shader | supporting | Related: `001-circle` with `bands.style` | Not being ported. It would lack a fill that reads the pixel's position | Stays |
 | `SquareZ` | doyle-spiral-shader | aside | Same: `006-square` | Nothing | Done |
 | `PowerViews` | doyle-spiral-shader | primary | Related: `010-mobius` | Two-dimensional drag, panels of different sizes | Feature (two) |
 | `UnwrapMorph` | doyle-spiral-shader | primary | Related: `007-lattice`, `009-squaring` | Nothing (one part untried) | Port |
@@ -68,12 +156,12 @@ it. See "Keyboard, hover and linked panels".
 
 The site wraps each figure in HTML that Pencil doesn't own, and `<pencil-figure>` doesn't build any of it yet:
 
-- **Controls from params.** Sliders and choices are built from a figure's params in the playground (`web/playground.js`), not in the
-  element. Every interactive figure here has them. A slider whose maximum follows another (p ≤ q in `ArmColors`, `DoyleSpiral`,
-  `DoyleFlower`, `LatticeMapping`) can't be said in the document: `param p = 2 in 0..q` gives "a param's range must be constant"
-  *(tried)*. `007-lattice` already lives with this, and `clamp` in a binding does the math's part. Five layer checkboxes
-  (`TriangleLayers`) are choices `{"off": 0, "on": 1}` read by `show` *(tried)*, so a host only needs to draw a two-option choice as
-  a checkbox.
+- **Controls from params.** Sliders and choices are built from a figure's params in the playground (`web/playground.js`) and by
+  `pencil-lang.dev`'s `<figure-controls>` (`site/src/scripts/figure-controls.js`), not in the element. Every interactive figure
+  here has them. A slider whose maximum follows another (p ≤ q in `ArmColors`, `DoyleSpiral`, `DoyleFlower`, `LatticeMapping`)
+  is said in the document since 2026-11-14: `param p = 2 in 0..q step 1`, which the figure enforces and a page reads through
+  `info.params` and `figure.range` (`language.md`, Documents). Five layer checkboxes (`TriangleLayers`) are choices
+  `{"off": 0, "on": 1}` read by `show` *(tried)*, so a host only needs to draw a two-option choice as a checkbox.
 - **Readouts.** Most figures have a one-line monospace readout of computed values. The element's `value` reads any binding, so the
   numbers are there (`004-bounds` keeps `ring_count` for this). The formatting is the page's: fixed decimals with a sign column,
   exponent notation with superscript exponents (`DigitsChart`, `NewtonDoyle`, `DoyleFlower`), and yes/no text (`CameraLog`).
@@ -86,6 +174,10 @@ The site wraps each figure in HTML that Pencil doesn't own, and `<pencil-figure>
 - **Tap to pause, pausing offscreen, a still frame for reduced motion.** The element has all three already.
 
 ## The five shaders
+
+**Three of the five stay GLSL** (see Order): `gradient.glsl`, `circle-distance.glsl` and `doyle.glsl`, which are the shader post's
+subject. What's below about them is what a port would have taken, kept in case that changes. `circumcircle.glsl` is still a
+port, and `hero.glsl` was always the site's.
 
 Pencil draws fields and styles them with expressions, and `011-circumcircle` and `012-limacon` are ports of shaders like these. What
 it can't do, checked for all five:
@@ -206,15 +298,16 @@ the reader turns.
 ## Keyboard, hover and linked panels
 
 **Keyboard.** The site gives every draggable point arrow keys (a tenth of a grid cell, a whole one with Shift) and every
-step-through construction ← and →. These twelve figures would lose it:
+step-through construction ← and →. It comes with the host, before the posts (see Order). These twelve figures have it:
 
 - **Handles:** `CircumcircleDemo`, `CircumNormals`, `CircumCot`, `TriangleLayers`, `MedianConstruction`, `LimaconConstruction`,
   `FollowPixel`, `PowerViews`, `LogNearest`, `FloorCell`, `LimaconTangency`, `BoundsConstruction`.
 - **Steps:** `BoundsConstruction`, `MedianConstruction`, `LimaconConstruction`.
 
-`key` isn't a statement *(tried)*, and the element leaves keys to the page (`goals.md`, "The element"). Stepping beats is the
-element's own job and needs nothing from the core. Moving a point is the core's: a host would ask for the handle's inverse at the
-point's screen position plus a step, which `drag_value` already computes for a pointer.
+`key` isn't a statement *(tried)*, and doesn't need to be: since 2026-11-14 the element does both (`goals.md`, "The element").
+It steps beats on ← and →, and each handle is a tab stop that the arrows move, through the handle's inverse at the point's
+place plus a step (`frame::nudge_value`). The site's step is a tenth of a grid cell, and the element's is a hundredth of the
+figure's shorter side, since a figure has no grid of its own.
 
 **Hover.**
 
@@ -340,7 +433,7 @@ element's play hands back at the matching time, as `goals.md` describes.
 
 ### doyle-spiral-shader
 
-**`DoyleSpiral`** (hero): see "The five shaders". Controls: q 3–30, p 0–q, arms along {ω, 1, 1 + ω}, which is the choice that
+**`DoyleSpiral`** (hero): stays GLSL. See "The five shaders". Controls: q 3–30, p 0–q, arms along {ω, 1, 1 + ω}, which is the choice that
 `param axis in {ω, 1, 1 + ω}` was built from.
 
 **`ScaledCopy`** (aside, in two posts)
@@ -370,7 +463,7 @@ element's play hands back at the matching time, as `goals.md` describes.
   - Which candidate wins is `min` in a style's `show` and `opacity`.
 - **Lacks:** two-dimensional drag, and panels of different sizes (`goals.md`, Known limits).
 
-**`gradient.glsl`** and **`circle-distance.glsl`**: see "The five shaders".
+**`gradient.glsl`** and **`circle-distance.glsl`**: stay GLSL. See "The five shaders".
 
 **`SquareZ`** (aside): done as `006-square`. The site builds each label from pieces measured one by one; Pencil's expressions
 replaced that.
@@ -577,24 +670,29 @@ replaced that.
 - **Done: 5.** `Unroll`, `BoundsConstruction`, `SquareZ`, `LatticeMapping` and `RollTube`, which are corpus figures.
 - **Port: 9.** Everything they need exists, and they aren't written yet: `circumcircle.glsl` (by extending `011`), `CircumCot`,
   `TriangleLayers`, `MedianConstruction`, `ScaledCopy`, `UnwrapMorph`, `LogNearest`, `CameraLog` and `LimaconTangency`.
-- **One feature: 9.** `CircumcircleDemo`, `CircumNormals`, `FloorCell`, `gradient.glsl`, `circle-distance.glsl`, `ArmColors`,
-  `DoyleSpiral`, `NewtonLine` and `DoyleFlower`.
+- **One feature: 6.** `CircumcircleDemo`, `CircumNormals`, `FloorCell`, `ArmColors`, `NewtonLine` and `DoyleFlower`.
 - **Two features: 3.** `FollowPixel`, `PowerViews` and `DigitsChart`.
 - **Design: 5.** `LimaconConstruction`, `ZoomLoop`, `LevelCurve`, `NewtonDoyle` and `SkewSliders`. The hero and the logo
   are design too.
+- **Stays GLSL: 3.** `DoyleSpiral`, `gradient.glsl` and `circle-distance.glsl`.
+
+**In the Doyle series,** which goes first: 23 sources. 4 are done (`SquareZ`, `LatticeMapping`, `RollTube`,
+`BoundsConstruction`), 3 stay GLSL, 5 are ports (`ScaledCopy`, `LogNearest`, `UnwrapMorph`, `CameraLog`, `LimaconTangency`), 4
+need one feature (`FloorCell`, `ArmColors`, `DoyleFlower`, `NewtonLine`), 3 need two (`FollowPixel`, `PowerViews`,
+`DigitsChart`), and 4 need design (`ZoomLoop`, `LevelCurve`, `SkewSliders`, `NewtonDoyle`).
 
 **Missing features, by how many figures need each.** The table counts the 31 sources plus the hero and logo. "Alone" means the figure
 is ported once this exists and nothing else does.
 
 | Feature | Needed by | Alone | Kind |
 |---|---|---|---|
-| Keys: arrows move a handle and step beats | 12 (listed under Keyboard) | 0, since none needs it to port | Element, plus a nudge through the handle's inverse |
-| Dragging a point in two dimensions | 5: `CircumcircleDemo`, `CircumNormals`, `FloorCell`, `FollowPixel`, `PowerViews` | 3 | Language: a handle that sets two params, or a point-valued param |
+| Keys: handles a reader can tab to, arrows that move them and step beats | 12 (listed under Keyboard) | 0 to draw, and all 12 to ship: no figure is ported without them (see Order) | Element, plus a nudge through the handle's inverse |
+| Dragging a point in two dimensions | 5: `CircumcircleDemo`, `CircumNormals`, `FloorCell`, `FollowPixel`, `PowerViews` | 3 | Language: a point that's `(a, b)` or `a + b·i` of two params is dragged by setting them, and an explicit inverse can give a point (see Order) |
 | Newton's steps as values (or derivatives a figure can name) | 4: `DoyleFlower`, `DigitsChart`, `NewtonDoyle`, `SkewSliders` | 1 | Language |
 | Panels of different sizes and layouts (a wide strip over two) | 4: `FollowPixel`, `PowerViews`, `NewtonDoyle`, `FloorCell` (or two figures) | 0 | Sheet: a known limit |
 | 3D: a view that pitches and that the reader turns | 2: `LevelCurve`, `NewtonDoyle` | 1 | Design |
-| A fill that reads the pixel's position | 2: `gradient.glsl`, `circle-distance.glsl` | 2 | Style |
-| A field that names its nearest circle, or sides past the 256 cap | 2: `DoyleSpiral`, hero (and maybe `ZoomLoop`) | 1 | Core and shader |
+| A fill that reads the pixel's position | 0, now that `gradient.glsl` and `circle-distance.glsl` stay GLSL | 0 | Style: not planned |
+| A field that names its nearest circle, or sides past the 256 cap | 0, now that `DoyleSpiral` stays GLSL and the hero is the site's (maybe `ZoomLoop`, if its circles pass the cap) | 0 | Core and shader: not planned |
 | Unequal axis scales | 2: `NewtonLine`, `DigitsChart` | 1 | Viewport: decided against on 2026-11-06, unless asked for |
 | Hover, or the pointer as an input outside a drag | 2: `DigitsChart`, hero | 0 | Design: a frame stays a function of its inputs |
 | A color per instance in `curves` and `dots` | 1: `ArmColors` (and `RollTube`, `CameraLog` more simply) | 1 | Style |
@@ -607,41 +705,9 @@ is ported once this exists and nothing else does.
 
 Host work that isn't a language feature but every port needs, in rough count:
 
-- sliders and choices built from params: about 20 figures
+- sliders and choices built from params: about 20 figures (`pencil-lang.dev` has them; the element and the blog don't)
 - readouts: about 16
 - a two-option choice drawn as a checkbox: `TriangleLayers`
 
 **Not needed by any figure:** pointing at a thing in one panel to show it in another, KaTeX in labels, charts as a general
 feature (`DigitsChart` is marks), clipping (`in clip(…)`), and general lists.
-
-## Suggested order
-
-1. **The ports that need nothing new**, closest to an existing figure first:
-   1. `circumcircle.glsl` (extend `011`)
-   2. `LimaconTangency`
-   3. `MedianConstruction` (after `004-bounds`)
-   4. `CircumCot`
-   5. `LogNearest`
-   6. `ScaledCopy`
-   7. `TriangleLayers`
-   8. `CameraLog`
-   9. `UnwrapMorph` (whose one-per-period selection is untried)
-
-   They exercise the site's host along the way.
-2. **Host:** controls from params, readouts from `value`, and keys for beats in the element. Moving a handle by keys follows, since
-   it needs the core to take a nudge through the inverse.
-3. **Two-dimensional drag**, which ports `CircumcircleDemo`, `CircumNormals` and `FloorCell` (as two figures). Then panels of
-   different sizes, which with it ports `FollowPixel` and `PowerViews`.
-4. **A fill that reads the pixel's position:** `gradient.glsl` and `circle-distance.glsl`. Small, and it settles how a style sees the
-   plane.
-5. **A color per instance in `curves` and `dots`:** `ArmColors`.
-6. **Newton's steps as values:** `DoyleFlower`, then `DigitsChart` (scaling y in the document, and without hover until that's
-   decided). Then `NewtonLine`, once unequal scales are settled one way or the other.
-7. **The nearest-circle field,** or sides past the cap: `DoyleSpiral`, the shader post's hero.
-8. **Design, one figure each:**
-   - 3D: `LevelCurve` (one view, fixed drawing order), now that `RollTube` is done
-   - beats per panel or linked elements for `LimaconConstruction`
-   - `ZoomLoop`'s clock and chart
-   - `SkewSliders`' actions
-   - `NewtonDoyle` last, since it needs most of the above
-   - the logo and hero, which can stay the site's own

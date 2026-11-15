@@ -432,6 +432,74 @@ pub fn handle_at(
     Ok(best)
 }
 
+/// Where each handle's mark is, in device pixels, for a page to put something a reader can focus
+/// there. A handle whose mark doesn't exist this frame has no place.
+pub fn handle_places(
+    figure: &Figure,
+    inputs: &Inputs,
+    width: u32,
+    height: u32,
+) -> Result<Vec<Option<(f64, f64)>>, Error> {
+    if figure.scene.handles.is_empty() {
+        return Ok(Vec::new());
+    }
+    let env = eval::frame_env(figure, inputs)?;
+    let view = view_for(figure, inputs, width, height)?;
+    figure
+        .scene
+        .handles
+        .iter()
+        .map(|handle| match pair(&handle.at, &env) {
+            Ok((x, y)) => Ok(Some(device(x, y, &view, width, height))),
+            Err(e) if e.absent => Ok(None),
+            Err(e) => Err(e),
+        })
+        .collect()
+}
+
+/// What a key sets a handle's param to: its inverse at where the mark is, moved by this many
+/// device pixels, as a drag from the mark's own place would. `None` for a handle whose mark
+/// doesn't exist this frame.
+///
+/// A param with steps might not reach its next value in one move, and a key that did nothing
+/// would leave a reader stuck. So the move is doubled until the param changes, or until it has
+/// gone as far as the canvas is wide, where the direction has no next value.
+pub fn nudge_value(
+    figure: &Figure,
+    inputs: &Inputs,
+    handle: usize,
+    width: u32,
+    height: u32,
+    dx: f64,
+    dy: f64,
+) -> Result<Option<(String, f64)>, Error> {
+    let Some(place) = handle_places(figure, inputs, width, height)?.get(handle).copied().flatten()
+    else {
+        return Ok(None);
+    };
+    let param = &figure.scene.handles[handle].param;
+    let now = eval::frame_env(figure, inputs)?.get(param);
+    let stepped = figure.scene.params.iter().any(|p| p.id == *param && p.step.is_some());
+    let far = width.max(height) as f64;
+    let mut reach = 1.0;
+    loop {
+        let (name, value) = drag_value(
+            figure,
+            inputs,
+            handle,
+            width,
+            height,
+            place.0 + dx * reach,
+            place.1 + dy * reach,
+        )?;
+        let moved = now.is_none_or(|now| (value - now).abs() > 1e-9);
+        reach *= 2.0;
+        if moved || !stepped || dx.hypot(dy) * reach > far {
+            return Ok(Some((name, value)));
+        }
+    }
+}
+
 /// What a drag sets a handle's param to: its explicit inverse at the pointer, kept within
 /// the param's range, which is what constrains the drag.
 pub fn drag_value(
@@ -1226,6 +1294,78 @@ mod tests {
         assert_eq!(with(&[("a", 2.0)]), [-1.0, 1.0]);
         // `b` is a plain param, so the view fits it.
         assert_eq!(with(&[("b", 2.0)]), [-2.0, 2.0]);
+    }
+
+    /// A point on the unit circle, dragged by its angle, and one on a line that only takes
+    /// whole numbers.
+    const KEYED: &str = "viewport { x: -2..2, y: -2..2 }
+        param theta = 0 in 0..π
+        param n = 0 in -1..1 step 1
+        param shown = 1 in 0..1 step 1
+        let P = (cos(theta), sin(theta))
+        let N = (n, -1.5)
+        // Where a line through the origin meets y = 1: nowhere, once it's turned flat.
+        let Q = intersect(line((0, 1), (1, 1)), line((0, 0), (1 - shown, shown)))
+        dot P, N, Q
+        handle P sets theta = atan2(max(pointer.y, 0), pointer.x)
+        handle N sets n = pointer.x
+        handle Q sets shown = pointer.x";
+
+    fn held(params: &[(&str, f64)]) -> Inputs {
+        Inputs {
+            time: 0.0,
+            params: params.iter().map(|(n, v)| (n.to_string(), *v)).collect(),
+        }
+    }
+
+    #[test]
+    fn a_handle_says_where_it_is() {
+        let f = build(KEYED, &[]).unwrap();
+        let places = handle_places(&f, &Inputs::at(0.0), 400, 400).unwrap();
+        // P is at (1, 0) and N at (0, −1.5), in a view 4 across drawn 400 wide.
+        assert_eq!(places, [Some((300.0, 200.0)), Some((200.0, 350.0)), Some((200.0, 100.0))]);
+        // A mark that doesn't exist has no place, and a key on it does nothing.
+        let hidden = held(&[("shown", 0.0)]);
+        assert_eq!(handle_places(&f, &hidden, 400, 400).unwrap()[2], None);
+        assert_eq!(nudge_value(&f, &hidden, 2, 400, 400, 4.0, 0.0).unwrap(), None);
+        // A figure with no handles has none.
+        let plain = build("let P = (0, 0)\ndot P", &[]).unwrap();
+        assert!(handle_places(&plain, &Inputs::at(0.0), 400, 400).unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_key_moves_a_handle_through_its_inverse() {
+        let f = build(KEYED, &[]).unwrap();
+        let at = held(&[("theta", std::f64::consts::FRAC_PI_2)]);
+        // At the top of the circle, left is counterclockwise: the mark is at (200, 100), and 10
+        // pixels left of it is the angle atan2(1, −0.1).
+        let (name, value) = nudge_value(&f, &at, 0, 400, 400, -10.0, 0.0).unwrap().unwrap();
+        assert_eq!(name, "theta");
+        assert!((value - 1.0f64.atan2(-0.1)).abs() < 1e-12, "{value}");
+        // Up is straight out from the circle, so the angle stays.
+        let (_, value) = nudge_value(&f, &at, 0, 400, 400, 0.0, -10.0).unwrap().unwrap();
+        assert!((value - std::f64::consts::FRAC_PI_2).abs() < 1e-12, "{value}");
+        // The param's range stops it: past the end of the half circle, it stays at π.
+        let end = held(&[("theta", std::f64::consts::PI)]);
+        let (_, value) = nudge_value(&f, &end, 0, 400, 400, 0.0, 10.0).unwrap().unwrap();
+        assert_eq!(value, std::f64::consts::PI);
+    }
+
+    #[test]
+    fn a_key_reaches_the_next_step_of_a_param_that_has_steps() {
+        let f = build(KEYED, &[]).unwrap();
+        // N's steps are 100 pixels apart, and 4 pixels doesn't round to the next one. The move
+        // grows until it does.
+        let (name, value) = nudge_value(&f, &Inputs::at(0.0), 1, 400, 400, 4.0, 0.0).unwrap().unwrap();
+        assert_eq!((name.as_str(), value), ("n", 1.0));
+        let (_, value) = nudge_value(&f, &Inputs::at(0.0), 1, 400, 400, -4.0, 0.0).unwrap().unwrap();
+        assert_eq!(value, -1.0);
+        // At the end of its range there's no next step, and it stays.
+        let (_, value) = nudge_value(&f, &held(&[("n", 1.0)]), 1, 400, 400, 4.0, 0.0).unwrap().unwrap();
+        assert_eq!(value, 1.0);
+        // Up and down don't move it at all.
+        let (_, value) = nudge_value(&f, &Inputs::at(0.0), 1, 400, 400, 0.0, 4.0).unwrap().unwrap();
+        assert_eq!(value, 0.0);
     }
 
     #[test]

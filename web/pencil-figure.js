@@ -96,6 +96,14 @@ slot { display: none; }
 ::slotted(source) { display: none; }
 ::slotted(img), ::slotted(picture) { display: block; width: 100%; height: auto; }
 .em { position: absolute; left: 0; top: 0; width: 1em; height: 0; visibility: hidden; pointer-events: none; }
+/* Something to focus over each handle. The pointer goes through it to the canvas, which is where
+   a drag is taken, and a reader on a keyboard tabs to it and moves it with the arrow keys. Its
+   ring is two tones, so it shows on any paper. */
+.handles { position: absolute; inset: 0; pointer-events: none; }
+.handle { position: absolute; left: -14px; top: -14px; width: 28px; height: 28px; border-radius: 50%; outline: none; will-change: transform; }
+.handle:focus-visible { outline: 2px solid var(--pencil-focus, currentColor); outline-offset: 1px; box-shadow: 0 0 0 2px var(--pencil-focus-halo, Canvas); }
+.handle[hidden] { display: none; }
+.said { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .label { position: absolute; left: 0; top: 0; white-space: nowrap; font-family: system-ui, -apple-system, sans-serif; line-height: 1; will-change: transform; }
 .label.math { font-family: Charter, 'Bitstream Charter', 'Sitka Text', Cambria, serif; font-style: italic; }
 `;
@@ -121,6 +129,11 @@ export class PencilFigure extends HTMLElement {
   #em;
   #emPx = 0;
   #layer;
+  #handleLayer;
+  #handles = []; // what a reader focuses for each handle, in `info.handles`' order
+  #said; // what a key just did, for a screen reader
+  #internals = null;
+  #tabbable = false; // whether the element made itself a tab stop, for stepping beats
   #size = null;
   #player = null;
   #starting = false;
@@ -163,6 +176,16 @@ export class PencilFigure extends HTMLElement {
     this.#em.setAttribute('aria-hidden', 'true');
     this.#stage.append(document.createElement('slot'), this.#canvas, this.#em);
     this.#layer = new LabelLayer(this.#stage, window.devicePixelRatio || 1);
+    this.#handleLayer = document.createElement('div');
+    this.#handleLayer.className = 'handles';
+    this.#said = document.createElement('div');
+    this.#said.className = 'said';
+    this.#said.setAttribute('aria-live', 'polite');
+    this.#stage.append(this.#handleLayer, this.#said);
+    this.addEventListener('keydown', this.#key);
+    try {
+      this.#internals = this.attachInternals();
+    } catch {}
   }
 
   // ---- The poster and the sources ----
@@ -272,6 +295,10 @@ export class PencilFigure extends HTMLElement {
     canvas.addEventListener('pointermove', this.#pointerMove);
     canvas.addEventListener('pointerup', this.#pointerEnd);
     canvas.addEventListener('pointercancel', this.#pointerEnd);
+    // A grab focuses its handle, and the press mustn't take the focus away again.
+    canvas.addEventListener('mousedown', (e) => {
+      if (this.#player?.grabbed() >= 0) e.preventDefault();
+    });
     return canvas;
   }
 
@@ -435,6 +462,7 @@ export class PencilFigure extends HTMLElement {
       else this.#held.delete(name);
     }
     this.#retime();
+    this.#operable();
     this.#fresh = true;
     this.#invalidate();
     this.#sync();
@@ -697,6 +725,8 @@ export class PencilFigure extends HTMLElement {
       this.pause();
       this.#canvas.setPointerCapture(e.pointerId);
       this.#canvas.style.cursor = 'grabbing';
+      // The keys carry on from where the pointer leaves it.
+      this.#handles[this.#player.grabbed()]?.focus({ preventScroll: true });
       this.#drag(x, y);
     } catch {}
   };
@@ -721,7 +751,11 @@ export class PencilFigure extends HTMLElement {
   };
 
   #drag(x, y) {
-    const name = this.#player.drag(this.#time, x, y);
+    this.#moved(this.#player.drag(this.#time, x, y));
+  }
+
+  /** A handle set this param in the player: hold it here too, draw, and tell the page. */
+  #moved(name) {
     if (!name) return;
     const value = this.#player.value(name, this.#time);
     this.#held.delete(name);
@@ -729,6 +763,141 @@ export class PencilFigure extends HTMLElement {
     this.#invalidate();
     this.dispatchEvent(new CustomEvent('input', { bubbles: true, detail: { name, value } }));
   }
+
+  // ---- Keys: every handle can be tabbed to and moved, and beats stepped ----
+
+  /** Whether the figure has beats to step through. */
+  #steps() {
+    const info = this.#info;
+    return !!info && info.beats.length > 0 && info.params.some((p) => p.id === 'beat');
+  }
+
+  /**
+   * Makes what a reader can do with the figure reachable without a pointer, once it's known.
+   * Each handle gets something to focus, named for its mark, that says its param's value as a
+   * slider does. A figure with beats becomes a tab stop itself, unless the page has said where
+   * it is in the tab order, and a figure with either is a group, so its name is read.
+   */
+  #operable() {
+    const handles = this.#info.handles ?? [];
+    const key = JSON.stringify(handles);
+    if (this.#handleLayer.dataset.for !== key) {
+      this.#handleLayer.dataset.for = key;
+      this.#handles = handles.map((handle, index) => {
+        const el = document.createElement('div');
+        el.className = 'handle';
+        el.setAttribute('part', 'handle');
+        el.setAttribute('role', 'slider');
+        el.setAttribute('aria-label', handle.mark);
+        el.tabIndex = 0;
+        el.hidden = true;
+        el.addEventListener('keydown', (e) => this.#handleKey(e, index));
+        return el;
+      });
+      this.#handleLayer.replaceChildren(...this.#handles);
+    }
+    const steps = this.#steps();
+    if (steps && !this.hasAttribute('tabindex')) {
+      this.tabIndex = 0;
+      this.#tabbable = true;
+    } else if (!steps && this.#tabbable) {
+      this.removeAttribute('tabindex');
+      this.#tabbable = false;
+    }
+    if (this.#internals) this.#internals.role = steps || handles.length ? 'group' : null;
+  }
+
+  /** Puts each handle's focus where its mark is, and says its value, after a frame is drawn. */
+  #placeHandles() {
+    if (!this.#handles.length) return;
+    let places;
+    try {
+      places = this.#player.handle_places(this.#time);
+    } catch {
+      return;
+    }
+    const scale = this.#canvas.clientWidth / this.#canvas.width;
+    this.#handles.forEach((el, i) => {
+      const [x, y] = [places[2 * i] * scale, places[2 * i + 1] * scale];
+      const there = Number.isFinite(x) && Number.isFinite(y);
+      if (el.hidden === there) el.hidden = !there;
+      if (!there) return;
+      const moved = `translate(${x.toFixed(2)}px, ${y.toFixed(2)}px)`;
+      if (el.style.transform !== moved) el.style.transform = moved;
+      const param = this.#info.handles[i].param;
+      const value = this.#valueAt(param, this.#time);
+      const [min, max] = this.range(param);
+      const said = [min, max, value].join(' ');
+      if (el.dataset.said === said) return;
+      el.dataset.said = said;
+      el.setAttribute('aria-valuemin', String(min));
+      el.setAttribute('aria-valuemax', String(max));
+      el.setAttribute('aria-valuenow', String(value));
+      el.setAttribute('aria-valuetext', `${param} = ${this.#format(param, value)}`);
+    });
+  }
+
+  /** A param's value as text: as many decimals as its step has, or three. */
+  #format(name, value) {
+    const step = this.#info?.params.find((p) => p.id === name)?.step;
+    if (step != null) return value.toFixed((String(step).split('.')[1] ?? '').length);
+    return String(Number(value.toFixed(3)));
+  }
+
+  /**
+   * A key on a focused handle. An arrow moves it that way on the page, a hundredth of the
+   * figure's shorter side, or a tenth with Shift, through the handle's own inverse, as a drag
+   * that far would. A param with steps goes to its next one that way. Home and End take the
+   * param to the ends of its range, and Page Up and Page Down move it a tenth of the range.
+   */
+  #handleKey(e, index) {
+    if (!this.#player || e.altKey || e.ctrlKey || e.metaKey) return;
+    const way = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key];
+    const param = this.#info.handles[index].param;
+    try {
+      if (way) {
+        const { width, height } = this.#canvas;
+        const step = Math.max(Math.min(width, height) / 100, 2 * (window.devicePixelRatio || 1)) * (e.shiftKey ? 10 : 1);
+        this.pause();
+        this.#moved(this.#player.nudge(this.#time, index, way[0] * step, way[1] * step));
+      } else if (['Home', 'End', 'PageUp', 'PageDown'].includes(e.key)) {
+        const [min, max] = this.range(param);
+        const now = this.#valueAt(param, this.#time);
+        const to = { Home: min, End: max, PageUp: now + (max - min) / 10, PageDown: now - (max - min) / 10 }[e.key];
+        this.pause();
+        this.#player.set_param(param, to);
+        this.#moved(param);
+      } else {
+        return;
+      }
+    } catch {
+      return;
+    }
+    // The key is the handle's: the page doesn't scroll, and the figure doesn't step a beat.
+    e.preventDefault();
+    e.stopPropagation();
+  }
+
+  /** A key on the figure itself: ← and → step its beats, and Home and End go to the first and
+   * last. What it came to is said for a screen reader, with the beat's caption. */
+  #key = (e) => {
+    if (e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey || !this.#player || !this.#steps()) return;
+    const range = this.#info.params.find((p) => p.id === 'beat');
+    if (e.key === 'ArrowRight') this.step(1);
+    else if (e.key === 'ArrowLeft') this.step(-1);
+    else if (e.key === 'Home' || e.key === 'End') {
+      this.pause();
+      this.beat = e.key === 'Home' ? range.min : range.max;
+    } else return;
+    e.preventDefault();
+    const beats = this.#info.beats;
+    const beat = this.beat;
+    // Beats with lengths count the ones done, from 0. Ones without say which it's on.
+    const timed = (this.#info.beatLengths?.length ?? 0) > 0;
+    const n = Math.round(timed ? beat : beat + 1);
+    const caption = beats[n - 1] ?? '';
+    this.#said.textContent = n < 1 ? 'Start' : `Step ${n} of ${beats.length}${caption ? `: ${caption}` : ''}`;
+  };
 
   // ---- Drawing ----
 
@@ -778,6 +947,7 @@ export class PencilFigure extends HTMLElement {
       this.#drawn = true;
       this.#wait();
     }
+    this.#placeHandles();
     this.dispatchEvent(new CustomEvent('draw', { detail: { time: this.#time, fresh } }));
   }
 
