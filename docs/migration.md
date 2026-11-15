@@ -35,7 +35,8 @@ below can ship when it's done.
    **Built 2026-11-14** in the element, and tried on `004-bounds`, which has both a handle and steps (`goals.md`, The
    element). Left: a screen reader hasn't been tried on it.
 2. **`doyle-spiral-shader`.** Of its 12 sources, 3 stay GLSL and `SquareZ` is done. The other 8:
-   1. Ports with what exists: `ScaledCopy`, `LogNearest`, then `UnwrapMorph`, whose one-circle-per-period selection is untried.
+   1. Ports with what exists: `ScaledCopy` (done, `014-scaled-copy`), `LogNearest`, then `UnwrapMorph`, whose
+      one-circle-per-period selection is untried.
    2. A color per instance in `curves` and `dots`: `ArmColors`, which the period post places too.
    3. Dragging a point in two dimensions (see below for its shape): `FloorCell`, as two figures.
    4. Panels of different sizes, which with the drag ports `FollowPixel` and `PowerViews`.
@@ -93,6 +94,7 @@ and a form that can't offer a name says so. That's a set of names per form, and 
 | 2026-11-14 | A range that follows other params: `param p = 2 in 0..q step 1` | The p ≤ q of `LatticeMapping`, `ArmColors`, `DoyleFlower` |
 | 2026-11-14 | `pencil build`, posters, and the element's poster and `<source>` children | Every figure (`goals.md`, The host) |
 | 2026-11-14 | Handles a reader can tab to, arrow keys that move them, and ← → for beats | The 12 figures with keys on the site |
+| 2026-11-15 | `corpus/014-scaled-copy` | `ScaledCopy` |
 
 **How it was checked.** Every component was read, with the libraries it draws through (`plot.ts`, `construction.ts`, `wire3d.ts`,
 `doyle.ts`, `Shader.astro`). On the Pencil side, every "lacks" claim below was checked against `language.md` and the code, and the
@@ -124,7 +126,7 @@ The home page's hero canvas and the header's logo are listed apart, at the end. 
 | `TriangleLayers` | limacon | primary | None | Nothing | Port |
 | `MedianConstruction` | limacon | primary | Related: `lab/explainer/limacon/pedal.pen` | Nothing | Port |
 | `DoyleSpiral` (`doyle.glsl`) | doyle-spiral-shader | hero | Related: `007-lattice`'s spiral | Not being ported. It would lack coloring a field by which circle is nearest | Stays |
-| `ScaledCopy` | doyle-spiral-shader, doyle-spiral-touch | aside | Related: `010-mobius` | Nothing | Port |
+| `ScaledCopy` | doyle-spiral-shader, doyle-spiral-touch | aside | Same: `014-scaled-copy` | Nothing | Done |
 | `FollowPixel` | doyle-spiral-shader | primary | Related: `007-lattice` | Two-dimensional drag, panels of different sizes | Feature (two) |
 | `gradient.glsl` | doyle-spiral-shader | aside | None | Not being ported. It would lack a fill that reads the pixel's position | Stays |
 | `circle-distance.glsl` | doyle-spiral-shader | supporting | Related: `001-circle` with `bands.style` | Not being ported. It would lack a fill that reads the pixel's position | Stays |
@@ -436,14 +438,20 @@ element's play hands back at the matching time, as `goals.md` describes.
 **`DoyleSpiral`** (hero): stays GLSL. See "The five shaders". Controls: q 3–30, p 0–q, arms along {ω, 1, 1 + ω}, which is the choice that
 `param axis in {ω, 1, 1 + ω}` was built from.
 
-**`ScaledCopy`** (aside, in two posts)
+**`ScaledCopy`** (aside, in two posts): done as `014-scaled-copy`.
 
-- **Draws:** the log spiral Rᵗe^{iθt} with R = 1.45 and θ = 40°, eight circles on it at n = −6…1 of radius K·Rⁿ that touch their
-  neighbors, a radial tick in each showing its turn, and a copy at a continuous s moving from circle 0 to circle 1, with a dashed
-  trail.
+- **Draws:** the log spiral zᵗ with z = R·e^{iθ}, R = 1.45 and θ = 40°, eight circles on it at n = −6…1 of radius K·Rⁿ that touch
+  their neighbors, a radial tick in each showing its turn, and a copy at a continuous s moving from circle 0 to circle 1, with a
+  dashed trail.
 - **Reader:** watches a 4.2 s loop.
-- **Pencil:** a `circles` collection, a `curves` collection for the ticks, a timeline, and `opacity` from time.
-- **Lacks:** nothing.
+- **Pencil:** zᵗ is `exp(t·log z)`, so circle n and its tick are circle 0's multiplied by zⁿ, in a `circles` collection and a
+  `curves` one, and the copy is circle 0 multiplied by zˢ. The loop's timing is the site's, as beats with lengths (arrive, glide,
+  leave) whose `self.life` fades the copy, and `param s` is bound to the glide, eased as the site eases it.
+- **Differs from the site:** a reader can also hold s, and step the three beats with ← and →, where the site only loops. The
+  poster is the site's still under reduced motion, at 1.8 s.
+- **Checked:** the copy's circle, through its own field, is circle 0's image under w ↦ zˢw for s across 0 to 1, and its tick is
+  too; the eight circles are that image at whole n and touch their neighbors to 1e-12; time eases s from 0 to 1 over the glide
+  (`crates/pencil-core/tests/corpus.rs`). `pencil check` agrees with the oracle to 1/255 at five times and three held s.
 
 **`FollowPixel`** (primary): three panels, two side by side and a wide one under them.
 
@@ -667,17 +675,17 @@ replaced that.
 
 **Coverage today, of 31 sources:**
 
-- **Done: 5.** `Unroll`, `BoundsConstruction`, `SquareZ`, `LatticeMapping` and `RollTube`, which are corpus figures.
-- **Port: 9.** Everything they need exists, and they aren't written yet: `circumcircle.glsl` (by extending `011`), `CircumCot`,
-  `TriangleLayers`, `MedianConstruction`, `ScaledCopy`, `UnwrapMorph`, `LogNearest`, `CameraLog` and `LimaconTangency`.
+- **Done: 6.** `Unroll`, `BoundsConstruction`, `SquareZ`, `LatticeMapping`, `RollTube` and `ScaledCopy`, which are corpus figures.
+- **Port: 8.** Everything they need exists, and they aren't written yet: `circumcircle.glsl` (by extending `011`), `CircumCot`,
+  `TriangleLayers`, `MedianConstruction`, `UnwrapMorph`, `LogNearest`, `CameraLog` and `LimaconTangency`.
 - **One feature: 6.** `CircumcircleDemo`, `CircumNormals`, `FloorCell`, `ArmColors`, `NewtonLine` and `DoyleFlower`.
 - **Two features: 3.** `FollowPixel`, `PowerViews` and `DigitsChart`.
 - **Design: 5.** `LimaconConstruction`, `ZoomLoop`, `LevelCurve`, `NewtonDoyle` and `SkewSliders`. The hero and the logo
   are design too.
 - **Stays GLSL: 3.** `DoyleSpiral`, `gradient.glsl` and `circle-distance.glsl`.
 
-**In the Doyle series,** which goes first: 23 sources. 4 are done (`SquareZ`, `LatticeMapping`, `RollTube`,
-`BoundsConstruction`), 3 stay GLSL, 5 are ports (`ScaledCopy`, `LogNearest`, `UnwrapMorph`, `CameraLog`, `LimaconTangency`), 4
+**In the Doyle series,** which goes first: 23 sources. 5 are done (`SquareZ`, `LatticeMapping`, `RollTube`,
+`BoundsConstruction`, `ScaledCopy`), 3 stay GLSL, 4 are ports (`LogNearest`, `UnwrapMorph`, `CameraLog`, `LimaconTangency`), 4
 need one feature (`FloorCell`, `ArmColors`, `DoyleFlower`, `NewtonLine`), 3 need two (`FollowPixel`, `PowerViews`,
 `DigitsChart`), and 4 need design (`ZoomLoop`, `LevelCurve`, `SkewSliders`, `NewtonDoyle`).
 

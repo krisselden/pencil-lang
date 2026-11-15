@@ -2479,3 +2479,177 @@ fn restyling_leaves_the_ir_alone() {
     assert_eq!(plain.scene, bands.scene);
     assert_ne!(plain.styles, bands.styles);
 }
+
+fn scaled_copy() -> pencil_core::Figure {
+    build(
+        &square_read("014-scaled-copy/scaled-copy.pen"),
+        &[
+            &square_read("theme.style"),
+            &square_read("014-scaled-copy/plain.style"),
+        ],
+    )
+    .unwrap()
+}
+
+#[test]
+fn scaled_copy_ir_matches_golden() {
+    let actual = golden_text(&scaled_copy().scene.to_json());
+    let golden = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../corpus/014-scaled-copy/expected.ir.json");
+    if std::env::var_os("UPDATE_GOLDENS").is_some() {
+        std::fs::write(&golden, &actual).unwrap();
+    }
+    assert_eq!(actual, std::fs::read_to_string(golden).unwrap());
+}
+
+/// A mark of a figure, by its id.
+fn mark_form<'a>(figure: &'a pencil_core::Figure, id: &str) -> &'a pencil_core::ir::Form {
+    &figure
+        .scene
+        .marks
+        .iter()
+        .find(|m| m.id == id)
+        .unwrap_or_else(|| panic!("no `{id}`"))
+        .form
+}
+
+/// One instance of a collection, with its variables set as given.
+fn instance_of(
+    figure: &pencil_core::Figure,
+    env: &pencil_core::eval::Env,
+    id: &str,
+    vars: &[(&str, f64)],
+) -> (pencil_core::eval::Env, Option<pencil_core::stroke::Instance>) {
+    use pencil_core::ir::Form;
+    let Form::Many { lets, shape, .. } = mark_form(figure, id) else {
+        panic!("`{id}` isn't a collection");
+    };
+    let mut local = env.clone();
+    for (name, value) in vars {
+        local.set(name, *value);
+    }
+    let made = pencil_core::stroke::instance(lets, shape, &mut local).unwrap();
+    (local, made)
+}
+
+/// A point along a curve, or along one curve of a collection whose variables are set in `env`.
+fn arc_point(figure: &pencil_core::Figure, env: &pencil_core::eval::Env, id: &str, t: f64) -> [f64; 2] {
+    use pencil_core::{
+        eval::real,
+        ir::{Form, Shape},
+    };
+    let arc = match mark_form(figure, id) {
+        Form::Parametric(arc) => arc,
+        Form::Many {
+            shape: Shape::Curves(arc),
+            ..
+        } => arc,
+        _ => panic!("`{id}` isn't a curve"),
+    };
+    let mut env = env.clone();
+    env.set(&arc.var, t);
+    [real(&arc.point[0], &env).unwrap(), real(&arc.point[1], &env).unwrap()]
+}
+
+fn near(a: [f64; 2], b: [f64; 2], tolerance: f64) -> bool {
+    (a[0] - b[0]).hypot(a[1] - b[1]) < tolerance
+}
+
+/// zᵗ for the spiral's z = R·e^{iθ}, from R = 1.45 and θ = 40°, written here and not read from the
+/// figure.
+fn scaled_copy_power(t: f64) -> [f64; 2] {
+    let (r, theta) = (1.45f64, 40f64.to_radians());
+    let (m, a) = (r.powf(t), t * theta);
+    [m * a.cos(), m * a.sin()]
+}
+
+fn complex_mul(a: [f64; 2], b: [f64; 2]) -> [f64; 2] {
+    [a[0] * b[0] - a[1] * b[1], a[0] * b[1] + a[1] * b[0]]
+}
+
+/// The copy is circle 0, about 1 with radius K, and its tick from 1 to 1 + Ki, multiplied by zˢ:
+/// grown by |z|ˢ and turned by s·arg z. Its circle is checked through its own field, as drawn.
+#[test]
+fn the_copy_is_circle_zero_scaled_and_turned() {
+    use pencil_core::{eval::frame_env, eval::real, frame::Inputs, ir::Form};
+    let figure = scaled_copy();
+    let k = {
+        let z = scaled_copy_power(1.0);
+        (z[0] - 1.0).hypot(z[1]) / (1.45 + 1.0)
+    };
+    let Form::Field { vars, field, .. } = mark_form(&figure, "copy") else {
+        panic!("the copy is a circle");
+    };
+    let Form::Polyline { points, .. } = mark_form(&figure, "copy_tick") else {
+        panic!("the tick is a segment");
+    };
+    for s in [0.0, 0.2, 0.5, 0.83, 1.0] {
+        let inputs = Inputs {
+            time: 1.8,
+            params: vec![("s".to_string(), s)],
+        };
+        let env = frame_env(&figure, &inputs).unwrap();
+        let scale = scaled_copy_power(s);
+        let field_at = |p: [f64; 2]| {
+            let mut env = env.clone();
+            env.set(&vars[0], p[0]);
+            env.set(&vars[1], p[1]);
+            real(field, &env).unwrap()
+        };
+        // Every point of circle 0, carried by zˢ, is on the copy, and its center is the image of 1.
+        for j in 0..24 {
+            let a = j as f64 / 24.0 * std::f64::consts::TAU;
+            let on_zero = [1.0 + k * a.cos(), k * a.sin()];
+            let image = complex_mul(scale, on_zero);
+            assert!(field_at(image).abs() < 1e-9, "s = {s}: {}", field_at(image));
+        }
+        let radius = k * 1.45f64.powf(s);
+        assert!((field_at(scale) + radius).abs() < 1e-9, "s = {s}: the center is {} in", field_at(scale));
+        let ends: Vec<[f64; 2]> = points
+            .iter()
+            .map(|p| [real(&p[0], &env).unwrap(), real(&p[1], &env).unwrap()])
+            .collect();
+        assert!(near(ends[0], complex_mul(scale, [1.0, 0.0]), 1e-12), "s = {s}");
+        assert!(near(ends[1], complex_mul(scale, [1.0, k]), 1e-12), "s = {s}");
+    }
+}
+
+/// The spiral's circles are the same circle 0 carried by zⁿ, they touch their neighbors, and the copy
+/// starts on circle 0 and lands on circle 1.
+#[test]
+fn the_spirals_circles_touch_and_the_copy_lands_on_the_next() {
+    use pencil_core::{eval::frame_env, frame::Inputs, stroke::Instance};
+    let figure = scaled_copy();
+    let k = {
+        let z = scaled_copy_power(1.0);
+        (z[0] - 1.0).hypot(z[1]) / (1.45 + 1.0)
+    };
+    let env = frame_env(&figure, &Inputs::at(1.8)).unwrap();
+    let circle = |n: f64| match instance_of(&figure, &env, "arm", &[("n", n)]).1 {
+        Some(Instance::Circle(c, r)) => (c, r),
+        other => panic!("circle {n} is {other:?}"),
+    };
+    for n in -6..=1 {
+        let n = n as f64;
+        let (c, r) = circle(n);
+        let scale = scaled_copy_power(n);
+        assert!(near(c, scale, 1e-12), "circle {n} at {c:?}");
+        assert!((r - k * 1.45f64.powf(n)).abs() < 1e-12, "circle {n} has radius {r}");
+        // Its tick is circle 0's, carried the same way.
+        let (local, _) = instance_of(&figure, &env, "ticks", &[("n", n)]);
+        assert!(near(arc_point(&figure, &local, "ticks", 0.0), scale, 1e-12));
+        assert!(near(arc_point(&figure, &local, "ticks", 1.0), complex_mul(scale, [1.0, k]), 1e-12));
+        if n < 1.0 {
+            let (d, q) = circle(n + 1.0);
+            let gap = (c[0] - d[0]).hypot(c[1] - d[1]) - (r + q);
+            assert!(gap.abs() < 1e-12, "circles {n} and {} are {gap} apart", n + 1.0);
+        }
+    }
+    // Time eases s from 0 to 1 while the copy glides, and the copy is circle 0, then circle 1.
+    for (time, s) in [(0.3, 0.0), (0.9, 0.0), (1.8, 0.5), (2.7, 1.0), (3.8, 1.0)] {
+        let env = frame_env(&figure, &Inputs::at(time)).unwrap();
+        assert!((env.get("s").unwrap() - s).abs() < 1e-12, "at {time}, s = {}", env.get("s").unwrap());
+        let trail_end = arc_point(&figure, &env, "trail", s);
+        assert!(near(trail_end, scaled_copy_power(s), 1e-12), "at {time}");
+    }
+}

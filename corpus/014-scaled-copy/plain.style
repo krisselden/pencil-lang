@@ -1,0 +1,14 @@
+// The spiral's circles in red and the moving copy in the accent, as the site draws them. The
+// copy and its trail fade in and out with the beats that show and drop them.
+style figure { width: 320px; height: 320px }
+
+style spiral { stroke: muted; width: 1.25px }
+style arm, ticks { stroke: red; width: 1.75px; opacity: 0.7 }
+style arm::inside { fill: red }
+style arm { fill_opacity: 0.15 }
+style center { fill: ink; radius: 3px }
+
+style trail { stroke: accent; width: 1.5px; dash: 5px; gap: 4px; opacity: smoothstep(0, 1, self.life) }
+style copy, copy_tick { stroke: accent; width: 3px; opacity: smoothstep(0, 1, self.life) }
+style copy::inside { fill: accent }
+style copy { fill_opacity: 0.15 }

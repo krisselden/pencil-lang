@@ -209,6 +209,24 @@ export const DEMOS: Demo[] = [
     looks: [{ pen: 'corpus/013-tube/tube.pen', sheets: [THEME, 'corpus/013-tube/plain.style'], dark: [DARK], playground: 'tube' }],
   },
   {
+    id: 'scaled-copy',
+    number: '014',
+    title: 'A circle of the spiral, scaled and turned',
+    about:
+      'Multiplying by z grows a circle of a log spiral by |z| and turns it by arg z about the center, which lands it on the next circle. A copy of circle 0 is multiplied by zˢ as s runs from 0 to 1, and each circle’s tick shows the turn.',
+    label:
+      'A log spiral of touching circles. A copy of one circle grows and turns about the spiral’s center until it lands exactly on the next circle.',
+    folder: 'corpus/014-scaled-copy',
+    looks: [
+      {
+        pen: 'corpus/014-scaled-copy/scaled-copy.pen',
+        sheets: [THEME, 'corpus/014-scaled-copy/plain.style'],
+        dark: [DARK],
+        playground: 'scaled-copy',
+      },
+    ],
+  },
+  {
     id: 'explainer',
     number: 'Lab',
     title: 'Explainer: the limaçon from its central circle',
