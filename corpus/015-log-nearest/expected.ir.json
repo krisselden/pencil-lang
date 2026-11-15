@@ -1,0 +1,465 @@
+{
+  "beats": [],
+  "bindings": [
+    {
+      "expr": 1.75,
+      "id": "x"
+    },
+    {
+      "expr": 1.3,
+      "id": "top"
+    },
+    {
+      "expr": -0.1,
+      "id": "bottom"
+    },
+    {
+      "expr": -0.35,
+      "id": "lo"
+    },
+    {
+      "expr": 2.3,
+      "id": "hi"
+    },
+    {
+      "expr": ["Ln","x"],
+      "id": "u"
+    },
+    {
+      "expr": ["Clamp",["Floor",["Add","u",0.5]],0.0,2.0],
+      "id": "near_log"
+    },
+    {
+      "expr": ["Clamp",["Floor","u"],0.0,1.0],
+      "id": "cell"
+    },
+    {
+      "expr": ["Divide",["Add",["Exp","cell"],["Exp",["Add","cell",1.0]]],2.0],
+      "id": "line_middle"
+    },
+    {
+      "expr": ["Add","cell",["Clamp",["Add",["Floor",["Subtract","x","line_middle"]],1.0],0.0,1.0]],
+      "id": "near_line"
+    },
+    {
+      "expr": ["Abs",["Subtract","near_line","near_log"]],
+      "id": "disagree"
+    },
+    {
+      "expr": "x",
+      "id": "X.x"
+    },
+    {
+      "expr": "top",
+      "id": "X.y"
+    },
+    {
+      "expr": ["Add",0.2,["Multiply",["Divide",["Subtract","u","lo"],["Subtract","hi","lo"]],7.6]],
+      "id": "X_log.x"
+    },
+    {
+      "expr": "bottom",
+      "id": "X_log.y"
+    },
+    {
+      "expr": ["Exp","near_line"],
+      "id": "nearest_on_line.x"
+    },
+    {
+      "expr": "top",
+      "id": "nearest_on_line.y"
+    },
+    {
+      "expr": ["Add",0.2,["Multiply",["Divide",["Subtract","near_log","lo"],["Subtract","hi","lo"]],7.6]],
+      "id": "nearest_on_log.x"
+    },
+    {
+      "expr": "bottom",
+      "id": "nearest_on_log.y"
+    }
+  ],
+  "doc": "log_nearest",
+  "duration": null,
+  "expressions": [],
+  "handles": [
+    {
+      "inverse": "pointer.x",
+      "mark": "X",
+      "param": "x"
+    }
+  ],
+  "marks": [
+    {
+      "beat": null,
+      "form": {
+        "closed": false,
+        "kind": "polyline",
+        "points": [[-0.2,"top"],[8.0,"top"]]
+      },
+      "id": "real_line",
+      "tags": ["segment"]
+    },
+    {
+      "beat": null,
+      "form": {
+        "closed": false,
+        "kind": "polyline",
+        "points": [[["Add",0.2,["Multiply",["Divide",["Subtract","lo","lo"],["Subtract","hi","lo"]],7.6]],"bottom"],[["Add",0.2,["Multiply",["Divide",["Subtract","hi","lo"],["Subtract","hi","lo"]],7.6]],"bottom"]]
+      },
+      "id": "log_line",
+      "tags": ["segment"]
+    },
+    {
+      "beat": null,
+      "form": {
+        "kind": "many",
+        "shape": {
+          "curves": {
+            "point": [["Add","a",["Multiply",["Subtract","b","a"],"t"]],"top"],
+            "range": [0.0,1.0],
+            "var": "t"
+          }
+        },
+        "vars": [
+          {
+            "range": [0.0,1.0],
+            "var": "n"
+          }
+        ],
+        "with": [
+          {
+            "expr": ["Exp",["Add","n",0.5]],
+            "id": "a"
+          },
+          {
+            "expr": ["Divide",["Add",["Exp","n"],["Exp",["Add","n",1.0]]],2.0],
+            "id": "b"
+          }
+        ]
+      },
+      "id": "disagree_line",
+      "tags": ["curves","disagreement"]
+    },
+    {
+      "beat": null,
+      "form": {
+        "kind": "many",
+        "shape": {
+          "curves": {
+            "point": [["Add",0.2,["Multiply",["Divide",["Subtract",["Add","a",["Multiply",["Subtract","b","a"],"t"]],"lo"],["Subtract","hi","lo"]],7.6]],"bottom"],
+            "range": [0.0,1.0],
+            "var": "t"
+          }
+        },
+        "vars": [
+          {
+            "range": [0.0,1.0],
+            "var": "n"
+          }
+        ],
+        "with": [
+          {
+            "expr": ["Add","n",0.5],
+            "id": "a"
+          },
+          {
+            "expr": ["Ln",["Divide",["Add",["Exp","n"],["Exp",["Add","n",1.0]]],2.0]],
+            "id": "b"
+          }
+        ]
+      },
+      "id": "disagree_log",
+      "tags": ["curves","disagreement"]
+    },
+    {
+      "beat": null,
+      "form": {
+        "kind": "many",
+        "shape": {
+          "curves": {
+            "point": [["Add",["Exp","n"],["Multiply","t",["Subtract",["Add",0.2,["Multiply",["Divide",["Subtract","n","lo"],["Subtract","hi","lo"]],7.6]],["Exp","n"]]]],["Add","top",["Multiply","t",["Subtract","bottom","top"]]]],
+            "range": [0.0,1.0],
+            "var": "t"
+          }
+        },
+        "vars": [
+          {
+            "range": [0.0,2.0],
+            "var": "n"
+          }
+        ],
+        "with": []
+      },
+      "id": "carried",
+      "tags": ["curves"]
+    },
+    {
+      "beat": null,
+      "form": {
+        "kind": "many",
+        "shape": {
+          "dots": ["self.x","self.y"]
+        },
+        "vars": [
+          {
+            "range": [0.0,2.0],
+            "var": "n"
+          }
+        ],
+        "with": [
+          {
+            "expr": ["Exp","n"],
+            "id": "self.x"
+          },
+          {
+            "expr": "top",
+            "id": "self.y"
+          }
+        ]
+      },
+      "id": "line_dots",
+      "tags": ["dots"]
+    },
+    {
+      "beat": null,
+      "form": {
+        "kind": "many",
+        "shape": {
+          "dots": ["self.x","self.y"]
+        },
+        "vars": [
+          {
+            "range": [0.0,2.0],
+            "var": "n"
+          }
+        ],
+        "with": [
+          {
+            "expr": ["Add",0.2,["Multiply",["Divide",["Subtract","n","lo"],["Subtract","hi","lo"]],7.6]],
+            "id": "self.x"
+          },
+          {
+            "expr": "bottom",
+            "id": "self.y"
+          }
+        ]
+      },
+      "id": "log_dots",
+      "tags": ["dots"]
+    },
+    {
+      "beat": null,
+      "form": {
+        "at": ["nearest_on_line.x","nearest_on_line.y"],
+        "kind": "dot"
+      },
+      "id": "nearest_on_line",
+      "tags": ["dot"]
+    },
+    {
+      "beat": null,
+      "form": {
+        "at": ["nearest_on_log.x","nearest_on_log.y"],
+        "kind": "dot"
+      },
+      "id": "nearest_on_log",
+      "tags": ["dot"]
+    },
+    {
+      "beat": null,
+      "form": {
+        "at": [1.0,"top"],
+        "away": [0.0,1.0],
+        "kind": "label",
+        "offset": [0.0,0.0],
+        "text": "1",
+        "values": []
+      },
+      "id": "name_1",
+      "tags": ["label"]
+    },
+    {
+      "beat": null,
+      "form": {
+        "at": [["Exp",1.0],"top"],
+        "away": [0.0,1.0],
+        "kind": "label",
+        "offset": [0.0,0.0],
+        "text": "e",
+        "values": []
+      },
+      "id": "name_e",
+      "tags": ["label"]
+    },
+    {
+      "beat": null,
+      "form": {
+        "at": [["Exp",2.0],"top"],
+        "away": [0.0,1.0],
+        "kind": "label",
+        "offset": [0.0,0.0],
+        "text": "e²",
+        "values": []
+      },
+      "id": "name_e2",
+      "tags": ["label"]
+    },
+    {
+      "beat": null,
+      "form": {
+        "at": [["Add",0.2,["Multiply",["Divide",["Subtract",0.0,"lo"],["Subtract","hi","lo"]],7.6]],"bottom"],
+        "away": [0.0,-1.0],
+        "kind": "label",
+        "offset": [0.0,0.0],
+        "text": "0",
+        "values": []
+      },
+      "id": "name_0",
+      "tags": ["label"]
+    },
+    {
+      "beat": null,
+      "form": {
+        "at": [["Add",0.2,["Multiply",["Divide",["Subtract",1.0,"lo"],["Subtract","hi","lo"]],7.6]],"bottom"],
+        "away": [0.0,-1.0],
+        "kind": "label",
+        "offset": [0.0,0.0],
+        "text": "1",
+        "values": []
+      },
+      "id": "name_log_1",
+      "tags": ["label"]
+    },
+    {
+      "beat": null,
+      "form": {
+        "at": [["Add",0.2,["Multiply",["Divide",["Subtract",2.0,"lo"],["Subtract","hi","lo"]],7.6]],"bottom"],
+        "away": [0.0,-1.0],
+        "kind": "label",
+        "offset": [0.0,0.0],
+        "text": "2",
+        "values": []
+      },
+      "id": "name_2",
+      "tags": ["label"]
+    },
+    {
+      "beat": null,
+      "form": {
+        "at": [-0.2,"top"],
+        "away": [1.0,1.0],
+        "kind": "label",
+        "offset": [0.0,0.0],
+        "text": "line",
+        "values": []
+      },
+      "id": "name_line",
+      "tags": ["label","note"]
+    },
+    {
+      "beat": null,
+      "form": {
+        "at": [["Add",0.2,["Multiply",["Divide",["Subtract","lo","lo"],["Subtract","hi","lo"]],7.6]],"bottom"],
+        "away": [1.0,1.0],
+        "kind": "label",
+        "offset": [0.0,0.0],
+        "text": "after log",
+        "values": []
+      },
+      "id": "name_log",
+      "tags": ["label","note"]
+    },
+    {
+      "beat": null,
+      "form": {
+        "closed": false,
+        "kind": "polyline",
+        "points": [["X.x","X.y"],["nearest_on_line.x","nearest_on_line.y"]]
+      },
+      "id": "to_nearest_on_line",
+      "tags": ["segment"]
+    },
+    {
+      "beat": null,
+      "form": {
+        "closed": false,
+        "kind": "polyline",
+        "points": [["X_log.x","X_log.y"],["nearest_on_log.x","nearest_on_log.y"]]
+      },
+      "id": "to_nearest_on_log",
+      "tags": ["segment"]
+    },
+    {
+      "beat": null,
+      "form": {
+        "closed": false,
+        "kind": "polyline",
+        "points": [["X.x","X.y"],["X_log.x","X_log.y"]]
+      },
+      "id": "carry_x",
+      "tags": ["segment"]
+    },
+    {
+      "beat": null,
+      "form": {
+        "at": ["X_log.x","X_log.y"],
+        "kind": "dot"
+      },
+      "id": "X_log",
+      "tags": ["dot"]
+    },
+    {
+      "beat": null,
+      "form": {
+        "at": ["X.x","X.y"],
+        "kind": "dot"
+      },
+      "id": "X",
+      "tags": ["dot"]
+    },
+    {
+      "beat": null,
+      "form": {
+        "at": ["X.x","X.y"],
+        "away": [0.0,1.0],
+        "kind": "label",
+        "offset": [0.0,0.0],
+        "text": "x",
+        "values": []
+      },
+      "id": "name_x",
+      "tags": ["label"]
+    },
+    {
+      "beat": null,
+      "form": {
+        "at": ["X_log.x","X_log.y"],
+        "away": [0.0,1.0],
+        "kind": "label",
+        "offset": [0.0,0.0],
+        "text": "ln x",
+        "values": []
+      },
+      "id": "name_ln_x",
+      "tags": ["label"]
+    }
+  ],
+  "params": [
+    {
+      "id": "x",
+      "range": [0.72,7.9]
+    }
+  ],
+  "places": [],
+  "poster": {
+    "params": [["x",1.75]],
+    "time": null
+  },
+  "systems": [],
+  "viewport": {
+    "fit": 0,
+    "pad": 0.1,
+    "x": [-0.4,8.2],
+    "y": [-0.945,2.145]
+  }
+}

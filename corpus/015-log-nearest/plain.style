@@ -1,0 +1,17 @@
+// The site's colors: blue for the line's nearest, red for log's, and the accent for x.
+style figure { width: 640px; height: 230px }
+
+style real_line, log_line { stroke: muted; width: 1.5px }
+style .disagreement { stroke: red_soft; width: 10px }
+style carried { stroke: muted; width: 1px; dash: 4px; gap: 4px }
+style line_dots, log_dots { fill: ink; radius: 3.5px }
+style nearest_on_line { fill: blue; radius: 5px }
+style nearest_on_log { fill: red; radius: 5px }
+
+style to_nearest_on_line { stroke: blue; width: 3px }
+style to_nearest_on_log { stroke: red; width: 3px }
+style carry_x { stroke: accent; width: 1.25px; dash: 4px; gap: 4px }
+style X_log { fill: accent; radius: 4.5px }
+style X { fill: accent; radius: 6px }
+style name_x, name_ln_x { fill: accent }
+style label.note { fill: muted }

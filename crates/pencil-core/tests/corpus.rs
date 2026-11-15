@@ -2653,3 +2653,87 @@ fn the_spirals_circles_touch_and_the_copy_lands_on_the_next() {
         assert!(near(trail_end, scaled_copy_power(s), 1e-12), "at {time}");
     }
 }
+
+fn log_nearest() -> pencil_core::Figure {
+    build(
+        &square_read("015-log-nearest/log-nearest.pen"),
+        &[
+            &square_read("theme.style"),
+            &square_read("015-log-nearest/plain.style"),
+        ],
+    )
+    .unwrap()
+}
+
+#[test]
+fn log_nearest_ir_matches_golden() {
+    let actual = golden_text(&log_nearest().scene.to_json());
+    let golden = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../corpus/015-log-nearest/expected.ir.json");
+    if std::env::var_os("UPDATE_GOLDENS").is_some() {
+        std::fs::write(&golden, &actual).unwrap();
+    }
+    assert_eq!(actual, std::fs::read_to_string(golden).unwrap());
+}
+
+fn dots_instance(figure: &pencil_core::Figure, env: &pencil_core::eval::Env, id: &str, n: f64) -> [f64; 2] {
+    match instance_of(figure, env, id, &[("n", n)]).1 {
+        Some(pencil_core::stroke::Instance::Dot(p)) => p,
+        other => panic!("`{id}` {n} is {other:?}"),
+    }
+}
+
+/// Which of 0, 1, 2 is nearest by this distance, worked out by trying each.
+fn argmin_of(distance: impl Fn(f64) -> f64) -> f64 {
+    [0.0, 1.0, 2.0]
+        .into_iter()
+        .min_by(|a, b| distance(*a).total_cmp(&distance(*b)))
+        .unwrap()
+}
+
+/// Each line's marked dot is the nearest by that line's own distance, |eⁿ − x| on the line and
+/// |n − ln x| after log, found here by trying all three. The log line puts ln x in the scale its
+/// dots are on, and the shading on both lines is exactly where the two choices differ.
+#[test]
+fn each_line_marks_its_own_nearest_and_the_shading_is_where_they_differ() {
+    use pencil_core::{eval::frame_env, frame::Inputs};
+    let figure = log_nearest();
+    let mut disagreed = 0;
+    let steps = 4000;
+    for j in 0..=steps {
+        let x = 0.72 + (7.9 - 0.72) * j as f64 / steps as f64;
+        let inputs = Inputs {
+            time: 0.0,
+            params: vec![("x".to_string(), x)],
+        };
+        let env = frame_env(&figure, &inputs).unwrap();
+        let on_line = argmin_of(|n| (n.exp() - x).abs());
+        let on_log = argmin_of(|n| (n - x.ln()).abs());
+        let line_dot = dots_instance(&figure, &env, "line_dots", on_line);
+        let log_dot = dots_instance(&figure, &env, "log_dots", on_log);
+        assert!((line_dot[0] - on_line.exp()).abs() < 1e-12, "x = {x}");
+        assert!(near(dot_at(&figure, &env, "nearest_on_line"), line_dot, 1e-12), "x = {x}: on the line");
+        assert!(near(dot_at(&figure, &env, "nearest_on_log"), log_dot, 1e-12), "x = {x}: after log");
+
+        // ln x on the log line, in the scale where its dots are at 0, 1 and 2.
+        let [zero, one] = [0.0, 1.0].map(|n| dots_instance(&figure, &env, "log_dots", n));
+        let at = |u: f64| [zero[0] + (one[0] - zero[0]) * u, zero[1] + (one[1] - zero[1]) * u];
+        assert!(near(dot_at(&figure, &env, "X_log"), at(x.ln()), 1e-12), "x = {x}");
+        assert!(near(dot_at(&figure, &env, "X"), [x, line_dot[1]], 1e-12), "x = {x}");
+
+        let differ = on_line != on_log;
+        assert_eq!(env.get("disagree").unwrap(), if differ { 1.0 } else { 0.0 }, "x = {x}");
+        let shaded = |id: &str, place: f64| {
+            (0..=1).any(|n| {
+                let (local, _) = instance_of(&figure, &env, id, &[("n", n as f64)]);
+                let [a, b] = [0.0, 1.0].map(|t| arc_point(&figure, &local, id, t)[0]);
+                a.min(b) <= place && place <= a.max(b)
+            })
+        };
+        assert_eq!(shaded("disagree_line", x), differ, "x = {x}: shaded on the line");
+        assert_eq!(shaded("disagree_log", at(x.ln())[0]), differ, "x = {x}: shaded after log");
+        disagreed += differ as usize;
+    }
+    // Both stretches are crossed: from e^½ to (1 + e)/2, and from e^{3/2} to (e + e²)/2.
+    assert!(disagreed > 300, "{disagreed}");
+}

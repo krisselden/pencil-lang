@@ -35,8 +35,8 @@ below can ship when it's done.
    **Built 2026-11-14** in the element, and tried on `004-bounds`, which has both a handle and steps (`goals.md`, The
    element). Left: a screen reader hasn't been tried on it.
 2. **`doyle-spiral-shader`.** Of its 12 sources, 3 stay GLSL and `SquareZ` is done. The other 8:
-   1. Ports with what exists: `ScaledCopy` (done, `014-scaled-copy`), `LogNearest`, then `UnwrapMorph`, whose
-      one-circle-per-period selection is untried.
+   1. Ports with what exists: `ScaledCopy` (done, `014-scaled-copy`), `LogNearest` (done, `015-log-nearest`), then
+      `UnwrapMorph`, whose one-circle-per-period selection is untried.
    2. A color per instance in `curves` and `dots`: `ArmColors`, which the period post places too.
    3. Dragging a point in two dimensions (see below for its shape): `FloorCell`, as two figures.
    4. Panels of different sizes, which with the drag ports `FollowPixel` and `PowerViews`.
@@ -95,6 +95,7 @@ and a form that can't offer a name says so. That's a set of names per form, and 
 | 2026-11-14 | `pencil build`, posters, and the element's poster and `<source>` children | Every figure (`goals.md`, The host) |
 | 2026-11-14 | Handles a reader can tab to, arrow keys that move them, and ← → for beats | The 12 figures with keys on the site |
 | 2026-11-15 | `corpus/014-scaled-copy` | `ScaledCopy` |
+| 2026-11-15 | `corpus/015-log-nearest` | `LogNearest` |
 
 **How it was checked.** Every component was read, with the libraries it draws through (`plot.ts`, `construction.ts`, `wire3d.ts`,
 `doyle.ts`, `Shader.astro`). On the Pencil side, every "lacks" claim below was checked against `language.md` and the code, and the
@@ -133,7 +134,7 @@ The home page's hero canvas and the header's logo are listed apart, at the end. 
 | `SquareZ` | doyle-spiral-shader | aside | Same: `006-square` | Nothing | Done |
 | `PowerViews` | doyle-spiral-shader | primary | Related: `010-mobius` | Two-dimensional drag, panels of different sizes | Feature (two) |
 | `UnwrapMorph` | doyle-spiral-shader | primary | Related: `007-lattice`, `009-squaring` | Nothing (one part untried) | Port |
-| `LogNearest` | doyle-spiral-shader | supporting | None | Nothing | Port |
+| `LogNearest` | doyle-spiral-shader | supporting | Same: `015-log-nearest` | Nothing | Done |
 | `FloorCell` | doyle-spiral-shader | supporting | None | Dragging a point in two dimensions | Feature |
 | `ArmColors` | doyle-spiral-shader, doyle-spiral-period | primary | Related: `007-lattice` | A color per instance in `curves` and `dots` | Feature |
 | `ZoomLoop` | doyle-spiral-shader | primary | None | A clock that doesn't loop, and a chart | Design |
@@ -505,13 +506,20 @@ replaced that.
     condition, only by a construction that doesn't exist. Ranges that read the earlier variable may enumerate the period directly.
 - **Lacks:** nothing known.
 
-**`LogNearest`** (supporting)
+**`LogNearest`** (supporting): done as `015-log-nearest`.
 
 - **Draws:** two number lines, the real line and a log line with its own scale. Dots at 1, e, e² and at 0, 1, 2, the nearest one on
   each line highlighted, and shaded intervals where the two disagree.
 - **Reader:** drags x along the top line, with keys. Readout of each nearest and whether they disagree.
-- **Pencil:** segments, dots and one handle. "Nearest" is `floor(ln x + 0.5)`.
-- **Lacks:** nothing.
+- **Pencil:** segments, dots, `dots` and `curves` collections, and one handle. Log's nearest is `clamp(floor(ln x + 0.5), 0, 2)`.
+  The line's is the nearer end of the cell x is in, `floor(ln x)` held to 0 or 1, by whether x is past the cell's arithmetic
+  mean. The highlighted dots are dots of their own, drawn over the plain ones, since a `dots` collection has one fill.
+- **Differs from the site:** the readout stays page HTML, from the bindings `near_line`, `near_log` and `disagree`. `ln x` is
+  labeled, which the site leaves unnamed.
+- **Checked:** across 4001 values of x, each highlighted dot is the nearest by its line's distance, found by trying all three; ln x
+  sits on the log line in the scale its dots are on; and x is in a shaded stretch, on each line, exactly where the two choices
+  differ (`crates/pencil-core/tests/corpus.rs`). `pencil check` agrees with the oracle at six x across the range, and under the
+  dark sheet.
 
 **`FloorCell`** (supporting): two plots stacked, 560 × 90 and 560 × 380.
 
@@ -675,17 +683,18 @@ replaced that.
 
 **Coverage today, of 31 sources:**
 
-- **Done: 6.** `Unroll`, `BoundsConstruction`, `SquareZ`, `LatticeMapping`, `RollTube` and `ScaledCopy`, which are corpus figures.
-- **Port: 8.** Everything they need exists, and they aren't written yet: `circumcircle.glsl` (by extending `011`), `CircumCot`,
-  `TriangleLayers`, `MedianConstruction`, `UnwrapMorph`, `LogNearest`, `CameraLog` and `LimaconTangency`.
+- **Done: 7.** `Unroll`, `BoundsConstruction`, `SquareZ`, `LatticeMapping`, `RollTube`, `ScaledCopy` and `LogNearest`, which are
+  corpus figures.
+- **Port: 7.** Everything they need exists, and they aren't written yet: `circumcircle.glsl` (by extending `011`), `CircumCot`,
+  `TriangleLayers`, `MedianConstruction`, `UnwrapMorph`, `CameraLog` and `LimaconTangency`.
 - **One feature: 6.** `CircumcircleDemo`, `CircumNormals`, `FloorCell`, `ArmColors`, `NewtonLine` and `DoyleFlower`.
 - **Two features: 3.** `FollowPixel`, `PowerViews` and `DigitsChart`.
 - **Design: 5.** `LimaconConstruction`, `ZoomLoop`, `LevelCurve`, `NewtonDoyle` and `SkewSliders`. The hero and the logo
   are design too.
 - **Stays GLSL: 3.** `DoyleSpiral`, `gradient.glsl` and `circle-distance.glsl`.
 
-**In the Doyle series,** which goes first: 23 sources. 5 are done (`SquareZ`, `LatticeMapping`, `RollTube`,
-`BoundsConstruction`, `ScaledCopy`), 3 stay GLSL, 4 are ports (`LogNearest`, `UnwrapMorph`, `CameraLog`, `LimaconTangency`), 4
+**In the Doyle series,** which goes first: 23 sources. 6 are done (`SquareZ`, `LatticeMapping`, `RollTube`,
+`BoundsConstruction`, `ScaledCopy`, `LogNearest`), 3 stay GLSL, 3 are ports (`UnwrapMorph`, `CameraLog`, `LimaconTangency`), 4
 need one feature (`FloorCell`, `ArmColors`, `DoyleFlower`, `NewtonLine`), 3 need two (`FollowPixel`, `PowerViews`,
 `DigitsChart`), and 4 need design (`ZoomLoop`, `LevelCurve`, `SkewSliders`, `NewtonDoyle`).
 

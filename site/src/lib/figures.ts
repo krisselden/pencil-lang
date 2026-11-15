@@ -227,6 +227,25 @@ export const DEMOS: Demo[] = [
     ],
   },
   {
+    id: 'log-nearest',
+    number: '015',
+    title: 'Nearest isn’t nearest after log',
+    about:
+      'Dots at 1, e and e² on the line are evenly spaced after log, at 0, 1 and 2. Each line marks the dot nearest x by its own distance, and they disagree between e^(n+½) and (eⁿ + eⁿ⁺¹)/2, which is shaded on both. Drag x.',
+    label:
+      'Two number lines: dots at 1, e and e² on the line, and at 0, 1 and 2 after taking the log. A draggable x and its nearest dot on each, with the stretches where they disagree shaded.',
+    folder: 'corpus/015-log-nearest',
+    looks: [
+      {
+        pen: 'corpus/015-log-nearest/log-nearest.pen',
+        sheets: [THEME, 'corpus/015-log-nearest/plain.style'],
+        dark: [DARK],
+        playground: 'log-nearest',
+      },
+    ],
+    paused: true,
+  },
+  {
     id: 'explainer',
     number: 'Lab',
     title: 'Explainer: the limaçon from its central circle',
