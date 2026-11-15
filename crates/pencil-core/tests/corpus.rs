@@ -2737,3 +2737,239 @@ fn each_line_marks_its_own_nearest_and_the_shading_is_where_they_differ() {
     // Both stretches are crossed: from e^½ to (1 + e)/2, and from e^{3/2} to (e + e²)/2.
     assert!(disagreed > 300, "{disagreed}");
 }
+
+fn unwrap_figure() -> pencil_core::Figure {
+    build(
+        &square_read("016-unwrap/unwrap.pen"),
+        &[
+            &square_read("theme.style"),
+            &square_read("016-unwrap/plain.style"),
+        ],
+    )
+    .unwrap()
+}
+
+#[test]
+fn unwrap_ir_matches_golden() {
+    let actual = golden_text(&unwrap_figure().scene.to_json());
+    let golden =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus/016-unwrap/expected.ir.json");
+    if std::env::var_os("UPDATE_GOLDENS").is_some() {
+        std::fs::write(&golden, &actual).unwrap();
+    }
+    assert_eq!(actual, std::fs::read_to_string(golden).unwrap());
+}
+
+/// The (a, b) a collection draws this frame, from its own ranges, the second read with the first set.
+fn drawn_pairs(figure: &pencil_core::Figure, env: &pencil_core::eval::Env, id: &str) -> Vec<(i64, i64)> {
+    use pencil_core::{eval::real, ir::Form};
+    let Form::Many { vars, .. } = mark_form(figure, id) else {
+        panic!("`{id}` isn't a collection");
+    };
+    assert_eq!(vars.iter().map(|v| v.0.as_str()).collect::<Vec<_>>(), ["a", "b"]);
+    let mut env = env.clone();
+    let mut out = Vec::new();
+    let [a0, a1] = [&vars[0].1[0], &vars[0].1[1]].map(|e| real(e, &env).unwrap());
+    let mut a = a0;
+    while a <= a1 {
+        env.set("a", a);
+        let [b0, b1] = [&vars[1].1[0], &vars[1].1[1]].map(|e| real(e, &env).unwrap());
+        let mut b = b0;
+        while b <= b1 {
+            assert_eq!(b.fract(), 0.0, "b starts at {b0}");
+            out.push((a as i64, b as i64));
+            b += 1.0;
+        }
+        a += 1.0;
+    }
+    out
+}
+
+/// The spiral's log space, worked out here from p = 4, q = 12 and the skew the figure solved for:
+/// u = S(T(w)) for w = a + bω, and the turn Im T(w) that says which copy of a period it is.
+struct LogSpace {
+    mu: f64,
+    nu: f64,
+}
+
+impl LogSpace {
+    const P: f64 = 4.0;
+    const Q: f64 = 12.0;
+    fn grid(a: f64, b: f64) -> [f64; 2] {
+        [a - b / 2.0, b * 3f64.sqrt() / 2.0]
+    }
+    fn turn(&self, a: f64, b: f64) -> [f64; 2] {
+        // 2πi·w / A
+        let w = Self::grid(a, b);
+        let big = Self::grid(-Self::P, Self::Q - Self::P);
+        let d = big[0] * big[0] + big[1] * big[1];
+        let ratio = [(w[0] * big[0] + w[1] * big[1]) / d, (w[1] * big[0] - w[0] * big[1]) / d];
+        let tau = std::f64::consts::TAU;
+        [-tau * ratio[1], tau * ratio[0]]
+    }
+    fn log(&self, a: f64, b: f64) -> [f64; 2] {
+        // ν·Re(v) / (1 − iμ) + i·Im(v)
+        let v = self.turn(a, b);
+        let s = self.nu * v[0] / (1.0 + self.mu * self.mu);
+        [s, s * self.mu + v[1]]
+    }
+}
+
+/// The strip holds exactly one circle of each period, the one in the turn from −π to π, and every
+/// circle of the window has its copy there. Checked against every lattice point in a box much
+/// bigger than the window, with the window and turn worked out here.
+#[test]
+fn the_strip_holds_exactly_one_circle_per_period() {
+    use pencil_core::{eval::frame_env, frame::Inputs};
+    let figure = unwrap_figure();
+    let (alpha, beta) = (-LogSpace::P as i64, (LogSpace::Q - LogSpace::P) as i64);
+    for t in [0.0, 0.5, 1.0] {
+        let inputs = Inputs {
+            time: 0.0,
+            params: vec![("t".to_string(), t)],
+        };
+        let env = frame_env(&figure, &inputs).unwrap();
+        let space = LogSpace {
+            mu: env.get("mu").unwrap(),
+            nu: env.get("nu").unwrap(),
+        };
+        let in_window = |a: i64, b: i64| {
+            let re = space.log(a as f64, b as f64)[0];
+            (-2.4..=1.15).contains(&re)
+        };
+        let drawn = drawn_pairs(&figure, &env, "strip");
+        let set: std::collections::HashSet<_> = drawn.iter().copied().collect();
+        assert_eq!(set.len(), drawn.len(), "t = {t}: a circle drawn twice");
+        for &(a, b) in &drawn {
+            assert!(in_window(a, b), "t = {t}: ({a}, {b}) is outside the window");
+            let turn = space.turn(a as f64, b as f64)[1];
+            assert!(
+                (-std::f64::consts::PI - 1e-9..std::f64::consts::PI - 1e-9).contains(&turn),
+                "t = {t}: ({a}, {b}) is at turn {turn}"
+            );
+        }
+        // Every point of the window, a period at a time, has exactly one copy drawn.
+        let mut seen = 0;
+        for a in -80..=80 {
+            for b in -80..=80 {
+                if !in_window(a, b) {
+                    continue;
+                }
+                let copies = (-20..=20)
+                    .filter(|j| set.contains(&(a + j * alpha, b + j * beta)))
+                    .count();
+                assert_eq!(copies, 1, "t = {t}: ({a}, {b}) has {copies} copies drawn");
+                seen += 1;
+            }
+        }
+        assert!(seen > 1000 && drawn.len() > 50, "{seen} points, {} circles", drawn.len());
+        // The copies a turn away are the same circles.
+        assert_eq!(drawn_pairs(&figure, &env, "circles_above"), drawn);
+        assert_eq!(drawn_pairs(&figure, &env, "circles_below"), drawn);
+    }
+}
+
+/// fₜ runs from the flat strip, u + 1, to the spiral, eᵘ, and keeps 1 fixed. A circle's radius is
+/// k·|fₜ′(u)| = k·e^{t·Re u}: k when flat, and the spiral's k|z| wrapped, where its circles touch
+/// their six neighbors, as a Doyle spiral's do.
+#[test]
+fn the_morph_runs_from_the_flat_strip_to_the_spiral() {
+    use pencil_core::{eval::frame_env, frame::Inputs, stroke::Instance};
+    let figure = unwrap_figure();
+    let at = |t: f64| {
+        frame_env(
+            &figure,
+            &Inputs {
+                time: 0.0,
+                params: vec![("t".to_string(), t)],
+            },
+        )
+        .unwrap()
+    };
+    let circle = |env: &pencil_core::eval::Env, id: &str, a: i64, b: i64| {
+        match instance_of(&figure, env, id, &[("a", a as f64), ("b", b as f64)]).1 {
+            Some(Instance::Circle(c, r)) => (c, r),
+            other => panic!("({a}, {b}) is {other:?}"),
+        }
+    };
+    let cexp = |u: [f64; 2]| [u[0].exp() * u[1].cos(), u[0].exp() * u[1].sin()];
+    for t in [0.0, 0.3, 0.55, 1.0] {
+        let env = at(t);
+        let k = env.get("k").unwrap();
+        let space = LogSpace {
+            mu: env.get("mu").unwrap(),
+            nu: env.get("nu").unwrap(),
+        };
+        let pairs = drawn_pairs(&figure, &env, "strip");
+        for &(a, b) in &pairs {
+            let u = space.log(a as f64, b as f64);
+            let (c, r) = circle(&env, "strip", a, b);
+            match t {
+                // The limit, u + 1 and k. The figure bends by a ten-thousandth there, which is off
+                // the limit by its second-order term, about bend·|u|²/2, and this allows twice that.
+                0.0 => {
+                    let off = 1e-4 * (u[0] * u[0] + u[1] * u[1]) + 1e-12;
+                    assert!(near(c, [u[0] + 1.0, u[1]], off), "({a}, {b}) flat at {c:?}");
+                    assert!((r - k).abs() < 1e-4 * u[0].abs() * 2.0 * k + 1e-12, "({a}, {b}) flat has radius {r}");
+                }
+                // eᵘ and k|eᵘ| exactly.
+                1.0 => {
+                    let z = cexp(u);
+                    assert!(near(c, z, 1e-12 * (1.0 + z[0].hypot(z[1]))), "({a}, {b}) at {c:?}");
+                    assert!((r - k * z[0].hypot(z[1])).abs() < 1e-12, "({a}, {b})");
+                }
+                // In between, (e^{tu} − 1)/t + 1, and a radius scaled as the map scales there.
+                _ => {
+                    let e = cexp([t * u[0], t * u[1]]);
+                    let f = [(e[0] - 1.0) / t + 1.0, e[1] / t];
+                    assert!(near(c, f, 1e-12 * (1.0 + f[0].hypot(f[1]))), "t = {t}: ({a}, {b})");
+                    assert!((r - k * e[0].hypot(e[1])).abs() < 1e-12, "t = {t}: ({a}, {b})");
+                }
+            }
+            // A turn above and below: the same u, a whole turn up or down.
+            if t == 0.0 {
+                let tau = std::f64::consts::TAU;
+                for (id, shift) in [("circles_above", tau), ("circles_below", -tau)] {
+                    let (copy, _) = circle(&env, id, a, b);
+                    let v = [u[0], u[1] + shift];
+                    let off = 1e-4 * (v[0] * v[0] + v[1] * v[1]);
+                    assert!(near(copy, [v[0] + 1.0, v[1]], off), "{id} ({a}, {b}) at {copy:?}");
+                }
+            }
+        }
+        // 1 never moves.
+        let (one, r) = circle(&env, "strip", 0, 0);
+        assert!(near(one, [1.0, 0.0], 1e-12) && (r - k).abs() < 1e-12, "t = {t}: {one:?}");
+    }
+    // Wrapped, each circle touches its six neighbors, and the rows run through the circles' centers.
+    let env = at(1.0);
+    for &(a, b) in &drawn_pairs(&figure, &env, "strip") {
+        let (c, r) = circle(&env, "strip", a, b);
+        for (da, db) in [(1, 0), (0, 1), (1, 1), (-1, 0), (0, -1), (-1, -1)] {
+            let (d, s) = circle(&env, "strip", a + da, b + db);
+            let gap = (c[0] - d[0]).hypot(c[1] - d[1]) - (r + s);
+            assert!(gap.abs() < 1e-9 * (r + s), "({a}, {b}) to ({da}, {db}): {gap}");
+        }
+    }
+    for (row, (a, b)) in [("row_one", (1.0, 0.0)), ("row_omega", (0.0, 1.0))] {
+        let space = LogSpace {
+            mu: env.get("mu").unwrap(),
+            nu: env.get("nu").unwrap(),
+        };
+        for n in -3..=2 {
+            let n = n as f64;
+            let z = cexp(space.log(a * n, b * n));
+            assert!(near(arc_point(&figure, &env, row, n), z, 1e-9), "{row} at {n}");
+        }
+    }
+    // Flat, a row is folded into the turn, which keeps its height between −π and π.
+    let flat = at(0.0);
+    let pi = std::f64::consts::PI;
+    for j in -200..=200 {
+        let s = j as f64 / 20.0;
+        for row in ["row_one", "row_omega"] {
+            let y = arc_point(&figure, &flat, row, s)[1];
+            assert!((-pi - 1e-3..pi + 1e-3).contains(&y), "{row} at {s} is at height {y}");
+        }
+    }
+}

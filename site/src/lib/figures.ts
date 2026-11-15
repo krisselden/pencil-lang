@@ -246,6 +246,25 @@ export const DEMOS: Demo[] = [
     paused: true,
   },
   {
+    id: 'unwrap',
+    number: '016',
+    title: 'Unwrapping the spiral',
+    about:
+      'One slider from the flat strip to the Doyle spiral, through fₜ(u) = (e^(tu) − 1)/t + 1, which keeps 1 fixed. The strip holds one circle of each period, chosen by a whole-number range; the copies a turn above and below fade as it wraps, and the rows along 1 and ω curl into arms.',
+    label:
+      'A strip of circles in log space, one full turn tall, bending into the Doyle spiral as the slider moves from flat to wrapped, with the circle at 1 fixed.',
+    folder: 'corpus/016-unwrap',
+    looks: [
+      {
+        pen: 'corpus/016-unwrap/unwrap.pen',
+        sheets: [THEME, 'corpus/016-unwrap/plain.style'],
+        dark: [DARK],
+        playground: 'unwrap',
+      },
+    ],
+    paused: true,
+  },
+  {
     id: 'explainer',
     number: 'Lab',
     title: 'Explainer: the limaçon from its central circle',

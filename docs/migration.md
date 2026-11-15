@@ -35,8 +35,8 @@ below can ship when it's done.
    **Built 2026-11-14** in the element, and tried on `004-bounds`, which has both a handle and steps (`goals.md`, The
    element). Left: a screen reader hasn't been tried on it.
 2. **`doyle-spiral-shader`.** Of its 12 sources, 3 stay GLSL and `SquareZ` is done. The other 8:
-   1. Ports with what exists: `ScaledCopy` (done, `014-scaled-copy`), `LogNearest` (done, `015-log-nearest`), then
-      `UnwrapMorph`, whose one-circle-per-period selection is untried.
+   1. Ports with what exists, done on 2026-11-15: `ScaledCopy` (`014-scaled-copy`), `LogNearest` (`015-log-nearest`) and
+      `UnwrapMorph` (`016-unwrap`), whose one circle per period turned out to be a range.
    2. A color per instance in `curves` and `dots`: `ArmColors`, which the period post places too.
    3. Dragging a point in two dimensions (see below for its shape): `FloorCell`, as two figures.
    4. Panels of different sizes, which with the drag ports `FollowPixel` and `PowerViews`.
@@ -96,6 +96,7 @@ and a form that can't offer a name says so. That's a set of names per form, and 
 | 2026-11-14 | Handles a reader can tab to, arrow keys that move them, and ← → for beats | The 12 figures with keys on the site |
 | 2026-11-15 | `corpus/014-scaled-copy` | `ScaledCopy` |
 | 2026-11-15 | `corpus/015-log-nearest` | `LogNearest` |
+| 2026-11-15 | `corpus/016-unwrap`, and one circle per period as a range | `UnwrapMorph` |
 
 **How it was checked.** Every component was read, with the libraries it draws through (`plot.ts`, `construction.ts`, `wire3d.ts`,
 `doyle.ts`, `Shader.astro`). On the Pencil side, every "lacks" claim below was checked against `language.md` and the code, and the
@@ -133,7 +134,7 @@ The home page's hero canvas and the header's logo are listed apart, at the end. 
 | `circle-distance.glsl` | doyle-spiral-shader | supporting | Related: `001-circle` with `bands.style` | Not being ported. It would lack a fill that reads the pixel's position | Stays |
 | `SquareZ` | doyle-spiral-shader | aside | Same: `006-square` | Nothing | Done |
 | `PowerViews` | doyle-spiral-shader | primary | Related: `010-mobius` | Two-dimensional drag, panels of different sizes | Feature (two) |
-| `UnwrapMorph` | doyle-spiral-shader | primary | Related: `007-lattice`, `009-squaring` | Nothing (one part untried) | Port |
+| `UnwrapMorph` | doyle-spiral-shader | primary | Same: `016-unwrap` | Nothing | Done |
 | `LogNearest` | doyle-spiral-shader | supporting | Same: `015-log-nearest` | Nothing | Done |
 | `FloorCell` | doyle-spiral-shader | supporting | None | Dragging a point in two dimensions | Feature |
 | `ArmColors` | doyle-spiral-shader, doyle-spiral-period | primary | Related: `007-lattice` | A color per instance in `curves` and `dots` | Feature |
@@ -493,18 +494,33 @@ replaced that.
   - The turn labels vary in number and would be written for the most there can be.
 - **Lacks:** two-dimensional drag, and panels of different sizes.
 
-**`UnwrapMorph`** (primary)
+**`UnwrapMorph`** (primary): done as `016-unwrap`.
 
 - **Draws:** one period of the lattice's circles and the rows along 1 and ω, through fₜ(u) = (e^{tu} − 1)/t + 1. At t = 0 that's the
   flat strip, and at t = 1 it's the spiral. Copies a turn above and below fade out as t grows, and the rows are folded mod 2π.
 - **Reader:** slider t.
 - **Pencil:**
-  - Circles map their centers in `with`, and rows are curves `through` fₜ, as `009-squaring` morphs with `z^p`.
-  - A curve breaks at a jump, which handles the fold.
-  - fₜ is 0/0 at t = 0, and with no piecewise values the range starts just above 0.
-  - **Not tried:** choosing one circle per period. The site tests an integer invariant, and a collection can't skip an instance by a
-    condition, only by a construction that doesn't exist. Ranges that read the earlier variable may enumerate the period directly.
-- **Lacks:** nothing known.
+  - Circles map their centers in `with`, with radius k·e^{t·Re u}, which is k·|fₜ′(u)|. Rows are parametric curves of fₜ.
+  - **One circle per period is a range,** not a condition. The site's test keeps the grid point whose N = 2aα + 2bβ − aβ − bα,
+    twice its inner product with A, is in −|A|² ≤ N < |A|². For each a, N rises with b, so those b are a run of whole numbers,
+    and so are the b whose Re u is in the window, since Re u rises with b too (for 0 < p ≤ q). So `for a in -16..16, b in
+    first_b(a)..last_b(a)`, with `floor` for the ceilings. It's a whole-number test, as the site's is, so nothing ties at ±π.
+  - The fold is `u − 2πi·floor(Im u / 2π + ½)`, and a curve breaks at the jump, so flat a row comes in pieces, and wrapped they
+    join.
+  - fₜ is 0/0 at t = 0. The slider runs from 0, and the map bends by `max(t, 0.0001)`, which is off the flat limit by about
+    bend·|u|²/2, under a thousandth here and far under a pixel.
+  - The view fits how far the circles reach at the ends of the window, a quarter turn apart, which is the spiral's bounds once
+    wrapped, and room for the copies while it's flat. `fit` can't name a `circles` collection, which the site fits by every circle.
+- **Differs from the site:** the framing, above. The site switches to u + 1 below a ten-thousandth, and Pencil has no piecewise
+  values, so it bends by that much instead.
+- **Checked** (`crates/pencil-core/tests/corpus.rs`):
+  - At t = 0, ½ and 1, the drawn (a, b), read from the collection's own ranges, are each in the window and in the turn −π to π,
+    none twice, and every lattice point of the window in a 161 × 161 box has exactly one copy drawn, a whole period apart. The
+    copies above and below are the same pairs.
+  - Each circle is (e^{tu} − 1)/t + 1 with radius k·e^{t·Re u} at t = 0.3 and 0.55, eᵘ with k|eᵘ| at t = 1, where each touches its
+    six neighbors to 1e-9, and u + 1 with radius k at t = 0 to within the bound above. 1 stays at 1. Wrapped, the rows run through
+    the circles' centers, and flat, they stay in the turn.
+  - `pencil check` agrees with the oracle at t = 0, 0.2, 0.55, 0.8 and 1, and under the dark sheet at 0.3.
 
 **`LogNearest`** (supporting): done as `015-log-nearest`.
 
@@ -538,8 +554,9 @@ replaced that.
   - The second placement (`period p={2} q={7}`) starts at those values and adds the period A as an arrow with a clause in the
     readout.
 - **Reader:** sliders q (3–16) and p (0–q), arms along ω, 1 or 1 + ω.
-- **Pencil:** circles take per-instance fills on their sides *(tried)*. A `curves` stroke and a `dots` fill can't read their
-  variables: "unknown name `s`" and "unknown name `n`" *(tried)*. There's one curve and one row of dots per arm, and the number of
+- **Pencil:** one circle per period is a range, as in `016-unwrap`, whose window in b divides by how fast Re u rises with b,
+  which is 0 at p = 0, so that end needs its own range. Circles take per-instance fills on their sides *(tried)*. A `curves`
+  stroke and a `dots` fill can't read their variables: "unknown name `s`" and "unknown name `n`" *(tried)*. There's one curve and one row of dots per arm, and the number of
   arms follows p.
 - **Lacks:** a color per instance in `curves` and `dots`.
 
@@ -683,18 +700,18 @@ replaced that.
 
 **Coverage today, of 31 sources:**
 
-- **Done: 7.** `Unroll`, `BoundsConstruction`, `SquareZ`, `LatticeMapping`, `RollTube`, `ScaledCopy` and `LogNearest`, which are
-  corpus figures.
-- **Port: 7.** Everything they need exists, and they aren't written yet: `circumcircle.glsl` (by extending `011`), `CircumCot`,
-  `TriangleLayers`, `MedianConstruction`, `UnwrapMorph`, `CameraLog` and `LimaconTangency`.
+- **Done: 8.** `Unroll`, `BoundsConstruction`, `SquareZ`, `LatticeMapping`, `RollTube`, `ScaledCopy`, `LogNearest` and
+  `UnwrapMorph`, which are corpus figures.
+- **Port: 6.** Everything they need exists, and they aren't written yet: `circumcircle.glsl` (by extending `011`), `CircumCot`,
+  `TriangleLayers`, `MedianConstruction`, `CameraLog` and `LimaconTangency`.
 - **One feature: 6.** `CircumcircleDemo`, `CircumNormals`, `FloorCell`, `ArmColors`, `NewtonLine` and `DoyleFlower`.
 - **Two features: 3.** `FollowPixel`, `PowerViews` and `DigitsChart`.
 - **Design: 5.** `LimaconConstruction`, `ZoomLoop`, `LevelCurve`, `NewtonDoyle` and `SkewSliders`. The hero and the logo
   are design too.
 - **Stays GLSL: 3.** `DoyleSpiral`, `gradient.glsl` and `circle-distance.glsl`.
 
-**In the Doyle series,** which goes first: 23 sources. 6 are done (`SquareZ`, `LatticeMapping`, `RollTube`,
-`BoundsConstruction`, `ScaledCopy`, `LogNearest`), 3 stay GLSL, 3 are ports (`UnwrapMorph`, `CameraLog`, `LimaconTangency`), 4
+**In the Doyle series,** which goes first: 23 sources. 7 are done (`SquareZ`, `LatticeMapping`, `RollTube`,
+`BoundsConstruction`, `ScaledCopy`, `LogNearest`, `UnwrapMorph`), 3 stay GLSL, 2 are ports (`CameraLog`, `LimaconTangency`), 4
 need one feature (`FloorCell`, `ArmColors`, `DoyleFlower`, `NewtonLine`), 3 need two (`FollowPixel`, `PowerViews`,
 `DigitsChart`), and 4 need design (`ZoomLoop`, `LevelCurve`, `SkewSliders`, `NewtonDoyle`).
 

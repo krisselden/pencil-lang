@@ -1,0 +1,103 @@
+// Unwrapping the Doyle spiral, as one slider. Each circle of the lattice sits at u, the log of its
+// center, where the lattice is flat. The map
+//   fₜ(u) = (e^{tu} − 1)/t + 1
+// is the flat strip u + 1 as t goes to 0 and exactly the spiral e^u at t = 1, and keeps 1 fixed
+// throughout. Its derivative is e^{tu}, so a circle's radius scales by |e^{tu}| = e^{t·Re u}: k
+// when flat, k|z| in the spiral. Grid points one period A apart are the same circle of the spiral,
+// so the strip holds one of each: the one a whole turn, −π to π, contains. The faded copies a turn
+// above and below are the strip again, which wrapping rolls onto this turn. The rows along 1 and
+// ω are each one whole line folded into the turn, so flat they're several parallel pieces, and
+// wrapped they join into one spiral arm.
+doc unwrap
+
+// The site's spiral.
+let p = 4
+let q = 12
+
+param t = 0 in 0..1
+// Halfway wrapped: the edges have swung most of the way round and the rows are curling.
+poster { t: 0.55 }
+
+let omega = -1 / 2 + sqrt(3) / 2·i
+fn grid(a, b) = a + b·omega
+let A = grid(-p, q - p)
+
+// The spiral's skew, from the two equations that say all six neighbors touch, as in the lattice.
+fn to_turn(w) = 2·π·i·w / A
+fn skewed(v, m, n) = n·real(v) / (1 - i·m) + i·imag(v)
+fn center(w, m, n) = exp(skewed(to_turn(w), m, n))
+fn tangency(w, m, n) = abs(center(w, m, n) - 1)² / (abs(center(w, m, n)) + 1)²
+solve (mu, nu) from 0, exp(pi² / (6·abs(A)²)):
+  tangency(omega, mu, nu) = tangency(1 + omega, mu, nu),
+  tangency(1, mu, nu) = tangency(1 + omega, mu, nu)
+let k = sqrt(tangency(omega, mu, nu))
+
+// Log space: where each grid point's circle is, before exp.
+fn to_log(w) = skewed(to_turn(w), mu, nu)
+
+// fₜ, which is 0/0 at t = 0. Its limit there is u + 1, and a ten-thousandth is within a hair of it.
+let bend = max(t, 0.0001)
+fn wrap(u) = (exp(bend·u) - 1) / bend + 1
+fn size(u) = k·exp(bend·real(u))
+
+// The window, in Re u: from well inside 1 to a little outside it.
+let inner = -2.4
+let outer = 1.15
+
+// One circle per period. With A = α + βω, N = 2aα + 2bβ − aβ − bα is twice w's inner product with
+// A, a whole number that rises by exactly 2|A|² from one copy to the next, so −|A|² ≤ N < |A|²
+// keeps one copy of each: the one whose turn, Im T(w) = π·N / |A|², is in −π to π. For each a, N
+// rises with b, so those b are a run of whole numbers, and so are the b whose Re u is in the
+// window, since Re u rises with b too. A whole number test, so nothing ties at ±π.
+let alpha = -p
+let beta = q - p
+let period = alpha² - alpha·beta + beta²
+let rise_a = 2·alpha - beta
+let rise_b = 2·beta - alpha
+let across_a = real(to_log(1))
+let across_b = real(to_log(omega))
+fn first_b(a) = max(-floor((period + rise_a·a) / rise_b), -floor((across_a·a - inner) / across_b))
+fn last_b(a) = min(-floor((rise_a·a - period) / rise_b) - 1, floor((outer - across_a·a) / across_b))
+
+// How far it still is from wrapped, for the copies a turn away, which wrapping rolls onto this one.
+let flatness = max(0, 1 - 2.5·t)
+
+// What the view holds, as the site frames it: how far the circles reach at each end of the window, a
+// quarter turn apart, which is the whole spiral's bounds once it's wrapped, and room for the copies
+// above and below while it's flat. The edges run on past it.
+let reach_out = outer + k
+let reach_in = inner - k
+let rim_ahead = (wrap(reach_out), 0)
+let rim_up = wrap(reach_out + π / 2·i)
+let rim_down = wrap(reach_out - π / 2·i)
+let rim_back = wrap(reach_out + π·i)
+let rim_in = (wrap(reach_in), 0)
+let room_up = 1 + (π + 1.6·flatness)·i
+let room_down = 1 - (π + 1.6·flatness)·i
+viewport { fit: rim_ahead rim_up rim_down rim_back rim_in room_up room_down, pad: 0.04 }
+
+// The two edges of one full turn, Im u = π and −π, which swing together and meet once it wraps.
+curve edge_top = parametric (s): wrap(s + π·i) for s in inner - 0.3..outer + 0.3 tag edge
+curve edge_bottom = parametric (s): wrap(s - π·i) for s in inner - 0.3..outer + 0.3 tag edge
+
+// The strip a turn above and below.
+circles circles_above = circle(c, c + size(u)) for a in -16..16, b in first_b(a)..last_b(a) with u = to_log(grid(a, b)) + 2·π·i, c = wrap(u) tag copy
+circles circles_below = circle(c, c + size(u)) for a in -16..16, b in first_b(a)..last_b(a) with u = to_log(grid(a, b)) - 2·π·i, c = wrap(u) tag copy
+
+circles strip = circle(c, c + size(u)) for a in -16..16, b in first_b(a)..last_b(a) with u = to_log(grid(a, b)), c = wrap(u)
+
+// The rows through 0 along 1 and ω, as whole lines folded into the turn: each pass that runs off one
+// edge comes back in at the other. They're the curves of the window that cross it.
+fn fold(u) = u - 2·π·i·floor(imag(u) / (2·π) + 0.5)
+let one_log = to_log(1)
+let omega_log = to_log(omega)
+curve row_one = parametric (s): wrap(fold(s·one_log)) for s in inner / across_a..outer / across_a tag one
+curve row_omega = parametric (s): wrap(fold(s·omega_log)) for s in inner / across_b..outer / across_b tag along_omega
+curve row_one_above = parametric (s): wrap(fold(s·one_log) + 2·π·i) for s in inner / across_a..outer / across_a tag one, copy
+curve row_one_below = parametric (s): wrap(fold(s·one_log) - 2·π·i) for s in inner / across_a..outer / across_a tag one, copy
+curve row_omega_above = parametric (s): wrap(fold(s·omega_log) + 2·π·i) for s in inner / across_b..outer / across_b tag along_omega, copy
+curve row_omega_below = parametric (s): wrap(fold(s·omega_log) - 2·π·i) for s in inner / across_b..outer / across_b tag along_omega, copy
+
+// The circle at 1, which never moves.
+curve circle_one = circle(1, 1 + k)
+label name_one = "1" at 1

@@ -27,6 +27,7 @@ const FIGURES = [
   ['tube', '013 tube', 'corpus/013-tube/tube.pen', [THEME, 'corpus/013-tube/plain.style']],
   ['scaled-copy', '014 scaled copy', 'corpus/014-scaled-copy/scaled-copy.pen', [THEME, 'corpus/014-scaled-copy/plain.style']],
   ['log-nearest', '015 log nearest', 'corpus/015-log-nearest/log-nearest.pen', [THEME, 'corpus/015-log-nearest/plain.style']],
+  ['unwrap', '016 unwrap', 'corpus/016-unwrap/unwrap.pen', [THEME, 'corpus/016-unwrap/plain.style']],
   ['explainer', 'Explainer: limaçon', 'lab/explainer/limacon.pen',
     [THEME, 'corpus/dark.style', 'lab/explainer/limacon.style', 'lab/explainer/caption.style']],
 ].map(([id, name, pen, sheets]) => ({ id, name, pen, sheets }));
