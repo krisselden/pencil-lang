@@ -76,7 +76,11 @@ pub struct Binding {
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Param {
     pub id: String,
+    /// The widest its range gets. With no `limits`, this is its range.
     pub range: [f64; 2],
+    /// An end of its range that follows other params, as `0..q` does. The range in a frame is
+    /// read from them, and `range` holds the widest that can be.
+    pub limits: [Option<Expr>; 2],
     /// The param only takes the values its range's start plus a whole number of these, as a
     /// whole number does with a step of 1.
     pub step: Option<f64>,
@@ -94,23 +98,32 @@ pub struct Choice {
 }
 
 impl Param {
-    /// The value it takes: the nearest step, if it has steps.
-    pub fn stepped(&self, value: f64) -> f64 {
-        match self.step {
-            Some(step) => self.range[0] + ((value - self.range[0]) / step).round() * step,
-            None => value,
-        }
-    }
-
-    /// A reader's value for it: within its range, and on a step. The range's end counts only if
-    /// it's on one.
-    pub fn settle(&self, value: f64) -> f64 {
-        let [lo, hi] = self.range;
+    /// The value it takes in a range, however it's driven: within the range, and on a step
+    /// counted from the range's start. The range's end counts only if it's on a step, and a
+    /// range that ends before it starts leaves only its start.
+    pub fn settle(&self, value: f64, [lo, hi]: [f64; 2]) -> f64 {
         let top = match self.step {
             Some(step) => lo + ((hi - lo) / step + 1e-9).floor() * step,
             None => hi,
         };
-        self.stepped(value.clamp(lo, top.max(lo)))
+        let value = value.max(lo).min(top.max(lo));
+        match self.step {
+            Some(step) => lo + ((value - lo) / step).round() * step,
+            None => value,
+        }
+    }
+
+    /// The names its range reads.
+    pub fn follows(&self) -> Vec<String> {
+        let mut out: Vec<String> = Vec::new();
+        for limit in self.limits.iter().flatten() {
+            limit.visit_syms(&mut |s| {
+                if !out.iter().any(|known| known == s) {
+                    out.push(s.to_string());
+                }
+            });
+        }
+        out
     }
 }
 
@@ -561,6 +574,11 @@ impl Scene {
             })).collect::<Vec<_>>(),
             "params": self.params.iter().map(|p| {
                 let mut param = json!({ "id": p.id, "range": p.range });
+                if p.limits.iter().any(Option::is_some) {
+                    param["limits"] = json!(p.limits.iter()
+                        .map(|limit| limit.as_ref().map(Expr::to_mathjson))
+                        .collect::<Vec<_>>());
+                }
                 if let Some(step) = p.step {
                     param["step"] = json!(step);
                 }

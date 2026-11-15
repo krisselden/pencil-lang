@@ -606,6 +606,23 @@ export class PencilFigure extends HTMLElement {
     }
   }
 
+  /**
+   * A param's range this frame, as `[min, max]`. An end that follows other params, as the `q` of
+   * `0..q` does, moves with them, and the figure keeps the param inside it. `info.params` gives
+   * the widest each range gets, as `min` and `max`, and the params that move it, as `follows`,
+   * so a control only has to ask again for a param that follows something.
+   */
+  range(name, time = this.#time) {
+    const param = this.#info?.params.find((p) => p.id === name);
+    if (!param) return [NaN, NaN];
+    if (!param.follows?.length || !this.#player) return [param.min, param.max];
+    try {
+      return Array.from(this.#player.range(name, time));
+    } catch {
+      return [param.min, param.max];
+    }
+  }
+
   /** Takes a param over from time, at this value, until it's released or the figure plays. */
   hold(name, value) {
     this.#held.delete(name);

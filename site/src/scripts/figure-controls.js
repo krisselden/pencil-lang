@@ -1,6 +1,6 @@
 // <figure-controls for="id">: a play button, a time slider, beat stepping and a control for each
 // param, built from what a `<pencil-figure>` says of itself once it loads. It only calls the
-// element's public API (`info`, `play`, `pause`, `time`, `step`, `hold`, `value`), as every page in
+// element's public API (`info`, `play`, `pause`, `time`, `step`, `hold`, `value`, `range`), as every page in
 // `web/` does, so a figure needs no controls of its own written for it.
 //
 // `bare` builds nothing, and only says why a figure couldn't be drawn, if it couldn't.
@@ -140,6 +140,9 @@ class FigureControls extends HTMLElement {
       this.timeOut.textContent = `${figure.time.toFixed(1)} s`;
     }
     for (const { param, input, out } of this.#inputs.values()) {
+      // A range that follows another param, as `0..q` does, is read as it stands, so the
+      // control stops where the figure does.
+      if (param.follows?.length) [input.min, input.max] = figure.range(param.id);
       const value = figure.value(param.id);
       if (document.activeElement !== input && Number.isFinite(value)) input.value = String(value);
       out.textContent = param.choice ? '' : Number.isFinite(value) ? value.toFixed(decimals(param)) : '—';

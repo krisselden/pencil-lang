@@ -441,7 +441,10 @@ impl Composition {
             "timeDriven": clock::time_driven(&figure.scene),
             "usesTime": clock::composition_uses_time(self),
             "params": figure.scene.params.iter().map(|p| serde_json::json!({
+                // The widest its range gets, and the params an end of it follows: a page asks
+                // for the range as it stands when it draws one of those.
                 "id": p.id, "min": p.range[0], "max": p.range[1], "step": p.step,
+                "follows": p.follows(),
                 "choice": p.choice.as_ref().map(|c| serde_json::json!({ "of": c.of, "options": c.options })),
             })).collect::<Vec<_>>(),
             "poster": {

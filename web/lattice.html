@@ -75,21 +75,17 @@
     }
   });
 
+  // The figure says where each param stops: p's range is `0..q`, so its control follows q, and
+  // the figure keeps p inside it.
   for (const name of ['q', 'p']) {
-    $(name).addEventListener('input', () => {
-      // p steps along the edge of q, so it can't be past it.
-      if (Number($('p').value) > Number($('q').value)) {
-        $('p').value = $('q').value;
-        figure.hold('p', Number($('p').value));
-      }
-      figure.hold(name, Number($(name).value));
-    });
+    $(name).addEventListener('input', () => figure.hold(name, Number($(name).value)));
   }
 
   const signed = (n, sign) => (n === 0 ? '0' : `${sign}${n}`);
   figure.addEventListener('draw', () => {
     const [q, p] = [figure.value('q'), figure.value('p')];
     for (const [name, value] of [['q', q], ['p', p]]) {
+      [$(name).min, $(name).max] = figure.range(name);
       $(name).value = value;
       $(`${name}-value`).textContent = value;
     }

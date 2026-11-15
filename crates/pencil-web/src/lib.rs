@@ -336,6 +336,25 @@ impl Player {
         self.measured.borrow_mut().clear();
     }
 
+    /// A param's range this frame, as `[min, max]`. An end that follows other params is read
+    /// from them, so a page's control can stop where the figure does.
+    pub fn range(&self, name: &str, time: f32) -> Result<Vec<f64>, JsError> {
+        let name = &named(name);
+        let Some((composition, _)) = &self.figure else {
+            return Err(js_error("no figure"));
+        };
+        let figure = &composition.panels[0].figure;
+        let Some(param) = figure.scene.params.iter().find(|p| p.id == *name) else {
+            return Err(js_error(format!("no param named `{name}`")));
+        };
+        // A range no other param moves needs no frame.
+        if param.limits.iter().all(Option::is_none) {
+            return Ok(param.range.to_vec());
+        }
+        let env = eval::frame_env(figure, &self.inputs(time)).map_err(js_error)?;
+        Ok(eval::param_range(param, &env).map_err(js_error)?.to_vec())
+    }
+
     /// A binding's value this frame, or NaN if it doesn't exist this frame.
     pub fn value(&self, name: &str, time: f32) -> Result<f64, JsError> {
         let name = &named(name);

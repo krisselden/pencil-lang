@@ -1138,6 +1138,7 @@ fn declare_beat(scene: &mut Scene, lowerer: &mut Lowerer) {
     scene.params.push(Param {
         id: BEAT_PARAM.to_string(),
         range: [0.0, 0.0],
+        limits: [None, None],
         step: None,
         choice: None,
     });
@@ -1384,6 +1385,51 @@ fn focus_over(
         was = now;
     }
     Ok(focuses)
+}
+
+impl Lowerer {
+    /// An end of a param's range: a number, or an expression of the params before it, as the `q`
+    /// of `0..q`. With it comes the furthest that end gets, the least for a start and the most
+    /// for an end, found at the ends of the ranges of the params it reads.
+    fn limit(&self, e: &Expr, end: bool, params: &[Param]) -> Result<(f64, Option<Expr>), Error> {
+        let what = "a param's range";
+        let mut reads_names = false;
+        // A signal is left for `constant` to refuse, which says why.
+        e.visit_syms(&mut |s| reads_names |= constant_value(s).is_none() && !SIGNALS.contains(&s));
+        if !reads_names {
+            return Ok((constant(e, what)?, None));
+        }
+        let limit = self.scalar(e, &Locals::new())?;
+        let mut read: Vec<&Param> = Vec::new();
+        let mut other = None;
+        limit.visit_syms(&mut |s| match params.iter().find(|p| p.id == s) {
+            Some(param) if !read.iter().any(|known| known.id == param.id) => read.push(param),
+            Some(_) => {}
+            None if constant_value(s).is_none() => other = Some(s.to_string()),
+            None => {}
+        });
+        if let Some(name) = other {
+            return Err(Error::new(format!(
+                "{what} is numbers and the params before it, and `{name}` isn't either"
+            )));
+        }
+        if read.is_empty() {
+            return Ok((constant(&limit, what)?, None));
+        }
+        // Each corner of the ranges it reads, which finds the furthest of anything that only
+        // rises or falls with each param.
+        let mut furthest = if end { f64::NEG_INFINITY } else { f64::INFINITY };
+        for corner in 0..1u32 << read.len().min(16) {
+            let mut env = Env::new(0.0);
+            for (k, param) in read.iter().enumerate() {
+                env.set(&param.id, param.range[(corner >> k.min(15) & 1) as usize]);
+            }
+            let value = eval::real(&limit, &env)
+                .map_err(|err| Error::new(format!("{what} has to have a value: {err}")))?;
+            furthest = if end { furthest.max(value) } else { furthest.min(value) };
+        }
+        Ok((furthest, Some(limit)))
+    }
 }
 
 /// A value that holds for the whole figure. Evaluating it at time 0 would quietly freeze
@@ -2821,6 +2867,7 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
                 scene.params.push(Param {
                     id: index.clone(),
                     range: [0.0, (values.len() - 1) as f64],
+                    limits: [None, None],
                     step: Some(1.0),
                     choice: Some(Choice {
                         of: name.clone(),
@@ -2857,10 +2904,9 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
             } => {
                 claim(name, *line)?;
                 let fail = at_line(*line);
-                let range = [
-                    constant(&range[0], "a param's range").map_err(&fail)?,
-                    constant(&range[1], "a param's range").map_err(&fail)?,
-                ];
+                let low = lowerer.limit(&range[0], false, &scene.params).map_err(&fail)?;
+                let high = lowerer.limit(&range[1], true, &scene.params).map_err(&fail)?;
+                let (range, limits) = ([low.0, high.0], [low.1, high.1]);
                 let step = match step {
                     Some(step) => {
                         let step = constant(step, "a param's step").map_err(&fail)?;
@@ -2879,6 +2925,7 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
                 scene.params.push(Param {
                     id: name.clone(),
                     range,
+                    limits,
                     step,
                     choice: None,
                 });
@@ -3846,7 +3893,9 @@ mod tests {
     fn a_bind_replaces_the_default_with_a_time_expression() {
         let s = scene("param a = 1 in 0..2\nbind a = time * 2").unwrap();
         assert_eq!(s.params[0].range, [0.0, 2.0]);
-        assert_eq!(env_of(&s, 3.0).get("a"), Some(6.0));
+        assert_eq!(env_of(&s, 0.75).get("a"), Some(1.5));
+        // Time drives it as far as its range goes, as a reader's hand would.
+        assert_eq!(env_of(&s, 3.0).get("a"), Some(2.0));
         let err = scene("let a = 1\nbind a = time").unwrap_err();
         assert!(err.message.contains("isn't a param"), "{err}");
     }

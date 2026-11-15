@@ -26,6 +26,10 @@ pub fn time_driven(scene: &Scene) -> Vec<String> {
             let depends = &scene.systems[*system as usize].depends;
             reads |= depends.iter().any(|d| driven.contains(d.as_str()));
         }
+        // A param kept in a range that moves with time moves with it.
+        if let Some(param) = scene.params.iter().find(|p| p.id == binding.id) {
+            reads |= param.follows().iter().any(|f| driven.contains(f.as_str()));
+        }
         if reads {
             driven.insert(&binding.id);
             found.push(binding.id.clone());

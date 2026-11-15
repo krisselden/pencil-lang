@@ -669,6 +669,10 @@ light and dark sheets:
   from another build is an error that says to compile again, and the figure on screen stays.
 - **A compiled figure carries the colors its sheets name,** so `figure.colors` works without sheets, and a page can have them
   from the `.json` before any script runs.
+- **A param says where it stops, and a page can ask.** `param p = 2 in 0..q step 1` in `007-lattice` replaces the `p ≤ q` its
+  page kept in script, which the site's controls never had. `info.params` gives each param's widest `min` and `max`, its `step`
+  and what its range `follows`, and `figure.range(name)` gives the range this frame. The site's `<figure-controls>`, the
+  playground and `web/lattice.html` set their sliders from those, and the core keeps the value in range whatever a page does.
 - **Not checked:** a phone, a browser without WebGPU, and print. **Known:** the poster's labels are drawn by the CLI's fonts
   and the page's by the browser's, so text can shift a little when the figure takes over. The tube has one label and it
   wasn't noticeable.

@@ -464,7 +464,7 @@ pub fn drag_value(
         Err(e) => return Err(e),
     };
     let value = match figure.scene.params.iter().find(|p| p.id == handle.param) {
-        Some(param) => param.settle(value),
+        Some(param) => param.settle(value, eval::param_range(param, &env)?),
         None => value,
     };
     Ok((handle.param.clone(), value))

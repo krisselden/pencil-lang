@@ -422,6 +422,8 @@ function readControls() {
   for (const param of info()?.params ?? []) {
     const input = $(`param-${param.id}`);
     if (!input) continue;
+    // A range that follows another param is read as it stands.
+    if (param.follows?.length) [input.min, input.max] = figure.range(param.id);
     const value = figure.value(param.id);
     if (document.activeElement !== input) input.value = String(value);
     // A stepped param shows as many decimals as its step has, so a whole number shows as one. A

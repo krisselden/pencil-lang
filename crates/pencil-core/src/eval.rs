@@ -8,7 +8,7 @@ use std::sync::Mutex;
 use crate::Figure;
 use crate::error::Error;
 use crate::frame::{self, Inputs, Prepared};
-use crate::ir::{Expr, Form, Scene, System};
+use crate::ir::{Expr, Form, Param, Scene, System};
 use crate::nearest;
 use crate::stroke::{self, box_coverage};
 use crate::style::{Blend, MarkStyle, SELF_CURVATURE, SELF_DIST, SELF_PIXEL, Tone};
@@ -420,6 +420,22 @@ fn solved(
     answer
 }
 
+/// A param's range in a frame. An end that follows other params is read from them, and where
+/// one of those is absent the end is the furthest it gets.
+pub fn param_range(param: &Param, env: &Env) -> Result<[f64; 2], Error> {
+    let mut range = param.range;
+    for (end, limit) in range.iter_mut().zip(&param.limits) {
+        if let Some(limit) = limit {
+            match real(limit, env) {
+                Ok(value) => *end = value,
+                Err(e) if e.absent => {}
+                Err(e) => return Err(e),
+            }
+        }
+    }
+    Ok(range)
+}
+
 /// The values of a frame's bindings and signals. An input overrides a param.
 pub fn frame_env(figure: &Figure, inputs: &Inputs) -> Result<Env, Error> {
     scene_env(&figure.scene, inputs, Some(&figure.solved))
@@ -451,11 +467,11 @@ pub fn scene_env(scene: &Scene, inputs: &Inputs, memo: Option<&Solved>) -> Resul
             }
             (None, _) => real(&binding.expr, &env),
         };
-        // A param with steps only takes those values, however it's driven.
-        let value = value.map(|v| match scene.params.iter().find(|p| p.id == binding.id) {
-            Some(param) => param.stepped(v),
-            None => v,
-        });
+        // A param stays in its range and on its steps, however it's driven.
+        let value = match (value, scene.params.iter().find(|p| p.id == binding.id)) {
+            (Ok(v), Some(param)) => param_range(param, &env).map(|range| param.settle(v, range)),
+            (value, _) => value,
+        };
         match value {
             Ok(value) => env.set(&binding.id, value),
             Err(e) if e.absent => env.set_absent(&binding.id),
