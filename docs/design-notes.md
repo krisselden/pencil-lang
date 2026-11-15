@@ -224,4 +224,4 @@ Written before anything was built. What's still open is in `goals.md`, under "Op
   definition, `fast.rs` compiles curves and collections, and the GPU gets WGSL.
 - How are constrained params expressed, and who maps a pointer back onto the constraint?
   The site does this with a hand-written `constrain` on each handle. **A `handle` takes an explicit inverse,**
-  and the param's range is the constraint (`language.md`, 2026-11-05).
+  and the param's range is the constraint (`decisions.md`, 2026-11-05).

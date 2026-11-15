@@ -72,7 +72,8 @@ Then open <http://localhost:8741/web/limacon.html>. `web/` has the other figures
 
 ## Finding your way around
 
-- [`docs/language.md`](docs/language.md): the syntax, built-ins, styles and language decisions.
+- [`docs/language.md`](docs/language.md): the syntax, built-ins and styles.
+- [`docs/decisions.md`](docs/decisions.md): why the language is the way it is.
 - [`docs/goals.md`](docs/goals.md): what this is for, and what each figure found.
 - `corpus/`: the figures and their expected IR.
 - `crates/`: `pencil-core` (parser, IR, styles, CPU oracle, WGSL), `pencil-render` (wgpu), `pencil-cli` (the `pencil` command) and `pencil-web` (the browser host).

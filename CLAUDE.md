@@ -12,8 +12,9 @@ Read in this order, with earlier files winning where they disagree:
    references are superseded as `goals.md` describes.
 3. `docs/design-notes.md`: background, including the overlap with the site.
 
-`docs/language.md` is the reference for the syntax, built-ins and language decisions. Add to it when
-the language changes: a test fails if a built-in, property or statement goes undocumented.
+`docs/language.md` is the reference for the syntax and built-ins. Add to it when the language changes: a
+test fails if a built-in, property or statement goes undocumented. `docs/decisions.md` has a row for each
+language decision and why, and the site doesn't render it: add the row there.
 
 ## Commands
 
