@@ -209,6 +209,62 @@ export const DEMOS: Demo[] = [
     looks: [{ pen: 'corpus/013-tube/tube.pen', sheets: [THEME, 'corpus/013-tube/plain.style'], dark: [DARK], playground: 'tube' }],
   },
   {
+    id: 'scaled-copy',
+    number: '014',
+    title: 'A circle of the spiral, scaled and turned',
+    about:
+      'Multiplying by z grows a circle of a log spiral by |z| and turns it by arg z about the center, which lands it on the next circle. A copy of circle 0 is multiplied by zˢ as s runs from 0 to 1, and each circle’s tick shows the turn.',
+    label:
+      'A log spiral of touching circles. A copy of one circle grows and turns about the spiral’s center until it lands exactly on the next circle.',
+    folder: 'corpus/014-scaled-copy',
+    looks: [
+      {
+        pen: 'corpus/014-scaled-copy/scaled-copy.pen',
+        sheets: [THEME, 'corpus/014-scaled-copy/plain.style'],
+        dark: [DARK],
+        playground: 'scaled-copy',
+      },
+    ],
+  },
+  {
+    id: 'log-nearest',
+    number: '015',
+    title: 'Nearest isn’t nearest after log',
+    about:
+      'Dots at 1, e and e² on the line are evenly spaced after log, at 0, 1 and 2. Each line marks the dot nearest x by its own distance, and they disagree between e^(n+½) and (eⁿ + eⁿ⁺¹)/2, which is shaded on both. Drag x.',
+    label:
+      'Two number lines: dots at 1, e and e² on the line, and at 0, 1 and 2 after taking the log. A draggable x and its nearest dot on each, with the stretches where they disagree shaded.',
+    folder: 'corpus/015-log-nearest',
+    looks: [
+      {
+        pen: 'corpus/015-log-nearest/log-nearest.pen',
+        sheets: [THEME, 'corpus/015-log-nearest/plain.style'],
+        dark: [DARK],
+        playground: 'log-nearest',
+      },
+    ],
+    paused: true,
+  },
+  {
+    id: 'unwrap',
+    number: '016',
+    title: 'Unwrapping the spiral',
+    about:
+      'One slider from the flat strip to the Doyle spiral, through fₜ(u) = (e^(tu) − 1)/t + 1, which keeps 1 fixed. The strip holds one circle of each period, chosen by a whole-number range; the copies a turn above and below fade as it wraps, and the rows along 1 and ω curl into arms.',
+    label:
+      'A strip of circles in log space, one full turn tall, bending into the Doyle spiral as the slider moves from flat to wrapped, with the circle at 1 fixed.',
+    folder: 'corpus/016-unwrap',
+    looks: [
+      {
+        pen: 'corpus/016-unwrap/unwrap.pen',
+        sheets: [THEME, 'corpus/016-unwrap/plain.style'],
+        dark: [DARK],
+        playground: 'unwrap',
+      },
+    ],
+    paused: true,
+  },
+  {
     id: 'explainer',
     number: 'Lab',
     title: 'Explainer: the limaçon from its central circle',

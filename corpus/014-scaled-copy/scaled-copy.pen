@@ -1,0 +1,43 @@
+// A log spiral's circles are copies of one another: multiplying by z grows a circle by |z| and
+// turns it by arg z about the spiral's center, and that lands it exactly on the next one. Here
+// z = R·e^{iθ}, circle n sits at zⁿ with radius K·|zⁿ|, and each carries a tick at a quarter
+// turn in its own frame, so the turn shows and not only the move. K = |z − 1| / (|z| + 1) is
+// what makes neighbors touch: |zⁿ⁺¹ − zⁿ| = |zⁿ|·|z − 1| = K|zⁿ| + K|zⁿ⁺¹|. The copy is circle 0
+// multiplied by zˢ, so as s runs from 0 to 1 it slides along the spiral from circle 0 to circle 1.
+doc scaled_copy
+// A copy arrives, glides, holds, and leaves.
+duration 4.2
+// Halfway there: grown by |z|^½ and turned by half of arg z.
+poster { time: 1.8 }
+
+beat arrive for 0.5 show copy, copy_tick, trail
+pause 0.4
+beat glide for 1.8
+pause 0.8
+beat leave for 0.6 drop copy, copy_tick, trail
+pause 0.1
+
+let R = 1.45
+let theta = 40·Degrees
+// log z, so zᵗ = exp(t·log z) for any t, whole or not.
+let log_z = ln(R) + theta·i
+fn power(t) = exp(t·log_z)
+let z = power(1)
+let K = abs(z - 1) / (abs(z) + 1)
+
+// How far the copy has gone: time eases it from circle 0 to circle 1, and a reader can hold it.
+param s in 0..1
+bind s = smoothstep(0, 1, glide)
+
+viewport { x: -0.5..1.75, y: -0.62..1.63 }
+
+let center = 0
+curve spiral = parametric (t): power(t) for t in -6..1.2
+// Circle n is circle 0, about 1 with radius K, multiplied by zⁿ, and so is its tick.
+circles arm = circle(c, c·(1 + K)) for n in -6..1 with c = power(n)
+curves ticks = parametric (u): c·(1 + u·K·i) for u in 0..1 for n in -6..1 with c = power(n)
+dot center
+
+curve trail = parametric (t): power(t) for t in 0..s
+curve copy = circle(power(s), power(s)·(1 + K))
+segment copy_tick = power(s), power(s)·(1 + K·i)
