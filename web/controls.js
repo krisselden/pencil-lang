@@ -1,7 +1,8 @@
 // What the figure pages in `web/` share around a `<pencil-figure>`: a play button, a time slider,
 // a status line, and reloading as the files change. Each is only calls on the element and its
 // events, so a page shows what a reader of the site could do with the same element.
-import { gather } from './pencil-figure.js';
+import '../packages/figure/src/element.js';
+import { gather } from '../packages/figure/src/host.js';
 
 /** `?gl` on the page's URL tests the WebGL2 path. Set before the GPU starts. */
 export function fromQuery(figure) {

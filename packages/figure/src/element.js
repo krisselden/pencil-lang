@@ -3,6 +3,9 @@
 //
 //   <pencil-figure src="unroll.pen" sheets="theme.style blog.style"></pencil-figure>
 //
+// Importing this module defines the element: `import '@pencil-lang/figure'`. The WASM it runs
+// on is `./host.js`, which a page can call directly too.
+//
 // The clock is a Web Animations `Animation` on the element (`clock`), so its time, pausing and
 // rate are the browser's own, and DevTools' Animations panel can scrub it. Time and a reader's input
 // both set the figure's bindings, as everywhere else: nothing here works out a value of its own.
@@ -32,10 +35,11 @@
 // WebGPU. A page can also pick its sheets in script, by setting `sheets` as soon as the element
 // is defined: changes made before that script finishes are fetched once.
 // Its labels are an em of the text where it sits, and follow when a reader changes their text size.
+// `reload()` fetches the sources again, for a page that watches them change.
 // Events: `load` when a figure is compiled, `draw` after each frame drawn, `resize` when its drawn
 // size or its em changes (its `detail.em`, in CSS pixels), `input` when a reader
 // drags a param, `play` and `pause`, and `error` (its `detail.error`) when one can't load or draw.
-import init, { Player, figure_size, figure_size_compiled, uses } from './pkg/pencil_web.js';
+import { Player, figure_size, figure_size_compiled, ready, isReady, gather } from './host.js';
 import { LabelLayer } from './labels.js';
 import { match } from './fit.js';
 
@@ -46,42 +50,11 @@ const REACH = 24;
 // How far from the viewport the GPU starts, so a figure is drawn by the time it's scrolled to.
 const NEAR = '200px';
 
-let wasm = null;
-const ready = () => (wasm ??= init());
-
 const fetchText = async (url) => {
   const response = await fetch(new URL(url, document.baseURI));
   if (!response.ok) throw new Error(`${url}: ${response.status}`);
   return response.text();
 };
-
-/**
- * Reads every file a document and its sheets `use`, and every file those use, for `load`.
- * `names` say where the document and then each sheet came from: URLs, which can be relative to
- * the page. A used file is found from the file that names it, so its own name is a URL too, and
- * `read` is given that. A file that can't be read is left out, and compiling says which line
- * wanted it. `have` are files already at hand, by name, such as ones being edited.
- */
-export async function gather(names, texts, read = fetchText, have = {}) {
-  await ready();
-  const files = {};
-  const visit = (name, text) =>
-    Promise.all(
-      uses(name, text).map(async (file) => {
-        if (file in files) return;
-        files[file] = null;
-        try {
-          files[file] = have[file] ?? (await read(file));
-        } catch {
-          return;
-        }
-        await visit(file, files[file]);
-      }),
-    );
-  await Promise.all(texts.map((text, i) => visit(names[i] ?? '', text)));
-  for (const [file, text] of Object.entries(files)) if (text === null) delete files[file];
-  return { names, files };
-}
 
 const CSS = `
 :host { display: block; }
@@ -376,6 +349,13 @@ export class PencilFigure extends HTMLElement {
     });
   }
 
+  /** Fetches the sources again and loads them, as after a file changed. The figure on screen,
+   * its time and its held params stay until the new one is compiled. */
+  reload() {
+    this.#fetched = null;
+    this.#queueFetch();
+  }
+
   async #fetchSources() {
     const chosen = this.#chosen();
     const compiled = chosen.getAttribute('compiled');
@@ -426,7 +406,7 @@ export class PencilFigure extends HTMLElement {
     const sources = { doc, sheets, names: used.names ?? [], files: used.files ?? {} };
     if (this.#player) {
       this.#compile(sources);
-    } else if (wasm) {
+    } else if (isReady()) {
       this.#shape(JSON.parse(figure_size(doc, sheets, sources.names, sources.files)));
       this.#sources = sources;
     } else {
@@ -441,7 +421,7 @@ export class PencilFigure extends HTMLElement {
     const sources = { compiled: bytes };
     if (this.#player) {
       this.#compile(sources);
-    } else if (wasm) {
+    } else if (isReady()) {
       this.#shape(JSON.parse(figure_size_compiled(bytes)));
       this.#sources = sources;
     } else {
@@ -776,7 +756,8 @@ export class PencilFigure extends HTMLElement {
    * Makes what a reader can do with the figure reachable without a pointer, once it's known.
    * Each handle gets something to focus, named for its mark, that says its param's value as a
    * slider does. A figure with beats becomes a tab stop itself, unless the page has said where
-   * it is in the tab order, and a figure with either is a group, so its name is read.
+   * it is in the tab order, and a figure with either is a group, so its name is read. One with
+   * neither is an image.
    */
   #operable() {
     const handles = this.#info.handles ?? [];
@@ -804,7 +785,9 @@ export class PencilFigure extends HTMLElement {
       this.removeAttribute('tabindex');
       this.#tabbable = false;
     }
-    if (this.#internals) this.#internals.role = steps || handles.length ? 'group' : null;
+    // One a reader only looks at is an image, when the page has named it.
+    const named = this.hasAttribute('aria-label') || this.hasAttribute('aria-labelledby');
+    if (this.#internals) this.#internals.role = steps || handles.length ? 'group' : named ? 'img' : null;
   }
 
   /** Puts each handle's focus where its mark is, and says its value, after a frame is drawn. */

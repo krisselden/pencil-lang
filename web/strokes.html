@@ -36,7 +36,7 @@
 </main>
 <canvas id="source" width="1024" height="1024"></canvas>
 <script type="module">
-  import init, { Player } from './pkg/pencil_web.js';
+  import { ready as init, Player } from '../packages/figure/src/host.js';
 
   const S = 1024, DPR = 2, C = S / 2, SCALE = S / 4, R = 1.15 * SCALE;
   const source = document.getElementById('source');

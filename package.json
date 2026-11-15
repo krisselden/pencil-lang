@@ -1,0 +1,13 @@
+{
+  "name": "pencil-lang",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "packageManager": "pnpm@11.17.0",
+  "scripts": {
+    "test:web": "pnpm --filter @pencil-lang/figure test",
+    "site": "pnpm --filter pencil-lang-site"
+  }
+}

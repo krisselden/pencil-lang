@@ -1,10 +1,10 @@
 // The playground: a figure's `.pen` and its sheets in an editor beside the figure, compiled again
 // as they change. The figure is a `<pencil-figure>`, which owns the GPU, the clock and the handles,
 // and nothing here works out a value of the figure's own: the page only sets and reads bindings.
-import { PencilFigure } from './pencil-figure.js';
+import { PencilFigure } from '../packages/figure/src/element.js';
 import { ready as readingReady, readingAt, pasteLatex } from './reading.js';
 import { viewing } from './controls.js';
-import { uses } from './pkg/pencil_web.js';
+import { uses } from '../packages/figure/src/host.js';
 
 // Each figure with the sheets its own page or video loads, from the repo root, in order.
 const THEME = 'corpus/theme.style';

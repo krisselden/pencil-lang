@@ -72,8 +72,8 @@ cd pencil-lang</code></pre>
 
   <h2 id="browser">Figures in a browser</h2>
   <p>
-    The core compiles to WebAssembly, and <code>&lt;pencil-figure&gt;</code> in
-    <code>web/pencil-figure.js</code> draws a figure on a page with WebGPU, or WebGL2 where the
+    The core compiles to WebAssembly, and <code>&lt;pencil-figure&gt;</code>, in the package at
+    <code>packages/figure</code>, draws a figure on a page with WebGPU, or WebGL2 where the
     browser has no WebGPU. The first build installs a matching <code>wasm-bindgen</code> and takes a
     few minutes.
   </p>
@@ -85,13 +85,19 @@ scripts/serve.py</code></pre>
     for most figures, and adding <code>?gl</code> to a page’s address uses WebGL2.
   </p>
   <p>On a page of your own, the element needs only the figure and its sheets:</p>
-  <pre><code>&lt;script type="module" src="web/pencil-figure.js"&gt;&lt;/script&gt;
+  <pre><code>&lt;script type="module" src="packages/figure/src/element.js"&gt;&lt;/script&gt;
 &lt;pencil-figure src="corpus/012-limacon/limacon.pen"
   sheets="corpus/012-limacon/plain.style"&gt;&lt;/pencil-figure&gt;</code></pre>
   <p>
     It starts the GPU only when the figure comes near the viewport, and lets it go when the figure
     leaves the page. Its attributes, methods and events are described at the top of
-    <a href={`${REPO}/blob/main/web/pencil-figure.js`}><code>web/pencil-figure.js</code></a>.
+    <a href={`${REPO}/blob/main/packages/figure/src/element.js`}><code>packages/figure/src/element.js</code></a>.
+  </p>
+  <p>
+    A site with a bundler installs the package, <code>@pencil-lang/figure</code>, and imports it. In
+    Astro its <code>&lt;Figure&gt;</code> compiles each figure at build and ships it with a poster,
+    which shows until the figure's first frame. Its
+    <a href={`${REPO}/tree/main/packages/figure`}>README</a> has both.
   </p>
 
   <h2 id="latex">Bring formulas from LaTeX</h2>

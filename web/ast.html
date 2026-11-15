@@ -65,7 +65,7 @@
   <div class="out" id="out" aria-live="polite"></div>
 </div>
 <script type="module">
-import init, { inspect } from './pkg/pencil_web.js';
+import { ready as init, inspect } from '../packages/figure/src/host.js';
 import { infix, ready, pasteLatex } from './reading.js';
 
 // Each shows something about how names, products and powers read today.

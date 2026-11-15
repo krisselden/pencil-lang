@@ -70,6 +70,9 @@ scripts/serve.py
 
 Then open <http://localhost:8741/web/limacon.html>. `web/` has the other figures too, and adding `?gl` to a page uses WebGL2.
 
+To put a figure on a site of your own, [`packages/figure`](packages/figure) is the `<pencil-figure>` element as a package,
+with an Astro component that builds each figure and its poster.
+
 ## Finding your way around
 
 - [`docs/language.md`](docs/language.md): the syntax, built-ins and styles.

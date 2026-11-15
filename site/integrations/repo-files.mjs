@@ -1,18 +1,23 @@
-// Serves the parts of the repo that figures load at run time, at the same paths they have in the
-// repo, so `<pencil-figure>` and the playground find `corpus/…`, `lab/explainer/…` and
-// `web/pkg/…` as they do under `scripts/serve.py`. Nothing is forked or copied into `src/`:
-// the dev server reads the files where they are, and a build copies them into the output.
-import { cp, readFile, stat } from 'node:fs/promises';
+// Serves the parts of the repo that the playground loads at run time, at the same paths they have
+// in the repo, so `web/playground.html` finds `corpus/…`, `lab/explainer/…` and the element's
+// package as it does under `scripts/serve.py`. Nothing is forked or copied into `src/`: the dev
+// server reads the files where they are, and a build copies them into the output.
+//
+// The site's own figures don't come through here. `@pencil-lang/figure` builds those.
+import { cp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
+const WASM = 'packages/figure/pkg/pencil_web_bg.wasm';
 
 // What is served, from the repo root. Each figure page in `web/` reloads its files every half
-// second while Kris edits, which a published site shouldn't do, so only the element, the
-// playground and the page that shows how text parses go out, with what they import.
-const DIRS = ['corpus', 'lab/explainer', 'web/pkg'];
-const WEB_FILES = /^web\/(?:[a-z-]+\.js|playground\.html|ast\.html)$/;
+// second while Kris edits, which a published site shouldn't do, so only the playground and the
+// page that shows how text parses go out, with what they import.
+const DIRS = ['corpus', 'lab/explainer', 'packages/figure/pkg'];
+const FILES = /^(?:web\/(?:[a-z-]+\.js|playground\.html|ast\.html)|packages\/figure\/src\/[a-z-]+\.js)$/;
+// Folders with nothing of their own to serve, on the way to something that is.
+const WAY = ['web', 'lab', 'packages', 'packages/figure', 'packages/figure/src'];
 // Each corpus figure's golden IR is the test suite's contract, and no page reads it.
 const SKIP = /(?:^|\/)(?:expected\.ir\.json|\.gitignore|\.DS_Store)$/;
 
@@ -28,7 +33,7 @@ const TYPES = {
 
 /** Whether a repo-relative path is one the site serves. */
 const served = (rel) =>
-  !SKIP.test(rel) && (WEB_FILES.test(rel) || DIRS.some((dir) => rel === dir || rel.startsWith(`${dir}/`)));
+  !SKIP.test(rel) && (FILES.test(rel) || DIRS.some((dir) => rel === dir || rel.startsWith(`${dir}/`)));
 
 export default function repoFiles() {
   return {
@@ -52,19 +57,30 @@ export default function repoFiles() {
       'astro:build:done': async ({ dir, logger }) => {
         const out = fileURLToPath(dir);
         try {
-          await stat(path.join(ROOT, 'web/pkg/pencil_web_bg.wasm'));
+          await stat(path.join(ROOT, WASM));
         } catch {
-          throw new Error('web/pkg is missing: run scripts/build-web.sh from the repo root first.');
+          throw new Error('packages/figure/pkg is missing: run scripts/build-web.sh from the repo root first.');
         }
         const filter = (src) => {
           const rel = path.relative(ROOT, src).split(path.sep).join('/');
-          // Directories on the way to something served are walked.
-          return served(rel) || DIRS.some((d) => d.startsWith(`${rel}/`)) || rel === 'web';
+          return served(rel) || WAY.includes(rel);
         };
-        for (const top of ['corpus', 'lab', 'web']) {
+        for (const top of ['corpus', 'lab', 'web', 'packages']) {
           await cp(path.join(ROOT, top), path.join(out, top), { recursive: true, filter });
         }
-        logger.info('copied corpus/, lab/explainer/ and web/ from the repo');
+        // The site's pages already ship the WASM, as a bundled asset. The playground loads the
+        // package's files as they are, so its loader is pointed at that copy and a reader
+        // fetches the 5 MB once.
+        const bundled = (await readdir(path.join(out, '_astro')).catch(() => [])).find((name) => /^pencil_web_bg.*\.wasm$/.test(name));
+        if (bundled) {
+          const loader = path.join(out, 'packages/figure/pkg/pencil_web.js');
+          const text = await readFile(loader, 'utf8');
+          const there = "new URL('pencil_web_bg.wasm', import.meta.url)";
+          if (!text.includes(there)) throw new Error(`${loader} doesn't load its WASM the way this build expects.`);
+          await writeFile(loader, text.replace(there, `new URL('/_astro/${bundled}', import.meta.url)`));
+          await rm(path.join(out, WASM));
+        }
+        logger.info('copied the playground, corpus/, lab/explainer/ and the package it loads from the repo');
       },
     },
   };

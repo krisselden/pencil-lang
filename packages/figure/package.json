@@ -1,0 +1,37 @@
+{
+  "name": "@pencil-lang/figure",
+  "version": "0.0.1",
+  "description": "Pencil figures on a page: the <pencil-figure> element, the WASM host it runs on, and an Astro component that builds a figure and its poster.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/krisselden/pencil-lang.git",
+    "directory": "packages/figure"
+  },
+  "homepage": "https://pencil-lang.dev",
+  "keywords": ["pencil", "mathematics", "figure", "custom-element", "astro-component", "withastro"],
+  "type": "module",
+  "exports": {
+    ".": "./src/element.js",
+    "./host": "./src/host.js",
+    "./astro": "./astro/index.js",
+    "./Figure.astro": "./astro/Figure.astro",
+    "./pencil_web_bg.wasm": "./pkg/pencil_web_bg.wasm"
+  },
+  "files": ["src", "pkg", "astro"],
+  "sideEffects": ["./src/element.js", "./astro/client.js"],
+  "scripts": {
+    "test": "playwright test"
+  },
+  "peerDependencies": {
+    "astro": ">=5"
+  },
+  "peerDependenciesMeta": {
+    "astro": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.56.0"
+  }
+}

@@ -7,7 +7,7 @@ interface Props {
   description?: string;
   /** Which nav item is this page's. */
   section?: 'docs' | 'demos' | 'playground';
-  /** Whether the page draws figures, and so loads the element. */
+  /** Whether the page draws figures, and so loads their controls. The element comes with each figure. */
   figures?: boolean;
   /** A page that fills the window, such as the playground's. */
   full?: boolean;
@@ -36,7 +36,6 @@ const nav = [
     <title>{fullTitle}</title>
     <meta name="description" content={description} />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-    {figures && <link rel="modulepreload" href="/web/pencil-figure.js" />}
   </head>
   <body class:list={{ full }}>
     <a class="skip" href="#main">Skip to content</a>
@@ -60,11 +59,6 @@ const nav = [
         </p>
       </footer>
     )}
-    {figures && (
-      <>
-        <script src="../scripts/figure-controls.js"></script>
-        <script type="module" src="/web/pencil-figure.js" is:inline></script>
-      </>
-    )}
+    {figures && <script src="../scripts/figure-controls.js"></script>}
   </body>
 </html>

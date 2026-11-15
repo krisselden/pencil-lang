@@ -1,7 +1,10 @@
 ---
-// A live figure: a `<pencil-figure>` with the sheets its page in `web/` loads, and, unless
-// `controls` is false, what a reader can set on it (and either way, why it can't draw if it can't), built from the figure once it loads.
-import { url, type Look } from '../lib/figures';
+// A live figure: the package's `<Figure>`, which builds it and its poster for each of the sheets
+// its page in `web/` loads, and, unless `controls` is false, what a reader can set on it (and
+// either way, why it can't draw if it can't), built from the figure once it loads.
+import PencilFigure from '@pencil-lang/figure/Figure.astro';
+import { build } from '@pencil-lang/figure/astro';
+import type { Look } from '../lib/figures';
 
 interface Props {
   id: string;
@@ -18,28 +21,45 @@ interface Props {
 
 const { id, looks, label, params, paused, start, controls = true, choose, class: className } = Astro.props;
 const [look] = looks;
-// A look whose sheets follow the reader's theme or width is picked in script, with its `src` set
-// after, so the figure is fetched once.
-const picked = Boolean(look.dark?.length || look.narrow?.length);
-const sheets = look.sheets.map(url);
-const pick = picked
-  ? JSON.stringify({ base: sheets, narrow: (look.narrow ?? []).map(url), dark: (look.dark ?? []).map(url) })
-  : undefined;
+// The poster is the figure as the page starts it: the params it holds, at the time it starts at.
+const held = Object.fromEntries(
+  (params ?? '')
+    .split(';')
+    .map((part) => part.split(':').map((s) => s.trim()))
+    .filter(([name, value]) => name && value)
+    .map(([name, value]) => [name, Number(value)]),
+);
+const poster = { time: start, params: held };
+// A tall figure fits the window's height on a wide screen rather than running off it. Its shape
+// is known here, so it's that wide before it loads. The stylesheet says when `--fit-width` applies.
+const { info } = await build({ src: look.pen, sheets: look.sheets, ...poster });
+const fit = info ? `--fit-width: calc(85vh * ${info.size[0] / info.size[1]})` : undefined;
+// A figure with more than one look has each built, and its controls swap one for another.
 const choices = looks.length > 1
-  ? JSON.stringify(looks.map((l) => ({ name: l.name, src: url(l.pen), sheets: l.sheets.map(url).join(' '), playground: l.playground })))
+  ? JSON.stringify(
+      await Promise.all(
+        looks.map(async (each) => {
+          const built = await build({ src: each.pen, sheets: each.sheets, ...poster });
+          const from = built.src ? { src: built.src, sheets: built.sheets.join(' ') } : { compiled: built.compiled };
+          return { name: each.name, playground: each.playground, ...from };
+        }),
+      ),
+    )
   : undefined;
 ---
 <div class:list={['live', className]}>
-  <pencil-figure
+  <PencilFigure
     id={id}
-    src={picked ? undefined : url(look.pen)}
-    sheets={picked ? undefined : sheets.join(' ')}
-    data-src={picked ? url(look.pen) : undefined}
-    data-sheets={pick}
-    data-start={start}
+    src={look.pen}
+    sheets={look.sheets}
+    dark={look.dark}
+    narrow={look.narrow}
+    alt={label}
+    poster={poster}
     params={params}
-    paused={paused ? '' : undefined}
-    aria-label={label}
-  ></pencil-figure>
+    paused={paused}
+    data-start={start}
+    style={fit}
+  />
   <figure-controls for={id} looks={choices} looks-label={choose} bare={controls ? undefined : ''} hidden></figure-controls>
 </div>

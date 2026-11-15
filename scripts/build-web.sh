@@ -1,5 +1,6 @@
 #!/bin/sh
-# Builds the browser host into web/pkg. Serve the repo root, then open /web/:
+# Builds the browser host into packages/figure/pkg, which the package ships and isn't checked in.
+# Serve the repo root, then open /web/:
 #   scripts/serve.py
 set -e
 cd "$(dirname "$0")/.."
@@ -14,5 +15,5 @@ fi
 
 cargo build -p pencil-web --target wasm32-unknown-unknown --release
 "$WASM_BINDGEN" target/wasm32-unknown-unknown/release/pencil_web.wasm \
-  --target web --no-typescript --out-dir web/pkg
-ls -la web/pkg
+  --target web --no-typescript --out-dir packages/figure/pkg
+ls -la packages/figure/pkg

@@ -105,14 +105,16 @@ GLSL shaders draw through one SVG system (`src/lib/plot.ts`), and nothing is mad
      `NewtonDoyle` (the site's `wire3d.ts`, which has z up and turns about it). Their planes are translucent polygons, so
      what's drawn over what needs an answer there, and their surfaces are grid lines, which `curves` already draws.
 2. **The host: what a page and a build do with a figure.** Designed on 2026-11-14 ("The host" below). Built: the compiled
-   figure, `pencil build`, the `poster` statement, and the element's poster, `<source>` children and `compiled` attribute.
-   Not built: the Astro component and the element as a package. In short: a build makes a compiled figure, a poster and what the
-   page needs to know about the figure, for each set of sheets a page can pick. The element shows the poster until its
-   first frame and picks the set by media query. An Astro component does both for a page.
+   figure, `pencil build`, the `poster` statement, the element's poster, `<source>` children and `compiled` attribute, and
+   (2026-11-15) the element as a package, `@pencil-lang/figure` in `packages/figure`, with the Astro integration and
+   `<Figure>` in it. In short: a build makes a compiled figure, a poster and what the page needs to know about the figure,
+   for each set of sheets a page can pick. The element shows the poster until its first frame and picks the set by media
+   query. The Astro component does both for a page. Not done: trying it on the blog.
 3. **`pencil-lang.dev`:** the docs, the playground and the corpus as demos. An Astro site in `site/`, so it's the first user of
    the integration, before the blog. **A first version is built (2026-11-14)** and not deployed: a landing page, the language
    reference rendered from `docs/language.md`, the corpus and the explainer drawn live, and the playground in a frame
-   (`site/README.md`). It loads figures through the element as it is. Kris hasn't looked at it.
+   (`site/README.md`). Since 2026-11-15 its figures come through the package's `<Figure>`: compiled at build, each with a
+   poster, and no sources shipped. Kris hasn't looked at it.
 4. **The move itself is tracked in `docs/migration.md`:** the order, what's done, and each of the site's 31 figures with the
    corpus figure that covers it and what Pencil lacks for it. **The Doyle series goes first** (Kris, 2026-11-14), in its own
    order, and the shader post's three GLSL figures stay GLSL, since that post is about writing a shader. Keyboard use comes
@@ -594,7 +596,8 @@ of it.
 
 ## The element
 
-`web/pencil-figure.js`, built on 2026-11-11, first in the proposed order. `<pencil-figure src="…pen" sheets="a.style b.style">`
+`packages/figure/src/element.js` (it was `web/pencil-figure.js` until 2026-11-15), built on 2026-11-11, first in the
+proposed order. `<pencil-figure src="…pen" sheets="a.style b.style">`
 owns the canvas, its labels, the GPU and the clock, so a page only says which figure and which sheets. The playground and
 every figure page in `web/` draw through it, and their controls only set and read the element. Checked in headless Chrome on
 the M1 Pro, on WebGPU and `?gl`.
@@ -699,6 +702,47 @@ light and dark sheets:
   and the page's by the browser's, so text can shift a little when the figure takes over. The tube has one label and it
   wasn't noticeable.
 
+**Built 2026-11-15: the package and the Astro component,** and `pencil-lang.dev` moved onto them.
+
+- **One package, `@pencil-lang/figure`, in `packages/figure`,** with three ways in: `.` defines the element, `./host` is the
+  WASM as a page calls it (`ready`, `Player`, `gather`, `inspect` and the rest), and `./astro` with `./Figure.astro` are the
+  integration and the component. One package and not three, because they can't be versioned apart: a compiled figure is only
+  read by the WASM built from the same source. The repo is a pnpm workspace of it and `site/`, and the pages in `web/` load its
+  files as they are. Packed and installed into an Astro project outside the repo, it built a page with a figure.
+- **`<Figure src sheets dark narrow alt>`** runs `pencil build` for each set of sheets a reader can get, in the order
+  `<picture>` wants them (narrow and dark, dark, narrow, then the rest), and writes the element with a `<source>` for each
+  and a `<picture>` of their posters. `build()` is the same call for a page that wants a figure's `info` or its card.
+- **Nothing is made twice.** `pencil build` now lists every file that went into a figure, as `sources` in its `.json`, and
+  a figure is built again only when one of them, or `pencil`, is newer. The site's 23 builds take 3.4 s from nothing and
+  0.08 s when nothing changed. What a reader fetches is named for what's in it
+  (`_pencil/tube-a5c1afca6244/tube.pfig`), so a copy they kept is never a stale one.
+- **A build stops if `pencil` and the WASM are different builds.** The WASM exports the core's fingerprint, and the
+  integration compares it with each figure's. This happened while building it: the release binary was older than the WASM.
+- **The poster has the figure's exact shape.** Its pixels only round to it, which moved the page a pixel when the figure
+  took over, so the image takes its `aspect-ratio` from the figure's size, under the same media queries when a narrow
+  sheet reshapes it. On the site's demos page, all 14 figures have the same box before and after, at 1633×919 and at
+  375×812. A build can now give a tall figure its width before it loads, which the site does.
+- **`pencil build` drew a poster 11 pixels wide** for a figure whose sheet gives a width and no height, as `003-unroll`'s
+  does, since it took the figure's shape for its size. Fixed: a lone figure's width is its sheet's.
+- **`astro dev` hands the element the sources,** as designed, and the poster too. Saving a source reloads each figure
+  where it is, through a new `reload()` on the element: on the circle, paused at 1.25 s, a touched sheet gave one `load`,
+  the same page, and the same time.
+- **A figure nobody operates is an image to a screen reader,** when the page names it: its role was only set for one with
+  handles or beats.
+- **On `pencil-lang.dev`:** the demos fetch 14 compiled figures and no `.pen` or sheet. The choice of looks swaps one
+  compiled figure for another, and the script that picked sheets by theme and width is gone, since `<source media>` does
+  it. The playground still loads the package's files as they are, and a build points it at the WASM the pages already
+  ship, so there is one copy.
+- **Sizes to know:** the site's `_pencil/` is 13 MB, mostly posters at twice the size and the lattice's four compiled
+  figures at 970 KB each before compression. Whether a host compresses `.pfig` decides what a reader pays for one.
+- **The element has tests of its own (2026-11-15),** Playwright's, in `packages/figure/tests`: 131 pass on headless
+  Chromium and WebKit, each at 1633×919 and as an emulated phone, on WebGPU and again with WebGL2 forced. They press every
+  key on a handle and on beats, drag with a mouse and with touch, and check a range that follows a param, reduced motion,
+  sheets by theme, the poster's swap to the pixel, and a compiled figure fetching no source. Headless WebKit has WebGPU
+  as it is, and Chromium has it on SwiftShader with flags. An emulated phone isn't Mobile Safari: `safaridriver` can drive
+  Safari on a phone over USB, which is untried.
+- **Not checked:** `astro dev` from an installed copy and not a linked one, a site with a `base`, and the blog itself.
+
 What follows is the design as written, for what's left.
 
 **What a reader gets today.** `<pencil-figure src sheets>` fetches the document, each sheet and each used file, then the 5.2 MB
@@ -755,7 +799,7 @@ reloads as it's edited. A function gives a post its card, in place of the site's
 captions wrap it, in the site.
 
 **Order.** The compiled figure, the poster and what the page needs to know, and the element's children and `<source>` are
-built. Next the element as a package, and the component, tried on `pencil-lang.dev` first. Then the Doyle series, which goes first
+built, and so are the element as a package and the component, tried on `pencil-lang.dev`. Then the Doyle series, which goes first
 (`migration.md`, Order): the component is tried there on a figure that's already done, `SquareZ` in the shader post or
 `LatticeMapping` and `RollTube` in the period post.
 

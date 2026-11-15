@@ -27,10 +27,11 @@ cargo run -p pencil-cli -- compile corpus/001-circle/circle.pen --style corpus/0
 cargo run --release -p pencil-cli -- build corpus/013-tube/tube.pen --style corpus/theme.style --style corpus/013-tube/plain.style --card --out out/tube   # what a page needs: the compiled figure, its poster, a card and a .json; /web/built.html loads out/tube and out/tube-dark (the same with --style corpus/dark.style)
 cargo run -p pencil-cli -- render out/circle.pfig --t 1.25 --out out/frame.png   # render, check, video, ir and wgsl take a compiled file too
 cargo run -p pencil-cli -- latex formulas.tex   # LaTeX from Desmos or MathLive, a formula per line, as Pencil text
-scripts/build-web.sh
+scripts/build-web.sh           # the WASM, into packages/figure/pkg
+pnpm install && pnpm test:web  # the element's Playwright tests, in packages/figure/tests (after scripts/build-web.sh)
 cargo run --release -p pencil-cli -- video corpus/003-unroll/unroll.pen --style corpus/003-unroll/blog.style --size 1280 --out out/unroll.mp4
 scripts/serve.py              # port 8741, no caching; then open /web/playground.html, /web/unroll.html, /web/bounds.html, /web/tube.html, /web/built.html, /web/strokes.html, /web/text.html or /web/ast.html (add ?gl for WebGL2)
-cd site && pnpm install && pnpm build   # the pencil-lang.dev site into site/dist, after scripts/build-web.sh; pnpm dev serves it on 4321
+cd site && pnpm install && pnpm build   # the pencil-lang.dev site into site/dist, after scripts/build-web.sh and cargo build --release -p pencil-cli, from the same source; pnpm dev serves it on 4321
 ```
 
 ## Layout
@@ -40,10 +41,15 @@ cd site && pnpm install && pnpm build   # the pencil-lang.dev site into site/dis
 - `crates/pencil-render`: wgpu pipeline shared by the native and browser paths.
 - `crates/pencil-cli`: the `pencil` command, including `check` (GPU against the oracle) and
   `video`.
-- `crates/pencil-web`, `web/`: the WASM host and live-reloading playground.
+- `crates/pencil-web`: the WASM host.
+- `packages/figure`: `@pencil-lang/figure`, what a site installs. `.` is the `<pencil-figure>` element, `./host` the
+  WASM as a page calls it, and `./astro` with `./Figure.astro` the Astro integration and component, which run
+  `pencil build` and write the element around a compiled figure and its poster. Its tests are Playwright's. The repo
+  is a pnpm workspace of it and `site/`.
+- `web/`: the live-reloading playground and a page for most figures, which load the package's files as they are.
 - `corpus/`: figures and their golden IR, which are the contract.
 - `site/`: the pencil-lang.dev site, in Astro with static output. It renders `docs/language.md`, draws
-  the corpus through `<pencil-figure>`, and frames `web/playground.html`, reading and serving those
+  the corpus through the package's `<Figure>`, and frames `web/playground.html`, reading and serving those
   files from the repo rather than copying them in (`site/README.md`).
 - `lab/text`: its own workspace, a test bench for text renderers. `cargo run --release` there writes
   images and results for `/web/text.html`.

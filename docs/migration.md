@@ -25,6 +25,9 @@ below can ship when it's done.
 0. **The host, before any post:** the element as a package and the Astro component (`goals.md`, The host). Tried on
    `pencil-lang.dev`, then on a figure that's already done. `SquareZ` in the shader post is the smallest, and `LatticeMapping`
    and `RollTube` in the period post are the ones with controls.
+
+   **Built 2026-11-15:** `@pencil-lang/figure` in `packages/figure`, with `<Figure>` for Astro, and `pencil-lang.dev` draws
+   through it. Left: the blog installs it and one done figure goes through it. The blog is on the same Astro, 7.
 1. **Keyboard use, with the host.** Kris: accessibility matters, so a ported figure keeps the keys it has on the site, and none
    is ported without them. Twelve figures have them (see "Keyboard, hover and linked panels").
    1. Each handle is something a reader can tab to, named for its point, with a visible focus.

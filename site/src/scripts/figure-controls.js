@@ -4,8 +4,8 @@
 // `web/` does, so a figure needs no controls of its own written for it.
 //
 // `bare` builds nothing, and only says why a figure couldn't be drawn, if it couldn't.
-// `looks` on the element, a JSON list of `{ name, src, sheets }`, adds a choice of sheets, for a
-// figure shown in more than one style.
+// `looks` on the element, a JSON list of `{ name, compiled }` or `{ name, src, sheets }`, adds a
+// choice between them, for a figure shown in more than one style.
 
 const make = (tag, props = {}, ...children) => {
   const el = Object.assign(document.createElement(tag), props);
@@ -55,8 +55,11 @@ class FigureControls extends HTMLElement {
       select.addEventListener('change', () => {
         this.dataset.look = select.value;
         const look = looks[Number(select.value)];
-        figure.setAttribute('src', look.src);
-        figure.setAttribute('sheets', look.sheets);
+        // A build gives each look as a compiled figure, and `astro dev` as its sources.
+        for (const name of ['src', 'sheets', 'compiled']) {
+          if (look[name] == null) figure.removeAttribute(name);
+          else figure.setAttribute(name, look[name]);
+        }
         this.dispatchEvent(new CustomEvent('look', { detail: look, bubbles: true }));
       });
       rows.push(make('div', { className: 'row' }, make('label', { htmlFor: select.id, textContent: this.getAttribute('looks-label') ?? 'Style' }), select));
@@ -198,20 +201,3 @@ for (const figure of document.querySelectorAll('pencil-figure')) {
 for (const figure of document.querySelectorAll('pencil-figure[data-start]')) {
   figure.addEventListener('load', () => (figure.time = Number(figure.dataset.start)), { once: true });
 }
-
-// Sheets chosen by the reader's theme and width, as the lattice's, hearts' and Möbius's pages do:
-// a figure with `data-sheets` (JSON `{ base, narrow, dark }`) gets `sheets` set from them.
-const wantsDark = matchMedia('(prefers-color-scheme: dark)');
-const wantsNarrow = matchMedia('(max-width: 600px)');
-const pickSheets = () => {
-  for (const figure of document.querySelectorAll('pencil-figure[data-sheets]')) {
-    const { base = [], narrow = [], dark = [] } = JSON.parse(figure.dataset.sheets);
-    const sheets = [...base, ...(wantsNarrow.matches ? narrow : []), ...(wantsDark.matches ? dark : [])].join(' ');
-    if (figure.getAttribute('sheets') !== sheets) figure.setAttribute('sheets', sheets);
-    // `src` waits for the sheets, so the figure is fetched once, with the right ones.
-    if (!figure.hasAttribute('src')) figure.setAttribute('src', figure.dataset.src);
-  }
-};
-pickSheets();
-wantsDark.addEventListener('change', pickSheets);
-wantsNarrow.addEventListener('change', pickSheets);

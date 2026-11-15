@@ -78,7 +78,7 @@
   // With Record on, the microphone runs from the moment the figure starts until it stops, and the
   // take goes to `scripts/serve.py`, with the figure's time it started at. A take is in step with
   // the figure by construction, so `narrate.py video` puts it on the rendered figure as it is.
-  import './pencil-figure.js';
+  import '../packages/figure/src/element.js';
 
   const $ = (id) => document.getElementById(id);
   const search = new URLSearchParams(location.search);

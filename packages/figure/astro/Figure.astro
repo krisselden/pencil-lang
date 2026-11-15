@@ -1,0 +1,89 @@
+---
+// A Pencil figure on an Astro page. A build compiles it and draws its poster, for each set of
+// sheets a reader can get, and writes the element around them:
+//
+//   <Figure src="tube.pen" sheets="theme.style tube.style" dark="dark.style" alt="…" />
+//
+// The poster is an image with the figure's size, so the page is laid out before any script runs,
+// and it shows until the figure's first frame and wherever a figure can't run. The element swaps
+// itself in over it without anything moving. `astro dev` gives the element the sources too, and a
+// figure follows its files as they're edited.
+//
+// `sheets` are always applied. `dark` are added after them when the reader's theme is dark, and
+// `narrow` before those when `narrowMedia` matches, as a sheet that reshapes a figure for a phone.
+// Paths are from the integration's `root`. `alt` says what the figure shows, for the poster and
+// for the figure. `poster` picks another moment than the document's own: `{ time, params }`.
+// Anything else (`id`, `class`, `params`, `paused`, `gl`, `data-*`) goes on `<pencil-figure>`.
+import { build } from './build.js';
+
+interface Props {
+  src: string;
+  sheets?: string | string[];
+  dark?: string | string[];
+  narrow?: string | string[];
+  /** When `narrow` applies: one media condition. */
+  narrowMedia?: string;
+  alt: string;
+  poster?: { time?: number; params?: Record<string, number> };
+  [attribute: string]: unknown;
+}
+
+const { src, sheets, dark, narrow, narrowMedia = '(max-width: 600px)', alt, poster = {}, ...attributes } = Astro.props;
+const list = (value: unknown) => (Array.isArray(value) ? value : String(value ?? '').split(/\s+/).filter(Boolean));
+const [always, whenDark, whenNarrow] = [list(sheets), list(dark), list(narrow)];
+const DARK = '(prefers-color-scheme: dark)';
+
+// As in `<picture>`, the first that matches wins, so the narrowest case goes first.
+const choices = [
+  whenNarrow.length && whenDark.length
+    ? { media: `${narrowMedia} and ${DARK}`, sheets: [...always, ...whenNarrow, ...whenDark] }
+    : null,
+  whenDark.length ? { media: DARK, sheets: [...always, ...whenDark] } : null,
+  whenNarrow.length ? { media: narrowMedia, sheets: [...always, ...whenNarrow] } : null,
+].filter((choice) => choice !== null);
+
+const [main, ...others] = await Promise.all(
+  [{ sheets: always }, ...choices].map((choice) => build({ src, sheets: choice.sheets, ...poster })),
+);
+// A build ships the compiled figure. `astro dev` hands over the sources.
+const from = (built: Awaited<ReturnType<typeof build>>) =>
+  built.src ? { src: built.src, sheets: built.sheets.join(' ') } : { compiled: built.compiled };
+
+// The poster takes the figure's exact shape, which its own pixels only round to, so nothing
+// moves by even a pixel when the figure takes over. A choice with another shape, as a narrow
+// sheet gives, says so under its media query. Later rules win, so they go in reverse.
+const shape = (built: Awaited<ReturnType<typeof build>>) => (built.info ? built.info.size.join(' / ') : undefined);
+const reshaped = others
+  .map((built, i) => ({ media: choices[i].media, shape: shape(built) }))
+  .filter((each) => each.shape && each.shape !== shape(main))
+  .reverse();
+const mark = reshaped.length ? main.hash : undefined;
+const rules = reshaped
+  .map((each) => `@media ${each.media}{[data-pencil-poster="${mark}"] img{--pencil-shape:${each.shape}}}`)
+  .join('');
+---
+{mark && <style is:inline set:html={rules}></style>}
+<pencil-figure {...attributes} {...from(main)} aria-label={alt} data-pencil-poster={mark}>
+  {others.map((built, i) => <source media={choices[i].media} {...from(built)} />)}
+  {main.poster && (
+    <picture style={shape(main) && `--pencil-shape: ${shape(main)}`}>
+      {others.map((built, i) => built.poster && (
+        <source media={choices[i].media} srcset={built.poster.srcset ?? built.poster.src} width={built.poster.width} height={built.poster.height} />
+      ))}
+      <img
+        src={main.poster.src}
+        srcset={main.poster.srcset}
+        width={main.poster.width}
+        height={main.poster.height}
+        alt={alt}
+        loading="lazy"
+        decoding="async"
+        style="display: block; width: 100%; height: auto; aspect-ratio: var(--pencil-shape, auto)"
+      />
+    </picture>
+  )}
+</pencil-figure>
+
+<script>
+  import './client.js';
+</script>
