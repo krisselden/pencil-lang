@@ -118,7 +118,9 @@ GLSL shaders draw through one SVG system (`src/lib/plot.ts`), and nothing is mad
 4. **The move itself is tracked in `docs/migration.md`:** the order, what's done, and each of the site's 31 figures with the
    corpus figure that covers it and what Pencil lacks for it. **The Doyle series goes first** (Kris, 2026-11-14), in its own
    order, and the shader post's three GLSL figures stay GLSL, since that post is about writing a shader. Keyboard use comes
-   with the host, before the posts: handles a reader can tab to, and arrow keys. 5 figures are done, 9
+   with the host, before the posts: handles a reader can tab to, and arrow keys. 8 figures are done (the shader
+   post's `ScaledCopy`, `LogNearest` and `UnwrapMorph` on 2026-11-15, drawn on the site's demos page at 1633×919 and
+   375×812, light and dark), 6
    are ports with what exists, 9 need one or two features, 5 need design and 3 stay. What most figures lack is around the figure
    and not in it: arrow keys (12 figures), dragging a point in two dimensions (5), Newton's steps as values (4) and panels of
    different sizes (4).
