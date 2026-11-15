@@ -624,6 +624,13 @@ pub fn uses(name: &str, text: &str) -> Vec<String> {
     pencil_core::files::uses(name, text)
 }
 
+/// Which build of the core this is, as a compiled figure's `.json` writes it under `build`. Only
+/// a figure with the same one can be loaded, so a build checks before a reader finds out.
+#[wasm_bindgen]
+pub fn fingerprint() -> String {
+    format!("{:016x}", pencil_core::compiled::FINGERPRINT)
+}
+
 /// How text reads, stage by stage, as JSON: its tokens, then the expression it is or the
 /// document's statements and IR. The AST page shows it.
 #[wasm_bindgen]

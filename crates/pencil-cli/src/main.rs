@@ -1,5 +1,6 @@
 //! The `pencil` command: compile, render frames and video, and referee GPU against CPU.
 
+use std::cell::RefCell;
 use std::error::Error;
 use std::fs;
 use std::io::{BufWriter, Write};
@@ -107,9 +108,19 @@ fn parse_args(args: &[String]) -> Result<Args, Box<dyn Error>> {
 /// one of them uses is read from where its name says, which is its path from here, since the
 /// document's and sheets' names are theirs.
 fn load(args: &Args) -> Result<Composition, Box<dyn Error>> {
-    let read = |p: &Path| fs::read_to_string(p).map_err(|e| format!("{}: {e}", p.display()));
+    load_listing(args, &RefCell::new(Vec::new()))
+}
+
+/// As `load`, and lists every file it read into `read_files`: the document, each sheet, and each
+/// file they use. A build writes the list down, so a host knows when the figure is out of date.
+fn load_listing(args: &Args, read_files: &RefCell<Vec<String>>) -> Result<Composition, Box<dyn Error>> {
+    let read = |p: &Path| {
+        read_files.borrow_mut().push(p.to_string_lossy().into_owned());
+        fs::read_to_string(p).map_err(|e| format!("{}: {e}", p.display()))
+    };
     let name = |p: &Path| p.to_string_lossy().into_owned();
     let bytes = fs::read(&args.doc).map_err(|e| format!("{}: {e}", args.doc.display()))?;
+    read_files.borrow_mut().push(name(&args.doc));
     if compiled::is_compiled(&bytes) {
         if !args.styles.is_empty() {
             return Err(format!(
@@ -133,7 +144,14 @@ fn load(args: &Args) -> Result<Composition, Box<dyn Error>> {
         Source { name, text }
     }
     let sheet_sources: Vec<Source> = sheets.iter().map(source).collect();
-    Sources::read(source(&doc), &sheet_sources, &|file| fs::read_to_string(file).ok())
+    let used = |file: &str| {
+        let text = fs::read_to_string(file).ok();
+        if text.is_some() {
+            read_files.borrow_mut().push(file.to_string());
+        }
+        text
+    };
+    Sources::read(source(&doc), &sheet_sources, &used)
         .and_then(|sources| sources.compose())
         .map_err(|e| match e.file {
             // A used file's error says its own name.
@@ -308,7 +326,10 @@ const CARD_FILL: f64 = 0.92;
 /// `.json` that names them and holds what the page needs to know about the figure.
 fn build(args: &Args) -> Result<(), Box<dyn Error>> {
     let dir = args.out.as_ref().ok_or("build needs --out, a folder")?;
-    let composition = load(args)?;
+    let read_files = RefCell::new(Vec::new());
+    let composition = load_listing(args, &read_files)?;
+    let mut sources = read_files.into_inner();
+    sources.dedup();
     fs::create_dir_all(dir)?;
     let stem = args
         .doc
@@ -335,11 +356,15 @@ fn build(args: &Args) -> Result<(), Box<dyn Error>> {
         inputs.params.retain(|(held, _)| held != name);
         inputs.params.push((name.clone(), *value));
     }
-    // A figure with a design size is drawn at it. One without is as wide as it's told.
-    let designed = composition.panels.len() > 1
-        || composition.panels[0].figure.scene.viewport.design_width.is_some();
-    let width = match (designed, args.sized) {
-        (true, false) => composition.size[0].round() as u32,
+    // A figure with a design width is drawn at it. One without is as wide as it's told. Panels
+    // are laid out in design pixels, so their size is one. A lone figure's size is only its
+    // shape unless its sheet gives a height too, and its width is the sheet's.
+    let design = match composition.panels.len() {
+        1 => composition.panels[0].figure.scene.viewport.design_width,
+        _ => Some(composition.size[0]),
+    };
+    let width = match (design, args.sized) {
+        (Some(design), false) => design.round() as u32,
         _ => args.size,
     };
     let gpu = Offscreen::new()?;
@@ -358,6 +383,8 @@ fn build(args: &Args) -> Result<(), Box<dyn Error>> {
         // when it has to be made again and when a reader's copy is stale.
         "build": format!("{:016x}", compiled::FINGERPRINT),
         "hash": format!("{:016x}", fnv(&bytes)),
+        // Every file that went into it, as paths from where the build ran.
+        "sources": sources,
         "poster": {
             "time": inputs.time,
             "params": inputs.params.iter()

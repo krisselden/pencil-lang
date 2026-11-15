@@ -126,8 +126,9 @@ the document says:
 
 `pencil build DOC.pen --style … --out DIR` draws it, at the figure's design size and at twice it, beside the compiled figure
 and a `.json` of what a page needs to know: the figure's shape, its duration, its params with their ranges, its beats and
-captions, its poster's moment, and the colors its sheets name. `--card` adds a 1200×630 card for sharing, the figure on its
-own paper. `web/built.html` is a page made of only those files.
+captions, its poster's moment, the colors its sheets name, and every file that went into it (`sources`), so a build knows
+when to make it again. `--card` adds a 1200×630 card for sharing, the figure on its own paper. `web/built.html` is a page
+made of only those files, and the Astro component in `packages/figure` runs this for each figure on a site.
 
 ### Beats
 
