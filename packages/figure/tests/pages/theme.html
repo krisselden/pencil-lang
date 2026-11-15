@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>theme</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { margin: 0; padding: 8px; }
+  main { max-width: 765px; margin: 0 auto; }
+  pencil-figure { touch-action: none; }
+  .far { height: 250vh; }
+</style>
+</head>
+<body>
+<main>
+  <pencil-figure id="figure" src="../../../../corpus/001-circle/circle.pen" sheets="../../../../corpus/theme.style ../../../../corpus/001-circle/circle.style" paused
+    aria-label="A circle in the reader's colors.">
+    <source media="(prefers-color-scheme: dark)" sheets="../../../../corpus/theme.style ../../../../corpus/001-circle/circle.style ../../../../corpus/dark.style">
+  </pencil-figure>
+</main>
+<script type="module" src="./boot.js"></script>
+</body>
+</html>

@@ -1,0 +1,13 @@
+// Three handles, modelled on the KEYED figure in crates/pencil-core/src/frame.rs: P on a circle
+// (theta, continuous), N on a rail whose param steps by 1, and Q whose `shown` can hide it.
+viewport { x: -2..2, y: -2..2 }
+param theta = 0 in 0..π
+param n = 0 in -1..1 step 1
+param shown = 1 in 0..1 step 1
+let P = (cos(theta), sin(theta))
+let N = (n, -1.5)
+let Q = intersect(line((0, 1), (1, 1)), line((0, 0), (1 - shown, shown)))
+dot P, N, Q
+handle P sets theta = atan2(max(pointer.y, 0), pointer.x)
+handle N sets n = pointer.x
+handle Q sets shown = pointer.x
