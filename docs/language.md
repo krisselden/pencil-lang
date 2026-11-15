@@ -40,6 +40,7 @@ that names them. `lab/explainer/limacon.pen` is the example: a file to each part
 |---|---|
 | `doc name` | Names the document. |
 | `duration 13` | How long one pass of the time bindings takes, for looping and video. Any constant will do: `duration 2·π` loops once per turn of `time`. |
+| `poster { time: 3.5, roll: 0.6 }` | The moment a still of the figure shows: a time, and params held at values, as a reader could set them. A build draws it for a page to show until the figure runs (see Posters). |
 | `viewport { … }` | The world window (see below). |
 | `let x = expr` | A named value: a number, point, circle or line. |
 | `fn f(a, b) = expr` | A function, inlined where it's called. No recursion. |
@@ -107,6 +108,25 @@ direction. A collection's `for i in a..b` counts up, and is empty when `b` is be
 A viewport says what part of the plane the figure shows, and not how big it's drawn. That depends on where it's drawn, so it's
 a sheet's: `style figure { width: 640px; height: 400px }` (see Styles). The same figure can be 16:9 in a video's sheet and fit a
 page's column in another's.
+
+### Posters
+
+A still of a figure stands in for it where it can't run, or hasn't started: on a page before its first frame, in a link's
+preview, in print. A figure knows which moment tells the most, and it's a binding of time and params like any other, so
+the document says:
+
+`poster { time: 3.5, roll: 0.6 }`
+
+- **`time`** is a moment of the clock, and anything else is a param, held there as if a reader had set it. Each is a constant.
+- **Without one,** the poster is the end of the story for a figure whose beats have lengths, where everything has arrived,
+  and the start of the clock for any other.
+- **It changes nothing about the figure as it runs.** A page that wants the figure to start where its poster is holds those
+  params itself, from what the build wrote down.
+
+`pencil build DOC.pen --style … --out DIR` draws it, at the figure's design size and at twice it, beside the compiled figure
+and a `.json` of what a page needs to know: the figure's shape, its duration, its params with their ranges, its beats and
+captions, its poster's moment, and the colors its sheets name. `--card` adds a 1200×630 card for sharing, the figure on its
+own paper. `web/built.html` is a page made of only those files.
 
 ### Beats
 
@@ -578,6 +598,8 @@ Newest first. "Why" is the reason at the time, so these can be revisited.
 
 | Date | Decision | Why |
 |---|---|---|
+| 2026-11-14 | The document names its poster: `poster { time: 3.5, roll: 0.6 }` | A page shows a still until a figure's first frame, and a link's preview shows nothing else. Which moment tells the most is about the figure, and the Möbius page already said it in script, as `figure.time = 3.5`. A sheet's `style figure { poster: 3.5 }` was the alternative: it lets a video's sheet and a page's differ, and can't set a param. Kris chose the document |
+| 2026-11-14 | A compiled figure carries the colors its sheets name | A page takes its colors from its figure's sheets, and a compiled figure has no sheets to ask. They're in what the build writes down, too, so a page can use them before the figure runs |
 | 2026-11-14 | A point can have a `z`, and a mark draws it looking down z | Kris wants the blog's 3D figures in Pencil. All three are orthographic strokes and flat fills, with no lighting, so a third coordinate that drawing drops covers them, and a figure with no `z` doesn't change. The projection is worked out when a mark is compiled, so no renderer learned anything new |
 | 2026-11-14 | A point in space isn't a complex number | A point in the plane multiplies and goes through `exp`, which is why the lattice and the Möbius figures are short. None of that has a meaning in space, so it's an error there, and space gets only what a vector has |
 | 2026-11-14 | The far side of a surface is a sheet's choice, read from `self.z` | The site's tube split each row into front and back paths at the nearest of 48 samples, which Kris found jumpy and hacky, and wanted as a style: "something like z < 0". The figure says where each point is, and puts the tube's axis at z = 0, so z < 0 is the side facing away however far it's rolled. The sheet fades it. The stroke is cut where the style changes, so the cut is at the crossing |

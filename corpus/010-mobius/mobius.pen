@@ -4,6 +4,8 @@
 // circle, that circle is a line for a moment, and past it the circle turns inside out.
 doc mobius
 duration 13
+// A still of it is the graph's own map, before the pole starts through a circle.
+poster { time: 3.5 }
 
 param n = 8 in 1..10 step 1
 param a = 1 in -10..10

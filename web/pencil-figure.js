@@ -14,15 +14,28 @@
 // A document or sheet that says `use "parts/arms.pen"` gets that file fetched too, from beside the
 // file that says it.
 //
-// Attributes: `src` and `sheets` (space-separated URLs, in order), `params` (`a: 0.5; beat: 2`,
-// held as if a reader set them), `paused` to start paused, and `gl` to skip WebGPU.
-// A page that picks its sheets in script, by the reader's theme or width, sets `sheets` as soon as
-// the element is defined: changes made before that script finishes are fetched once.
+// A build can compile a figure ahead (`pencil build`), and then a page gives that one file:
+//
+//   <pencil-figure compiled="tube.pfig">
+//     <source media="(prefers-color-scheme: dark)" compiled="tube.dark.pfig">
+//     <img src="tube.png" width="640" height="524" alt="…">
+//   </pencil-figure>
+//
+// Its children are its poster: they show until the first frame is drawn, and stay where a figure
+// can't run. With one, nothing is fetched until the figure is near the viewport, since the poster
+// already has its shape. A `<source>` child picks other sources while its `media` matches, as in
+// `<picture>`: the first that matches wins, and the element's own attributes are the rest. It can
+// give `compiled`, or `sheets` (and `src`, which is the element's if it gives none).
+//
+// Attributes: `src` and `sheets` (space-separated URLs, in order), or `compiled`, `params`
+// (`a: 0.5; beat: 2`, held as if a reader set them), `paused` to start paused, and `gl` to skip
+// WebGPU. A page can also pick its sheets in script, by setting `sheets` as soon as the element
+// is defined: changes made before that script finishes are fetched once.
 // Its labels are an em of the text where it sits, and follow when a reader changes their text size.
 // Events: `load` when a figure is compiled, `draw` after each frame drawn, `resize` when its drawn
 // size or its em changes (its `detail.em`, in CSS pixels), `input` when a reader
 // drags a param, `play` and `pause`, and `error` (its `detail.error`) when one can't load or draw.
-import init, { Player, figure_size, named_colors, uses } from './pkg/pencil_web.js';
+import init, { Player, figure_size, figure_size_compiled, uses } from './pkg/pencil_web.js';
 import { LabelLayer } from './labels.js';
 import { match } from './fit.js';
 
@@ -75,6 +88,13 @@ const CSS = `
 :host([hidden]) { display: none; }
 .stage { position: relative; overflow: hidden; width: 100%; }
 canvas { display: block; width: 100%; aspect-ratio: var(--pencil-aspect, 16 / 9); outline: none; }
+/* The poster: the element's children, until the first frame. It has the figure's shape, and the
+   canvas waits under it at the same size, so nothing moves when they swap. */
+slot { display: none; }
+.stage.waiting slot { display: block; }
+.stage.waiting canvas { position: absolute; inset: 0; height: 100%; aspect-ratio: auto; opacity: 0; }
+::slotted(source) { display: none; }
+::slotted(img), ::slotted(picture) { display: block; width: 100%; height: auto; }
 .em { position: absolute; left: 0; top: 0; width: 1em; height: 0; visibility: hidden; pointer-events: none; }
 .label { position: absolute; left: 0; top: 0; white-space: nowrap; font-family: system-ui, -apple-system, sans-serif; line-height: 1; will-change: transform; }
 .label.math { font-family: Charter, 'Bitstream Charter', 'Sitka Text', Cambria, serif; font-style: italic; }
@@ -89,7 +109,7 @@ const parseParams = (text) =>
     .map(([name, value]) => [name, Number(value)]);
 
 export class PencilFigure extends HTMLElement {
-  static observedAttributes = ['src', 'sheets', 'params'];
+  static observedAttributes = ['src', 'sheets', 'compiled', 'params'];
 
   /** Resolves once the WASM core is ready, after which `load` checks sources at once. */
   static get ready() {
@@ -105,7 +125,10 @@ export class PencilFigure extends HTMLElement {
   #player = null;
   #starting = false;
   #generation = 0;
-  #sources = null; // { doc, sheets, names, files }, compiled or waiting for the GPU
+  #sources = null; // { doc, sheets, names, files } or { compiled }, loaded or waiting for the GPU
+  #drawn = false; // whether a frame has been drawn since the canvas was made
+  #children = null; // watches for a poster or a <source> arriving
+  #media = []; // each <source>'s media query, and what's listening to it
   #fetched = null;
   #fetching = false;
   #info = null;
@@ -138,8 +161,49 @@ export class PencilFigure extends HTMLElement {
     this.#em = document.createElement('span');
     this.#em.className = 'em';
     this.#em.setAttribute('aria-hidden', 'true');
-    this.#stage.append(this.#canvas, this.#em);
+    this.#stage.append(document.createElement('slot'), this.#canvas, this.#em);
     this.#layer = new LabelLayer(this.#stage, window.devicePixelRatio || 1);
+  }
+
+  // ---- The poster and the sources ----
+
+  /** Whether the element has a poster: any child that isn't a `<source>`. */
+  #hasPoster() {
+    return [...this.children].some((child) => child.localName !== 'source');
+  }
+
+  /** Shows the poster until a frame is drawn. */
+  #wait() {
+    this.#stage.classList.toggle('waiting', !this.#drawn && this.#hasPoster());
+  }
+
+  /** Where the sources come from now: the first `<source>` child whose media matches, or the
+   * element itself. */
+  #chosen() {
+    for (const source of this.querySelectorAll(':scope > source')) {
+      const media = source.getAttribute('media');
+      if (!media || matchMedia(media).matches) return source;
+    }
+    return this;
+  }
+
+  /** Follows each `<source>`'s media query, so the figure changes sheets when the reader's
+   * theme or the page's width does. */
+  #listen() {
+    for (const [query, listener] of this.#media) query.removeEventListener('change', listener);
+    this.#media = [];
+    if (!this.isConnected) return;
+    for (const source of this.querySelectorAll(':scope > source[media]')) {
+      const query = matchMedia(source.getAttribute('media'));
+      const listener = () => this.#refetch();
+      query.addEventListener('change', listener);
+      this.#media.push([query, listener]);
+    }
+  }
+
+  /** Fetches the sources, unless a poster is standing in and the figure isn't near yet. */
+  #refetch() {
+    if (this.#visible || !this.#hasPoster()) this.#queueFetch();
   }
 
   // ---- Lifecycle ----
@@ -155,7 +219,10 @@ export class PencilFigure extends HTMLElement {
     this.#seen = new IntersectionObserver(
       (entries) => {
         this.#visible = entries[entries.length - 1].isIntersecting;
-        if (this.#visible) this.#start();
+        if (this.#visible) {
+          this.#queueFetch();
+          this.#start();
+        }
         this.#sync();
       },
       { rootMargin: NEAR },
@@ -164,12 +231,23 @@ export class PencilFigure extends HTMLElement {
     this.#resized = new ResizeObserver(() => this.#follow());
     this.#resized.observe(this.#canvas);
     this.#resized.observe(this.#em);
-    this.#queueFetch();
+    // Children can arrive after the element does, while the page is still being read.
+    this.#children = new MutationObserver(() => {
+      this.#wait();
+      this.#listen();
+      this.#refetch();
+    });
+    this.#children.observe(this, { childList: true, attributes: true, subtree: true, attributeFilter: ['media', 'src', 'sheets', 'compiled'] });
+    this.#wait();
+    this.#listen();
+    this.#refetch();
   }
 
   disconnectedCallback() {
     this.#seen?.disconnect();
     this.#resized?.disconnect();
+    this.#children?.disconnect();
+    this.#listen();
     this.#visible = false;
     this.#sync();
     // Moving an element disconnects it and connects it again at once: only let go if it stays out.
@@ -182,7 +260,7 @@ export class PencilFigure extends HTMLElement {
     if (name === 'params') {
       for (const [param, value] of parseParams(this.getAttribute('params'))) this.hold(param, value);
     } else {
-      this.#queueFetch();
+      this.#refetch();
     }
   }
 
@@ -252,6 +330,9 @@ export class PencilFigure extends HTMLElement {
       const canvas = this.#makeCanvas();
       this.#canvas.replaceWith(canvas);
       this.#canvas = canvas;
+      // And its poster back, until that one has drawn.
+      this.#drawn = false;
+      this.#wait();
     }
   }
 
@@ -269,9 +350,28 @@ export class PencilFigure extends HTMLElement {
   }
 
   async #fetchSources() {
-    const src = this.getAttribute('src');
+    const chosen = this.#chosen();
+    const compiled = chosen.getAttribute('compiled');
+    if (compiled) {
+      const key = JSON.stringify(['compiled', compiled]);
+      if (key === this.#fetched) return;
+      this.#fetched = key;
+      if (this.#clock) this.#clock.id = this.#clockName();
+      try {
+        const response = await fetch(new URL(compiled, document.baseURI));
+        if (!response.ok) throw new Error(`${compiled}: ${response.status}`);
+        const bytes = new Uint8Array(await response.arrayBuffer());
+        await ready();
+        if (key !== this.#fetched) return;
+        this.loadCompiled(bytes);
+      } catch (error) {
+        this.#fail(error);
+      }
+      return;
+    }
+    const src = chosen.getAttribute('src') ?? this.getAttribute('src');
     if (!src) return;
-    const sheets = (this.getAttribute('sheets') ?? '').split(/\s+/).filter(Boolean);
+    const sheets = (chosen.getAttribute('sheets') ?? this.getAttribute('sheets') ?? '').split(/\s+/).filter(Boolean);
     const key = JSON.stringify([src, sheets]);
     if (key === this.#fetched) return;
     this.#fetched = key;
@@ -307,8 +407,24 @@ export class PencilFigure extends HTMLElement {
     }
   }
 
+  /** Loads a figure a build compiled (`pencil build`, `pencil compile`), from its bytes. One that
+   * another build of Pencil wrote is an error that says to compile it again, and leaves the last
+   * figure, or the poster, on screen. */
+  loadCompiled(bytes) {
+    const sources = { compiled: bytes };
+    if (this.#player) {
+      this.#compile(sources);
+    } else if (wasm) {
+      this.#shape(JSON.parse(figure_size_compiled(bytes)));
+      this.#sources = sources;
+    } else {
+      this.#sources = sources;
+    }
+  }
+
   #compile(sources) {
-    this.#player.load(sources.doc, sources.sheets, sources.names, sources.files);
+    if (sources.compiled) this.#player.load_compiled(sources.compiled);
+    else this.#player.load(sources.doc, sources.sheets, sources.names, sources.files);
     this.#sources = sources;
     const info = JSON.parse(this.#player.info());
     this.#info = info;
@@ -333,7 +449,7 @@ export class PencilFigure extends HTMLElement {
   }
 
   #clockName() {
-    const src = this.getAttribute('src');
+    const src = this.getAttribute('src') ?? this.getAttribute('compiled');
     return `pencil ${this.id || (src ? src.split('/').pop() : 'figure')}`;
   }
 
@@ -537,9 +653,7 @@ export class PencilFigure extends HTMLElement {
   /** The named colors the figure's sheets define, by name, so the page around it can match:
    * `{ paper_color: 'rgb(…)', … }`. Empty until the figure has loaded. */
   get colors() {
-    if (!this.#info || !this.#sources) return {};
-    const { sheets, names, files } = this.#sources;
-    return JSON.parse(named_colors(sheets, names.slice(1), files));
+    return this.#info?.colors ?? {};
   }
 
   /** The WASM host, for measuring and debugging. */
@@ -642,6 +756,10 @@ export class PencilFigure extends HTMLElement {
       this.pause();
       this.dispatchEvent(new CustomEvent('error', { detail: { error, time: this.#time, fresh } }));
       return;
+    }
+    if (!this.#drawn) {
+      this.#drawn = true;
+      this.#wait();
     }
     this.dispatchEvent(new CustomEvent('draw', { detail: { time: this.#time, fresh } }));
   }

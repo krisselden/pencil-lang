@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A figure a build made</title>
+<style>
+  :root { color-scheme: light dark; --ink: rgb(18 17 15); --paper: rgb(242 240 235); --muted: rgb(110 106 99); --bad: #b5443c; }
+  @media (prefers-color-scheme: dark) { :root { --ink: rgb(243 240 234); --paper: rgb(23 22 20); --muted: rgb(148 143 134); } }
+  body { margin: 0; padding: 24px 16px; background: var(--paper); color: var(--ink); font: 0.9375rem/1.45 ui-sans-serif, system-ui, sans-serif; }
+  main { max-width: 640px; margin: 0 auto; }
+  h1 { font-size: 1rem; font-weight: 600; margin: 0 0 12px; }
+  .controls { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; margin: 12px 0; min-height: 1.5rem; }
+  .controls input[type=range] { width: 8rem; }
+  output { font-variant-numeric: tabular-nums; }
+  p { margin: 4px 0; color: var(--muted); }
+  code { font-size: 0.8125rem; }
+  .far { height: 250vh; }
+  #error { color: var(--bad); white-space: pre-wrap; font-family: ui-monospace, monospace; font-size: 0.8125rem; }
+</style>
+</head>
+<body>
+<main>
+  <h1>A figure a build made: compiled, with a poster</h1>
+  <p>What <code>pencil build</code> wrote into <code>out/tube</code> and <code>out/tube-dark</code>, and nothing else: no
+    <code>.pen</code> and no sheet is fetched. The image is the poster, which shows until the first frame is drawn, and the
+    sliders are laid out from <code>tube.json</code> before the figure runs. Add <code>?far</code> to put it below the fold,
+    where nothing of it is fetched until it's scrolled to.</p>
+  <div id="spacer"></div>
+  <pencil-figure id="figure" compiled="../out/tube/tube.pfig">
+    <source media="(prefers-color-scheme: dark)" compiled="../out/tube-dark/tube.pfig">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="../out/tube-dark/tube.png, ../out/tube-dark/tube@2x.png 2x">
+      <img src="../out/tube/tube.png" srcset="../out/tube/tube@2x.png 2x" width="640" height="524" style="display: block; width: 100%; height: auto"
+        alt="The one-turn strip of the triangular grid, with rows colored by arm, rolled up into a tube whose seam joins each row to another row of the same arm.">
+    </picture>
+  </pencil-figure>
+  <div class="controls" id="controls"></div>
+  <p id="status">The poster. The figure hasn't started.</p>
+  <p id="error" role="alert"></p>
+</main>
+<script type="module">
+  // To make the files this page loads:
+  //   cargo run --release -p pencil-cli -- build corpus/013-tube/tube.pen --style corpus/theme.style --style corpus/013-tube/plain.style --card --out out/tube
+  //   cargo run --release -p pencil-cli -- build corpus/013-tube/tube.pen --style corpus/theme.style --style corpus/013-tube/plain.style --style corpus/dark.style --out out/tube-dark
+  import { fromQuery, report } from './controls.js';
+
+  const $ = (id) => document.getElementById(id);
+  const figure = $('figure');
+  fromQuery(figure);
+  if (new URLSearchParams(location.search).has('far')) $('spacer').className = 'far';
+  report(figure, $('status'), $('error'));
+
+  // The sliders come from what the build wrote down about the figure, so they're on the page
+  // before the figure is, at the poster's values.
+  const inputs = [];
+  try {
+    const response = await fetch('../out/tube/tube.json');
+    if (!response.ok) throw new Error(`out/tube/tube.json: ${response.status}. Run the two commands at the top of this page's script.`);
+    const { info } = await response.json();
+    for (const param of info.params) {
+      const label = document.createElement('label');
+      const input = Object.assign(document.createElement('input'), {
+        type: 'range', id: param.id, min: param.min, max: param.max, step: param.step ?? 'any',
+      });
+      const out = document.createElement('output');
+      label.append(`${param.id} `, input, ' ', out);
+      $('controls').append(label);
+      inputs.push(input);
+      input.addEventListener('input', () => {
+        figure.hold(param.id, Number(input.value));
+        out.textContent = Number(input.value).toFixed(param.step ? 0 : 2);
+      });
+      // A param the poster holds starts the figure there too.
+      if (param.id in info.poster.params) figure.hold(param.id, info.poster.params[param.id]);
+    }
+  } catch (e) {
+    $('error').textContent = e.message;
+  }
+  figure.addEventListener('load', () => {
+    for (const input of inputs) {
+      input.value = figure.value(input.id);
+      input.nextElementSibling.textContent = Number(input.value).toFixed(input.step === 'any' ? 2 : 0);
+    }
+  });
+
+  window.pencil = { figure };
+</script>
+</body>
+</html>

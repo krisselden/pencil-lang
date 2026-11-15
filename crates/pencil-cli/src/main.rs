@@ -18,6 +18,7 @@ use pencil_render::{FigurePipeline, Offscreen};
 const USAGE: &str = "\
 usage:
   pencil compile DOC.pen [--style FILE]... --out FIGURE.pfig
+  pencil build  DOC.pen [--style FILE]... [--t SECONDS] [--param NAME=VALUE]... [--size WIDTH] [--card] --out DIR
   pencil ir     DOC.pen
   pencil wgsl   DOC.pen [--style FILE]...
   pencil render DOC.pen [--style FILE]... [--t SECONDS] [--param NAME=VALUE]... [--size WIDTH] [--cpu] --out FRAME.png
@@ -27,6 +28,10 @@ usage:
 
 ir, wgsl, render, check and video take a compiled figure (the file `compile` writes, which has its
 sheets in it) in place of DOC.pen.
+
+build writes what a page needs for one figure under one set of sheets: the compiled figure, a
+poster at its design size and at twice it, and a .json that says what they are and what the figure
+is. The poster is the moment the document's `poster` names, unless --t or --param say another.
 ";
 
 /// The most any channel may differ from the CPU oracle, out of 255. The GPU is
@@ -44,6 +49,9 @@ struct Args {
     seconds: Option<f64>,
     font: Option<PathBuf>,
     cpu: bool,
+    /// Whether `--size` was given, for a command with a size of its own otherwise.
+    sized: bool,
+    card: bool,
     out: Option<PathBuf>,
 }
 
@@ -58,6 +66,8 @@ fn parse_args(args: &[String]) -> Result<Args, Box<dyn Error>> {
         seconds: None,
         font: None,
         cpu: false,
+        sized: false,
+        card: false,
         out: None,
     };
     let mut iter = args.iter();
@@ -73,7 +83,11 @@ fn parse_args(args: &[String]) -> Result<Args, Box<dyn Error>> {
                     .ok_or_else(|| format!("--param needs NAME=VALUE, found `{text}`"))?;
                 parsed.params.push((name.to_string(), number.parse()?));
             }
-            "--size" => parsed.size = value()?.parse()?,
+            "--size" => {
+                parsed.size = value()?.parse()?;
+                parsed.sized = true;
+            }
+            "--card" => parsed.card = true,
             "--fps" => parsed.fps = value()?.parse()?,
             "--seconds" => parsed.seconds = Some(value()?.parse()?),
             "--font" => parsed.font = Some(value()?.into()),
@@ -203,60 +217,186 @@ fn write_png(path: &Path, rgba: &[u8], width: u32, height: u32) -> Result<(), Bo
     Ok(())
 }
 
-fn render(args: &Args) -> Result<(), Box<dyn Error>> {
-    let composition = load(args)?;
-    let time = args.times.first().copied().unwrap_or(0.0);
-    let out = args.out.as_ref().ok_or("render needs --out")?;
-    let (width, height) = (args.size, height_for(&composition, args.size));
-    let inputs = Inputs {
-        time,
-        params: args.params.clone(),
-    };
+/// One frame of a figure, as RGBA, with its labels drawn, and its paper's color. `dpr` is the
+/// device pixels to a CSS pixel, as on a screen: a figure with no design width draws its `px` that
+/// many pixels wide.
+fn still(
+    composition: &Composition,
+    inputs: &Inputs,
+    width: u32,
+    dpr: f64,
+    args: &Args,
+    gpu: Option<&Offscreen>,
+) -> Result<(Vec<u8>, u32, [f64; 3]), Box<dyn Error>> {
+    let height = height_for(composition, width);
     // A figure with no text shouldn't need the machine to have these fonts.
-    let fonts = has_text(&composition)
+    let fonts = has_text(composition)
         .then(|| text::Fonts::load(args.font.as_deref()))
         .transpose()?;
     let widths: &dyn TextWidths = match &fonts {
         Some(fonts) => fonts,
         None => &Estimate,
     };
-    let mut frames = composition.prepare(&inputs, width, height, 1.0, None, widths)?;
+    let mut frames = composition.prepare(inputs, width, height, dpr, None, widths)?;
     let mut caches: Vec<_> = composition
         .panels
         .iter()
         .map(|_| Default::default())
         .collect();
-    spring_all(&composition, &mut frames, &inputs, &mut caches)?;
-    let mut rgba = if args.cpu {
-        if composition.panels.len() > 1 {
-            return Err("--cpu draws one figure, and this has panels".into());
+    spring_all(composition, &mut frames, inputs, &mut caches)?;
+    let mut rgba = match gpu {
+        None => {
+            if composition.panels.len() > 1 {
+                return Err("--cpu draws one figure, and this has panels".into());
+            }
+            Frame::new(&composition.panels[0].figure, inputs, width, height)?.rgba()?
         }
-        Frame::new(&composition.panels[0].figure, &inputs, width, height)?.rgba()?
-    } else {
-        let gpu = Offscreen::new()?;
-        println!("gpu: {}", gpu.adapter_name);
-        let mut pipelines = pipelines(&gpu, &composition)?;
-        gpu.render_panels(
-            &mut pipelines,
-            &on_canvas(&frames),
-            time as f32,
-            width,
-            height,
-        )?
+        Some(gpu) => {
+            let mut pipelines = pipelines(gpu, composition)?;
+            gpu.render_panels(
+                &mut pipelines,
+                &on_canvas(&frames),
+                inputs.time as f32,
+                width,
+                height,
+            )?
+        }
     };
+    let paper = frames[0].prepared.paper;
     if let Some(fonts) = &fonts {
         text::draw_labels(
             &mut rgba,
             width,
             height,
-            &composition.labels(&frames, &inputs, fonts)?,
-            frames[0].prepared.paper,
+            &composition.labels(&frames, inputs, fonts)?,
+            paper,
             fonts,
         );
     }
-    write_png(out, &rgba, width, height)?;
+    Ok((rgba, height, paper))
+}
+
+fn render(args: &Args) -> Result<(), Box<dyn Error>> {
+    let composition = load(args)?;
+    let time = args.times.first().copied().unwrap_or(0.0);
+    let out = args.out.as_ref().ok_or("render needs --out")?;
+    let inputs = Inputs {
+        time,
+        params: args.params.clone(),
+    };
+    let gpu = match args.cpu {
+        true => None,
+        false => {
+            let gpu = Offscreen::new()?;
+            println!("gpu: {}", gpu.adapter_name);
+            Some(gpu)
+        }
+    };
+    let (rgba, height, _) = still(&composition, &inputs, args.size, 1.0, args, gpu.as_ref())?;
+    write_png(out, &rgba, args.size, height)?;
     println!("wrote {}", out.display());
     Ok(())
+}
+
+/// A share card's size, as the sites that show one expect.
+const CARD: (u32, u32) = (1200, 630);
+/// How much of a card's width and height its figure may take.
+const CARD_FILL: f64 = 0.92;
+
+/// Writes what a page needs for one figure under one set of sheets, into a folder: the compiled
+/// figure, a poster at its design size and at twice it, optionally a card for sharing, and a
+/// `.json` that names them and holds what the page needs to know about the figure.
+fn build(args: &Args) -> Result<(), Box<dyn Error>> {
+    let dir = args.out.as_ref().ok_or("build needs --out, a folder")?;
+    let composition = load(args)?;
+    fs::create_dir_all(dir)?;
+    let stem = args
+        .doc
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .ok_or("the document has no name")?;
+    let write = |name: &str, bytes: &[u8]| -> Result<(), Box<dyn Error>> {
+        let path = dir.join(name);
+        fs::write(&path, bytes).map_err(|e| format!("{}: {e}", path.display()))?;
+        println!("wrote {} ({} bytes)", path.display(), bytes.len());
+        Ok(())
+    };
+
+    let bytes = composition.to_bytes()?;
+    let figure = format!("{stem}.pfig");
+    write(&figure, &bytes)?;
+
+    // The poster's moment is the document's, and a flag can say another.
+    let mut inputs = composition.poster();
+    if let Some(time) = args.times.first() {
+        inputs.time = *time;
+    }
+    for (name, value) in &args.params {
+        inputs.params.retain(|(held, _)| held != name);
+        inputs.params.push((name.clone(), *value));
+    }
+    // A figure with a design size is drawn at it. One without is as wide as it's told.
+    let designed = composition.panels.len() > 1
+        || composition.panels[0].figure.scene.viewport.design_width.is_some();
+    let width = match (designed, args.sized) {
+        (true, false) => composition.size[0].round() as u32,
+        _ => args.size,
+    };
+    let gpu = Offscreen::new()?;
+    let mut posters = Vec::new();
+    for (scale, name) in [(1, format!("{stem}.png")), (2, format!("{stem}@2x.png"))] {
+        let wide = width * scale;
+        let (rgba, height, _) = still(&composition, &inputs, wide, scale as f64, args, Some(&gpu))?;
+        write_png(&dir.join(&name), &rgba, wide, height)?;
+        println!("wrote {} ({wide}×{height})", dir.join(&name).display());
+        posters.push(serde_json::json!({ "src": name, "width": wide, "height": height, "scale": scale }));
+    }
+
+    let mut manifest = serde_json::json!({
+        "figure": figure,
+        // Which build of Pencil can read the figure, and what's in it, so a host can tell
+        // when it has to be made again and when a reader's copy is stale.
+        "build": format!("{:016x}", compiled::FINGERPRINT),
+        "hash": format!("{:016x}", fnv(&bytes)),
+        "poster": {
+            "time": inputs.time,
+            "params": inputs.params.iter()
+                .map(|(name, value)| (name.clone(), serde_json::Value::from(*value)))
+                .collect::<serde_json::Map<_, _>>(),
+            "images": posters,
+        },
+        "info": composition.info(),
+    });
+
+    if args.card {
+        // The figure as big as fits, in the middle of its own paper.
+        let room = (CARD.0 as f64 * CARD_FILL, CARD.1 as f64 * CARD_FILL);
+        let shape = composition.size[1] / composition.size[0];
+        let wide = (room.0.min(room.1 / shape).floor() as u32).max(2) / 2 * 2;
+        let scale = wide as f64 / width as f64;
+        let (rgba, height, paper) = still(&composition, &inputs, wide, scale, args, Some(&gpu))?;
+        let fill = paper.map(|c| (pencil_core::eval::srgb_encode(c) * 255.0).round() as u8);
+        let mut card = [fill[0], fill[1], fill[2], 255].repeat((CARD.0 * CARD.1) as usize);
+        let (left, top) = ((CARD.0 - wide) / 2, (CARD.1.saturating_sub(height)) / 2);
+        for row in 0..height.min(CARD.1) {
+            let from = (row * wide * 4) as usize;
+            let to = (((top + row) * CARD.0 + left) * 4) as usize;
+            card[to..to + (wide * 4) as usize].copy_from_slice(&rgba[from..from + (wide * 4) as usize]);
+        }
+        let name = format!("{stem}.card.png");
+        write_png(&dir.join(&name), &card, CARD.0, CARD.1)?;
+        println!("wrote {} ({}×{})", dir.join(&name).display(), CARD.0, CARD.1);
+        manifest["card"] = serde_json::json!({ "src": name, "width": CARD.0, "height": CARD.1 });
+    }
+
+    write(&format!("{stem}.json"), serde_json::to_string_pretty(&manifest)?.as_bytes())
+}
+
+/// FNV-1a, to name what a file holds.
+fn fnv(bytes: &[u8]) -> u64 {
+    bytes.iter().fold(0xcbf2_9ce4_8422_2325, |hash, byte| {
+        (hash ^ *byte as u64).wrapping_mul(0x0000_0100_0000_01b3)
+    })
 }
 
 fn video(args: &Args) -> Result<(), Box<dyn Error>> {
@@ -545,6 +685,7 @@ fn run() -> Result<(), Box<dyn Error>> {
             }
         }
         "compile" => compile(&parsed)?,
+        "build" => build(&parsed)?,
         "render" => render(&parsed)?,
         "check" => check(&parsed)?,
         "video" => video(&parsed)?,

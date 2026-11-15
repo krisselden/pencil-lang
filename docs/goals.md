@@ -104,8 +104,9 @@ GLSL shaders draw through one SVG system (`src/lib/plot.ts`), and nothing is mad
    - **Next, a view that turns:** pitch as well as yaw, bound like any param so a drag orbits, for `LevelCurve` and
      `NewtonDoyle` (the site's `wire3d.ts`, which has z up and turns about it). Their planes are translucent polygons, so
      what's drawn over what needs an answer there, and their surfaces are grid lines, which `curves` already draws.
-2. **The host: what a page and a build do with a figure.** Designed on 2026-11-14 ("The host" below). The compiled figure is
-   built, and nothing else of it. In short: a build makes a compiled figure, a poster and what the
+2. **The host: what a page and a build do with a figure.** Designed on 2026-11-14 ("The host" below). Built: the compiled
+   figure, `pencil build`, the `poster` statement, and the element's poster, `<source>` children and `compiled` attribute.
+   Not built: the Astro component and the element as a package. In short: a build makes a compiled figure, a poster and what the
    page needs to know about the figure, for each set of sheets a page can pick. The element shows the poster until its
    first frame and picks the set by media query. An Astro component does both for a page.
 3. **`pencil-lang.dev`:** the docs, the playground and the corpus as demos. An Astro site in `site/`, so it's the first user of
@@ -651,8 +652,28 @@ the M1 Pro, on WebGPU and `?gl`.
 
 ## The host
 
-What a page and a build do with a figure. Designed on 2026-11-14 for moving Kris's site to Pencil, and proposed, not agreed:
-the choices that are his are marked.
+What a page and a build do with a figure. Designed on 2026-11-14 for moving Kris's site to Pencil. Kris chose the build's side
+and the element's to be built first, with the poster's moment in the document and the build on his machine.
+
+**Built 2026-11-14,** and shown by `web/built.html`, which loads only what `pencil build` wrote for `corpus/013-tube` under its
+light and dark sheets:
+
+- **`pencil build DOC.pen --style … [--card] --out DIR`** writes the compiled figure, a poster at the design size and at twice
+  it, a 1200×630 card, and a `.json` with their names and what the page needs to know. The tube's figure is 13 KB.
+- **`poster { time: 3.5, roll: 0.6 }`** in the document (`language.md`, Posters). `010-mobius` has one, for the moment its
+  page set in script.
+- **The element shows its children until its first frame,** and keeps them where it can't run. With a poster it fetches
+  nothing until it's near the viewport: below the fold, the page fetched only the `.json`, then the WASM and the `.pfig` once
+  scrolled to, and never a `.pen` or a sheet. Its box was 640×524 before and after the swap.
+- **`<source media compiled>` children pick the figure,** and changing the theme swapped light for dark while it ran. A file
+  from another build is an error that says to compile again, and the figure on screen stays.
+- **A compiled figure carries the colors its sheets name,** so `figure.colors` works without sheets, and a page can have them
+  from the `.json` before any script runs.
+- **Not checked:** a phone, a browser without WebGPU, and print. **Known:** the poster's labels are drawn by the CLI's fonts
+  and the page's by the browser's, so text can shift a little when the figure takes over. The tube has one label and it
+  wasn't noticeable.
+
+What follows is the design as written, for what's left.
 
 **What a reader gets today.** `<pencil-figure src sheets>` fetches the document, each sheet and each used file, then the 5.2 MB
 of WASM, and starts the GPU when it's near the viewport. Until its first frame it's an empty box of the right shape, and it
@@ -707,8 +728,8 @@ above and writes the element with its sources and poster. In `astro dev` it hand
 reloads as it's edited. A function gives a post its card, in place of the site's dev-only capture. The site's tiers and
 captions wrap it, in the site.
 
-**Order.** The compiled figure (built). Then the poster and what the page needs to know, from the CLI. Then the
-element's children and `<source>`. Then the component, tried on `pencil-lang.dev` first. Then one post: the involute's has a
+**Order.** The compiled figure, the poster and what the page needs to know, and the element's children and `<source>` are
+built. Next the element as a package, and the component, tried on `pencil-lang.dev` first. Then one post: the involute's has a
 single figure, which is `corpus/003-unroll`.
 
 ## Distance to a curve

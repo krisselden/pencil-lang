@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use pencil_core::frame::{self, Inputs};
 use pencil_core::style::Font;
 use pencil_core::terms::{Estimate, TextWidths};
-use pencil_core::{Composition, Source, Sources, clock, eval};
+use pencil_core::{Composition, Source, Sources, css, eval};
 use pencil_render::{FigurePipeline, FrameInputs};
 use wasm_bindgen::prelude::*;
 use web_sys::HtmlCanvasElement;
@@ -319,29 +319,7 @@ impl Player {
         let Some((composition, _)) = &self.figure else {
             return "null".to_string();
         };
-        let figure = &composition.panels[0].figure;
-        serde_json::json!({
-            "size": composition.size,
-            "panels": composition.panels.iter().map(|p| serde_json::json!({
-                "id": p.id, "title": p.title, "formula": p.formula, "rect": p.rect,
-            })).collect::<Vec<_>>(),
-            "duration": figure.scene.duration,
-            "viewport": {
-                "x": figure.scene.viewport.x,
-                "y": figure.scene.viewport.y,
-                "width": figure.scene.viewport.design_width,
-                "height": figure.scene.viewport.design_height,
-            },
-            "beats": figure.scene.beats,
-            "beatLengths": figure.scene.beat_lengths,
-            "timeDriven": clock::time_driven(&figure.scene),
-            "usesTime": clock::composition_uses_time(composition),
-            "params": figure.scene.params.iter().map(|p| serde_json::json!({
-                "id": p.id, "min": p.range[0], "max": p.range[1], "step": p.step,
-                "choice": p.choice.as_ref().map(|c| serde_json::json!({ "of": c.of, "options": c.options })),
-            })).collect::<Vec<_>>(),
-        })
-        .to_string()
+        composition.info().to_string()
     }
 
     fn inputs(&self, time: f32) -> Inputs {
@@ -507,15 +485,6 @@ impl Player {
             .collect();
         Ok(serde_json::Value::Array(labels).to_string())
     }
-}
-
-fn css(c: [f64; 3]) -> String {
-    format!(
-        "rgb({} {} {})",
-        (eval::srgb_encode(c[0]) * 255.0).round(),
-        (eval::srgb_encode(c[1]) * 255.0).round(),
-        (eval::srgb_encode(c[2]) * 255.0).round(),
-    )
 }
 
 /// The colors these sheets name, as a JSON object of CSS colors, so a page can match the figure

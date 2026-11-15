@@ -240,6 +240,9 @@ pub struct Composition {
     pub panels: Vec<Panel>,
     /// The whole thing's design size, for its shape.
     pub size: [f64; 2],
+    /// The colors its sheets name, by name, so the page around it can match it. See
+    /// [`named_colors`].
+    pub colors: Vec<(String, [f64; 3])>,
 }
 
 /// Compiles a document with or without panels, against its stylesheets.
@@ -270,6 +273,7 @@ impl Sources {
                     rect: [0.0, 0.0, 1.0, 1.0],
                 }],
                 size,
+                colors: self.named_colors()?,
             });
         }
         self.panels()
@@ -381,6 +385,74 @@ impl Sources {
         Ok(Composition {
             panels,
             size: [total_w, total_h],
+            colors: self.named_colors()?,
+        })
+    }
+}
+
+/// A color as CSS writes it.
+pub fn css(c: [f64; 3]) -> String {
+    format!(
+        "rgb({} {} {})",
+        (eval::srgb_encode(c[0]) * 255.0).round(),
+        (eval::srgb_encode(c[1]) * 255.0).round(),
+        (eval::srgb_encode(c[2]) * 255.0).round(),
+    )
+}
+
+impl Composition {
+    /// The moment a still of the figure shows: the document's `poster`, and without one, the
+    /// end of its story if its beats have lengths, where everything has arrived, and the start
+    /// otherwise.
+    pub fn poster(&self) -> frame::Inputs {
+        let scene = &self.panels[0].figure.scene;
+        let end = match scene.beat_lengths.is_empty() {
+            true => 0.0,
+            false => scene.duration.unwrap_or(0.0),
+        };
+        match &scene.poster {
+            Some(poster) => frame::Inputs {
+                time: poster.time.unwrap_or(end),
+                params: poster.params.clone(),
+            },
+            None => frame::Inputs::at(end),
+        }
+    }
+
+    /// What a page needs to know about the figure to lay out around it, before it draws or
+    /// without it drawing at all: its shape, its clock, its params and beats, and its colors.
+    pub fn info(&self) -> serde_json::Value {
+        let figure = &self.panels[0].figure;
+        let poster = self.poster();
+        serde_json::json!({
+            "size": self.size,
+            "panels": self.panels.iter().map(|p| serde_json::json!({
+                "id": p.id, "title": p.title, "formula": p.formula, "rect": p.rect,
+            })).collect::<Vec<_>>(),
+            "duration": figure.scene.duration,
+            "viewport": {
+                "x": figure.scene.viewport.x,
+                "y": figure.scene.viewport.y,
+                "width": figure.scene.viewport.design_width,
+                "height": figure.scene.viewport.design_height,
+            },
+            "beats": figure.scene.beats,
+            "beatLengths": figure.scene.beat_lengths,
+            "timeDriven": clock::time_driven(&figure.scene),
+            "usesTime": clock::composition_uses_time(self),
+            "params": figure.scene.params.iter().map(|p| serde_json::json!({
+                "id": p.id, "min": p.range[0], "max": p.range[1], "step": p.step,
+                "choice": p.choice.as_ref().map(|c| serde_json::json!({ "of": c.of, "options": c.options })),
+            })).collect::<Vec<_>>(),
+            "poster": {
+                "time": poster.time,
+                "params": poster.params.iter()
+                    .map(|(name, value)| (name.clone(), serde_json::Value::from(*value)))
+                    .collect::<serde_json::Map<_, _>>(),
+            },
+            "colors": self.colors.iter()
+                .map(|(name, color)| (name.clone(), serde_json::Value::from(css(*color))))
+                .collect::<serde_json::Map<_, _>>(),
         })
     }
 }

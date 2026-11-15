@@ -2142,6 +2142,7 @@ fn needs(item: &Item) -> Vec<String> {
         }
         Item::Choice { options, .. } => all(&mut options.iter().map(|(e, _)| e), &mut out),
         Item::Duration(e) | Item::Pause(e) => refers(e, &mut out),
+        Item::Poster { values, .. } => all(&mut values.iter().map(|(_, e)| e), &mut out),
         Item::Curve { form, .. } => match form {
             CurveSyntax::Implicit { lhs, rhs, .. } => all(&mut [lhs, rhs].into_iter(), &mut out),
             CurveSyntax::Sdf { field, .. } => refers(field, &mut out),
@@ -2608,7 +2609,10 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
         spots: Vec::new(),
         expressions: Vec::new(),
         systems: Vec::new(),
+        poster: None,
     };
+    // A poster's values, and its line, checked against the params once they're all known.
+    let mut poster_line = 0;
     let none = Locals::new();
     let mut ids: HashSet<String> = HashSet::new();
     let mut claim = |name: &str, line: usize| -> Result<(), Error> {
@@ -2890,6 +2894,21 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
                 lowerer.bind(&mut scene, name, val);
             }
             Item::Duration(e) => scene.duration = Some(constant(e, "`duration`")?),
+            Item::Poster { values, line } => {
+                if scene.poster.is_some() {
+                    return Err(Error::at(*line, 1, "a figure has one `poster`"));
+                }
+                let mut poster = crate::ir::Poster::default();
+                for (name, e) in values {
+                    let value = constant(e, "a poster's value").map_err(at_line(*line))?;
+                    match name.as_str() {
+                        "time" => poster.time = Some(value),
+                        _ => poster.params.push((name.clone(), value)),
+                    }
+                }
+                scene.poster = Some(poster);
+                poster_line = *line;
+            }
             Item::Curve { name, form, line } => {
                 claim(name, *line)?;
                 let fail = at_line(*line);
@@ -3565,6 +3584,22 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
         last_marks = marks_before..scene.marks.len();
     }
 
+    if let Some(poster) = &scene.poster {
+        for (name, _) in &poster.params {
+            if !scene.params.iter().any(|p| p.id == *name) {
+                let known = scene.params.iter().map(|p| p.id.as_str());
+                let hint = match crate::suggest::suggestion(name, known) {
+                    Some(hint) => format!(": did you mean {hint}?"),
+                    None => String::new(),
+                };
+                return Err(Error::at(
+                    poster_line,
+                    1,
+                    format!("a poster sets `time` and params, and `{name}` isn't one{hint}"),
+                ));
+            }
+        }
+    }
     for name in fit_names {
         let curve = scene.marks.iter().find_map(|m| match &m.form {
             Form::Parametric(arc) if m.id == name => Some(arc.clone()),
@@ -5040,6 +5075,30 @@ mod tests {
         .unwrap();
         let prepared = crate::frame::prepare(&figure, &crate::frame::Inputs::at(0.0), 300, 100, 1.0).unwrap();
         assert_eq!(prepared.strokes[0].len() / crate::stroke::FLOATS_PER_SEGMENT, 2);
+    }
+
+    #[test]
+    fn a_figure_names_its_poster() {
+        let s = scene("param roll = 1 in 0..1\nposter { time: 3.5, roll: 0.6 }").unwrap();
+        let poster = s.poster.clone().unwrap();
+        assert_eq!((poster.time, &poster.params[..]), (Some(3.5), &[("roll".to_string(), 0.6)][..]));
+        assert_eq!(
+            s.to_json()["poster"].to_string(),
+            r#"{"params":[["roll",0.6]],"time":3.5}"#
+        );
+        // It can come before the param it holds, and take any constant.
+        let s = scene("poster { roll: 1 / 4 }\nparam roll = 1 in 0..1").unwrap();
+        assert_eq!(s.poster.unwrap().params, [("roll".to_string(), 0.25)]);
+        // A figure that names none says nothing of one, so its IR is as it was.
+        let plain = scene("param roll = 1 in 0..1").unwrap();
+        assert!(plain.poster.is_none() && plain.to_json().get("poster").is_none());
+
+        let err = scene("param roll = 1 in 0..1\nposter { rol: 0.6 }").unwrap_err();
+        assert_eq!((err.line, err.message.contains("did you mean `roll`")), (2, true), "{}", err.message);
+        let err = scene("param roll = 1 in 0..1\nposter { roll: time }").unwrap_err();
+        assert_eq!(err.line, 2, "{}", err.message);
+        let err = scene("poster { time: 1 }\nposter { time: 2 }").unwrap_err();
+        assert!(err.message.contains("one `poster`"), "{}", err.message);
     }
 
     #[test]

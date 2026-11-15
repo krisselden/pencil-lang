@@ -23,11 +23,12 @@ UPDATE_GOLDENS=1 cargo test -p pencil-core --test corpus   # after an intended I
 cargo run -p pencil-cli -- check corpus/001-circle/circle.pen --style corpus/001-circle/circle.style
 cargo run -p pencil-cli -- render corpus/001-circle/circle.pen --style corpus/001-circle/bands.style --t 1.25 --out out/frame.png
 cargo run -p pencil-cli -- compile corpus/001-circle/circle.pen --style corpus/001-circle/circle.style --out out/circle.pfig   # one file a page loads without parsing; only this build can read it
+cargo run --release -p pencil-cli -- build corpus/013-tube/tube.pen --style corpus/theme.style --style corpus/013-tube/plain.style --card --out out/tube   # what a page needs: the compiled figure, its poster, a card and a .json; /web/built.html loads out/tube and out/tube-dark (the same with --style corpus/dark.style)
 cargo run -p pencil-cli -- render out/circle.pfig --t 1.25 --out out/frame.png   # render, check, video, ir and wgsl take a compiled file too
 cargo run -p pencil-cli -- latex formulas.tex   # LaTeX from Desmos or MathLive, a formula per line, as Pencil text
 scripts/build-web.sh
 cargo run --release -p pencil-cli -- video corpus/003-unroll/unroll.pen --style corpus/003-unroll/blog.style --size 1280 --out out/unroll.mp4
-scripts/serve.py              # port 8741, no caching; then open /web/playground.html, /web/unroll.html, /web/bounds.html, /web/tube.html, /web/strokes.html, /web/text.html or /web/ast.html (add ?gl for WebGL2)
+scripts/serve.py              # port 8741, no caching; then open /web/playground.html, /web/unroll.html, /web/bounds.html, /web/tube.html, /web/built.html, /web/strokes.html, /web/text.html or /web/ast.html (add ?gl for WebGL2)
 cd site && pnpm install && pnpm build   # the pencil-lang.dev site into site/dist, after scripts/build-web.sh; pnpm dev serves it on 4321
 ```
 

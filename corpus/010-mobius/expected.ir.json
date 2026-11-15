@@ -172,6 +172,10 @@
       }
     ],
     "places": [],
+    "poster": {
+      "params": [],
+      "time": 3.5
+    },
     "systems": [],
     "viewport": {
       "fit": 0,

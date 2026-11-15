@@ -391,6 +391,15 @@ pub struct Scene {
     pub spots: Vec<Spot>,
     pub expressions: Vec<Expression>,
     pub systems: Vec<System>,
+    /// The moment a still of the figure shows, if the document says.
+    pub poster: Option<Poster>,
+}
+
+/// A moment of a figure: a time, and params held at values, as a reader could set them.
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct Poster {
+    pub time: Option<f64>,
+    pub params: Vec<(String, f64)>,
 }
 
 fn pair(p: &[Expr; 2]) -> Value {
@@ -521,7 +530,7 @@ impl Scene {
             }
             mark
         };
-        json!({
+        let mut scene = json!({
             "doc": self.name,
             "duration": self.duration,
             "beats": self.beats,
@@ -573,6 +582,14 @@ impl Scene {
                     + self.viewport.fit_families.len(),
                 "pad": self.viewport.pad,
             },
-        })
+        });
+        // Only a figure that names its poster says so, so the others' IR is as it was.
+        if let Some(poster) = &self.poster {
+            scene["poster"] = json!({
+                "time": poster.time,
+                "params": poster.params.iter().map(|(name, value)| json!([name, value])).collect::<Vec<_>>(),
+            });
+        }
+        scene
     }
 }

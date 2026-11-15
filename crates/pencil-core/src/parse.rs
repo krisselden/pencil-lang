@@ -78,6 +78,11 @@ pub enum Item {
         line: usize,
     },
     Duration(Expr),
+    /// `poster { time: 3.5, roll: 0.6 }`: the moment a still of the figure shows.
+    Poster {
+        values: Vec<(String, Expr)>,
+        line: usize,
+    },
     Curve {
         name: String,
         form: CurveSyntax,
@@ -716,6 +721,19 @@ impl Parser {
                 items.push(Item::Bind { name, expr, line });
             }
             "duration" => items.push(Item::Duration(self.expr()?)),
+            "poster" => {
+                self.expect("{")?;
+                let mut values = Vec::new();
+                while !self.eat("}") {
+                    let name = self.ident("`time` or a param")?;
+                    self.expect(":")?;
+                    values.push((name, self.expr()?));
+                    if !self.eat(",") {
+                        self.eat(";");
+                    }
+                }
+                items.push(Item::Poster { values, line });
+            }
             "curve" => items.push(self.curve(line)?),
             "segment" | "path" | "polygon" => {
                 let name = self.ident("a name")?;
