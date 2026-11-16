@@ -3,7 +3,9 @@ import { readFile } from 'node:fs/promises';
 import { pack } from '../src/pack.js';
 
 // The playground, web/playground.html, served from the repo root: its two menus, a figure in a
-// link, a figure of the reader's own from files, adding and removing files, and Save.
+// link, a figure of the reader's own from files, adding and removing files, and Save. Then its
+// bars: one line of tabs that scrolls, and on a phone one small bar with the rest in two menus,
+// over the figure and then the editor, all on screen.
 
 /** The playground's address, with `?gl` and `?min` as the fixture pages add them. */
 function addressOf(query = '', hash = '') {
@@ -23,7 +25,7 @@ async function openPlayground(page, query = '', hash = '') {
 const settled = (page) => expect.poll(() => page.evaluate(() => !!window.pencil), { timeout: 30_000 }).toBe(true);
 
 /** Waits until the figure has compiled what's open and drawn it. It only draws while it's on
- * screen, which on a phone is below the editor. */
+ * screen. */
 async function drawnHere(page) {
   await page.locator('#figure').scrollIntoViewIfNeeded();
   await expect(page.locator('#status')).toContainText('compiled', { timeout: 30_000 });
@@ -34,6 +36,19 @@ const tabNames = (page) => page.locator('#tabs .pick').evaluateAll((picks) => pi
 const activeTab = (page) => page.locator('#tabs .tab.active .pick');
 const openFiles = (page) => page.evaluate(() => Object.fromEntries(window.pencil.files().map((f) => [f.path, f.text])));
 const colors = (page) => page.evaluate(() => window.pencil.figure.colors);
+
+/** Presses one of the bars' buttons. A narrow window keeps them in a menu, which is opened first. */
+async function press(within, id) {
+  const button = within.locator(`#${id}`);
+  if (!(await button.isVisible())) {
+    const menu = await button.evaluate((b) => b.closest('.menu').id);
+    await within.locator(`[popovertarget="${menu}"]`).click();
+  }
+  await button.click();
+}
+
+/** Whether the window is narrow enough that the bars' buttons are in menus. */
+const inMenus = (page) => page.viewportSize().width <= 800;
 
 /** Types at the end of what's in the editor. */
 async function typeAtEnd(page, text) {
@@ -132,7 +147,7 @@ test.describe('the playground', () => {
     if (browserName === 'chromium') await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
     await openPlayground(page, 'figure=circle');
     await typeAtEnd(page, '\n// shared\n');
-    await page.getByRole('button', { name: 'Share' }).click();
+    await press(page, 'share');
     await expect.poll(() => new URL(page.url()).hash).toMatch(/^#pen=/);
     await expect(page.locator('#said')).toHaveText(/Link copied|address bar/);
     const shared = await openFiles(page);
@@ -170,7 +185,7 @@ test.describe('the playground', () => {
     await drawnHere(page);
     expect((await colors(page)).ring_red).toBeTruthy();
 
-    await page.getByRole('button', { name: 'Revert', exact: true }).click();
+    await press(page, 'revert');
     await expect(page.locator('#source')).not.toHaveValue(/\/\/ changed/);
     await expect(page.locator('#source')).toHaveValue(/let r = 1\n/);
     await expect(page.locator('#tabs .tab.active')).not.toHaveClass(/edited/);
@@ -251,7 +266,7 @@ test.describe('the playground', () => {
     await openPlayground(page, 'figure=circle-bands');
     await page.locator('#tabs .pick', { hasText: 'bands.style' }).click();
     await typeAtEnd(page, '// saved\n');
-    const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Save' }).click()]);
+    const [download] = await Promise.all([page.waitForEvent('download'), press(page, 'save')]);
     expect(download.suggestedFilename()).toBe('bands.style');
     const text = await readFile(await download.path(), 'utf8');
     expect(text).toBe(await page.locator('#source').inputValue());
@@ -265,7 +280,9 @@ test.describe('the playground', () => {
     await page.locator('#add-name').press('Enter');
     await expect(page.locator('#figure-pick')).toHaveValue('yours');
 
-    await page.getByRole('button', { name: 'Open…' }).focus();
+    // Open is in the bar, or on a phone in the bar's menu, whose button has focus once it's chosen.
+    const opener = inMenus(page) ? page.locator('#figure-more') : page.getByRole('button', { name: 'Open…' });
+    await opener.focus();
     const other = [{ name: 'other.pen', mimeType: 'text/plain', buffer: Buffer.from(DOC.replace('use "parts/r.pen"\n', 'let r = 1\n')) }];
     await page.locator('#open-files').setInputFiles(other);
     const dialog = page.locator('#replace-dialog');
@@ -273,7 +290,7 @@ test.describe('the playground', () => {
     await expect(dialog.getByRole('button', { name: 'Keep mine' })).toBeFocused();
     await page.keyboard.press('Escape');
     await expect(dialog).toBeHidden();
-    await expect(page.getByRole('button', { name: 'Open…' })).toBeFocused();
+    await expect(opener).toBeFocused();
     expect(await tabNames(page)).toEqual(['circle.pen', 'circle.style', 'mine.style']);
 
     await page.locator('#open-files').setInputFiles(other);
@@ -283,7 +300,7 @@ test.describe('the playground', () => {
     await expect(page.locator('#figure-pick option:checked')).toHaveText('Yours: other');
 
     // Once shared, it can be replaced without asking.
-    await page.getByRole('button', { name: 'Share' }).click();
+    await press(page, 'share');
     await expect.poll(() => new URL(page.url()).hash).toMatch(/^#pen=/);
     await page.locator('#open-files').setInputFiles([{ ...other[0], name: 'third.pen' }]);
     await expect.poll(() => tabNames(page)).toEqual(['third.pen']);
@@ -368,7 +385,7 @@ test.describe('the playground in a frame', () => {
     await frame.locator('#source').focus();
     await frame.locator('#source').evaluate((t) => t.setSelectionRange(t.value.length, t.value.length));
     await page.keyboard.type('// from a frame\n');
-    await frame.getByRole('button', { name: 'Share' }).click();
+    await press(frame, 'share');
     await expect.poll(() => new URL(page.url()).hash).toMatch(/^#pen=/);
     expect(new URL(page.url()).pathname).toBe('/packages/figure/tests/pages/framed.html');
     await expect(frame.locator('#said')).toHaveText(/Link copied|address bar/);
@@ -385,7 +402,151 @@ test.describe('the playground in a frame', () => {
   });
 });
 
-test.describe('the playground\'s header', () => {
+test.describe('the playground\'s bars', () => {
+  test('the tabs stay on one line, and a file that comes into view brings its tab', async ({ page }) => {
+    await openPlayground(page, 'figure=explainer');
+    await expect.poll(() => tabNames(page)).toContain('caption.style');
+    const tabs = page.locator('#tabs');
+    const line = () => tabs.evaluate((list) => ({
+      tops: new Set([...list.children].map((tab) => Math.round(tab.getBoundingClientRect().bottom))).size,
+      past: list.scrollWidth - list.clientWidth,
+      at: list.scrollLeft,
+      cut: [list.classList.contains('cut-left'), list.classList.contains('cut-right')],
+    }));
+    const first = await line();
+    expect(first.tops).toBe(1);
+    expect(first.past).toBeGreaterThan(0);
+    expect(first.cut).toEqual([false, true]);
+    // The button that adds a file stays beside them, in view.
+    await expect(page.locator('#add')).toBeInViewport();
+
+    // End moves to the last tab, and showing it scrolls it in.
+    await page.locator('#tabs .pick').first().focus();
+    await page.keyboard.press('End');
+    await page.keyboard.press('Enter');
+    await expect(activeTab(page)).toHaveText(/caption\.style/);
+    const within = () => tabs.evaluate((list) => {
+      const tab = list.querySelector('.tab.active').getBoundingClientRect();
+      const box = list.getBoundingClientRect();
+      return tab.left >= box.left - 1 && tab.right <= box.right + 1;
+    });
+    await expect.poll(within).toBe(true);
+    await expect.poll(async () => (await line()).cut).toEqual([true, false]);
+
+    // Typing redraws the tabs, and leaves the line where it is.
+    const before = (await line()).at;
+    await typeAtEnd(page, '\n');
+    await expect(page.locator('#tabs .tab.active')).toHaveClass(/edited/);
+    expect((await line()).at).toBe(before);
+  });
+
+  test('a narrow window has one small bar, with the rest in two menus worked by the keyboard', async ({ page }) => {
+    test.skip(!inMenus(page), 'a wide window shows the buttons in place');
+    await openPlayground(page, 'figure=explainer');
+    const height = (selector) => page.locator(selector).evaluate((el) => el.getBoundingClientRect().height);
+    expect(await height('header')).toBeLessThan(48);
+    expect(await height('.files')).toBeLessThan(40);
+    // The figure is right under the bar and the editor under the figure, both on screen, and the
+    // page has nothing to scroll.
+    const laid = await page.evaluate(() => {
+      const box = (selector) => document.querySelector(selector).getBoundingClientRect();
+      const [figure, code] = [box('#figure'), box('.code')];
+      return {
+        figureTop: figure.top,
+        figureShown: figure.height > 100 && figure.bottom <= innerHeight,
+        under: code.top >= figure.bottom,
+        codeShown: code.height >= 100 && code.bottom <= innerHeight,
+        scrolls: document.documentElement.scrollHeight - innerHeight,
+        // And they're in the page in that order, for a screen reader and for Tab.
+        inOrder: !!(document.querySelector('.view').compareDocumentPosition(document.querySelector('.editor')) & Node.DOCUMENT_POSITION_FOLLOWING),
+      };
+    });
+    expect(laid.figureTop).toBeLessThan(60);
+    expect(laid).toMatchObject({ figureShown: true, under: true, codeShown: true, inOrder: true });
+    expect(laid.scrolls).toBeLessThanOrEqual(0);
+    await expect(page.locator('#share')).toBeHidden();
+    await expect(page.locator('#copy')).toBeHidden();
+
+    // The bar's menu opens under its button with focus on its first choice; arrows move, Esc closes.
+    const more = page.locator('#figure-more');
+    await more.click();
+    await expect(page.locator('#figure-menu')).toBeVisible();
+    await expect(page.locator('#open')).toBeFocused();
+    const under = await page.evaluate(() => {
+      const menu = document.getElementById('figure-menu').getBoundingClientRect();
+      const button = document.getElementById('figure-more').getBoundingClientRect();
+      return menu.top >= button.bottom && menu.right <= innerWidth && menu.left >= 0;
+    });
+    expect(under).toBe(true);
+    await page.keyboard.press('ArrowDown');
+    await expect(page.locator('#share')).toBeFocused();
+    await page.keyboard.press('ArrowUp');
+    await expect(page.locator('#open')).toBeFocused();
+    await page.keyboard.press('End');
+    await expect(page.locator('#share')).toBeFocused();
+    await expect(page.locator('#figure-menu .hint')).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#figure-menu')).toBeHidden();
+    await expect(more).toBeFocused();
+
+    // The file's menu names the file, and a choice closes it and says what it did.
+    await typeAtEnd(page, '// mine\n');
+    await page.locator('#file-more').click();
+    await expect(page.locator('#path')).toContainText('lab/explainer/limacon.pen');
+    await expect(page.locator('#copy')).toBeFocused();
+    await page.locator('#revert').click();
+    await expect(page.locator('#file-menu')).toBeHidden();
+    await expect(page.locator('#source')).not.toHaveValue(/\/\/ mine/);
+  });
+
+  test('a window made narrow puts the editor under the figure, and keeps the caret and the figure', async ({ page, isMobile }) => {
+    test.skip(isMobile, 'a phone starts narrow');
+    await openPlayground(page, 'figure=circle');
+    await drawnHere(page);
+    const order = () => page.evaluate(() => [...document.querySelector('.app').children].map((el) => el.className.split(' ')[0] || el.tagName.toLowerCase()));
+    expect(await order()).toEqual(['header', 'editor', 'view']);
+    const source = page.locator('#source');
+    await source.focus();
+    await source.evaluate((t) => t.setSelectionRange(12, 20));
+    await page.evaluate(() => {
+      window.loads = 0;
+      document.getElementById('figure').addEventListener('load', () => (window.loads += 1));
+    });
+
+    await page.setViewportSize({ width: 375, height: 812 });
+    await expect.poll(order).toEqual(['header', 'view', 'editor']);
+    await expect(source).toBeFocused();
+    expect(await source.evaluate((t) => [t.selectionStart, t.selectionEnd])).toEqual([12, 20]);
+    await expect(page.locator('#figure-more')).toBeVisible();
+
+    await page.setViewportSize({ width: 1633, height: 919 });
+    await expect.poll(order).toEqual(['header', 'editor', 'view']);
+    await expect(source).toBeFocused();
+    expect(await source.evaluate((t) => [t.selectionStart, t.selectionEnd])).toEqual([12, 20]);
+    // The figure wasn't moved, so it didn't start again.
+    expect(await page.evaluate(() => window.loads)).toBe(0);
+  });
+
+  test('framed, it offers to open alone at the address it has', async ({ page }) => {
+    const query = addressOf('figure=circle').split('?')[1];
+    await page.goto(`/packages/figure/tests/pages/framed.html?${query}`);
+    const frame = page.frameLocator('#playground');
+    const inner = () => page.frame({ url: /playground\.html/ });
+    await expect.poll(() => inner()?.evaluate(() => !!window.pencil).catch(() => false), { timeout: 30_000 }).toBe(true);
+    await frame.locator('#style-pick').selectOption('circle-bands');
+    await expect.poll(() => new URL(inner().url()).searchParams.get('figure')).toBe('circle-bands');
+    if (inMenus(page)) await frame.locator('#figure-more').click();
+    const alone = frame.locator('#alone');
+    await expect(alone).toBeVisible();
+    await alone.click();
+    await page.waitForURL(/\/web\/playground\.html/);
+    expect(new URL(page.url()).searchParams.get('figure')).toBe('circle-bands');
+    await settled(page);
+    // Alone, there's nothing to leave.
+    await expect(page.locator('#alone')).toBeHidden();
+  });
+
+
   test('nothing runs off the side, and the Style menu doesn\'t move the rest', async ({ page }) => {
     await openPlayground(page, 'figure=circle');
     const overflow = () => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);

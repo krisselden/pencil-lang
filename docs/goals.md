@@ -594,6 +594,36 @@ where a reader of a page goes to see how a figure is written.
   allow the fetch (Kris: a Cloudflare Worker can send that header). **Not checked:** a real clipboard, a real drag and drop,
   and a screen reader. 197 Playwright tests pass, on the source files and on the minified bundle.
 
+**Its bars on a phone, 2026-11-15.** Kris, of a portrait window: "Almost half the height when portrait is menus and
+navigation", and of Desmos on his phone: "It is mostly the viewport and expression list. One small bar at top." At 375×812
+on the site the editor started 390 px down, under 13 rows: the site's header on two, a note, the playground's header on
+four, the tabs on four and the file's buttons, and the figure was a scroll below it. Now the site's header and one bar
+take 75 px, and the figure and the editor have the rest, both on screen.
+
+- **Tabs are one line** at every width. The line scrolls when there are more than fit and fades at an end that has more
+  past it. A file that comes into view brings its tab, and typing leaves the line where the reader put it. The button that
+  adds a file stays beside the line.
+- **A narrow window has one bar:** the Figure and Style menus and a button. Open, Share and the help are behind that
+  button, and what's done to the file in view (Copy, Save, Revert, Revert all, under its path) is behind one at the end of
+  the tabs. Each is a popover that a wide window shows in place, so there's one of each button. A menu opens under its
+  button with focus on its first choice, arrows move through it, a choice or Esc closes it, and focus goes back to the
+  button. At 480 px and under the two menus drop the words Figure and Style, which a screen reader still gets.
+- **What a button did** is said for a few seconds over the bottom corner at every width, since the row it was in is now
+  inside a menu on a phone.
+- **The site's page adds one line.** Its header keeps to one on a phone, and the note under it is gone: framed, the
+  playground offers "Open on its own" itself, at the address it has.
+- **The figure is over the editor, and the page doesn't scroll.** The figure's part takes the height it needs, to 60% of
+  the window, with the figure itself kept to 38% of the window's height, and the editor has the rest, 9rem at least. A
+  part that needs more scrolls within itself. The editor is moved in the page to follow the figure, so a screen reader and
+  Tab meet them in the order they're seen, and it keeps its caret and focus when a window crosses 800 px. The figure isn't
+  moved, so it doesn't start again. Measured for all 18 examples at 375×812, 375×667 and 412×839: the page never scrolls,
+  the editor's text has 172 to 530 px, and the figure's part scrolls within itself only for `bounds` and `mobius`, which
+  have the most controls. The line of what a figure was drawn with keeps to one line there, which scrolls.
+- **Not handled:** a phone's keyboard. It covers the editor's half, and what the page does then is the browser's choice.
+  Not tried on a phone. **Seen:** `007-lattice` is 304 px wide at 375×812 where it was 359, and its panel titles are cut
+  at the top there. Its labels are an em of page text whatever the figure's size. Whether they were cut at 359 wasn't
+  checked.
+
 - **Errors now say which file they're in.** A sheet's error came back with the sheet's line and no file, and `pencil` printed it
   after the `.pen`'s path. `Error` has a `sheet` now, so the page marks the right tab, line and column, and the CLI names the
   sheet. A broken edit leaves the last figure that compiled on screen. An edit that compiles but can't draw goes back to the

@@ -241,7 +241,7 @@ function button(className, text, label) {
   return b;
 }
 
-/** A tab per file, then one to add a file. Focus stays on the same control when they're redrawn. */
+/** A tab per file. Focus stays on the same control when they're redrawn. */
 function paintTabs() {
   const list = $('tabs');
   const focused = list.contains(document.activeElement) ? document.activeElement : null;
@@ -278,22 +278,34 @@ function paintTabs() {
     }
     return tab;
   });
-  const add = document.createElement('li');
-  const plus = button('add', '+', 'Add a file');
-  plus.id = 'add';
-  plus.title = 'Add a .style or .pen file';
-  plus.addEventListener('click', askToAdd);
-  add.append(plus);
-  list.replaceChildren(...items, add);
-  if (again) {
-    const same = [...list.querySelectorAll('button')].find((b) => b.dataset.path === again[0] && b.className === again[1]);
-    (same ?? (again[1] === 'add' ? plus : null))?.focus();
-  }
+  const scrolled = list.scrollLeft;
+  list.replaceChildren(...items);
+  list.scrollLeft = scrolled;
+  if (again) [...list.querySelectorAll('button')].find((b) => b.dataset.path === again[0] && b.className === again[1])?.focus();
   const file = files[active];
+  // The tabs are one line that scrolls. A file that comes into view brings its tab with it, and
+  // otherwise the line stays where the reader left it.
+  if (list.dataset.shown !== (file?.path ?? '')) {
+    list.dataset.shown = file?.path ?? '';
+    const tab = list.querySelector('.tab.active');
+    if (tab && tab.offsetLeft < list.scrollLeft) list.scrollLeft = tab.offsetLeft - 24;
+    else if (tab && tab.offsetLeft + tab.offsetWidth > list.scrollLeft + list.clientWidth) list.scrollLeft = tab.offsetLeft + tab.offsetWidth - list.clientWidth + 24;
+  }
+  tabEdges();
   $('path').textContent = file ? `${file.path}${file.text !== file.disk ? ' (edited here, not saved to disk)' : ''}` : '';
   $('revert').disabled = !file || file.text === file.disk;
   $('revert-all').disabled = !files.some((f) => f.text !== f.disk);
 }
+
+/** Which ends of the tabs have more past them, for the fade there. */
+function tabEdges() {
+  const list = $('tabs');
+  list.classList.toggle('cut-left', list.scrollLeft > 1);
+  list.classList.toggle('cut-right', list.scrollLeft + list.clientWidth < list.scrollWidth - 1);
+}
+$('tabs').addEventListener('scroll', tabEdges, { passive: true });
+new ResizeObserver(tabEdges).observe($('tabs'));
+$('add').addEventListener('click', () => askToAdd());
 
 /** Left and right, Home and End, move between the tabs; Enter or Space shows one. */
 function moveAmongTabs(e) {
@@ -564,8 +576,8 @@ function paintErrors() {
 /** Builds the controls for what's loaded. A figure that never reads time gets no clock. */
 function paintControls() {
   const { size, params: declared, beats = [], usesTime } = info();
-  // A tall figure fits the window's height rather than running off it.
-  figure.style.maxWidth = `calc((100vh - 220px) * ${size[0] / size[1]})`;
+  // Its shape, which the page's styles keep it to the window's height with.
+  figure.style.setProperty('--shape', String(size[0] / size[1]));
   $('clock').hidden = !usesTime;
   $('time').max = figure.duration;
   $('beat-row').hidden = beats.length === 0;
@@ -1079,6 +1091,85 @@ async function share() {
   }
 }
 $('share').addEventListener('click', share);
+
+// ---- What a narrow window keeps behind a button ----
+
+// The buttons of the top bar and of the file in view are each a popover, which a wide window
+// shows in place. Opened, one sits under its button, and is worked like a menu: the arrows move
+// through it, a choice closes it, and Esc or a touch outside closes it as any popover.
+const isOpen = (menu) => {
+  try {
+    return menu.matches(':popover-open');
+  } catch {
+    return false;
+  }
+};
+for (const menu of document.querySelectorAll('.menu')) {
+  const opener = document.querySelector(`[popovertarget="${menu.id}"]`);
+  const items = () => [...menu.querySelectorAll('button:not(:disabled), a[href]')].filter((item) => !item.hidden);
+  menu.addEventListener('beforetoggle', (e) => {
+    if (e.newState !== 'open') {
+      // Focus goes back to the button that opened it. A browser does that only when the button
+      // had focus, and Safari's buttons don't take it from a click.
+      if (menu.contains(document.activeElement)) opener.focus();
+      return;
+    }
+    const at = opener.getBoundingClientRect();
+    menu.style.top = `${at.bottom + 4}px`;
+    menu.style.right = `${Math.max(8, innerWidth - at.right)}px`;
+  });
+  menu.addEventListener('toggle', (e) => {
+    if (e.newState === 'open') items()[0]?.focus();
+  });
+  menu.addEventListener('click', (e) => {
+    if (e.target.closest('button, a') && isOpen(menu)) menu.hidePopover();
+  });
+  menu.addEventListener('keydown', (e) => {
+    if (!isOpen(menu) || e.metaKey || e.ctrlKey || e.altKey) return;
+    const all = items();
+    const at = all.indexOf(document.activeElement);
+    const to = { ArrowUp: at - 1, ArrowDown: at + 1, Home: 0, End: all.length - 1 }[e.key];
+    if (to === undefined || !all.length) return;
+    e.preventDefault();
+    all[(to + all.length) % all.length].focus();
+  });
+}
+// A narrow window has the figure over the editor, and a wide one the editor beside it and first.
+// The styles place them, and this puts them in the page in the order they're seen, so they're
+// read and reached with Tab in that order. The editor is the one moved, since moving the figure
+// would start it again, and it keeps its place, its selection and the focus.
+const narrow = matchMedia('(max-width: 800px)');
+function arrange() {
+  const app = document.querySelector('.app');
+  const editor = app.querySelector('.editor');
+  const view = app.querySelector('.view');
+  const before = narrow.matches ? null : view;
+  if (editor.nextElementSibling === before) return;
+  const focused = editor.contains(document.activeElement) ? document.activeElement : null;
+  const kept = [textarea.scrollTop, textarea.scrollLeft, textarea.selectionStart, textarea.selectionEnd, textarea.selectionDirection];
+  const tabsAt = $('tabs').scrollLeft;
+  app.insertBefore(editor, before);
+  textarea.setSelectionRange(kept[2], kept[3], kept[4]);
+  textarea.scrollTop = kept[0];
+  textarea.scrollLeft = kept[1];
+  $('tabs').scrollLeft = tabsAt;
+  focused?.focus({ preventScroll: true });
+}
+arrange();
+narrow.addEventListener('change', () => {
+  // A window that's widened shows the menus' buttons in place, so nothing is left open over it.
+  for (const menu of document.querySelectorAll('.menu')) if (isOpen(menu)) menu.hidePopover();
+  arrange();
+});
+
+// Framed by another page, such as the site's, it offers itself alone, at the address it has now.
+if (window.top !== window) {
+  const alone = $('alone');
+  const here = () => (alone.href = location.href);
+  alone.hidden = false;
+  here();
+  for (const event of ['pointerdown', 'focus', 'click']) alone.addEventListener(event, here);
+}
 
 // ---- The menus and the address ----
 
