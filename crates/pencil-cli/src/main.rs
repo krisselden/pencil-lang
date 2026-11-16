@@ -235,6 +235,23 @@ fn write_png(path: &Path, rgba: &[u8], width: u32, height: u32) -> Result<(), Bo
     Ok(())
 }
 
+/// How close a WebP poster is to its frame, of 100. At 90 a figure's lines and labels show no
+/// ringing at the sizes a page draws them.
+const WEBP_QUALITY: f32 = 90.0;
+
+/// A frame as lossy WebP. Chroma is taken sharply, since a figure is thin colored lines on flat
+/// paper, which the usual halving of chroma smears.
+fn webp(rgba: &[u8], width: u32, height: u32) -> Result<Vec<u8>, Box<dyn Error>> {
+    let mut config = webp::WebPConfig::new().map_err(|_| "libwebp wouldn't start")?;
+    config.quality = WEBP_QUALITY;
+    config.method = 6;
+    config.use_sharp_yuv = 1;
+    let encoded = webp::Encoder::from_rgba(rgba, width, height)
+        .encode_advanced(&config)
+        .map_err(|e| format!("libwebp couldn't encode a {width}×{height} frame: {e:?}"))?;
+    Ok(encoded.to_vec())
+}
+
 /// One frame of a figure, as RGBA, with its labels drawn, and its paper's color. `dpr` is the
 /// device pixels to a CSS pixel, as on a screen: a figure with no design width draws its `px` that
 /// many pixels wide.
@@ -374,7 +391,31 @@ fn build(args: &Args) -> Result<(), Box<dyn Error>> {
         let (rgba, height, _) = still(&composition, &inputs, wide, scale as f64, args, Some(&gpu))?;
         write_png(&dir.join(&name), &rgba, wide, height)?;
         println!("wrote {} ({wide}×{height})", dir.join(&name).display());
-        posters.push(serde_json::json!({ "src": name, "width": wide, "height": height, "scale": scale }));
+        let mut poster = serde_json::json!({ "src": name, "width": wide, "height": height, "scale": scale });
+        // The same frame as WebP, for a page to offer first, when that's the smaller of the two.
+        // A figure of a few flat colors can be smaller as PNG, and then there's only the PNG.
+        let lossy = webp(&rgba, wide, height)?;
+        let lighter = name.replace(".png", ".webp");
+        if (lossy.len() as u64) < fs::metadata(dir.join(&name))?.len() {
+            write(&lighter, &lossy)?;
+            poster["webp"] = lighter.into();
+        } else {
+            // One an earlier build left would be a stale picture of the figure.
+            let _ = fs::remove_file(dir.join(&lighter));
+        }
+        posters.push(poster);
+    }
+
+    // Every param as the figure stands at its poster: its value, and its range, which other
+    // params can move. A page lays its controls out from these, as they'll be when the figure
+    // starts there, before any of it runs.
+    let first = &composition.panels[0].figure;
+    let env = pencil_core::eval::frame_env(first, &inputs)?;
+    let mut values = serde_json::Map::new();
+    let mut ranges = serde_json::Map::new();
+    for param in &first.scene.params {
+        values.insert(param.id.clone(), env.get(&param.id).into());
+        ranges.insert(param.id.clone(), serde_json::json!(pencil_core::eval::param_range(param, &env)?));
     }
 
     let mut manifest = serde_json::json!({
@@ -390,6 +431,8 @@ fn build(args: &Args) -> Result<(), Box<dyn Error>> {
             "params": inputs.params.iter()
                 .map(|(name, value)| (name.clone(), serde_json::Value::from(*value)))
                 .collect::<serde_json::Map<_, _>>(),
+            "values": values,
+            "ranges": ranges,
             "images": posters,
         },
         "info": composition.info(),

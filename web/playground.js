@@ -1,41 +1,66 @@
 // The playground: a figure's `.pen` and its sheets in an editor beside the figure, compiled again
 // as they change. The figure is a `<pencil-figure>`, which owns the GPU, the clock and the handles,
 // and nothing here works out a value of the figure's own: the page only sets and reads bindings.
-import { PencilFigure } from '../packages/figure/src/element.js';
+//
+// What's open is one of the examples, a document in one of its looks, or the reader's own figure
+// ("yours"): one that came from a link, from files, or from adding or removing a file. There is one
+// of those at a time, kept whole in this browser, apart from the examples' edits.
+import { PencilFigure } from '@pencil-lang/figure';
 import { ready as readingReady, readingAt, pasteLatex } from './reading.js';
 import { viewing } from './controls.js';
-import { uses } from '../packages/figure/src/host.js';
+import { uses } from '@pencil-lang/figure/host';
+import { pack, unpack } from '@pencil-lang/figure/pack';
 
-// Each figure with the sheets its own page or video loads, from the repo root, in order.
+/** A file's name without its folder or its extension, as the menus show it. */
+function styleName(path) {
+  return path.split('/').pop().replace(/\.(style|pen)$/, '');
+}
+
+// Each document with the looks its own pages or videos load: sheets from the repo root, in order.
+// A look's id is what `?figure=` names, and the site links here with them.
 const THEME = 'corpus/theme.style';
 const FIGURES = [
-  ['circle', '001 circle', 'corpus/001-circle/circle.pen', ['corpus/001-circle/circle.style']],
-  ['circle-bands', '001 circle, bands', 'corpus/001-circle/circle.pen', ['corpus/001-circle/bands.style']],
-  ['ring', '002 strokes, ring', 'corpus/002-strokes/ring.pen', ['corpus/002-strokes/filled.style']],
-  ['wave', '002 strokes, wave', 'corpus/002-strokes/wave.pen', ['corpus/002-strokes/taper.style']],
-  ['unroll', '003 unroll', 'corpus/003-unroll/unroll.pen', ['corpus/003-unroll/blog.style']],
-  ['unroll-night', '003 unroll, night', 'corpus/003-unroll/unroll.pen', ['corpus/003-unroll/night.style']],
-  ['bounds', '004 bounds', 'corpus/004-bounds/bounds.pen', ['corpus/004-bounds/blog.style']],
-  ['tangents', '005 tangents', 'corpus/005-tangents/tangents.pen', [THEME, 'corpus/005-tangents/plain.style']],
-  ['square', '006 square', 'corpus/006-square/square.pen', [THEME, 'corpus/006-square/plain.style']],
-  ['lattice', '007 lattice', 'corpus/007-lattice/lattice.pen', [THEME, 'corpus/007-lattice/plain.style']],
-  ['hearts', '008 hearts', 'corpus/008-hearts/hearts.pen', [THEME, 'corpus/008-hearts/plain.style']],
-  ['squaring', '009 squaring', 'corpus/009-squaring/squaring.pen', [THEME, 'corpus/009-squaring/plain.style']],
-  ['mobius', '010 Möbius', 'corpus/010-mobius/mobius.pen', [THEME, 'corpus/010-mobius/plain.style']],
-  ['circumcircle', '011 circumcircle', 'corpus/011-circumcircle/circumcircle.pen', ['corpus/011-circumcircle/plain.style']],
-  ['limacon', '012 limaçon', 'corpus/012-limacon/limacon.pen', ['corpus/012-limacon/plain.style']],
-  ['tube', '013 tube', 'corpus/013-tube/tube.pen', [THEME, 'corpus/013-tube/plain.style']],
-  ['scaled-copy', '014 scaled copy', 'corpus/014-scaled-copy/scaled-copy.pen', [THEME, 'corpus/014-scaled-copy/plain.style']],
-  ['log-nearest', '015 log nearest', 'corpus/015-log-nearest/log-nearest.pen', [THEME, 'corpus/015-log-nearest/plain.style']],
-  ['unwrap', '016 unwrap', 'corpus/016-unwrap/unwrap.pen', [THEME, 'corpus/016-unwrap/plain.style']],
-  ['explainer', 'Explainer: limaçon', 'lab/explainer/limacon.pen',
-    [THEME, 'corpus/dark.style', 'lab/explainer/limacon.style', 'lab/explainer/caption.style']],
-].map(([id, name, pen, sheets]) => ({ id, name, pen, sheets }));
+  ['001 circle', 'corpus/001-circle/circle.pen', [
+    ['circle', ['corpus/001-circle/circle.style']],
+    ['circle-bands', ['corpus/001-circle/bands.style']]]],
+  ['002 strokes, ring', 'corpus/002-strokes/ring.pen', [['ring', ['corpus/002-strokes/filled.style']]]],
+  ['002 strokes, wave', 'corpus/002-strokes/wave.pen', [['wave', ['corpus/002-strokes/taper.style']]]],
+  ['003 unroll', 'corpus/003-unroll/unroll.pen', [
+    ['unroll', ['corpus/003-unroll/blog.style']],
+    ['unroll-night', ['corpus/003-unroll/night.style']]]],
+  ['004 bounds', 'corpus/004-bounds/bounds.pen', [['bounds', ['corpus/004-bounds/blog.style']]]],
+  ['005 tangents', 'corpus/005-tangents/tangents.pen', [['tangents', [THEME, 'corpus/005-tangents/plain.style']]]],
+  ['006 square', 'corpus/006-square/square.pen', [['square', [THEME, 'corpus/006-square/plain.style']]]],
+  ['007 lattice', 'corpus/007-lattice/lattice.pen', [['lattice', [THEME, 'corpus/007-lattice/plain.style']]]],
+  ['008 hearts', 'corpus/008-hearts/hearts.pen', [['hearts', [THEME, 'corpus/008-hearts/plain.style']]]],
+  ['009 squaring', 'corpus/009-squaring/squaring.pen', [['squaring', [THEME, 'corpus/009-squaring/plain.style']]]],
+  ['010 Möbius', 'corpus/010-mobius/mobius.pen', [['mobius', [THEME, 'corpus/010-mobius/plain.style']]]],
+  ['011 circumcircle', 'corpus/011-circumcircle/circumcircle.pen', [['circumcircle', ['corpus/011-circumcircle/plain.style']]]],
+  ['012 limaçon', 'corpus/012-limacon/limacon.pen', [['limacon', ['corpus/012-limacon/plain.style']]]],
+  ['013 tube', 'corpus/013-tube/tube.pen', [['tube', [THEME, 'corpus/013-tube/plain.style']]]],
+  ['014 scaled copy', 'corpus/014-scaled-copy/scaled-copy.pen', [['scaled-copy', [THEME, 'corpus/014-scaled-copy/plain.style']]]],
+  ['015 log nearest', 'corpus/015-log-nearest/log-nearest.pen', [['log-nearest', [THEME, 'corpus/015-log-nearest/plain.style']]]],
+  ['016 unwrap', 'corpus/016-unwrap/unwrap.pen', [['unwrap', [THEME, 'corpus/016-unwrap/plain.style']]]],
+  ['Explainer: limaçon', 'lab/explainer/limacon.pen', [
+    ['explainer', [THEME, 'corpus/dark.style', 'lab/explainer/limacon.style', 'lab/explainer/caption.style']]]],
+].map(([name, pen, looks]) => {
+  const doc = { name, pen };
+  // A look is named for its sheets, without the theme every figure shares.
+  doc.looks = looks.map(([id, sheets]) => ({ id, doc, sheets, name: sheets.filter((s) => s !== THEME).map(styleName).join(' + ') }));
+  doc.id = doc.looks[0].id;
+  return doc;
+});
+const LOOKS = FIGURES.flatMap((doc) => doc.looks);
+// What the Figure menu calls the reader's own figure, and what `?figure=` names it by.
+const YOURS = 'yours';
 
 // How long typing has to stop before compiling: short enough to feel live, long enough not to
 // compile a figure like the lattice on every key.
 const SETTLE_MS = 120;
+// Example edits are kept under this and their path. Your figure is kept whole under the other,
+// which no path can make.
 const STORE = 'pencil-playground:';
+const STORE_YOURS = 'pencil-playground-yours';
 
 const $ = (id) => document.getElementById(id);
 const query = new URLSearchParams(location.search);
@@ -52,14 +77,28 @@ const fetchText = async (path) => {
 
 // ---- Sources and the editor ----
 
-/** One file: what's on disk, and what's being edited. Edits are kept per path, so a shared sheet
- * like `theme.style` carries its edits to every figure that loads it. A `root` is the document or
- * one of its sheets, in order. The others are files those `use`, each after the file that first
- * uses it. */
+/** One file: what's on disk, and what's being edited. An example's edits are kept per path, so a
+ * shared sheet like `theme.style` carries its edits to every figure that loads it. A `root` is the
+ * document or one of its sheets, in order. The others are files those `use`, each after the file
+ * that first uses it.
+ *
+ * In your figure, `disk` is the file as it was when the figure was opened, and `kept` as it was
+ * last shared or saved, so the page knows when an edit exists nowhere else. A `pinned` file is one
+ * you added or opened, which stays while nothing uses it (then it's `unused`). */
 let files = [];
 let active = 0;
+let inEditor = null; // the file the textarea shows, to keep its caret and scroll when another is shown
 let failure = null; // { file, line, col, message }
 let warning = null; // a draw error, which has no place in a file
+let notice = null; // a link that couldn't be read, until another figure is opened
+
+/** What's open: one of LOOKS, or YOURS. */
+let showing = null;
+/** Your figure: `{ name, link, restructured, files }`. `link` is the packed form it came from or
+ * was last shared as, and `restructured` says a file was added or removed since then. */
+let yours = null;
+/** Your files that a `use` stopped naming, kept for this page in case it comes back. */
+let spare = new Map();
 
 const stored = (path) => localStorage.getItem(STORE + path);
 const store = (file) => {
@@ -67,6 +106,55 @@ const store = (file) => {
   else localStorage.setItem(STORE + file.path, file.text);
 };
 const baseName = (path) => path.split('/').pop();
+const folderOf = (path) => path.slice(0, path.lastIndexOf('/') + 1);
+
+function saveYours() {
+  if (!yours) return localStorage.removeItem(STORE_YOURS);
+  const plain = ({ path, disk, text, kept, root, pinned }) => ({ path, disk, text, kept, root: !!root, pinned: !!pinned });
+  try {
+    localStorage.setItem(STORE_YOURS, JSON.stringify({ ...yours, files: yours.files.map(plain) }));
+  } catch {
+    say('This browser’s storage is full, so your figure won’t be here after a reload.');
+  }
+}
+
+function loadYours() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(STORE_YOURS));
+    const text = (v) => typeof v === 'string';
+    if (!saved || !Array.isArray(saved.files) || !saved.files[0]?.root) return null;
+    if (!saved.files.every((f) => text(f.path) && text(f.disk) && text(f.text))) return null;
+    for (const f of saved.files) f.kept ??= f.disk;
+    return { name: String(saved.name ?? ''), link: saved.link ?? null, restructured: !!saved.restructured, files: saved.files };
+  } catch {
+    return null;
+  }
+}
+
+/** Whether your figure has changes that aren't in a link it came from or was shared as, or in
+ * files it was opened from or saved to. */
+const unsaved = (y) => !!y && (y.restructured || y.files.some((f) => f.text !== f.kept));
+
+/** Keeps an edit: in your figure, or under the example file's path. */
+function persist(file) {
+  if (showing === YOURS) {
+    yours.files = files;
+    saveYours();
+  } else if (file) store(file);
+}
+
+// What the page says back about what a button did, in a polite live region.
+let saidTimer = 0;
+function say(text) {
+  const out = $('said');
+  out.textContent = '';
+  clearTimeout(saidTimer);
+  // Emptied first, so the same words are announced again.
+  setTimeout(() => {
+    out.textContent = text;
+    saidTimer = setTimeout(() => (out.textContent = ''), 8000);
+  }, 50);
+}
 
 const escape = (s) => s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]);
 
@@ -140,36 +228,90 @@ function syncScroll() {
   if (gutter) gutter.style.transform = `translateY(${-scrollTop}px)`;
 }
 
+/** Whether a file's tab offers to remove it: a sheet, or a file you added. The document can't go,
+ * and a file that's there because another uses it goes when the `use` line does. */
+const removable = (file) => file !== files[0] && (file.root || file.pinned);
+
+function button(className, text, label) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = className;
+  b.textContent = text;
+  if (label) b.setAttribute('aria-label', label);
+  return b;
+}
+
+/** A tab per file, then one to add a file. Focus stays on the same control when they're redrawn. */
 function paintTabs() {
-  const tabs = $('tabs');
-  tabs.replaceChildren(
-    ...files.map((file, i) => {
-      const tab = document.createElement('button');
-      tab.type = 'button';
-      tab.className = 'tab';
-      tab.role = 'tab';
-      tab.textContent = baseName(file.path);
-      tab.title = file.path;
-      tab.setAttribute('aria-selected', String(i === active));
-      tab.classList.toggle('edited', file.text !== file.disk);
-      tab.classList.toggle('used', !file.root);
-      tab.classList.toggle('failed', failure?.file === i);
-      tab.addEventListener('click', () => show(i));
-      return tab;
-    }),
-  );
+  const list = $('tabs');
+  const focused = list.contains(document.activeElement) ? document.activeElement : null;
+  const again = focused && [focused.dataset.path, focused.className];
+  const items = files.map((file, i) => {
+    const tab = document.createElement('li');
+    tab.className = 'tab';
+    tab.classList.toggle('active', i === active);
+    tab.classList.toggle('edited', file.text !== file.disk);
+    tab.classList.toggle('used', !file.root);
+    tab.classList.toggle('unused', !!file.unused);
+    tab.classList.toggle('failed', failure?.file === i);
+    const pick = button('pick', baseName(file.path));
+    pick.dataset.path = file.path;
+    pick.title = file.unused ? `${file.path}: nothing uses this file yet` : file.path;
+    if (i === active) pick.setAttribute('aria-current', 'true');
+    // What the dot and the dashes say, for a screen reader.
+    const states = [file.text !== file.disk && 'edited', file.unused && 'nothing uses it yet', failure?.file === i && 'has an error'].filter(Boolean);
+    if (states.length) {
+      const sr = document.createElement('span');
+      sr.className = 'sr';
+      sr.textContent = `, ${states.join(', ')}`;
+      pick.append(sr);
+    }
+    pick.addEventListener('click', () => show(i));
+    pick.addEventListener('keydown', moveAmongTabs);
+    tab.append(pick);
+    if (removable(file)) {
+      const remove = button('remove', '×', `Remove ${baseName(file.path)}`);
+      remove.dataset.path = file.path;
+      remove.title = `Remove ${file.path}`;
+      remove.addEventListener('click', () => removeFile(file.path));
+      tab.append(remove);
+    }
+    return tab;
+  });
+  const add = document.createElement('li');
+  const plus = button('add', '+', 'Add a file');
+  plus.id = 'add';
+  plus.title = 'Add a .style or .pen file';
+  plus.addEventListener('click', askToAdd);
+  add.append(plus);
+  list.replaceChildren(...items, add);
+  if (again) {
+    const same = [...list.querySelectorAll('button')].find((b) => b.dataset.path === again[0] && b.className === again[1]);
+    (same ?? (again[1] === 'add' ? plus : null))?.focus();
+  }
   const file = files[active];
   $('path').textContent = file ? `${file.path}${file.text !== file.disk ? ' (edited here, not saved to disk)' : ''}` : '';
   $('revert').disabled = !file || file.text === file.disk;
   $('revert-all').disabled = !files.some((f) => f.text !== f.disk);
 }
 
+/** Left and right, Home and End, move between the tabs; Enter or Space shows one. */
+function moveAmongTabs(e) {
+  const picks = [...$('tabs').querySelectorAll('.pick')];
+  const at = picks.indexOf(e.currentTarget);
+  const to = { ArrowLeft: at - 1, ArrowRight: at + 1, Home: 0, End: picks.length - 1 }[e.key];
+  if (to === undefined || e.metaKey || e.ctrlKey || e.altKey) return;
+  e.preventDefault();
+  picks[(to + picks.length) % picks.length].focus();
+}
+
 function show(i, caret) {
-  const old = files[active];
-  if (old) Object.assign(old, { scroll: [textarea.scrollTop, textarea.scrollLeft], selection: [textarea.selectionStart, textarea.selectionEnd] });
+  if (inEditor) Object.assign(inEditor, { scroll: [textarea.scrollTop, textarea.scrollLeft], selection: [textarea.selectionStart, textarea.selectionEnd] });
   active = i;
   const file = files[i];
+  inEditor = file;
   textarea.value = file.text;
+  textarea.setAttribute('aria-label', `Source of ${file.path}`);
   if (caret !== undefined) {
     textarea.focus();
     textarea.setSelectionRange(caret, caret);
@@ -197,7 +339,8 @@ let settle = 0;
 textarea.addEventListener('input', () => {
   const file = files[active];
   file.text = textarea.value;
-  store(file);
+  persist(file);
+  forget();
   paintEditor();
   paintTabs();
   clearTimeout(settle);
@@ -246,26 +389,42 @@ textarea.addEventListener('keydown', (e) => {
 $('copy').addEventListener('click', () => navigator.clipboard.writeText(files[active].text));
 const revert = (file) => {
   file.text = file.disk;
-  store(file);
+  persist(file);
 };
 $('revert').addEventListener('click', () => {
   revert(files[active]);
+  forget();
   show(active);
   compile();
 });
 $('revert-all').addEventListener('click', () => {
   files.forEach(revert);
+  forget();
   show(active);
   compile();
+});
+// Save downloads the file in the active tab, under its own name.
+$('save').addEventListener('click', () => {
+  const file = files[active];
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([file.text], { type: 'text/plain' }));
+  a.download = baseName(file.path);
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
+  if (showing === YOURS) {
+    file.kept = file.text;
+    saveYours();
+  }
+  say(`Saved ${baseName(file.path)} to your downloads`);
 });
 
 // ---- The figure ----
 
 await PencilFigure.ready;
 const pick = $('figure-pick');
-for (const entry of FIGURES) pick.add(new Option(entry.name, entry.id));
-const chosen = FIGURES.find((f) => f.id === query.get('figure')) ?? FIGURES.find((f) => f.id === 'explainer');
-pick.value = chosen.id;
+const stylePick = $('style-pick');
 
 let lastGood = null; // the sources that last drew, to go back to when an edit compiles but can't draw
 let compiles = 0;
@@ -289,33 +448,53 @@ const sources = () => {
 let following = 0;
 async function follow() {
   const turn = ++following;
+  const mine = showing === YOURS;
   const next = [];
   const seen = new Set();
-  const visit = async (file) => {
+  const visit = async (file, reached) => {
+    file.unused = !reached;
     next.push(file);
     for (const path of uses(file.path, file.text)) {
       if (seen.has(path)) continue;
       seen.add(path);
-      let used = files.find((f) => !f.root && f.path === path);
+      let used = files.find((f) => !f.root && f.path === path) ?? (mine ? spare.get(path) : undefined);
       if (!used) {
         try {
           const disk = await fetchText(path);
-          used = { path, disk, text: stored(path) ?? disk };
+          used = mine ? { path, disk, text: disk, kept: disk } : { path, disk, text: stored(path) ?? disk };
         } catch {
           // No such file. Compiling says which line wanted it.
           continue;
         }
       }
-      await visit(used);
+      await visit(used, reached);
     }
   };
-  for (const root of roots()) await visit(root);
+  for (const root of roots()) await visit(root, true);
+  // Your own files stay while nothing uses them, after the rest.
+  for (const file of files.filter((f) => f.pinned && !f.root)) {
+    if (seen.has(file.path)) continue;
+    seen.add(file.path);
+    await visit(file, false);
+  }
   if (turn !== following) return false;
-  if (next.length === files.length && next.every((f, i) => f === files[i])) return false;
+  if (next.length === files.length && next.every((f, i) => f === files[i])) {
+    paintTabs();
+    return false;
+  }
+  if (mine) {
+    for (const f of files) if (!next.includes(f)) spare.set(f.path, f);
+    for (const f of next) spare.delete(f.path);
+  }
   const shown = files[active];
   files = next;
+  if (mine) {
+    yours.files = files;
+    saveYours();
+  }
   active = files.indexOf(shown);
   if (active < 0) show(0);
+  else paintTabs();
   return true;
 }
 
@@ -350,6 +529,12 @@ function compile() {
 function paintErrors() {
   const list = $('errors');
   const items = [];
+  if (notice) {
+    const li = document.createElement('li');
+    li.className = 'stale';
+    li.textContent = notice;
+    items.push(li);
+  }
   if (failure) {
     const li = document.createElement('li');
     const where = failure.line ? `${baseName(files[failure.file].path)}:${failure.line}:${failure.col}` : baseName(files[failure.file].path);
@@ -491,21 +676,71 @@ figure.addEventListener('error', (e) => {
 
 // ---- Loading a figure ----
 
-async function open(entry) {
-  const paths = [entry.pen, ...entry.sheets];
-  let disks;
+/** The address names what's open, by the ids the site links with, and holds a link's figure after
+ * `#pen=` only while it's what's open. In a frame on the same origin, such as the site's page,
+ * that page's address follows too, since it's the one a reader sees and copies. */
+function outerWindow() {
   try {
-    disks = await Promise.all(paths.map(fetchText));
-  } catch (e) {
-    warning = String(e);
-    paintErrors();
-    return;
+    if (window.top !== window && window.top.location.href) return window.top;
+  } catch {}
+  return null;
+}
+
+function address(link = null) {
+  const url = new URL(location.href);
+  url.searchParams.set('figure', showing === YOURS ? YOURS : showing.id);
+  url.hash = link ? `pen=${link}` : '';
+  history.replaceState(null, '', url);
+  const outer = outerWindow();
+  if (!outer) return url.href;
+  const there = new URL(outer.location.href);
+  if (link) there.hash = `pen=${link}`;
+  else if (there.hash.startsWith('#pen=')) there.hash = '';
+  else return url.href;
+  outer.history.replaceState(outer.history.state, '', there);
+  return there.href;
+}
+
+/** The packed figure in this page's address, or the framing page's. */
+function linkInAddress() {
+  for (const at of [window, outerWindow()]) {
+    const hash = at?.location.hash ?? '';
+    if (hash.startsWith('#pen=') && hash.length > 5) return hash.slice(5);
   }
-  files = paths.map((path, i) => {
-    const text = stored(path) ?? disks[i];
-    return { path, disk: disks[i], text, root: true };
-  });
+  return null;
+}
+
+/** Drops a link from the address once what's open has changed from it. */
+function forget() {
+  if (linkInAddress() && showing) address();
+}
+
+function paintMenus() {
+  pick.replaceChildren(
+    ...(yours ? [new Option(`Yours: ${yours.name}`, YOURS)] : []),
+    ...FIGURES.map((doc) => new Option(doc.name, doc.id)),
+  );
+  pick.value = showing === YOURS ? YOURS : showing.doc.id;
+  if (showing === YOURS) {
+    const sheets = files.filter((f) => f.root).slice(1).map((f) => styleName(f.path));
+    stylePick.replaceChildren(new Option(sheets.join(' + ') || 'no sheets', ''));
+    stylePick.disabled = true;
+    stylePick.title = 'Your figure’s sheets are its tabs: add or remove them there';
+  } else {
+    stylePick.replaceChildren(...showing.doc.looks.map((look) => new Option(look.name, look.id)));
+    stylePick.value = showing.id;
+    stylePick.disabled = showing.doc.looks.length < 2;
+    stylePick.title = stylePick.disabled ? 'This figure has one style' : '';
+  }
+}
+
+/** Shows what's in `files` from the start: its first file, at time 0. */
+async function start(link = null) {
   active = 0;
+  inEditor = null;
+  spare = new Map();
+  paintMenus();
+  address(link);
   await follow();
   lastGood = null;
   warning = null;
@@ -519,13 +754,366 @@ async function open(entry) {
   else figure.play();
 }
 
-pick.addEventListener('change', () => {
-  const entry = FIGURES.find((f) => f.id === pick.value);
-  const url = new URL(location.href);
-  url.searchParams.set('figure', entry.id);
-  history.replaceState(null, '', url);
-  open(entry);
+/** Opens an example: a document in one of its looks. */
+async function open(look) {
+  const paths = [look.doc.pen, ...look.sheets];
+  let disks;
+  try {
+    disks = await Promise.all(paths.map(fetchText));
+  } catch (e) {
+    warning = String(e);
+    paintErrors();
+    return;
+  }
+  showing = look;
+  files = paths.map((path, i) => ({ path, disk: disks[i], text: stored(path) ?? disks[i], root: true }));
+  await start();
+}
+
+/** Puts the open example's document in another of its looks, keeping the document, its edits and
+ * the time. */
+async function restyle(look) {
+  let disks;
+  try {
+    disks = await Promise.all(look.sheets.map(fetchText));
+  } catch (e) {
+    warning = String(e);
+    paintErrors();
+    return;
+  }
+  const shown = files[active]?.path;
+  showing = look;
+  files = [files[0], ...look.sheets.map((path, i) => ({ path, disk: disks[i], text: stored(path) ?? disks[i], root: true }))];
+  paintMenus();
+  address();
+  await follow();
+  lastGood = null;
+  warning = null;
+  show(Math.max(0, files.findIndex((f) => f.path === shown)));
+  compile();
+}
+
+async function openYours(link = null) {
+  showing = YOURS;
+  files = yours.files;
+  await start(link);
+}
+
+/** Your figure from a link's sources. A file the document and sheets don't reach is one you
+ * added, and stays while nothing uses it. */
+function fromSources({ name, doc, sheets, files: texts }, link) {
+  const roots = [doc, ...sheets.filter((path) => path !== doc)];
+  const reached = new Set();
+  const visit = (path) => {
+    for (const used of uses(path, texts[path] ?? '')) {
+      if (reached.has(used) || !(used in texts)) continue;
+      reached.add(used);
+      visit(used);
+    }
+  };
+  roots.forEach(visit);
+  const file = (path, root) => {
+    const text = texts[path];
+    return { path, disk: text, text, kept: text, root, pinned: !root && !reached.has(path) };
+  };
+  const others = Object.keys(texts).filter((path) => !roots.includes(path));
+  return {
+    name: name || styleName(doc),
+    link,
+    restructured: false,
+    files: [...roots.map((path) => file(path, true)), ...others.map((path) => file(path, false))],
+  };
+}
+
+/** Opens a link's figure as yours. Says whether it opened one; a link that can't be read leaves
+ * its error in `notice`. */
+async function openLink(link) {
+  if (yours?.link === link) {
+    await openYours(link);
+    return true;
+  }
+  let sources;
+  try {
+    sources = await unpack(link);
+  } catch (e) {
+    notice = e.message;
+    paintErrors();
+    return false;
+  }
+  if (!(await mayReplace())) {
+    // Kept: show the one being kept, and drop the link from the address.
+    await openYours();
+    return true;
+  }
+  notice = null;
+  yours = fromSources(sources, link);
+  saveYours();
+  await openYours(link);
+  return true;
+}
+
+/** Whether your figure may be replaced: at once when it has nothing that exists only here, or
+ * when the reader says so. */
+async function mayReplace() {
+  if (!unsaved(yours)) return true;
+  $('replace-text').textContent =
+    `“${yours.name}” has changes that aren’t in a link or a saved file. Opening another figure of your own replaces it, and they’ll be gone.`;
+  return (await modal($('replace-dialog'))) === 'replace';
+}
+
+/** Turns an open example into your figure, a copy of every file as it stands, before its files are
+ * added or removed. The example is left as it was. Says whether it did, or yours already was. */
+async function adopt() {
+  if (showing === YOURS) return true;
+  if (!(await mayReplace())) return false;
+  notice = null;
+  const at = active;
+  const copy = files.map((f) => ({
+    path: f.path, disk: f.text, text: f.text, kept: f.text, root: !!f.root, pinned: false, scroll: f.scroll, selection: f.selection,
+  }));
+  // The example's file keeps the caret it had; the copy takes it from here.
+  if (inEditor) Object.assign(inEditor, { scroll: [textarea.scrollTop, textarea.scrollLeft], selection: [textarea.selectionStart, textarea.selectionEnd] });
+  yours = { name: showing.doc.name, link: null, restructured: true, files: copy };
+  showing = YOURS;
+  files = copy;
+  spare = new Map();
+  active = at;
+  inEditor = files[at];
+  saveYours();
+  paintMenus();
+  address();
+  return true;
+}
+
+/** After a file is added or removed: what's used, the tabs, the menus, the address, and the figure. */
+async function restructure(path) {
+  yours.restructured = true;
+  await follow();
+  yours.files = files;
+  saveYours();
+  paintMenus();
+  address();
+  const at = path ? files.findIndex((f) => f.path === path) : -1;
+  show(at >= 0 ? at : Math.min(active, files.length - 1));
+  compile();
+}
+
+// ---- Dialogs ----
+
+/** Opens a modal dialog, and resolves with its `returnValue` once it closes, focus back where it
+ * was. A modal dialog keeps the rest of the page out of reach; Tab also wraps within it, so focus
+ * never leaves it for the browser's own controls. */
+const waiting = new Map(); // dialog → how to settle the one still waiting for its `close`
+function modal(dialog) {
+  // A `close` comes as a task of its own, so a dialog closed and opened again at once can still
+  // have the last one's waiting: settle that first, with what it closed with. Its late `close`
+  // then finds the dialog open, and is let go.
+  waiting.get(dialog)?.(false);
+  const back = document.activeElement;
+  dialog.returnValue = '';
+  dialog.showModal();
+  return new Promise((resolve) => {
+    const closed = () => !dialog.open && settle(true);
+    const settle = (refocus) => {
+      dialog.removeEventListener('close', closed);
+      waiting.delete(dialog);
+      if (refocus && back?.isConnected) back.focus();
+      resolve(dialog.returnValue);
+    };
+    waiting.set(dialog, settle);
+    dialog.addEventListener('close', closed);
+  });
+}
+for (const dialog of document.querySelectorAll('dialog')) {
+  dialog.addEventListener('keydown', (e) => {
+    if (e.key !== 'Tab') return;
+    const stops = [...dialog.querySelectorAll('button, input, select, textarea, a[href]')].filter((el) => !el.disabled);
+    const [first, last] = [stops[0], stops.at(-1)];
+    if (e.shiftKey && document.activeElement === first) last.focus();
+    else if (!e.shiftKey && document.activeElement === last) first.focus();
+    else return;
+    e.preventDefault();
+  });
+}
+
+// ---- Adding, removing and opening files ----
+
+/** What's wrong with a name for a new file, or nothing. */
+function nameProblem(name) {
+  if (!/\.(pen|style)$/.test(name) || /^\.(pen|style)$/.test(name)) return 'The name ends in .style or .pen, as in mine.style.';
+  if (/\s|\\|:|^\/|(^|\/)\.\.?(\/|$)|\/\//.test(name)) return 'Name it from this figure’s folder, without spaces, as in mine.style or parts/arm.pen.';
+  const path = folderOf(files[0].path) + name;
+  if (files.some((f) => f.path === path)) return `There’s already a file named ${name}.`;
+  return null;
+}
+
+async function askToAdd() {
+  const dialog = $('add-dialog');
+  const input = $('add-name');
+  input.value = '';
+  $('add-bad').textContent = '';
+  input.removeAttribute('aria-invalid');
+  const answer = modal(dialog);
+  input.focus();
+  if ((await answer) !== 'add') return;
+  await addFile(input.value.trim());
+}
+$('add-form').addEventListener('submit', (e) => {
+  const problem = nameProblem($('add-name').value.trim());
+  if (!problem) return;
+  e.preventDefault();
+  $('add-bad').textContent = problem;
+  $('add-name').setAttribute('aria-invalid', 'true');
+});
+$('add-cancel').addEventListener('click', () => $('add-dialog').close('cancel'));
+
+/** Adds an empty file: a `.style` as the last sheet, a `.pen` as one the document can `use`. */
+async function addFile(name) {
+  if (!(await adopt())) return;
+  const path = folderOf(files[0].path) + name;
+  const sheet = name.endsWith('.style');
+  const text = sheet
+    ? '// A sheet of your own. It comes after the others, so its rules win.\n'
+    : `// The document can read this file with: use "${name}"\n`;
+  files.push({ path, disk: text, text, kept: text, root: sheet, pinned: !sheet });
+  await restructure(path);
+  textarea.focus();
+  textarea.setSelectionRange(text.length, text.length);
+}
+
+async function removeFile(path) {
+  if (!(await adopt())) return;
+  const at = files.findIndex((f) => f.path === path);
+  if (at <= 0 || !removable(files[at])) return;
+  files.splice(at, 1);
+  if (active >= at) active = Math.max(0, active - 1);
+  await restructure();
+  say(`Removed ${baseName(path)}`);
+  // The button that was pressed is gone: focus the tab that's shown now.
+  $('tabs').querySelector('.tab.active .pick')?.focus();
+}
+
+/** Opens files from the reader's computer. With a `.pen` among them they become your figure: the
+ * first `.pen` is the document, other `.pen` files are files it can `use`, and `.style` files are
+ * its sheets in name order. Without one, they're added to the figure that's open. */
+async function openFiles(list) {
+  const read = await Promise.all([...list].map(async (f) => ({ name: f.name, text: await f.text() })));
+  const pens = read.filter((f) => f.name.endsWith('.pen'));
+  const sheets = read.filter((f) => f.name.endsWith('.style')).sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+  const skipped = read.length - pens.length - sheets.length;
+  if (pens.length) {
+    if (!(await mayReplace())) return;
+    const file = (f, root) => ({ path: f.name, disk: f.text, text: f.text, kept: f.text, root, pinned: !root });
+    const [doc, ...others] = pens;
+    notice = null;
+    yours = {
+      name: styleName(doc.name),
+      link: null,
+      restructured: false,
+      files: [file(doc, true), ...sheets.map((f) => file(f, true)), ...others.map((f) => file(f, false))],
+    };
+    saveYours();
+    await openYours();
+  } else if (sheets.length) {
+    if (!(await adopt())) return;
+    const folder = folderOf(files[0].path);
+    for (const f of sheets) {
+      const path = folder + f.name;
+      const have = files.find((x) => x.path === path);
+      if (have) Object.assign(have, { disk: f.text, text: f.text, kept: f.text });
+      else files.push({ path, disk: f.text, text: f.text, kept: f.text, root: true, pinned: false });
+    }
+    await restructure(folder + sheets[0].name);
+  }
+  if (skipped) say(`Open takes .pen and .style files: ${skipped === 1 ? 'one other was' : `${skipped} others were`} left out`);
+}
+
+$('open').addEventListener('click', () => $('open-files').click());
+$('open-files').addEventListener('change', async (e) => {
+  const list = [...e.target.files];
+  e.target.value = '';
+  if (list.length) await openFiles(list);
+});
+// Files dropped on the editor open the same way.
+const editor = document.querySelector('.editor');
+const carriesFiles = (e) => [...(e.dataTransfer?.types ?? [])].includes('Files');
+editor.addEventListener('dragover', (e) => {
+  if (!carriesFiles(e)) return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'copy';
+  editor.classList.add('dropping');
+});
+editor.addEventListener('dragleave', (e) => {
+  if (!editor.contains(e.relatedTarget)) editor.classList.remove('dropping');
+});
+editor.addEventListener('drop', (e) => {
+  editor.classList.remove('dropping');
+  if (!carriesFiles(e)) return;
+  e.preventDefault();
+  openFiles(e.dataTransfer.files);
 });
 
-await open(chosen);
-window.pencil = { figure, compile, files: () => files };
+// ---- Sharing ----
+
+/** Packs every open file as it stands into the address, and copies the link. */
+async function share() {
+  const roots = files.filter((f) => f.root);
+  const link = await pack({
+    name: showing === YOURS ? yours.name : showing.doc.name,
+    doc: roots[0].path,
+    sheets: roots.slice(1).map((f) => f.path),
+    files: Object.fromEntries(files.map((f) => [f.path, f.text])),
+  });
+  if (showing === YOURS) {
+    yours.link = link;
+    yours.restructured = false;
+    for (const f of files) f.kept = f.text;
+    saveYours();
+  }
+  const href = address(link);
+  try {
+    await navigator.clipboard.writeText(href);
+    say('Link copied');
+  } catch {
+    say('The link is in the address bar: copy it from there');
+  }
+}
+$('share').addEventListener('click', share);
+
+// ---- The menus and the address ----
+
+// A page that frames this one hears the Figure menu's `change` to follow the address. A style
+// changes the address too, so it hears one then as well.
+let echoing = false;
+pick.addEventListener('change', async () => {
+  if (echoing) return;
+  notice = null;
+  if (pick.value === YOURS) await openYours();
+  else await open(FIGURES.find((doc) => doc.id === pick.value).looks[0]);
+});
+stylePick.addEventListener('change', async () => {
+  await restyle(LOOKS.find((look) => look.id === stylePick.value));
+  echoing = true;
+  pick.dispatchEvent(new Event('change'));
+  echoing = false;
+});
+
+// Another link pasted into this tab, or the framing page's, opens in place. One that can't be read
+// says so and leaves what's open.
+async function hashChanged() {
+  const link = linkInAddress();
+  if (!link || (showing === YOURS && yours?.link === link)) return;
+  await openLink(link);
+}
+window.addEventListener('hashchange', hashChanged);
+outerWindow()?.addEventListener('hashchange', hashChanged);
+
+yours = loadYours();
+const asked = query.get('figure');
+showing = LOOKS.find((look) => look.id === asked) ?? LOOKS.find((look) => look.id === 'explainer');
+const link = linkInAddress();
+if (!(link && (await openLink(link)))) {
+  if (asked === YOURS && yours) await openYours();
+  else await open(showing);
+}
+window.pencil = { figure, compile, files: () => files, yours: () => yours };

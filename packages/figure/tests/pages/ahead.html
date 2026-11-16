@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ahead</title>
+<script>
+  // What a build writes for a figure in view: the fetches start as the page is read, and the
+  // element takes them over. `?broken` leaves ones that fail, which it has to get past.
+  {
+    const broken = new URLSearchParams(location.search).has('broken');
+    const get = (url) => fetch(broken ? `${url}.missing` : url, { priority: 'low' }).catch(() => null);
+    const waiting = (self.__pencilAhead ??= {});
+    waiting.wasm = get('../../pkg/pencil_web_bg.wasm');
+    waiting[new URL('../.built/tube/tube.pfig', document.baseURI).href] = get('../.built/tube/tube.pfig');
+  }
+</script>
+<style>
+  :root { color-scheme: light dark; }
+  body { margin: 0; padding: 8px; }
+  main { max-width: 765px; margin: 0 auto; }
+  pencil-figure { touch-action: none; }
+  .far { height: 250vh; }
+</style>
+</head>
+<body>
+<main>
+  <pencil-figure id="figure" compiled="../.built/tube/tube.pfig" paused aria-label="A tube."></pencil-figure>
+</main>
+<script type="module" src="./boot.js"></script>
+</body>
+</html>

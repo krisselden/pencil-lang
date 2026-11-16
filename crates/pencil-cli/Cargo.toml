@@ -15,3 +15,5 @@ pencil-core.workspace = true
 pencil-render.workspace = true
 png = "0.18"
 serde_json.workspace = true
+# libwebp, for posters: the reference encoder, built from its C source. Only the CLI has it.
+webp = { version = "0.3", default-features = false }

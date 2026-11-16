@@ -1,6 +1,7 @@
 <!doctype html>
 <html lang="en">
 <head>
+<script src="./imports.js"></script>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Bounds Construction</title>
@@ -44,7 +45,7 @@
 <script type="module">
   // The figure says what its controls are: q's range and step, and the case's options by name.
   // The page only lays them out, so it can't disagree with the playground, which reads the same.
-  import '../packages/figure/src/element.js';
+  import '@pencil-lang/figure';
   import { viewing, watch } from './controls.js';
 
   const $ = (id) => document.getElementById(id);

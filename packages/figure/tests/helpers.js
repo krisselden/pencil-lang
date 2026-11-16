@@ -2,11 +2,13 @@ import { expect } from '@playwright/test';
 
 const PAGES = '/packages/figure/tests/pages';
 
-/** Opens a fixture page. PENCIL_GL=1 adds `?gl` to run every figure on WebGL2. */
+/** Opens a fixture page. PENCIL_GL=1 adds `?gl` to run every figure on WebGL2, and PENCIL_MIN=1 adds
+ * `?min` to run them on the minified bundle (`scripts/build-web.sh` writes it). */
 export async function open(page, name, query = '') {
   const params = new URLSearchParams(query);
   if (process.env.PENCIL_GL) params.set('gl', '');
-  const text = params.toString().replace(/gl=(&|$)/, 'gl$1');
+  if (process.env.PENCIL_MIN) params.set('min', '');
+  const text = params.toString().replace(/\b(gl|min)=(&|$)/g, '$1$2');
   await page.goto(`${PAGES}/${name}.html${text ? `?${text}` : ''}`);
   return figureOf(page);
 }

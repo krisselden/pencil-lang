@@ -11,6 +11,8 @@
 //   - WebKit, no flags: WebGPU works (`backend` is "BrowserWebGpu").
 //   - `gl` on the element forces WebGL2 in all of them. Set PENCIL_GL=1 to run every test that
 //     way (the fixture pages add `?gl`), which exercises the other path.
+// PENCIL_MIN=1 runs every test on the minified bundle, packages/figure/pkg/pencil-figure.min.js,
+//   which `scripts/build-web.sh` writes (the fixture pages add `?min`). It combines with PENCIL_GL=1.
 // The tests never name a backend, only that `figure.backend` is set.
 //
 // A server for the repo root starts on 8743 (tests/serve.js, which does what scripts/serve.py does

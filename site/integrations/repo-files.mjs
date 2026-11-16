@@ -69,15 +69,19 @@ export default function repoFiles() {
           await cp(path.join(ROOT, top), path.join(out, top), { recursive: true, filter });
         }
         // The site's pages already ship the WASM, as a bundled asset. The playground loads the
-        // package's files as they are, so its loader is pointed at that copy and a reader
+        // package's files as they are, so its loaders are pointed at that copy and a reader
         // fetches the 5 MB once.
         const bundled = (await readdir(path.join(out, '_astro')).catch(() => [])).find((name) => /^pencil_web_bg.*\.wasm$/.test(name));
         if (bundled) {
-          const loader = path.join(out, 'packages/figure/pkg/pencil_web.js');
-          const text = await readFile(loader, 'utf8');
-          const there = "new URL('pencil_web_bg.wasm', import.meta.url)";
-          if (!text.includes(there)) throw new Error(`${loader} doesn't load its WASM the way this build expects.`);
-          await writeFile(loader, text.replace(there, `new URL('/_astro/${bundled}', import.meta.url)`));
+          // The glue, and the minified bundle that has it inside, which `?min` loads (web/imports.js).
+          const there = /new URL\((['"])pencil_web_bg\.wasm\1,\s*import\.meta\.url\)/;
+          for (const name of ['pencil_web.js', 'pencil-figure.min.js']) {
+            const loader = path.join(out, 'packages/figure/pkg', name);
+            const text = await readFile(loader, 'utf8').catch(() => null);
+            if (text === null) continue;
+            if (!there.test(text)) throw new Error(`${loader} doesn't load its WASM the way this build expects.`);
+            await writeFile(loader, text.replace(there, `new URL('/_astro/${bundled}', import.meta.url)`));
+          }
           await rm(path.join(out, WASM));
         }
         logger.info('copied the playground, corpus/, lab/explainer/ and the package it loads from the repo');

@@ -1,36 +1,37 @@
 // <figure-controls for="id">: a play button, a time slider, beat stepping and a control for each
-// param, built from what a `<pencil-figure>` says of itself once it loads. It only calls the
-// element's public API (`info`, `play`, `pause`, `time`, `step`, `hold`, `value`, `range`), as every page in
-// `web/` does, so a figure needs no controls of its own written for it.
+// param of a `<pencil-figure>`. It only calls the element's public API (`info`, `play`, `pause`,
+// `time`, `step`, `hold`, `value`, `range`), as every page in `web/` does, so a figure needs no
+// controls of its own written for it.
 //
-// `bare` builds nothing, and only says why a figure couldn't be drawn, if it couldn't.
+// The build writes the controls into the page already, as the figure will stand when it starts
+// and disabled (`controls-markup.js`, through `Figure.astro`), so they have their place before
+// the figure does. This turns them on when the figure loads, and writes them again only if the
+// figure isn't the kind they were made for, as when a reader picks another look.
+//
+// `bare` holds nothing, and only says why a figure couldn't be drawn, if it couldn't.
 // `looks` on the element, a JSON list of `{ name, compiled }` or `{ name, src, sheets }`, adds a
 // choice between them, for a figure shown in more than one style.
-
-const make = (tag, props = {}, ...children) => {
-  const el = Object.assign(document.createElement(tag), props);
-  el.append(...children);
-  return el;
-};
-
-/** As many decimals as a param's step has, so a whole-number param reads as one. */
-const decimals = (param) => (param.step == null ? 2 : (String(param.step).split('.')[1] ?? '').length);
+import { markup, shape, steps, beatAt, valueText, timeText } from './controls-markup.js';
 
 class FigureControls extends HTMLElement {
   #figure = null;
-  #inputs = new Map();
   #off = new AbortController();
+  #parts = null; // the controls now in it, found once after each time they're written
 
   connectedCallback() {
     this.#figure = document.getElementById(this.getAttribute('for'));
     if (!this.#figure) return;
     const signal = this.#off.signal;
-    this.#figure.addEventListener('load', () => this.#build(), { signal });
+    this.#figure.addEventListener('load', () => this.#ready(), { signal });
     this.#figure.addEventListener('draw', () => this.#read(), { signal });
     this.#figure.addEventListener('play', () => this.#paintPlay(), { signal });
     this.#figure.addEventListener('pause', () => this.#paintPlay(), { signal });
     this.#figure.addEventListener('error', (e) => this.#fail(e.detail?.error), { signal });
-    if (this.#figure.info) this.#build();
+    // One listener for each kind of thing a reader does, whatever controls are written in.
+    this.addEventListener('input', (e) => this.#input(e.target), { signal });
+    this.addEventListener('change', (e) => this.#change(e.target), { signal });
+    this.addEventListener('click', (e) => this.#click(e.target.closest('button')), { signal });
+    if (this.#figure.info) this.#ready();
   }
 
   disconnectedCallback() {
@@ -38,138 +39,142 @@ class FigureControls extends HTMLElement {
     this.#off = new AbortController();
   }
 
-  #build() {
+  get #looks() {
+    return JSON.parse(this.getAttribute('looks') ?? '[]');
+  }
+
+  /** The figure has loaded: turn the controls on, writing them first if they aren't its. */
+  #ready() {
     const figure = this.#figure;
     const info = figure.info;
     if (!info || this.hasAttribute('bare')) return;
-    const { params = [], beats = [], usesTime } = info;
-    this.#inputs.clear();
-    const rows = [];
-    const id = figure.id;
-
-    const looks = JSON.parse(this.getAttribute('looks') ?? '[]');
-    if (looks.length > 1) {
-      const select = make('select', { id: `${id}-look` });
-      looks.forEach((look, i) => select.append(new Option(look.name, String(i))));
-      select.value = this.dataset.look ?? '0';
-      select.addEventListener('change', () => {
-        this.dataset.look = select.value;
-        const look = looks[Number(select.value)];
-        // A build gives each look as a compiled figure, and `astro dev` as its sources.
-        for (const name of ['src', 'sheets', 'compiled']) {
-          if (look[name] == null) figure.removeAttribute(name);
-          else figure.setAttribute(name, look[name]);
-        }
-        this.dispatchEvent(new CustomEvent('look', { detail: look, bubbles: true }));
+    const looks = this.#looks;
+    const made = shape(info, looks);
+    if (this.dataset.shape !== made) {
+      const values = Object.fromEntries(info.params.map((p) => [p.id, figure.value(p.id)]));
+      const ranges = Object.fromEntries(info.params.map((p) => [p.id, figure.range(p.id)]));
+      const note = this.querySelector('.error');
+      // A reader who picked a look with the keyboard is still on that control afterwards.
+      const focused = this.contains(document.activeElement) ? document.activeElement.id : '';
+      this.innerHTML = markup({
+        id: figure.id,
+        info,
+        moment: { time: figure.time, values, ranges },
+        paused: figure.paused,
+        looks,
+        look: Number(this.dataset.look ?? 0),
+        looksLabel: this.getAttribute('looks-label') ?? undefined,
       });
-      rows.push(make('div', { className: 'row' }, make('label', { htmlFor: select.id, textContent: this.getAttribute('looks-label') ?? 'Style' }), select));
-    }
-
-    if (usesTime) {
-      this.play = make('button', { type: 'button', className: 'play' });
-      this.play.addEventListener('click', () => (figure.paused ? figure.play() : figure.pause()));
-      this.time = make('input', {
-        type: 'range', min: 0, max: figure.duration, step: 0.001, value: figure.time, id: `${id}-time`,
-      });
-      this.time.setAttribute('aria-label', 'Time');
-      this.time.addEventListener('input', () => {
-        figure.pause();
-        figure.time = Number(this.time.value);
-      });
-      this.timeOut = make('output', { htmlFor: this.time.id });
-      rows.push(make('div', { className: 'row time' }, this.play, this.time, this.timeOut));
+      if (note) this.append(note);
+      this.dataset.shape = made;
+      if (focused) document.getElementById(focused)?.focus();
     } else {
-      this.play = this.time = this.timeOut = null;
+      for (const control of this.querySelectorAll('input, select, button')) control.disabled = false;
     }
-
-    if (beats.length && params.some((p) => p.id === 'beat')) {
-      const back = make('button', { type: 'button', textContent: '←', title: 'Previous beat' });
-      const next = make('button', { type: 'button', textContent: '→', title: 'Next beat' });
-      back.setAttribute('aria-label', 'Previous beat');
-      next.setAttribute('aria-label', 'Next beat');
-      back.addEventListener('click', () => figure.step(-1));
-      next.addEventListener('click', () => figure.step(1));
-      this.beatOut = make('output');
-      this.caption = make('span', { className: 'caption' });
-      this.back = back;
-      this.next = next;
-      rows.push(make('div', { className: 'row beats' }, back, this.beatOut, next, this.caption));
-    } else {
-      this.beatOut = null;
-    }
-
-    for (const param of params) {
-      if (param.id === 'beat' && this.beatOut) continue;
-      const inputId = `${id}-param-${param.id}`;
-      let input;
-      if (param.choice) {
-        input = make('select', { id: inputId });
-        param.choice.options.forEach((text, i) => input.append(new Option(text, String(i))));
-        input.addEventListener('change', () => figure.hold(param.id, Number(input.value)));
-      } else {
-        input = make('input', {
-          type: 'range', id: inputId, min: param.min, max: param.max,
-          step: param.step ?? ((param.max - param.min) / 1000 || 0.001),
-        });
-        input.addEventListener('input', () => {
-          figure.pause();
-          figure.hold(param.id, Number(input.value));
-        });
-      }
-      const out = make('output', { htmlFor: inputId });
-      const label = make('label', { htmlFor: inputId, className: 'param' }, make('var', { textContent: param.choice?.of ?? param.id }));
-      this.#inputs.set(param.id, { param, input, out });
-      rows.push(make('div', { className: 'row' }, label, input, out));
-    }
-
-    this.replaceChildren(...rows);
-    this.hidden = rows.length === 0;
+    this.#parts = null;
+    this.hidden = this.children.length === 0;
     this.#paintPlay();
     this.#read();
   }
 
+  #find() {
+    const one = (selector) => this.querySelector(selector);
+    return (this.#parts ??= {
+      play: one('[data-play]'),
+      time: one('[data-time]'),
+      timeOut: one('[data-time-out]'),
+      beatOut: one('[data-beat-out]'),
+      back: one('[data-step="-1"]'),
+      next: one('[data-step="1"]'),
+      captions: [...this.querySelectorAll('[data-captions] > .caption')],
+      params: [...this.querySelectorAll('[data-param]')].map((input) => ({
+        input,
+        out: this.querySelector(`[data-out="${CSS.escape(input.dataset.param)}"]`),
+        param: this.#figure.info.params.find((p) => p.id === input.dataset.param),
+      })),
+    });
+  }
+
+  #input(target) {
+    const figure = this.#figure;
+    if (target.matches('[data-time]')) {
+      figure.pause();
+      figure.time = Number(target.value);
+    } else if (target.matches('input[data-param]')) {
+      figure.pause();
+      figure.hold(target.dataset.param, Number(target.value));
+    }
+  }
+
+  #change(target) {
+    const figure = this.#figure;
+    if (target.matches('select[data-param]')) {
+      figure.hold(target.dataset.param, Number(target.value));
+    } else if (target.matches('[data-look]')) {
+      this.dataset.look = target.value;
+      const look = this.#looks[Number(target.value)];
+      // A build gives each look as a compiled figure, and `astro dev` as its sources.
+      for (const name of ['src', 'sheets', 'compiled']) {
+        if (look[name] == null) figure.removeAttribute(name);
+        else figure.setAttribute(name, look[name]);
+      }
+      this.dispatchEvent(new CustomEvent('look', { detail: look, bubbles: true }));
+    }
+  }
+
+  #click(button) {
+    if (!button || button.disabled) return;
+    const figure = this.#figure;
+    if (button.matches('[data-play]')) figure.paused ? figure.play() : figure.pause();
+    else if (button.dataset.step) figure.step(Number(button.dataset.step));
+  }
+
   #paintPlay() {
-    if (this.play) this.play.textContent = this.#figure.paused ? 'Play' : 'Pause';
+    if (!this.#figure.info || this.hasAttribute('bare')) return;
+    const { play } = this.#find();
+    if (!play) return;
+    const text = this.#figure.paused ? 'Play' : 'Pause';
+    if (play.textContent !== text) play.textContent = text;
   }
 
   /** Reads the figure back, so the controls show what's drawn. */
   #read() {
     const figure = this.#figure;
     const info = figure.info;
-    if (!info || this.hasAttribute('bare')) return;
-    if (this.time) {
-      this.time.max = figure.duration;
-      if (document.activeElement !== this.time) this.time.value = figure.time;
-      this.timeOut.textContent = `${figure.time.toFixed(1)} s`;
+    if (!info || this.hasAttribute('bare') || this.dataset.shape !== shape(info, this.#looks)) return;
+    const parts = this.#find();
+    const say = (el, text) => {
+      if (el.textContent !== text) el.textContent = text;
+    };
+    if (parts.time) {
+      parts.time.max = figure.duration;
+      if (document.activeElement !== parts.time) parts.time.value = figure.time;
+      say(parts.timeOut, timeText(figure.time));
     }
-    for (const { param, input, out } of this.#inputs.values()) {
+    for (const { param, input, out } of parts.params) {
+      if (!param) continue;
       // A range that follows another param, as `0..q` does, is read as it stands, so the
       // control stops where the figure does.
       if (param.follows?.length) [input.min, input.max] = figure.range(param.id);
       const value = figure.value(param.id);
       if (document.activeElement !== input && Number.isFinite(value)) input.value = String(value);
-      out.textContent = param.choice ? '' : Number.isFinite(value) ? value.toFixed(decimals(param)) : '—';
+      if (!param.choice) say(out, valueText(param, value));
     }
-    if (this.beatOut) {
-      const beats = info.beats;
+    if (parts.beatOut && steps(info)) {
       const range = info.params.find((p) => p.id === 'beat');
-      // Beats with lengths count beats done, from 0 to n. Untimed ones say which beat it's on.
-      const timed = (info.beatLengths?.length ?? 0) > 0;
       const beat = Number.isFinite(figure.beat) ? figure.beat : 0;
-      const shown = timed ? beat : beat + 1;
-      const whole = Math.abs(shown - Math.round(shown)) < 1e-6;
-      this.beatOut.textContent = `${whole ? Math.round(shown) : shown.toFixed(1)} / ${beats.length}`;
-      const index = timed ? Math.min(beats.length - 1, Math.max(0, Math.ceil(beat) - 1)) : Math.round(beat);
-      this.caption.textContent = beats[index] ?? '';
-      this.back.disabled = beat <= range.min;
-      this.next.disabled = beat >= range.max;
+      const at = beatAt(info, beat);
+      say(parts.beatOut, at.text);
+      parts.captions.forEach((caption, i) => caption.toggleAttribute('data-on', i === at.caption));
+      parts.back.disabled = beat <= range.min;
+      parts.next.disabled = beat >= range.max;
     }
   }
 
   #fail(error) {
     let note = this.querySelector('.error');
     if (!note) {
-      note = make('p', { className: 'error' });
+      note = Object.assign(document.createElement('p'), { className: 'error' });
       note.setAttribute('role', 'alert');
       this.append(note);
     }

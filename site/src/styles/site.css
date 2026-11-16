@@ -153,10 +153,26 @@ figure-controls {
 }
 figure-controls .row { display: flex; align-items: center; gap: 0.5rem 0.75rem; flex-wrap: wrap; }
 figure-controls input[type='range'] { flex: 1 1 8rem; min-width: 6rem; accent-color: var(--accent); }
-figure-controls output { font-variant-numeric: tabular-nums; min-width: 3.5rem; color: var(--ink); }
+/* An output is as wide as the widest thing it can say, which the controls work out from the
+   param's range (`--room`), so a value changing never moves or wraps what's beside it. */
+figure-controls output {
+  display: inline-block;
+  flex: none;
+  width: var(--room, 3.5rem);
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+figure-controls .beats output { text-align: center; }
 figure-controls .param { min-width: 1.5rem; }
 figure-controls var { font: italic 1rem var(--font-body); color: var(--ink); }
-figure-controls .caption { flex-basis: 100%; font-style: italic; }
+/* Every caption lies in the same place and only the beat's own shows, so the row is as tall as
+   the longest from the start and stepping moves nothing below it. */
+figure-controls .captions { flex-basis: 100%; display: grid; font-style: italic; }
+figure-controls .caption { grid-area: 1 / 1; visibility: hidden; }
+figure-controls .caption[data-on] { visibility: visible; }
+figure-controls input:disabled, figure-controls select:disabled { cursor: default; }
 figure-controls .error { color: var(--bad); margin: 0; }
 figure-controls button, figure-controls select, .button {
   font: inherit;

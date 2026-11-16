@@ -9,17 +9,32 @@
     "directory": "packages/figure"
   },
   "homepage": "https://pencil-lang.dev",
-  "keywords": ["pencil", "mathematics", "figure", "custom-element", "astro-component", "withastro"],
+  "keywords": [
+    "pencil",
+    "mathematics",
+    "figure",
+    "custom-element",
+    "astro-component",
+    "withastro"
+  ],
   "type": "module",
   "exports": {
     ".": "./src/element.js",
     "./host": "./src/host.js",
+    "./pack": "./src/pack.js",
     "./astro": "./astro/index.js",
     "./Figure.astro": "./astro/Figure.astro",
     "./pencil_web_bg.wasm": "./pkg/pencil_web_bg.wasm"
   },
-  "files": ["src", "pkg", "astro"],
-  "sideEffects": ["./src/element.js", "./astro/client.js"],
+  "files": [
+    "src",
+    "pkg",
+    "astro"
+  ],
+  "sideEffects": [
+    "./src/element.js",
+    "./astro/client.js"
+  ],
   "scripts": {
     "test": "playwright test"
   },
@@ -32,6 +47,7 @@
     }
   },
   "devDependencies": {
-    "@playwright/test": "^1.56.0"
+    "@playwright/test": "^1.56.0",
+    "esbuild": "^0.28.2"
   }
 }

@@ -1,6 +1,7 @@
 ---
 // The playground is `web/playground.html` itself, served from the repo and framed here so the
-// site's header stays. `?figure=<id>` is passed through, so a demo can open its own figure.
+// site's header stays. `?figure=<id>` is passed through, so a demo can open its own figure, and
+// so is what follows `#`, where a link carries a whole figure (`#pen=…`).
 import Base from '../layouts/Base.astro';
 ---
 <Base title="Playground" section="playground" full description="Edit any Pencil figure and its style sheets in the browser, and watch it recompile.">
@@ -10,35 +11,51 @@ import Base from '../layouts/Base.astro';
       playground on its own</a>.
     </p>
   </div>
-  <iframe class="playground" id="playground" src="/web/playground.html" title="Pencil playground" allow="fullscreen"></iframe>
+  <iframe class="playground" id="playground" src="/web/playground.html" title="Pencil playground" allow="fullscreen; clipboard-write"></iframe>
 </Base>
 
 <script>
   const frame = document.getElementById('playground') as HTMLIFrameElement;
   const alone = document.getElementById('alone') as HTMLAnchorElement;
+  const PAGE = '/web/playground.html';
+  // What says which figure: an example's id, or a whole figure after `#pen=`.
   const figure = new URLSearchParams(location.search).get('figure');
-  if (figure) {
-    const src = `/web/playground.html?figure=${encodeURIComponent(figure)}`;
-    frame.src = src;
-    alone.href = src;
+  const inner = () => `${PAGE}${figure ? `?figure=${encodeURIComponent(figure)}` : ''}${location.hash}`;
+  if (figure || location.hash) {
+    frame.src = inner();
+    alone.href = inner();
   }
+  // A link pasted into this tab while it's open is the frame's to open.
+  addEventListener('hashchange', () => {
+    const within = frame.contentWindow;
+    if (within && within.location.hash !== location.hash) within.location.hash = location.hash;
+  });
   // The playground keeps the figure it shows in its own address. Follow it, so this page's address
-  // and the link out say the same.
+  // and the link out say the same, however the playground comes to change it.
   frame.addEventListener('load', () => {
-    const watch = () => {
+    const within = frame.contentWindow;
+    if (!within) return;
+    const follow = () => {
       try {
-        const chosen = new URL(frame.contentWindow!.location.href).searchParams.get('figure');
-        if (!chosen) return;
-        alone.href = `/web/playground.html?figure=${encodeURIComponent(chosen)}`;
-        const url = new URL(location.href);
-        if (url.searchParams.get('figure') !== chosen) {
-          url.searchParams.set('figure', chosen);
-          history.replaceState(null, '', url);
-        }
+        const there = new URL(within.location.href);
+        alone.href = `${PAGE}${there.search}${there.hash}`;
+        const here = new URL(location.href);
+        const chosen = there.searchParams.get('figure');
+        if (chosen) here.searchParams.set('figure', chosen);
+        here.hash = there.hash;
+        if (here.href !== location.href) history.replaceState(null, '', here);
       } catch {}
     };
-    watch();
-    // Its menu changes the figure, and its address after.
-    frame.contentDocument?.getElementById('figure-pick')?.addEventListener('change', () => setTimeout(watch));
+    follow();
+    try {
+      for (const name of ['replaceState', 'pushState'] as const) {
+        const was = within.history[name];
+        within.history[name] = function (...args: Parameters<History['replaceState']>) {
+          was.apply(this, args);
+          follow();
+        };
+      }
+      within.addEventListener('hashchange', follow);
+    } catch {}
   });
 </script>

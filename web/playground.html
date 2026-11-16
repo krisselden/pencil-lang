@@ -1,6 +1,7 @@
 <!doctype html>
 <html lang="en">
 <head>
+<script src="./imports.js"></script>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Pencil playground</title>
@@ -26,21 +27,40 @@
   .app { display: grid; grid-template-columns: minmax(320px, 1fr) minmax(320px, 1fr); grid-template-rows: auto 1fr; height: 100%; }
   header { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--rule); }
   header h1 { font-size: 0.875rem; font-weight: 600; margin: 0; }
-  header .hint { color: var(--muted); font-size: 0.75rem; margin-left: auto; }
-  button, select { font: inherit; font-size: 0.8125rem; }
+  header .hint { color: var(--muted); font-size: 0.75rem; margin-left: auto; min-width: 0; }
+  header label { white-space: nowrap; }
+  button, select, input { font: inherit; font-size: 0.8125rem; }
+  /* Fixed widths, so nothing moves when a menu's entries change. */
+  #figure-pick { width: 13rem; max-width: calc(100vw - 6rem); }
+  #style-pick { width: 11rem; max-width: calc(100vw - 6rem); }
+  :focus-visible { outline: 2px solid var(--number); outline-offset: 1px; }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
   /* The editor: a textarea over a highlighted copy of its text, so the caret, selection and undo are the browser's own. */
   .editor { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--rule); }
-  .tabs { display: flex; flex-wrap: wrap; gap: 2px; padding: 6px 8px 0; border-bottom: 1px solid var(--rule); }
-  .tab { border: 1px solid transparent; border-bottom: 0; background: none; padding: 4px 10px; border-radius: 4px 4px 0 0; color: var(--muted); cursor: pointer; font-family: ui-monospace, monospace; font-size: 0.75rem; }
-  .tab[aria-selected=true] { border-color: var(--rule); background: var(--field); color: var(--ink); margin-bottom: -1px; }
-  .tab.edited::after { content: ' •'; }
-  .tab.failed { color: var(--bad); }
-  .tab.failed::before { content: '✕ '; }
+  /* A tab per open file: the file's own button, and one to remove it when it can be. */
+  .tabs { display: flex; flex-wrap: wrap; align-items: end; gap: 2px; margin: 0; padding: 6px 8px 0; list-style: none; border-bottom: 1px solid var(--rule); }
+  .tab { display: flex; align-items: center; border: 1px solid transparent; border-bottom: 0; border-radius: 4px 4px 0 0; }
+  .tab button { border: 0; background: none; color: var(--muted); cursor: pointer; font-family: ui-monospace, monospace; font-size: 0.75rem; }
+  .tab .pick { padding: 4px 10px; }
+  .tab .remove { padding: 4px 6px 4px 0; line-height: 1; }
+  .tab .remove:hover { color: var(--bad); }
+  .tab.active { border-color: var(--rule); background: var(--field); margin-bottom: -1px; }
+  .tab.active .pick { color: var(--ink); }
+  .tab.edited .pick::after { content: ' •'; }
+  .tab.failed .pick { color: var(--bad); }
+  .tab.failed .pick::before { content: '✕ '; }
   /* A file the one before it uses. */
-  .tab.used { font-style: italic; }
-  .tools { display: flex; gap: 6px; padding: 4px 8px; font-size: 0.75rem; color: var(--muted); align-items: center; }
-  .tools .path { font-family: ui-monospace, monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tab.used .pick { font-style: italic; }
+  /* A file of your own that nothing uses yet. */
+  .tab.unused { border-style: dashed; border-color: var(--rule); }
+  .tab.unused .pick { opacity: 0.7; }
+  .add { border: 1px dashed var(--rule); border-bottom: 0; border-radius: 4px 4px 0 0; background: none; color: var(--muted); cursor: pointer; padding: 3px 9px; font-size: 0.75rem; }
+  .add:hover { color: var(--ink); }
+  .editor.dropping { outline: 2px dashed var(--number); outline-offset: -4px; }
+  .tools { display: flex; flex-wrap: wrap; gap: 6px; padding: 4px 8px; font-size: 0.75rem; color: var(--muted); align-items: center; }
+  .tools .path { font-family: ui-monospace, monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 0 1 auto; }
+  .tools #said { color: var(--ink); }
   .tools button { font-size: 0.75rem; white-space: nowrap; }
   .tools .spacer { flex: 1; }
   /* How the expression at the caret reads, with every product and name written out. */
@@ -78,6 +98,14 @@
   #errors li.stale { cursor: default; }
   #errors li .note { color: var(--muted); }
   #status { color: var(--muted); font-size: 0.75rem; }
+  /* The dialogs: adding a file, and replacing your figure. */
+  dialog { border: 1px solid var(--rule); border-radius: 6px; background: var(--paper); color: var(--ink); padding: 14px 16px; max-width: min(26rem, calc(100vw - 2rem)); }
+  dialog::backdrop { background: rgb(0 0 0 / 0.3); }
+  dialog h2 { font-size: 0.875rem; margin: 0 0 8px; }
+  dialog p { margin: 0 0 10px; }
+  dialog input[type=text] { width: 100%; font-family: ui-monospace, monospace; padding: 4px 6px; border: 1px solid var(--rule); border-radius: 4px; background: var(--field); color: var(--ink); }
+  dialog .bad { color: var(--bad); font-size: 0.75rem; min-height: 1.1rem; margin: 4px 0 6px; }
+  dialog .buttons { display: flex; gap: 8px; justify-content: flex-end; }
   @media (max-width: 800px) { .app { grid-template-columns: 1fr; grid-template-rows: auto 50vh auto; } .editor { border-right: 0; } }
 </style>
 </head>
@@ -86,14 +114,20 @@
   <header>
     <h1>Pencil playground</h1>
     <label>Figure <select id="figure-pick"></select></label>
-    <span class="hint">Edits recompile as you type and are kept in this browser. <kbd>Esc</kbd> leaves the editor; then <kbd>Space</kbd> plays, <kbd>←</kbd> <kbd>→</kbd> step beats.</span>
+    <label>Style <select id="style-pick"></select></label>
+    <button id="open" type="button" title="Open .pen and .style files from your computer">Open…</button>
+    <input id="open-files" type="file" multiple accept=".pen,.style" hidden>
+    <button id="share" type="button" title="Put every open file in a link, and copy it">Share</button>
+    <span class="hint">Edits recompile as you type and stay in this browser; Share puts the whole figure in a link. <kbd>Esc</kbd> leaves the editor; then <kbd>Space</kbd> plays, <kbd>←</kbd> <kbd>→</kbd> step beats.</span>
   </header>
   <section class="editor" aria-label="Sources">
-    <div class="tabs" id="tabs" role="tablist"></div>
+    <ul class="tabs" id="tabs" aria-label="Files"></ul>
     <div class="tools">
       <span class="path" id="path"></span>
+      <span id="said" role="status"></span>
       <span class="spacer"></span>
       <button id="copy" type="button">Copy</button>
+      <button id="save" type="button" title="Download this file">Save</button>
       <button id="revert" type="button" title="Reload this file from disk, dropping your edits">Revert</button>
       <button id="revert-all" type="button" title="Reload every file from disk">Revert all</button>
     </div>
@@ -125,6 +159,29 @@
     <p id="status">Starting…</p>
   </section>
 </div>
+<dialog id="add-dialog" aria-labelledby="add-title">
+  <form method="dialog" id="add-form">
+    <h2 id="add-title">Add a file</h2>
+    <p>A <code>.style</code> is added as the last sheet. A <code>.pen</code> is one the document can <code>use</code>.</p>
+    <label for="add-name">Name</label>
+    <input id="add-name" type="text" spellcheck="false" autocapitalize="off" autocomplete="off" placeholder="mine.style" aria-describedby="add-bad">
+    <p class="bad" id="add-bad" aria-live="polite"></p>
+    <div class="buttons">
+      <button type="button" value="cancel" id="add-cancel">Cancel</button>
+      <button type="submit" value="add">Add</button>
+    </div>
+  </form>
+</dialog>
+<dialog id="replace-dialog" aria-labelledby="replace-title" aria-describedby="replace-text">
+  <form method="dialog">
+    <h2 id="replace-title">Replace your figure?</h2>
+    <p id="replace-text"></p>
+    <div class="buttons">
+      <button type="submit" value="keep" autofocus>Keep mine</button>
+      <button type="submit" value="replace">Replace it</button>
+    </div>
+  </form>
+</dialog>
 <script type="module" src="playground.js"></script>
 </body>
 </html>

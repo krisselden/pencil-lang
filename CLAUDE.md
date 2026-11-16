@@ -24,13 +24,13 @@ UPDATE_GOLDENS=1 cargo test -p pencil-core --test corpus   # after an intended I
 cargo run -p pencil-cli -- check corpus/001-circle/circle.pen --style corpus/001-circle/circle.style
 cargo run -p pencil-cli -- render corpus/001-circle/circle.pen --style corpus/001-circle/bands.style --t 1.25 --out out/frame.png
 cargo run -p pencil-cli -- compile corpus/001-circle/circle.pen --style corpus/001-circle/circle.style --out out/circle.pfig   # one file a page loads without parsing; only this build can read it
-cargo run --release -p pencil-cli -- build corpus/013-tube/tube.pen --style corpus/theme.style --style corpus/013-tube/plain.style --card --out out/tube   # what a page needs: the compiled figure, its poster, a card and a .json; /web/built.html loads out/tube and out/tube-dark (the same with --style corpus/dark.style)
+cargo run --release -p pencil-cli -- build corpus/013-tube/tube.pen --style corpus/theme.style --style corpus/013-tube/plain.style --card --out out/tube   # what a page needs: the compiled figure, its poster as PNG and WebP, a card and a .json. The Astro component in packages/figure runs this for a site; a page isn't written around it by hand
 cargo run -p pencil-cli -- render out/circle.pfig --t 1.25 --out out/frame.png   # render, check, video, ir and wgsl take a compiled file too
 cargo run -p pencil-cli -- latex formulas.tex   # LaTeX from Desmos or MathLive, a formula per line, as Pencil text
 scripts/build-web.sh           # the WASM, into packages/figure/pkg
-pnpm install && pnpm test:web  # the element's Playwright tests, in packages/figure/tests (after scripts/build-web.sh)
+pnpm install && pnpm test:web  # the element's and the playground's Playwright tests, in packages/figure/tests (after scripts/build-web.sh); PENCIL_MIN=1 runs them on the minified bundle, PENCIL_GL=1 on WebGL2
 cargo run --release -p pencil-cli -- video corpus/003-unroll/unroll.pen --style corpus/003-unroll/blog.style --size 1280 --out out/unroll.mp4
-scripts/serve.py              # port 8741, no caching; then open /web/playground.html, /web/unroll.html, /web/bounds.html, /web/tube.html, /web/built.html, /web/strokes.html, /web/text.html or /web/ast.html (add ?gl for WebGL2)
+scripts/serve.py              # port 8741, no caching; then open /web/playground.html, /web/unroll.html, /web/bounds.html, /web/tube.html, /web/strokes.html, /web/text.html or /web/ast.html (add ?gl for WebGL2)
 cd site && pnpm install && pnpm build   # the pencil-lang.dev site into site/dist, after scripts/build-web.sh and cargo build --release -p pencil-cli, from the same source; pnpm dev serves it on 4321
 ```
 
@@ -46,7 +46,10 @@ cd site && pnpm install && pnpm build   # the pencil-lang.dev site into site/dis
   WASM as a page calls it, and `./astro` with `./Figure.astro` the Astro integration and component, which run
   `pencil build` and write the element around a compiled figure and its poster. Its tests are Playwright's. The repo
   is a pnpm workspace of it and `site/`.
-- `web/`: the live-reloading playground and a page for most figures, which load the package's files as they are.
+- `web/`: the playground, where a reader opens, changes and shares a figure's sources (a link's `#pen=` carries a whole
+  figure), and a live-reloading page for most figures. They load the package's files as they are, through the import map
+  `web/imports.js` writes, or its minified bundle with `?min`. A figure on a site is built by the package's Astro
+  component, not by a page here.
 - `corpus/`: figures and their golden IR, which are the contract.
 - `site/`: the pencil-lang.dev site, in Astro with static output. It renders `docs/language.md`, draws
   the corpus through the package's `<Figure>`, and frames `web/playground.html`, reading and serving those

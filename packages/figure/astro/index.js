@@ -15,6 +15,9 @@
 //
 // Options:
 // - `root`: where `src` and `sheets` paths start, from the Astro project. The project, by default.
+// - `playground`: the address of a Pencil playground, as `https://pencil-lang.dev/playground/`.
+//   With one, `build()` gives each figure a link that opens its sources there. A built page ships
+//   no sources, so the link carries them, after its `#`, which no server is sent.
 // - `bin`: the `pencil` command. By default PENCIL_BIN, then `target/release/pencil` in the repo
 //   around `root` or around this package, then `pencil` on the PATH.
 import { cp, readFile, rm, stat } from 'node:fs/promises';
@@ -34,6 +37,7 @@ const TYPES = {
   '.style': 'text/plain; charset=utf-8',
   '.pfig': 'application/octet-stream',
   '.png': 'image/png',
+  '.webp': 'image/webp',
   '.json': 'application/json',
 };
 
@@ -62,7 +66,7 @@ async function wasmBuild() {
   return wasm.fingerprint();
 }
 
-export default function pencil({ root, bin } = {}) {
+export default function pencil({ root, bin, playground } = {}) {
   let cfg;
   return {
     name: '@pencil-lang/figure',
@@ -76,6 +80,7 @@ export default function pencil({ root, bin } = {}) {
           wasm: await wasmBuild(),
           dev: command === 'dev',
           base: config.base,
+          playground: playground ?? null,
         };
         process.env.PENCIL_FIGURE = JSON.stringify(cfg);
         updateConfig({

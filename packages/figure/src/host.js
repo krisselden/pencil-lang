@@ -28,12 +28,47 @@ import { uses } from '../pkg/pencil_web.js';
 let starting = null;
 let started = false;
 
+/**
+ * What the page began fetching before this script ran, if it did, and hands it over: a response,
+ * or nothing. A page that knows what a figure will need can start on it as it's read, in a
+ * script of its own, and leave each promise here by name: `wasm`, or a compiled figure's URL.
+ *
+ *   (self.__pencilAhead ??= {}).wasm = fetch(url, { priority: 'low' }).catch(() => null);
+ *
+ * It's this and not `<link rel="preload" as="fetch">` because WebKit doesn't give a preloaded
+ * fetch to the script that asks for it, and downloads the file again.
+ */
+export async function ahead(name) {
+  const waiting = globalThis.__pencilAhead;
+  const early = waiting?.[name];
+  if (!early) return null;
+  delete waiting[name];
+  try {
+    const response = await early;
+    return response?.ok ? response : null;
+  } catch {
+    return null;
+  }
+}
+
+async function start() {
+  const early = await ahead('wasm');
+  if (early) {
+    try {
+      const wasm = await init({ module_or_path: early });
+      started = true;
+      return wasm;
+    } catch {
+      // One that was cut short, as a tab left in the background can be, is fetched again.
+    }
+  }
+  const wasm = await init();
+  started = true;
+  return wasm;
+}
+
 /** Fetches and starts the WASM core, once, and resolves when it can be called. */
-export const ready = () =>
-  (starting ??= init().then((wasm) => {
-    started = true;
-    return wasm;
-  }));
+export const ready = () => (starting ??= start());
 
 /** Whether the core can be called now, without waiting. */
 export const isReady = () => started;

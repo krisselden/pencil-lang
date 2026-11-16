@@ -1,5 +1,6 @@
 // Shared by the fixture pages. It records the figures' events on `window.__pencil` so a test can
-// poll them, defines the element, and takes `?gl` from the query to skip WebGPU.
+// poll them, defines the element, and takes `?gl` from the query to skip WebGPU. `?min` loads the minified
+// bundle in pkg/ in place of the source files.
 const log = (window.__pencil = { load: 0, draw: 0, resize: 0, play: 0, pause: 0, input: [], errors: [] });
 
 // `load` and `draw` don't bubble, but a capturing listener on the document still sees them.
@@ -11,7 +12,7 @@ document.addEventListener('error', (e) => {
   if (e.target?.localName === 'pencil-figure') log.errors.push(String(e.detail?.error?.message ?? e.detail?.error));
 }, true);
 
-await import('../../src/element.js');
+await import(new URLSearchParams(location.search).has('min') ? '../../pkg/pencil-figure.min.js' : '../../src/element.js');
 
 if (new URLSearchParams(location.search).has('gl')) {
   for (const figure of document.querySelectorAll('pencil-figure')) figure.setAttribute('gl', '');

@@ -33,9 +33,10 @@ const files = (demo: (typeof DEMOS)[number]) => [
       </ul>
     </nav>
     <ol class="demos">
-      {DEMOS.map((demo) => (
+      {DEMOS.map((demo, i) => (
         <li class="demo" id={demo.id}>
           <Figure
+            priority={i === 0}
             id={`figure-${demo.id}`}
             looks={demo.looks}
             label={demo.label}

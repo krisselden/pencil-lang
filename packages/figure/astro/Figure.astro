@@ -5,6 +5,7 @@
 //   <Figure src="tube.pen" sheets="theme.style tube.style" dark="dark.style" alt="…" />
 //
 // The poster is an image with the figure's size, so the page is laid out before any script runs,
+// offered as WebP where that's smaller, with the PNG behind it,
 // and it shows until the figure's first frame and wherever a figure can't run. The element swaps
 // itself in over it without anything moving. `astro dev` gives the element the sources too, and a
 // figure follows its files as they're edited.
@@ -13,8 +14,14 @@
 // `narrow` before those when `narrowMedia` matches, as a sheet that reshapes a figure for a phone.
 // Paths are from the integration's `root`. `alt` says what the figure shows, for the poster and
 // for the figure. `poster` picks another moment than the document's own: `{ time, params }`.
+// `priority` is for a figure a reader sees before scrolling: its poster is likely the largest
+// thing painted first, so it's fetched at once and ahead of the rest. Every other poster waits
+// until it's near, and a page should mark one figure or two, since marking them all marks none.
+// A build knows what such a figure will fetch once its script runs, the compiled figure and the
+// WASM, so a line of script in the page starts on them as it's read, behind the poster.
 // Anything else (`id`, `class`, `params`, `paused`, `gl`, `data-*`) goes on `<pencil-figure>`.
 import { build } from './build.js';
+import wasm from '../pkg/pencil_web_bg.wasm?url';
 
 interface Props {
   src: string;
@@ -25,10 +32,12 @@ interface Props {
   narrowMedia?: string;
   alt: string;
   poster?: { time?: number; params?: Record<string, number> };
+  /** The figure is in view when the page opens. */
+  priority?: boolean;
   [attribute: string]: unknown;
 }
 
-const { src, sheets, dark, narrow, narrowMedia = '(max-width: 600px)', alt, poster = {}, ...attributes } = Astro.props;
+const { src, sheets, dark, narrow, narrowMedia = '(max-width: 600px)', alt, poster = {}, priority = false, ...attributes } = Astro.props;
 const list = (value: unknown) => (Array.isArray(value) ? value : String(value ?? '').split(/\s+/).filter(Boolean));
 const [always, whenDark, whenNarrow] = [list(sheets), list(dark), list(narrow)];
 const DARK = '(prefers-color-scheme: dark)';
@@ -57,26 +66,40 @@ const reshaped = others
   .map((built, i) => ({ media: choices[i].media, shape: shape(built) }))
   .filter((each) => each.shape && each.shape !== shape(main))
   .reverse();
+// What to fetch ahead for a figure in view: the WASM, and the compiled figure for the first
+// choice whose media matches, as `<source>` picks it. A script starts on them as the page is
+// read and leaves them for the element (`ahead`, in host.js). `astro dev` loads the sources, so
+// there it would fetch what's never used.
+const early = priority && main.compiled && !main.src
+  ? JSON.stringify({ wasm, figures: [...others.map((built, i) => [choices[i].media, built.compiled]), [null, main.compiled]] }).replace(/</g, '\\u003c')
+  : undefined;
+const start = `(()=>{const a=${early},s=self.__pencilAhead??={},get=(u)=>fetch(u,{priority:'low'}).catch(()=>null);s.wasm??=get(a.wasm);const f=a.figures.find(([m])=>!m||matchMedia(m).matches);if(f){const u=new URL(f[1],document.baseURI).href;s[u]??=get(u)}})()`;
 const mark = reshaped.length ? main.hash : undefined;
 const rules = reshaped
   .map((each) => `@media ${each.media}{[data-pencil-poster="${mark}"] img{--pencil-shape:${each.shape}}}`)
   .join('');
 ---
 {mark && <style is:inline set:html={rules}></style>}
+{early && <script is:inline set:html={start}></script>}
 <pencil-figure {...attributes} {...from(main)} aria-label={alt} data-pencil-poster={mark}>
   {others.map((built, i) => <source media={choices[i].media} {...from(built)} />)}
   {main.poster && (
     <picture style={shape(main) && `--pencil-shape: ${shape(main)}`}>
       {others.map((built, i) => built.poster && (
-        <source media={choices[i].media} srcset={built.poster.srcset ?? built.poster.src} width={built.poster.width} height={built.poster.height} />
+        <>
+          {built.poster.webp && <source media={choices[i].media} type="image/webp" srcset={built.poster.webp} width={built.poster.width} height={built.poster.height} />}
+          <source media={choices[i].media} srcset={built.poster.srcset ?? built.poster.src} width={built.poster.width} height={built.poster.height} />
+        </>
       ))}
+      {main.poster.webp && <source type="image/webp" srcset={main.poster.webp} width={main.poster.width} height={main.poster.height} />}
       <img
         src={main.poster.src}
         srcset={main.poster.srcset}
         width={main.poster.width}
         height={main.poster.height}
         alt={alt}
-        loading="lazy"
+        loading={priority ? 'eager' : 'lazy'}
+        fetchpriority={priority ? 'high' : undefined}
         decoding="async"
         style="display: block; width: 100%; height: auto; aspect-ratio: var(--pencil-shape, auto)"
       />

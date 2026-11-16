@@ -124,11 +124,12 @@ the document says:
 - **It changes nothing about the figure as it runs.** A page that wants the figure to start where its poster is holds those
   params itself, from what the build wrote down.
 
-`pencil build DOC.pen --style … --out DIR` draws it, at the figure's design size and at twice it, beside the compiled figure
+`pencil build DOC.pen --style … --out DIR` draws it, at the figure's design size and at twice it, as PNG and, where it's
+smaller, as WebP, beside the compiled figure
 and a `.json` of what a page needs to know: the figure's shape, its duration, its params with their ranges, its beats and
-captions, its poster's moment, the colors its sheets name, and every file that went into it (`sources`), so a build knows
-when to make it again. `--card` adds a 1200×630 card for sharing, the figure on its own paper. `web/built.html` is a page
-made of only those files, and the Astro component in `packages/figure` runs this for each figure on a site.
+captions, its poster's moment with every param's value and range there, the colors its sheets name, and every file that
+went into it (`sources`), so a build knows when to make it again. `--card` adds a 1200×630 card for sharing, the figure on its own paper. The Astro component in
+`packages/figure` runs this for each figure on a site, and writes the page around what it made.
 
 ### Beats
 

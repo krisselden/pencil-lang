@@ -31,5 +31,7 @@ Nothing from the rest of the repo is copied into `src/`:
   ship, so a reader fetches that once.
 
 `src/lib/figures.ts` lists the demos, with the sheets each figure's page in `web/` loads.
-`src/scripts/figure-controls.js` builds each demo's controls from what the figure declares. Add
+`src/scripts/controls-markup.js` writes each demo's controls from what the figure declares: into the page at build,
+disabled and in their first state, so nothing moves when the figure loads. `src/scripts/figure-controls.js` turns them
+on. Add
 `?gl` to a page's address to draw with WebGL2.

@@ -2,7 +2,7 @@
 // as the document knows them (`x1` is `x_1`), and parentheses where they decide the order. A page
 // shows it beside what was typed, so `2πr` visibly reads `2·π·r` and a slip shows before it
 // becomes a puzzle.
-import { ready as init, inspect, functions, is_latex, from_latex } from '../packages/figure/src/host.js';
+import { ready as init, inspect, functions, is_latex, from_latex } from '@pencil-lang/figure/host';
 
 // Each built-in's head, back to how it's written: the first spelling, as `acos` for `Arccos`.
 const WRITTEN = new Map();

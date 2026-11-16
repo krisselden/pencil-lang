@@ -39,7 +39,7 @@
 // Events: `load` when a figure is compiled, `draw` after each frame drawn, `resize` when its drawn
 // size or its em changes (its `detail.em`, in CSS pixels), `input` when a reader
 // drags a param, `play` and `pause`, and `error` (its `detail.error`) when one can't load or draw.
-import { Player, figure_size, figure_size_compiled, ready, isReady, gather } from './host.js';
+import { Player, figure_size, figure_size_compiled, ready, isReady, gather, ahead } from './host.js';
 import { LabelLayer } from './labels.js';
 import { match } from './fit.js';
 
@@ -365,9 +365,20 @@ export class PencilFigure extends HTMLElement {
       this.#fetched = key;
       if (this.#clock) this.#clock.id = this.#clockName();
       try {
-        const response = await fetch(new URL(compiled, document.baseURI));
-        if (!response.ok) throw new Error(`${compiled}: ${response.status}`);
-        const bytes = new Uint8Array(await response.arrayBuffer());
+        const url = new URL(compiled, document.baseURI);
+        // The page may have started on it already (`ahead`, in host.js).
+        let bytes = null;
+        const early = await ahead(url.href);
+        if (early) {
+          try {
+            bytes = new Uint8Array(await early.arrayBuffer());
+          } catch {}
+        }
+        if (!bytes) {
+          const response = await fetch(url);
+          if (!response.ok) throw new Error(`${compiled}: ${response.status}`);
+          bytes = new Uint8Array(await response.arrayBuffer());
+        }
         await ready();
         if (key !== this.#fetched) return;
         this.loadCompiled(bytes);

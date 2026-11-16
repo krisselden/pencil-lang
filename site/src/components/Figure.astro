@@ -1,10 +1,13 @@
 ---
 // A live figure: the package's `<Figure>`, which builds it and its poster for each of the sheets
 // its page in `web/` loads, and, unless `controls` is false, what a reader can set on it (and
-// either way, why it can't draw if it can't), built from the figure once it loads.
+// either way, why it can't draw if it can't). The controls are written here, from what the build
+// says of the figure, as it will stand when it starts and disabled, so they're in the page with
+// their size before the figure is. `<figure-controls>` turns them on when it loads.
 import PencilFigure from '@pencil-lang/figure/Figure.astro';
 import { build } from '@pencil-lang/figure/astro';
 import type { Look } from '../lib/figures';
+import { markup, shape } from '../scripts/controls-markup.js';
 
 interface Props {
   id: string;
@@ -16,10 +19,12 @@ interface Props {
   controls?: boolean;
   /** What a choice between `looks` is called: a style, by default. */
   choose?: string;
+  /** The figure is in view when the page opens, so its poster is fetched first. */
+  priority?: boolean;
   class?: string;
 }
 
-const { id, looks, label, params, paused, start, controls = true, choose, class: className } = Astro.props;
+const { id, looks, label, params, paused, start, controls = true, choose, priority, class: className } = Astro.props;
 const [look] = looks;
 // The poster is the figure as the page starts it: the params it holds, at the time it starts at.
 const held = Object.fromEntries(
@@ -32,7 +37,7 @@ const held = Object.fromEntries(
 const poster = { time: start, params: held };
 // A tall figure fits the window's height on a wide screen rather than running off it. Its shape
 // is known here, so it's that wide before it loads. The stylesheet says when `--fit-width` applies.
-const { info } = await build({ src: look.pen, sheets: look.sheets, ...poster });
+const { info, moment } = await build({ src: look.pen, sheets: look.sheets, ...poster });
 const fit = info ? `--fit-width: calc(85vh * ${info.size[0] / info.size[1]})` : undefined;
 // A figure with more than one look has each built, and its controls swap one for another.
 const choices = looks.length > 1
@@ -46,6 +51,12 @@ const choices = looks.length > 1
       ),
     )
   : undefined;
+const named = choices ? JSON.parse(choices) : [];
+// The poster's moment is where the figure starts, so its values are the controls' first ones.
+// Without them (a figure that doesn't compile, in `astro dev`), the page writes them on load.
+const written = controls && info
+  ? markup({ id, info, moment, paused: Boolean(paused), looks: named, looksLabel: choose, disabled: true })
+  : '';
 ---
 <div class:list={['live', className]}>
   <PencilFigure
@@ -56,10 +67,19 @@ const choices = looks.length > 1
     narrow={look.narrow}
     alt={label}
     poster={poster}
+    priority={priority}
     params={params}
     paused={paused}
     data-start={start}
     style={fit}
   />
-  <figure-controls for={id} looks={choices} looks-label={choose} bare={controls ? undefined : ''} hidden></figure-controls>
+  <figure-controls
+    for={id}
+    looks={choices}
+    looks-label={choose}
+    bare={controls ? undefined : ''}
+    hidden={written === '' ? true : undefined}
+    data-shape={written ? shape(info, named) : undefined}
+    set:html={written}
+  />
 </div>

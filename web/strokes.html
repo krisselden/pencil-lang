@@ -1,6 +1,7 @@
 <!doctype html>
 <html lang="en">
 <head>
+<script src="./imports.js"></script>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Stroke comparison</title>
@@ -36,7 +37,7 @@
 </main>
 <canvas id="source" width="1024" height="1024"></canvas>
 <script type="module">
-  import { ready as init, Player } from '../packages/figure/src/host.js';
+  import { ready as init, Player } from '@pencil-lang/figure/host';
 
   const S = 1024, DPR = 2, C = S / 2, SCALE = S / 4, R = 1.15 * SCALE;
   const source = document.getElementById('source');

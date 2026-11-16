@@ -9,6 +9,7 @@ import { createHash } from 'node:crypto';
 import { cp, mkdir, readFile, stat } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
+import { pack } from '../src/pack.js';
 
 /** Where a site serves what a build made, and in `astro dev` the sources under `src/`. */
 export const PUBLIC = '_pencil';
@@ -78,6 +79,15 @@ async function fresh(manifestFile, cfg) {
   }
 }
 
+/** A link into a playground that carries everything the figure was built from, or nothing if
+ * the integration wasn't given a playground. */
+async function playgroundLink(cfg, name, doc, sheets, sources) {
+  if (!cfg.playground) return null;
+  const files = {};
+  for (const file of sources) files[file] = await readFile(path.resolve(cfg.root, file), 'utf8');
+  return `${cfg.playground}#pen=${await pack({ name, doc, sheets, files })}`;
+}
+
 const making = new Map();
 
 /**
@@ -89,8 +99,13 @@ const making = new Map();
  * - `size`: the poster's width, for a figure with no design width.
  * - `card`: also a 1200×630 card for sharing.
  *
- * Gives `{ compiled, poster: { src, srcset, width, height }, card, info, hash }`, with URLs from
- * the site's root, and in `astro dev` also `src` and `sheets`, the sources' URLs, which the
+ * Gives `{ compiled, poster: { src, srcset, webp, width, height }, card, info, moment, hash }`,
+ * with URLs from the site's root. `moment` is the figure as its poster shows it, which is how a
+ * page that holds the same params starts it: `{ time, values, ranges }`, the last two for every
+ * param by name, so a page can write its controls as they'll be before the figure runs.
+ * `playground` is a link that opens the figure's sources in a playground, when the integration
+ * was told where one is: the page ships none of them, so the link carries them all. `webp` is a `srcset` of the same poster as WebP, where that's the smaller,
+ * and in `astro dev` also `src` and `sheets`, the sources' URLs, which the
  * element is given there so a figure follows its files as they're edited. A document that doesn't
  * compile fails the build with the compiler's message. In `astro dev` it gives the sources alone,
  * and the element says what's wrong.
@@ -128,7 +143,7 @@ async function make(cfg, key, { src, sheets, time, params, size, card }) {
       // While a figure is being written it's often broken for a moment.
       if (!cfg.dev) throw error;
       console.warn(`[pencil] ${error.message}`);
-      return { ...sources, compiled: null, poster: null, card: null, info: null, hash: null };
+      return { ...sources, compiled: null, poster: null, card: null, info: null, moment: null, playground: null, hash: null };
     }
     manifest = JSON.parse(await readFile(manifestFile, 'utf8'));
   }
@@ -148,17 +163,22 @@ async function make(cfg, key, { src, sheets, time, params, size, card }) {
   }
   const url = (file) => `${base}/${name}/${file}`;
   const [one, two] = manifest.poster.images;
+  // The WebP is offered only when both sizes have one, so a reader gets one kind at any density.
+  const lighter = one.webp && (!two || two.webp);
   return {
     ...sources,
     compiled: url(manifest.figure),
     poster: {
       src: url(one.src),
       srcset: two ? `${url(one.src)}, ${url(two.src)} 2x` : undefined,
+      webp: lighter ? (two ? `${url(one.webp)}, ${url(two.webp)} 2x` : url(one.webp)) : undefined,
       width: one.width,
       height: one.height,
     },
     card: manifest.card ? { src: url(manifest.card.src), width: manifest.card.width, height: manifest.card.height } : null,
     info: manifest.info,
+    moment: { time: manifest.poster.time, values: manifest.poster.values, ranges: manifest.poster.ranges },
+    playground: await playgroundLink(cfg, stem, src, sheets, manifest.sources),
     hash: manifest.hash,
   };
 }

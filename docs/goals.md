@@ -568,6 +568,32 @@ from disk again. Nothing is written to disk. Play, a time scrubber, beat steppin
 all set the same bindings the other pages do. All 16 entries compile and draw on WebGPU and on `?gl`, checked in the desktop
 app's browser pane. The editor is a textarea over a highlighted copy of its text, with no library.
 
+**Reworked on 2026-11-15, for a reader and not only for Kris.** His words: education is a big motivator, and the playground
+"doesn't let you load and save, or add/remove pen or style files", and its one menu was confusing, since a figure and its style
+are separate and an edit to the circle stayed when the menu changed. A built figure ships no sources, so the playground is also
+where a reader of a page goes to see how a figure is written.
+
+- **Two menus:** Figure lists documents and Style that document's sheets, so changing the style keeps the document and what
+  was typed in it. `?figure=<id>` takes the ids it did.
+- **A figure in a link.** What follows `#pen=` is a whole figure: its document, its sheets and every file they use, as JSON,
+  deflated, in base64 (`packages/figure/src/pack.js`, `@pencil-lang/figure/pack`). Nothing after a `#` is sent to a server.
+  Share writes one for what's in the editor, and the address drops it at the next edit, since it no longer says what's open.
+  A link that can't be read says so where errors show.
+- **A figure of your own,** one at a time, kept in the browser: what a link or opened files gave, or an example whose files
+  were added to or removed. The example is left as it was. Replacing one with changes that are nowhere else asks first.
+- **Open, Save, add and remove.** Open takes `.pen` and `.style` files, picked or dropped. Save downloads the file in the
+  open tab. A sheet or a file to `use` is added from the end of the tabs and removed from its own tab. Tabs are buttons with
+  arrow keys, and each dialog keeps the focus and gives it back.
+- **A built figure links in.** With `playground` set on the Astro integration, `build()` gives each figure a link that
+  carries its sources: 3.1 KB for the tube, and 0.4 to 8 KB across the corpus. Built in a project outside the repo and
+  opened in the playground alone and framed by the site, in Chromium and WebKit: it opens as "Yours: tube" with its three
+  files, an edit clears the link from the site's address, and Share puts it back.
+- **Left as they were:** an edit to a sheet examples share, as `theme.style`, still carries to every example that loads it,
+  with the dot on its tab to say so. Save is a file at a time, and Share is how a whole figure is kept.
+- **Not built:** a link that names a URL to fetch the sources from, which keeps a page small and needs the page's host to
+  allow the fetch (Kris: a Cloudflare Worker can send that header). **Not checked:** a real clipboard, a real drag and drop,
+  and a screen reader. 197 Playwright tests pass, on the source files and on the minified bundle.
+
 - **Errors now say which file they're in.** A sheet's error came back with the sheet's line and no file, and `pencil` printed it
   after the `.pen`'s path. `Error` has a `sheet` now, so the page marks the right tab, line and column, and the CLI names the
   sheet. A broken edit leaves the last figure that compiled on screen. An edit that compiles but can't draw goes back to the
@@ -682,8 +708,10 @@ the M1 Pro, on WebGPU and `?gl`.
 What a page and a build do with a figure. Designed on 2026-11-14 for moving Kris's site to Pencil. Kris chose the build's side
 and the element's to be built first, with the poster's moment in the document and the build on his machine.
 
-**Built 2026-11-14,** and shown by `web/built.html`, which loads only what `pencil build` wrote for `corpus/013-tube` under its
-light and dark sheets:
+**Built 2026-11-14,** and shown then by `web/built.html`, a page written by hand around what `pencil build` wrote for
+`corpus/013-tube` under its light and dark sheets. **That page is gone (2026-11-15).** Kris: it was too confusing to keep.
+A figure is built into a page by something like the Astro component, and a page that loads sources as it runs is the
+playground's case, which matters as much and is a different one. The site's pages are what a build is checked on:
 
 - **`pencil build DOC.pen --style … [--card] --out DIR`** writes the compiled figure, a poster at the design size and at twice
   it, a 1200×630 card, and a `.json` with their names and what the page needs to know. The tube's figure is 13 KB.
@@ -735,6 +763,45 @@ light and dark sheets:
   compiled figure for another, and the script that picked sheets by theme and width is gone, since `<source media>` does
   it. The playground still loads the package's files as they are, and a build points it at the WASM the pages already
   ship, so there is one copy.
+- **A figure in view when the page opens is marked `priority` (2026-11-15).** Its poster is the page's largest first
+  paint, so it's fetched eagerly with `fetchpriority="high"`, where every other poster is lazy. A build knows what the
+  figure will fetch, so it also writes a line of script that starts on the WASM and on the compiled figure its media
+  picks, at low priority behind the poster, and leaves them for the element to take (`ahead`, in `host.js`). On the
+  site's home page the figure and the WASM start with the page and are downloaded once each, in Chromium and in WebKit.
+  **It was `<link rel="preload" as="fetch">` first, and WebKit downloaded both again** when the script asked for
+  them, which Chromium didn't: two responses for the 4.6 MB WASM. A test counts the downloads now, and that a fetch
+  which failed is made again. A site that forbids inline scripts can't have this, and loses only the head start.
+- **Controls are in the page before the figure is (2026-11-15).** Kris: the binding info should be taken at build, so
+  controls are built in their first state and disabled until the figure is ready, since building them on load moved the
+  page, and an `<output>` should have a width from its range so a changing value doesn't wrap its row.
+  - `pencil build` writes every param's value and range at the poster's moment (`poster.values`, `poster.ranges`), and
+    `build()` gives them as `moment`. The poster's moment is where a page that holds the same params starts the figure,
+    so those are the controls' first values: the lattice built with `q = 4` and `p = 9` held says `p = 4` in `0..4`.
+  - On the site one function writes the controls (`site/src/scripts/controls-markup.js`), for the build and for the
+    page. `Figure.astro` writes them disabled, and `<figure-controls>` turns them on at `load`, and writes them again
+    only when the figure is another kind of thing than they were made for, as when a reader picks another look.
+  - An output is as many `ch` wide as the longest value its range allows, and every caption of a figure lies in one grid
+    cell with only the beat's own showing, so the row is as tall as the longest from the start. That leaves blank lines
+    under a short caption on a phone.
+  - Measured in headless Chromium on the demos page, at 1633×919 and 375×812: no layout shift while its 17 figures load
+    one after another, and none while stepping through `004-bounds`' beats and moving its slider. Its controls are
+    602×201 and 343×240 with scripts off and the same once ready.
+  - **Seen while checking:** on a phone a poster's labels are smaller than the figure's, since the poster is a picture
+    scaled down and a live label is an em of the page at any size. They change size when the figure takes over.
+  - Controls are still the page's and not the package's. The blog's own would use `info` and `moment` the same way.
+- **Posters are WebP too (2026-11-15).** The home page's poster at twice the size was a 1.2 MB PNG, which is what that
+  first paint waits for. `pencil build` now writes each poster as lossy WebP as well, through libwebp at quality 90 with
+  sharp chroma, since a figure is thin colored lines on flat paper, and keeps it when it's the smaller. It was for all 58
+  of the site's posters: 1.9 MB against 9.0 MB, and 146 KB for that one. The component offers the WebP first and the PNG
+  behind it. A crop of the lattice at twice the size shows no difference. The CLI builds libwebp from C, which is its
+  first dependency that isn't Rust. The card stays PNG.
+- **What's in the WASM (2026-11-15),** since a page of compiled figures still fetches all of it. It was 5.35 MB, 1.69 MB
+  gzipped, 1.19 MB as brotli. Of its 4.06 MB of code, naga is 21%, wgpu's core 15%, Rust's `core` and `alloc` 24%, and
+  the Pencil core 20%. What only a page that reads sources needs (`compile`, `parse`, `style`, `latex`, `diff`,
+  `suggest`, `inspect`, `files`) is 0.46 MB, 11% of the code, so a WASM for compiled figures alone would be about a
+  tenth smaller. A seventh of the file was function names, a 0.73 MB section that only shows in a
+  panic's stack. `scripts/build-web.sh` now leaves it out, unless `PENCIL_WASM_NAMES=1` asks for it to read one: the
+  WASM is 4.62 MB, 1.51 MB gzipped and 1.06 MB as brotli. The WASM for compiled figures alone isn't built.
 - **Sizes to know:** the site's `_pencil/` is 13 MB, mostly posters at twice the size and the lattice's four compiled
   figures at 970 KB each before compression. Whether a host compresses `.pfig` decides what a reader pays for one.
 - **The element has tests of its own (2026-11-15),** Playwright's, in `packages/figure/tests`: 131 pass on headless
