@@ -11,6 +11,8 @@ interface Props {
   figures?: boolean;
   /** A page that fills the window, such as the playground's. */
   full?: boolean;
+  /** Whether the page shows the logo itself, as the home page does beside its heading, so the header leaves it out. */
+  logo?: boolean;
 }
 
 const {
@@ -19,6 +21,7 @@ const {
   section,
   figures = false,
   full = false,
+  logo = false,
 } = Astro.props;
 const fullTitle = title ? `${title} · Pencil` : 'Pencil: a language for mathematical figures';
 const nav = [
@@ -41,7 +44,7 @@ const nav = [
   <body class:list={{ full }}>
     <a class="skip" href="#main">Skip to content</a>
     <header class="site">
-      <a class="mark" href="/" aria-label="Pencil, home"><span class="hearts" aria-hidden="true"></span>Pencil</a>
+      <a class="mark" href="/" aria-label="Pencil, home">{!logo && <span class="hearts" aria-hidden="true"></span>}Pencil</a>
       <nav aria-label="Site">
         {nav.map((item) => (
           <a href={item.href} aria-current={section === item.key ? 'page' : undefined}>{item.label}</a>

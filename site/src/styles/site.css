@@ -74,22 +74,21 @@ header.site .mark {
   text-decoration: none;
   letter-spacing: 0.01em;
 }
-/* The two hearts, from scripts/logo.mjs. The icon's file is a mask over the name's own color: as an image
+/* The two hearts, from scripts/logo.mjs. The icon's file is a mask over the text's own color: as an image
    it would choose its ink by its own media query, which Safari doesn't answer for an image, leaving dark
-   ink on dark paper. Sized in the name's ems and hung below its baseline, so the two sit centered on one
-   line that is no taller than the nav's. */
-header.site .mark .hearts {
+   ink on dark paper. */
+.hearts {
   display: inline-block;
-  width: 1.2em;
-  height: 1.2em;
-  margin-right: 0.4em;
-  vertical-align: -0.3em;
   background: currentColor;
   -webkit-mask: url(/favicon.svg) center / contain no-repeat;
   mask: url(/favicon.svg) center / contain no-repeat;
 }
+/* Sized in the name's ems and hung below its baseline, so the two sit centered on one line that is no
+   taller than the nav's. The home page leaves these out, and shows the hearts large beside its heading. */
+header.site .mark .hearts { width: 1.2em; height: 1.2em; margin-right: 0.4em; vertical-align: -0.3em; }
 @media (forced-colors: active) {
-  header.site .mark .hearts { forced-color-adjust: none; background: LinkText; }
+  .hearts { forced-color-adjust: none; background: CanvasText; }
+  header.site .mark .hearts { background: LinkText; }
 }
 header.site nav { display: flex; flex-wrap: wrap; gap: 0.25rem 1.25rem; margin-left: auto; font-size: 0.9375rem; }
 header.site nav a { color: var(--muted); text-decoration: none; }
@@ -212,7 +211,8 @@ figure-controls button.play { min-width: 4.5rem; }
   align-items: center;
   margin: 1.5rem 0 1rem;
 }
-.hero h1 { font-size: 3rem; margin: 0 0 1.25rem; }
+.hero h1 { display: flex; align-items: center; gap: 0.3em; font-size: 3rem; margin: 0 0 1.25rem; }
+.hero h1 .hearts { flex: none; width: 1.75em; height: 1.75em; }
 .hero .lede { margin-bottom: 1.25rem; }
 .hero figcaption, .plate figcaption { font: 0.875rem/1.45 var(--font-ui); color: var(--muted); margin-top: 0.5rem; }
 .actions { display: flex; flex-wrap: wrap; gap: 0.75rem 1.25rem; font-family: var(--font-ui); font-size: 0.9375rem; margin-top: 1.5rem; }
