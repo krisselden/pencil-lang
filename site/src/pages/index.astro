@@ -39,7 +39,7 @@ const [plainCircle, bandedCircle] = circle.looks;
     </section>
 
     <section aria-labelledby="example">
-      <h2 id="example">One figure, two style sheets</h2>
+      <h2 id="example">Styling a figure</h2>
       <div class="example-doc">
         <div class="prose">
           <p>
@@ -67,15 +67,15 @@ const [plainCircle, bandedCircle] = circle.looks;
       <h2 id="whats-in-it">What’s in it</h2>
       <ul class="features">
         <li>
-          <strong>Expressions, not drawing calls.</strong>
+          <strong>Mathematical expressions.</strong>
           Points are complex numbers, derivatives are exact, and a <code>solve</code> can find
           unknowns each frame. A figure compiles to an IR with its expressions in MathJSON, so it
           isn’t locked into this tool.
         </li>
         <li>
-          <strong>Time and input are the same thing.</strong>
-          Animation and interaction both bind the params of one figure, so what a reader drags and
-          what a video plays are one description.
+          <strong>Animation and interaction.</strong>
+          Both bind the params of one figure, so what a reader drags and what a video plays are
+          the same description.
         </li>
         <li>
           <strong>Collections and maps.</strong>
@@ -83,17 +83,17 @@ const [plainCircle, bandedCircle] = circle.looks;
           function, so one thing can appear in several panels.
         </li>
         <li>
-          <strong>Strokes and sides that follow the math.</strong>
+          <strong>Strokes and sides.</strong>
           A circle has a handedness and can pass through a line, and both of its sides can be drawn
           at once. A taper can follow arc length.
         </li>
         <li>
-          <strong>Description, style and rendering stay apart.</strong>
+          <strong>Style sheets.</strong>
           A figure holds no colors, sizes or renderer-specific calls. Styles target its names, with
           CSS-like rules and math-specific properties.
         </li>
         <li>
-          <strong>Two renderers that check each other.</strong>
+          <strong>Rendering and checking.</strong>
           A Rust core compiles figures to WGSL for WebGPU and WebGL2, and a separate CPU interpreter
           defines what each pixel should be. <code>pencil check</code> compares them.
         </li>

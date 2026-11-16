@@ -36,11 +36,11 @@ style rings::outside { fill: rgb(510, 255, 1530) }
 
 ## What's in it
 
-- **Expressions, not drawing calls.** Points are complex numbers, derivatives are exact, and a `solve` can find unknowns each frame. A figure compiles to an IR with its expressions in MathJSON, so it isn't locked into this tool.
-- **Time and input are the same thing.** Animation and interaction both bind the params of one figure.
+- **Mathematical expressions.** Points are complex numbers, derivatives are exact, and a `solve` can find unknowns each frame. A figure compiles to an IR with its expressions in MathJSON, so it isn't locked into this tool.
+- **Animation and interaction.** Both bind the params of one figure, so what a reader drags and what a video plays are the same description.
 - **Collections and maps.** One declaration can draw thousands of dots, circles or curves, and can go through a function, so one thing can appear in several panels.
-- **Strokes and sides that follow the math.** A circle has a handedness and can pass through a line, and both of its sides can be drawn at once.
-- **Two renderers that check each other.** A Rust core compiles figures to WGSL for WebGPU and WebGL2, and a separate CPU interpreter defines what each pixel should be. `pencil check` compares them.
+- **Strokes and sides.** A circle has a handedness and can pass through a line, and both of its sides can be drawn at once.
+- **Rendering and checking.** A Rust core compiles figures to WGSL for WebGPU and WebGL2, and a separate CPU interpreter defines what each pixel should be. `pencil check` compares them.
 
 ## Trying it
 
