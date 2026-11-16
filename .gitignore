@@ -11,3 +11,6 @@ node_modules/
 /lab/narration/out
 __pycache__/
 /packages/figure/tests/.built
+
+# Worktrees the Claude desktop app makes for its sessions
+/.claude/worktrees
