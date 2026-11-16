@@ -74,6 +74,23 @@ header.site .mark {
   text-decoration: none;
   letter-spacing: 0.01em;
 }
+/* The two hearts, from scripts/logo.mjs. The icon's file is a mask over the name's own color: as an image
+   it would choose its ink by its own media query, which Safari doesn't answer for an image, leaving dark
+   ink on dark paper. Sized in the name's ems and hung below its baseline, so the two sit centered on one
+   line that is no taller than the nav's. */
+header.site .mark .hearts {
+  display: inline-block;
+  width: 1.2em;
+  height: 1.2em;
+  margin-right: 0.4em;
+  vertical-align: -0.3em;
+  background: currentColor;
+  -webkit-mask: url(/favicon.svg) center / contain no-repeat;
+  mask: url(/favicon.svg) center / contain no-repeat;
+}
+@media (forced-colors: active) {
+  header.site .mark .hearts { forced-color-adjust: none; background: LinkText; }
+}
 header.site nav { display: flex; flex-wrap: wrap; gap: 0.25rem 1.25rem; margin-left: auto; font-size: 0.9375rem; }
 header.site nav a { color: var(--muted); text-decoration: none; }
 header.site nav a:hover, header.site nav a[aria-current='page'] { color: var(--ink); }

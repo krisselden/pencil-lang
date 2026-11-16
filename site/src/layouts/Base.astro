@@ -36,11 +36,12 @@ const nav = [
     <title>{fullTitle}</title>
     <meta name="description" content={description} />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
   </head>
   <body class:list={{ full }}>
     <a class="skip" href="#main">Skip to content</a>
     <header class="site">
-      <a class="mark" href="/" aria-label="Pencil, home">Pencil</a>
+      <a class="mark" href="/" aria-label="Pencil, home"><span class="hearts" aria-hidden="true"></span>Pencil</a>
       <nav aria-label="Site">
         {nav.map((item) => (
           <a href={item.href} aria-current={section === item.key ? 'page' : undefined}>{item.label}</a>
