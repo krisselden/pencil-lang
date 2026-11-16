@@ -540,7 +540,7 @@ struct Parser {
 /// Builtin names in source, and their MathJSON heads. Anything else is left under
 /// its own name for `compile` to resolve as a user function. `docs/language.md` must
 /// describe every one, and a test holds it to that.
-pub const FUNCTIONS: [(&str, &str); 49] = [
+pub const FUNCTIONS: [(&str, &str); 68] = [
     ("sqrt", "Sqrt"),
     ("sin", "Sin"),
     ("cos", "Cos"),
@@ -589,6 +589,25 @@ pub const FUNCTIONS: [(&str, &str); 49] = [
     ("csch", "Csch"),
     ("arctanh", "Artanh"),
     ("artanh", "Artanh"),
+    ("sec", "Sec"),
+    ("csc", "Csc"),
+    ("cot", "Cot"),
+    ("arcsin", "Arcsin"),
+    ("asin", "Arcsin"),
+    ("arctan", "Arctan"),
+    ("atan", "Arctan"),
+    ("arcsec", "Arcsec"),
+    ("arccsc", "Arccsc"),
+    ("arccot", "Arccot"),
+    ("arcsinh", "Arsinh"),
+    ("arsinh", "Arsinh"),
+    ("arccosh", "Arcosh"),
+    ("arcosh", "Arcosh"),
+    ("arccoth", "Arcoth"),
+    ("arcoth", "Arcoth"),
+    ("log", "Log"),
+    ("ceil", "Ceil"),
+    ("round", "Round"),
     ("flip", "Flip"),
 ];
 

@@ -39,6 +39,30 @@ pub fn read(latex: &str, functions: &[&str]) -> Result<String, Error> {
     Ok(lines?.join("\n") + end)
 }
 
+/// The functions a line `read` wrote calls that Pencil doesn't have yet, as `gcd`. `read` keeps a
+/// name LaTeX has and Pencil lacks, so that a figure's error names it, and this says so ahead of
+/// that. `defined` are the names the figure or the pasted lines define, which are theirs.
+pub fn lacking(text: &str, defined: &[&str]) -> Vec<&'static str> {
+    let named = OPERATORS.iter().map(|name| pencil_function(name));
+    let inverses = INVERSES.iter().map(|(_, inverse)| *inverse);
+    let mut found: Vec<&'static str> = Vec::new();
+    for name in named.chain(inverses) {
+        let has = FUNCTIONS.iter().any(|(known, _)| *known == name) || defined.contains(&name);
+        let call = format!("{name}(");
+        // A call of it, and not the end of a longer name's, as `sec(` is of `arcsec(`.
+        let called = text.match_indices(&call).any(|(at, _)| {
+            !text[..at]
+                .chars()
+                .next_back()
+                .is_some_and(|c| c.is_alphanumeric() || c == '_')
+        });
+        if !has && called && !found.contains(&name) {
+            found.push(name);
+        }
+    }
+    found
+}
+
 /// The functions that lines of LaTeX define, as `f\left(x\right)=x^{2}` defines `f`.
 pub fn definitions(latex: &str) -> Vec<String> {
     let mut names = Vec::new();
@@ -309,20 +333,24 @@ fn pencil_function(latex: &str) -> &str {
 }
 
 /// The inverse a `^{-1}` on a function means, by the name Pencil or MathJSON gives it.
+const INVERSES: [(&str, &str); 10] = [
+    ("sin", "arcsin"),
+    ("cos", "arccos"),
+    ("tan", "arctan"),
+    ("sec", "arcsec"),
+    ("csc", "arccsc"),
+    ("cot", "arccot"),
+    ("sinh", "arsinh"),
+    ("cosh", "arcosh"),
+    ("tanh", "artanh"),
+    ("coth", "arcoth"),
+];
+
 fn inverse_function(name: &str) -> Option<&'static str> {
-    Some(match name {
-        "sin" => "arcsin",
-        "cos" => "arccos",
-        "tan" => "arctan",
-        "sec" => "arcsec",
-        "csc" => "arccsc",
-        "cot" => "arccot",
-        "sinh" => "arsinh",
-        "cosh" => "arcosh",
-        "tanh" => "artanh",
-        "coth" => "arcoth",
-        _ => return None,
-    })
+    INVERSES
+        .iter()
+        .find(|(of, _)| *of == name)
+        .map(|(_, inverse)| *inverse)
 }
 
 struct Reader<'a> {
@@ -1103,6 +1131,10 @@ mod tests {
         assert!(error(r"p.z").contains("two coordinates"));
         // Desmos writes an inverse as a power of −1.
         assert_eq!(pencil(r"\tan^{-1}\left(x\right)"), "arctan(x)");
+        assert_eq!(lacking("arctan(x) + arcsec(x)·sec(x)", &[]), [""; 0]);
+        // Pencil has no `gcd` yet, and the name is kept so that a figure's error says so.
+        assert_eq!(lacking("gcd(a, b) + lg(x)·log(x)", &[]), ["lg", "gcd"]);
+        assert_eq!(lacking("gcd(a, b)", &["gcd"]), [""; 0]);
         assert_eq!(pencil(r"\tanh^{-1}x"), "artanh(x)");
         // A logarithm is base 10 unless it says.
         assert_eq!(pencil(r"\log_{2}\left(x\right)"), "ln(x)/ln(2)");

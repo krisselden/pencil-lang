@@ -26,6 +26,7 @@ usage:
   pencil check  DOC.pen [--style FILE]... [--t SECONDS]... [--param NAME=VALUE]... [--size WIDTH] [--out DIR]
   pencil video  DOC.pen [--style FILE]... [--size WIDTH] [--fps N] [--seconds S] [--font FILE] --out MOVIE.mp4
   pencil latex  FILE.tex...
+  pencil help
 
 ir, wgsl, render, check and video take a compiled figure (the file `compile` writes, which has its
 sheets in it) in place of DOC.pen.
@@ -716,14 +717,15 @@ fn check(args: &Args) -> Result<(), Box<dyn Error>> {
 /// A file is one graph: a function any of its lines defines is a call on all of them. A line
 /// with no Pencil form comes out as a comment that says why, so the output is still a list of
 /// Pencil lines, and the count of each goes to stderr. Each line that is read is also parsed
-/// as Pencil, which checks that what's printed means what was read.
+/// as Pencil, which checks that what's printed means what was read, and so does a line that
+/// calls a function LaTeX has and Pencil doesn't yet, which a figure couldn't compile.
 fn latex(paths: &[String]) -> Result<(), Box<dyn Error>> {
     if paths.is_empty() {
         return Err(format!("`latex` takes a file\n{USAGE}").into());
     }
-    let (mut read, mut refused, mut unparsed) = (0, 0, 0);
+    let (mut read, mut refused, mut lacking, mut unparsed) = (0, 0, 0, 0);
     for path in paths {
-        let source = std::fs::read_to_string(path)?;
+        let source = std::fs::read_to_string(path).map_err(|e| format!("{path}: {e}"))?;
         let defined = pencil_core::latex::definitions(&source);
         let functions: Vec<&str> = defined.iter().map(String::as_str).collect();
         for line in source.lines().filter(|l| !l.trim().is_empty()) {
@@ -732,9 +734,16 @@ fn latex(paths: &[String]) -> Result<(), Box<dyn Error>> {
                     let parses = text
                         .split(" = ")
                         .all(|side| pencil_core::parse::parse_whole_expression(side).is_ok());
-                    if parses {
+                    let lacks = pencil_core::latex::lacking(&text, &functions);
+                    if parses && lacks.is_empty() {
                         read += 1;
                         println!("{text}");
+                    } else if parses {
+                        lacking += 1;
+                        println!(
+                            "// Pencil has no `{}` yet: {text}  from  {line}",
+                            lacks.join("`, `")
+                        );
                     } else {
                         unparsed += 1;
                         println!("// doesn't read back as Pencil: {text}  from  {line}");
@@ -747,7 +756,10 @@ fn latex(paths: &[String]) -> Result<(), Box<dyn Error>> {
             }
         }
     }
-    eprintln!("{read} read, {refused} with no Pencil form, {unparsed} that don't read back");
+    eprintln!(
+        "{read} read, {refused} with no Pencil form, {lacking} that call a function Pencil lacks, \
+         {unparsed} that don't read back"
+    );
     Ok(())
 }
 
@@ -757,6 +769,23 @@ fn run() -> Result<(), Box<dyn Error>> {
         print!("{USAGE}");
         return Ok(());
     };
+    // Asked for anywhere, the usage is the answer, and not an error.
+    if args
+        .iter()
+        .any(|a| matches!(a.as_str(), "help" | "--help" | "-h"))
+    {
+        print!("{USAGE}");
+        return Ok(());
+    }
+    if matches!(command.as_str(), "--version" | "-V") {
+        // The build is what a compiled figure is stamped with, and what the package's WASM must match.
+        println!(
+            "pencil {} (build {:016x})",
+            env!("CARGO_PKG_VERSION"),
+            compiled::FINGERPRINT
+        );
+        return Ok(());
+    }
     if command == "latex" {
         return latex(rest);
     }

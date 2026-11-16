@@ -22,8 +22,12 @@ const headings = [
 >
   <h1>Getting started</h1>
   <p class="lede">
-    Pencil is built from source for now: there are no releases or packages. Everything below runs
-    from a checkout of the repository.
+    Pencil is built from source for now: there are no releases, and its package isn’t published.
+    Everything below runs from a checkout of the repository.
+  </p>
+  <p>
+    To try it with nothing installed, open the <a href="/playground/">playground</a>, which runs in
+    the browser.
   </p>
   <p class="status">
     The syntax and the compiled form change freely while the project is young, so a figure written
@@ -51,7 +55,7 @@ cd pencil-lang</code></pre>
     The same document takes a different sheet without changing. The breathing circle, banded by
     distance:
   </p>
-  <pre><code>cargo run -p pencil-cli -- render corpus/001-circle/circle.pen \
+  <pre><code>cargo run --release -p pencil-cli -- render corpus/001-circle/circle.pen \
   --style corpus/001-circle/bands.style --t 1.25 --out out/frame.png</code></pre>
 
   <h2 id="gpu-against-cpu">Compare the GPU with the CPU</h2>
@@ -94,9 +98,10 @@ scripts/serve.py</code></pre>
     <a href={`${REPO}/blob/main/packages/figure/src/element.js`}><code>packages/figure/src/element.js</code></a>.
   </p>
   <p>
-    A site with a bundler installs the package, <code>@pencil-lang/figure</code>, and imports it. In
-    Astro its <code>&lt;Figure&gt;</code> compiles each figure at build and ships it with a poster,
-    which shows until the figure's first frame. Its
+    A site with a bundler imports the package, <code>@pencil-lang/figure</code>. It isn’t published
+    yet, so it is installed from a checkout. In Astro its <code>&lt;Figure&gt;</code> compiles each
+    figure at build and ships it with a poster, which shows until the figure's first frame and is
+    what a reader without JavaScript or a GPU sees. Its
     <a href={`${REPO}/tree/main/packages/figure`}>README</a> has both.
   </p>
 
@@ -104,7 +109,7 @@ scripts/serve.py</code></pre>
   <p>
     Formulas copied from Desmos or MathLive, one per line, come back as Pencil text:
   </p>
-  <pre><code>cargo run -p pencil-cli -- latex formulas.tex</code></pre>
+  <pre><code>cargo run --release -p pencil-cli -- latex formulas.tex</code></pre>
   <p>The playground does the same when LaTeX is pasted into it.</p>
 
   <h2 id="tests">Run the tests</h2>
@@ -116,15 +121,20 @@ scripts/serve.py</code></pre>
   <pre><code>UPDATE_GOLDENS=1 cargo test -p pencil-core --test corpus</code></pre>
 
   <h2 id="pencil-command">The pencil command</h2>
-  <pre><code>pencil ir     DOC.pen
+  <pre><code>pencil compile DOC.pen [--style FILE]... --out FIGURE.pfig
+pencil build  DOC.pen [--style FILE]... [--t SECONDS] [--param NAME=VALUE]... [--size WIDTH] [--card] --out DIR
+pencil ir     DOC.pen
 pencil wgsl   DOC.pen [--style FILE]...
 pencil render DOC.pen [--style FILE]... [--t SECONDS] [--param NAME=VALUE]... [--size WIDTH] [--cpu] --out FRAME.png
 pencil check  DOC.pen [--style FILE]... [--t SECONDS]... [--param NAME=VALUE]... [--size WIDTH] [--out DIR]
 pencil video  DOC.pen [--style FILE]... [--size WIDTH] [--fps N] [--seconds S] [--font FILE] --out MOVIE.mp4
-pencil latex  FILE.tex...</code></pre>
+pencil latex  FILE.tex...
+pencil help</code></pre>
   <p>
-    <code>cargo run -p pencil-cli --</code> stands in for <code>pencil</code> in a checkout.
+    <code>cargo run --release -p pencil-cli --</code> stands in for <code>pencil</code> in a checkout.
     <code>ir</code> prints a figure’s compiled form, and <code>wgsl</code> the shader it becomes.
+    <code>compile</code> writes a figure and its sheets as one file a page loads without parsing, and
+    <code>build</code> writes that with its poster, which is what the package runs for a site.
   </p>
 
   <h2 id="next">Where next</h2>

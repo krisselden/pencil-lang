@@ -1,6 +1,6 @@
 // The circumcircle of a triangle whose corners chase each other around a Lissajous curve, from
-// Kris's shader. The triangle turns over whenever its corners pass, and the circle goes through a
-// line to come out the other way round. Its sides don't notice, so the plane doesn't flash.
+// Kris's shader. The triangle turns over whenever its corners line up, and the circle straightens
+// into a line to come out the other way round. Its sides don't notice, so the plane doesn't flash.
 doc circumcircle
 duration 17.95
 

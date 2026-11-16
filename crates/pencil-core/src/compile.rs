@@ -325,6 +325,54 @@ fn negated(a: Expr) -> Expr {
         Expr::app("Negate", vec![a])
     }
 }
+/// A function of numbers that is written out in ones every evaluator and shader already has, as
+/// the hyperbolic ones are, so that a derivative, the CPU and the GPU all read one formula. A
+/// sheet's expressions are lowered by this too. Outside its domain a number has no answer, as
+/// `sqrt(-1)` has none: the complex forms are in `builtin`.
+pub(crate) fn lowered(head: &str, args: &[Expr]) -> Option<Expr> {
+    let one = || num(1.0);
+    let of = |head: &str, x: &Expr| Expr::app(head, vec![x.clone()]);
+    let angle = |y: Expr, x: Expr| Expr::app("Arctan2", vec![y, x]);
+    Some(match (head, args) {
+        ("Sec", [x]) => div(one(), of("Cos", x)),
+        ("Csc", [x]) => div(one(), of("Sin", x)),
+        ("Cot", [x]) => div(of("Cos", x), of("Sin", x)),
+        // The angle of (√(1 − x²), x), which keeps its precision near 0 and near ±1.
+        ("Arcsin", [x]) => angle(x.clone(), sqrt(sub(one(), square(x.clone())))),
+        ("Arctan", [x]) => angle(x.clone(), one()),
+        // Between 0 and π, as Desmos has it, so it has no jump at 0.
+        ("Arccot", [x]) => angle(one(), x.clone()),
+        ("Arcsec", [x]) => Expr::app("Arccos", vec![div(one(), x.clone())]),
+        ("Arccsc", [x]) => lowered("Arcsin", &[div(one(), x.clone())])?,
+        // Odd, so a large negative x doesn't cancel.
+        ("Arsinh", [x]) => mul(
+            of("Sign", x),
+            Expr::app(
+                "Ln",
+                vec![add(of("Abs", x), sqrt(add(square(x.clone()), one())))],
+            ),
+        ),
+        ("Arcosh", [x]) => Expr::app(
+            "Ln",
+            vec![add(x.clone(), sqrt(sub(square(x.clone()), one())))],
+        ),
+        ("Arcoth", [x]) => div(
+            Expr::app(
+                "Ln",
+                vec![div(add(x.clone(), one()), sub(x.clone(), one()))],
+            ),
+            num(2.0),
+        ),
+        // Base 10, as LaTeX's `\log` and Desmos's are, or the base that's given.
+        ("Log", [x]) => div(of("Ln", x), num(std::f64::consts::LN_10)),
+        ("Log", [x, base]) => div(of("Ln", x), of("Ln", base)),
+        ("Ceil", [x]) => negated(of("Floor", &negated(x.clone()))),
+        // A half goes away from 0.
+        ("Round", [x]) => mul(of("Sign", x), of("Floor", &add(of("Abs", x), num(0.5)))),
+        _ => return None,
+    })
+}
+
 fn is_sum_of_squares(e: &Expr) -> bool {
     let squared = |e: &Expr| matches!(e, Expr::App(head, args) if head == "Power" && args.get(1).is_some_and(|n| is_num(n, 2.0)));
     matches!(e, Expr::App(head, args) if head == "Add" && args.len() == 2 && squared(&args[0]) && squared(&args[1]))
@@ -673,6 +721,21 @@ impl Lowerer {
         } else {
             low
         };
+        let numbers: Option<Vec<Expr>> = low
+            .iter()
+            .map(|v| match v {
+                Scalar(x) => Some(x.clone()),
+                _ => None,
+            })
+            .collect();
+        if let Some(written) = numbers.and_then(|numbers| lowered(head, &numbers)) {
+            return Ok(Scalar(written));
+        }
+        // What the complex forms below are made of.
+        let i = || Point(num(0.0), num(1.0));
+        let minus_i = || Point(num(0.0), num(-1.0));
+        let one = || Scalar(num(1.0));
+        let quarter_turn = || Scalar(num(std::f64::consts::FRAC_PI_2));
         let reflected_circle = |x: &Expr, y: &Expr, r: &Expr, p: [Expr; 2]| {
             let _ = (x, y);
             let [cx, cy] = p;
@@ -797,6 +860,83 @@ impl Lowerer {
                 let ratio = self.builtin("Divide", vec![above, below])?;
                 let log = self.builtin("Ln", vec![ratio])?;
                 self.builtin("Divide", vec![log, Scalar(num(2.0))])?
+            }
+            // Trigonometry of a complex number, from its parts: sin(x + iy) is
+            // sin x·cosh y + i·cos x·sinh y, and cos(x + iy) is cos x·cosh y − i·sin x·sinh y.
+            ("Sin" | "Cos", [Point(x, y)]) => {
+                let up = Expr::app("Exp", vec![y.clone()]);
+                let down = Expr::app("Exp", vec![negated(y.clone())]);
+                let cosh = div(add(up.clone(), down.clone()), num(2.0));
+                let sinh = div(sub(up, down), num(2.0));
+                let sin = Expr::app("Sin", vec![x.clone()]);
+                let cos = Expr::app("Cos", vec![x.clone()]);
+                if head == "Sin" {
+                    Point(times(&sin, &cosh), times(&cos, &sinh))
+                } else {
+                    Point(times(&cos, &cosh), negated(times(&sin, &sinh)))
+                }
+            }
+            ("Tan" | "Sec" | "Csc" | "Cot", [z @ Point(..)]) => {
+                let sin = self.builtin("Sin", vec![z.clone()])?;
+                let cos = self.builtin("Cos", vec![z.clone()])?;
+                match head {
+                    "Tan" => self.builtin("Divide", vec![sin, cos])?,
+                    "Sec" => self.builtin("Divide", vec![one(), cos])?,
+                    "Csc" => self.builtin("Divide", vec![one(), sin])?,
+                    _ => self.builtin("Divide", vec![cos, sin])?,
+                }
+            }
+            // Their inverses, on the principal branches: arcsin z = −i·ln(iz + √(1 − z²)),
+            // arccos z = π/2 − arcsin z, arctan z = −i·artanh(iz) and arccot z = π/2 − arctan z.
+            ("Arcsin", [z @ Point(..)]) => {
+                let squared = self.builtin("Multiply", vec![z.clone(), z.clone()])?;
+                let under = self.builtin("Subtract", vec![one(), squared])?;
+                let root = self.builtin("Sqrt", vec![under])?;
+                let turned = self.builtin("Multiply", vec![i(), z.clone()])?;
+                let sum = self.builtin("Add", vec![turned, root])?;
+                let log = self.builtin("Ln", vec![sum])?;
+                self.builtin("Multiply", vec![minus_i(), log])?
+            }
+            ("Arctan", [z @ Point(..)]) => {
+                let turned = self.builtin("Multiply", vec![i(), z.clone()])?;
+                let inverse = self.builtin("Artanh", vec![turned])?;
+                self.builtin("Multiply", vec![minus_i(), inverse])?
+            }
+            ("Arccos" | "Arccot", [z @ Point(..)]) => {
+                let other = if head == "Arccos" { "Arcsin" } else { "Arctan" };
+                let inverse = self.builtin(other, vec![z.clone()])?;
+                self.builtin("Subtract", vec![quarter_turn(), inverse])?
+            }
+            ("Arcsec" | "Arccsc" | "Arcoth", [z @ Point(..)]) => {
+                let of = match head {
+                    "Arcsec" => "Arccos",
+                    "Arccsc" => "Arcsin",
+                    _ => "Artanh",
+                };
+                let over = self.builtin("Divide", vec![one(), z.clone()])?;
+                self.builtin(of, vec![over])?
+            }
+            // arsinh z = ln(z + √(z² + 1)), and arcosh z = ln(z + √(z + 1)·√(z − 1)), whose two
+            // roots keep the cut on the real axis below 1.
+            ("Arsinh", [z @ Point(..)]) => {
+                let squared = self.builtin("Multiply", vec![z.clone(), z.clone()])?;
+                let under = self.builtin("Add", vec![squared, one()])?;
+                let root = self.builtin("Sqrt", vec![under])?;
+                let sum = self.builtin("Add", vec![z.clone(), root])?;
+                self.builtin("Ln", vec![sum])?
+            }
+            ("Arcosh", [z @ Point(..)]) => {
+                let above = self.builtin("Add", vec![z.clone(), one()])?;
+                let below = self.builtin("Subtract", vec![z.clone(), one()])?;
+                let first = self.builtin("Sqrt", vec![above])?;
+                let second = self.builtin("Sqrt", vec![below])?;
+                let roots = self.builtin("Multiply", vec![first, second])?;
+                let sum = self.builtin("Add", vec![z.clone(), roots])?;
+                self.builtin("Ln", vec![sum])?
+            }
+            ("Log", [z @ Point(..)]) => {
+                let log = self.builtin("Ln", vec![z.clone()])?;
+                self.builtin("Divide", vec![log, Scalar(num(std::f64::consts::LN_10))])?
             }
             ("Real", [Point(x, _)]) | ("Real", [Scalar(x)]) => Scalar(x.clone()),
             ("Imaginary", [Point(_, y)]) => Scalar(y.clone()),
@@ -4508,6 +4648,94 @@ mod tests {
         close("z + w", (1.0, 4.5));
     }
 
+    /// The numbers against Rust's own functions, and the complex values against Python's `cmath`,
+    /// which is how their branches were chosen.
+    #[test]
+    fn the_standard_functions_take_numbers_and_complex_numbers() {
+        let number = |expr: &str| {
+            let s = scene(&format!("let v = {expr}")).unwrap_or_else(|e| panic!("{expr}: {e}"));
+            env_of(&s, 0.0).get("v").unwrap()
+        };
+        let near = |expr: &str, want: f64| {
+            let got = number(expr);
+            assert!((got - want).abs() < 1e-12, "{expr}: {got}, wanted {want}");
+        };
+        use std::f64::consts::PI;
+        near("sec(0.7)", 1.0 / 0.7f64.cos());
+        near("csc(0.7)", 1.0 / 0.7f64.sin());
+        near("cot(0.7)", 1.0 / 0.7f64.tan());
+        for x in [-1.0, -0.6, 0.0, 1e-9, 0.6, 1.0f64] {
+            near(&format!("arcsin({x})"), x.asin());
+            near(&format!("asin({x})"), x.asin());
+        }
+        for x in [-30.0, -0.6, 0.0, 0.6, 30.0f64] {
+            near(&format!("arctan({x})"), x.atan());
+            near(&format!("atan({x})"), x.atan());
+            // Between 0 and π, with no jump at 0.
+            near(&format!("arccot({x})"), PI / 2.0 - x.atan());
+            near(&format!("arcsinh({x})"), x.asinh());
+            near(&format!("arsinh({x})"), x.asinh());
+        }
+        near("arcsec(-2.5)", (1.0 / -2.5f64).acos());
+        near("arccsc(-2.5)", (1.0 / -2.5f64).asin());
+        near("arccosh(2.5)", 2.5f64.acosh());
+        near("arcosh(1)", 0.0);
+        near("arccoth(2.5)", (1.0 / 2.5f64).atanh());
+        near("arcoth(-2.5)", (1.0 / -2.5f64).atanh());
+        near("log(1000)", 3.0);
+        near("log(8, 2)", 3.0);
+        for (x, up, nearest) in [
+            (2.5, 3.0, 3.0),
+            (-2.5, -2.0, -3.0),
+            (2.4, 3.0, 2.0),
+            (-2.4, -2.0, -2.0),
+            (7.0, 7.0, 7.0),
+            (0.0, 0.0, 0.0),
+        ] {
+            near(&format!("ceil({x})"), up);
+            near(&format!("round({x})"), nearest);
+        }
+        // Outside its domain a number has no answer, as `sqrt(-1)` has none.
+        assert!(number("arcsin(2)").is_nan());
+        assert!(number("arccosh(0.5)").is_nan());
+
+        let close = |expr: &str, want: (f64, f64)| {
+            let got = complex_value(expr);
+            assert!(
+                (got.0 - want.0).abs() < 1e-11 && (got.1 - want.1).abs() < 1e-11,
+                "{expr}: {got:?}, wanted {want:?}"
+            );
+        };
+        close("sin(z)", (3.853738037919377, -27.016813258003936));
+        close("cos(w)", (-0.4692579782290534, 0.473830620416407));
+        close("tan(w)", (0.8508781211449379, 1.3212865837711916));
+        close("sec(w)", (-1.0551797842192612, -1.0654618887767002));
+        close("csc(w)", (-0.9335239832066441, 0.19743230162838601));
+        close("cot(w)", (0.3445141070170653, -0.5349789308356446));
+        close("arcsin(z)", (0.6339838656391767, 2.305509031243477));
+        close("arcsin(w)", (-1.2930420702371825, 1.3618009008578458));
+        close("arccos(z)", (0.9368124611557198, -2.305509031243477));
+        close("arccos(w)", (2.863838397032079, -1.3618009008578458));
+        close("arctan(z)", (1.4483069952314644, 0.15899719167999918));
+        close("arctan(w)", (-1.1265564408348223, 0.09641562020299617));
+        close("arccot(w)", (2.697352767629719, -0.09641562020299617));
+        close("arcsec(w)", (2.056103667268239, 0.13261586085051183));
+        close("arccsc(w)", (-0.4853073404733425, -0.13261586085051183));
+        close("arcsinh(z)", (2.2999140408792695, 0.9176168533514786));
+        close("arcsinh(w)", (-1.4657153519472905, 0.22101863562288385));
+        close("arccosh(z)", (2.305509031243477, 0.9368124611557198));
+        close("arccosh(w)", (1.3618009008578458, 2.863838397032079));
+        close("arccoth(w)", (-0.500370000052531, -0.14924946579308962));
+        close("log(z)", (0.6989700043360187, 0.4027191962733731));
+        // A number that leaves the real line has to be written as a complex one, as with `sqrt`.
+        // Right of 1 is arcsin's cut, and on it the value is the one just below the real axis.
+        close("arcsin(2 + 0·i)", (PI / 2.0, -(2f64.acosh())));
+        // And each undoes its function.
+        close("sin(arcsin(w))", (-2.0, 0.5));
+        close("tan(arctan(z))", (3.0, 4.0));
+        close("cosh(arccosh(w))", (-2.0, 0.5));
+    }
+
     #[test]
     fn hyperbolic_functions_take_numbers_and_complex_numbers() {
         let number = |expr: &str| {
@@ -4635,7 +4863,7 @@ mod tests {
 
     #[test]
     fn what_a_complex_number_cant_do_says_so() {
-        let err = scene("let v = sin((1, 2))").unwrap_err();
+        let err = scene("let v = floor((1, 2))").unwrap_err();
         assert!(
             err.message.contains("needs a number, found a point"),
             "{err}"
@@ -5529,8 +5757,8 @@ mod tests {
             ("let a = smoothstp(0, 1, 0.5)", "did you mean `smoothstep`?"),
             // A built-in that can't take what it's given says so, whatever else is close.
             (
-                "fn Sinh2(z) = z\nlet P = (1, 2)\nlet a = sin(P)",
-                "Sin needs a number",
+                "fn Floor2(z) = z\nlet P = (1, 2)\nlet a = floor(P)",
+                "Floor needs a number",
             ),
         ] {
             let err = scene(doc).unwrap_err().to_string();

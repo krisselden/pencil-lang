@@ -364,7 +364,9 @@ Undo takes it back. Text with a backslash, a `^{`, or a leading `$` is LaTeX, an
 - **Lines pasted together are one graph:** a function any line defines, as `G\left(u,v\right)=u+v`, is a call on every line. Three
   or more things in parentheses are arguments whatever the name is, since a point has two coordinates.
 - **Desmos's own spellings read as what they mean:** `A.x` and `A.y` stay, `P.\operatorname{real}` is `real(P)`, `\tan^{-1}` is
-  `arctan`, and `\log` is base 10, so `\log_{2}x` is `ln(x)/ln(2)`.
+  `arctan`, and `\log` is base 10 while `\log_{2}x` is `ln(x)/ln(2)`.
+- **A function LaTeX has and Pencil doesn't yet keeps its name,** as `\gcd`, `\lcm`, `\det` and `\lg` do, so the figure's error names
+  it. `pencil latex` writes such a line as a comment that says which.
 - **What has no Pencil form is an error,** and the LaTeX pastes as written: Desmos's piecewise braces, `with` and `for`, comparisons, lists, derivatives, `±`, an
   n-th root (`x^(1/n)` differs from it for negative x), 3D points, and infinity.
 
@@ -372,8 +374,14 @@ Undo takes it back. Text with a backslash, a `^{`, or a leading `$` is LaTeX, an
 
 | Function | Meaning |
 |---|---|
-| `sqrt(x)`, `exp(x)`, `ln(x)`, `abs(x)`, `sign(x)`, `floor(x)` | The usual. `sign(0)` is 0. |
-| `sin(x)`, `cos(x)`, `tan(x)`, `acos(x)` or `arccos(x)`, `atan2(y, x)` | Radians. |
+| `sqrt(x)`, `exp(x)`, `ln(x)`, `abs(x)`, `sign(x)` | The usual. `sign(0)` is 0. |
+| `log(x)`, `log(x, b)` | The logarithm to base 10, as LaTeX's `\log` and Desmos's are, or to base `b`. The natural one is `ln(x)`. |
+| `floor(x)`, `ceil(x)`, `round(x)` | The whole number below, above and nearest. A half rounds away from 0, so `round(-2.5)` is −3. |
+| `sin(x)`, `cos(x)`, `tan(x)`, `sec(x)`, `csc(x)`, `cot(x)` | Radians. `30·Degrees` is an angle in degrees. |
+| `arcsin(x)`, `arccos(x)`, `arctan(x)`, or `asin(x)`, `acos(x)`, `atan(x)` | Their inverses, in radians. `arctan` is between −π/2 and π/2. |
+| `arcsec(x)`, `arccsc(x)`, `arccot(x)` | `arccos(1/x)`, `arcsin(1/x)`, and for `arccot` the angle between 0 and π, as Desmos has it, so it has no jump at 0. |
+| `atan2(y, x)` | The angle of the point `(x, y)`, between −π and π. |
+| `arcsinh(x)`, `arccosh(x)`, `arccoth(x)`, or `arsinh(x)`, `arcosh(x)`, `arcoth(x)` | The inverses of the hyperbolic functions, with `arctanh(x)`, which are under Complex numbers. |
 | `min(a, b)`, `max(a, b)`, `clamp(x, lo, hi)` | Limits. |
 | `mod(x, y)` | Floored, so the result takes `y`'s sign. |
 | `mix(a, b, t)` | `a` at 0 and `b` at 1. Also mixes two colors, in linear light. |
@@ -447,8 +455,12 @@ fn spiral(t) = exp(t)
   were. `dot(a, b)` is still the dot product.
 - **Powers:** `z²` and `z^-3` multiply out, up to a power of 8. Anything else, such as `z^2.5` or `z^i`, is `exp(w·ln(z))`, on the principal branch.
 - **Functions:** `real(z)`, `imag(z)`, `conj(z)`, `abs(z)` and `arg(z)` read it. `exp`, `ln` and `sqrt` take one too, with principal values.
-  `ln(0)` and `arg(0)` don't exist, and a figure with one draws what it can (see below). `sin`, `cos` and the rest take numbers only, for now.
-- **Hyperbolic functions:** `sinh(x)`, `cosh(x)`, `tanh(x)`, `coth(x)`, `sech(x)`, `csch(x)` and `arctanh(x)` (or `artanh(x)`) take numbers and complex numbers. They compile to `exp` and `ln`.
+  `ln(0)` and `arg(0)` don't exist, and a figure with one draws what it can (see below).
+- **The trigonometric functions and their inverses take one too,** all of those under Numbers but `atan2`, `floor`, `ceil` and `round`, on
+  the principal branches, as does `log`. A number stays a number: `arcsin(2)` has no answer, as `sqrt(-1)` has none, and
+  `arcsin(2 + 0·i)` is complex. On a branch cut the value is the one a formula gives there: `arcsin(z)` is `-i·ln(i·z + sqrt(1 - z²))`.
+- **Hyperbolic functions:** `sinh(x)`, `cosh(x)`, `tanh(x)`, `coth(x)`, `sech(x)`, `csch(x)` and `arctanh(x)` (or `artanh(x)`) take numbers and complex numbers. They compile to `exp` and `ln`,
+  and the functions added to them compile the same way, to ones every renderer already has, so a derivative sees through each.
 - **`i` gives way to anything named `i`,** so `for i in 1..q` still counts, and inside it `i` is the count. It's clearer to use another name there.
   It also means a stray `i` outside a loop isn't an unknown name any more.
 - **Exact derivatives see through all of it,** so `solve` and a label's `away` work on complex values. It all compiles to plain numbers, so a
@@ -513,7 +525,7 @@ it, but a rule by type or tag may match nothing, since a shared sheet can't know
 `::outside` are its true disk and everything else, whichever way round it runs, and on a line, where there's no disk, they follow the sign. Where both name the same part of the plane,
 `::inside` and `::outside` win. On anything else that has sides, `::inside` and `::outside` are aliases for the sign, with the negative side inside.
 
-So a circle through three points that turns over goes through a line and comes back with its sides' signs where they were, and its disk on the other one. Style `::negative` and the plane doesn't flash, and style `::inside` and
+So a circle through three points that turns over straightens into a line and comes back with its sides' signs where they were, and its disk on the other one. Style `::negative` and the plane doesn't flash, and style `::inside` and
 the color stays with the disk. A style can tell which it is from `self.curvature`.
 
 **Values are expressions**, so they can use `time`, params and bindings. A few more names exist only here:

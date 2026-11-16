@@ -5,6 +5,8 @@
 // and trig come from.
 doc square
 duration 19
+// The last beat clears the figure, so its still is the result, held.
+poster { time: 17.5 }
 
 viewport { x: -0.7..2.7, y: -0.35..2.0 }
 

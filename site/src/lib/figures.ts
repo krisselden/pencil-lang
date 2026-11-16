@@ -156,9 +156,9 @@ export const DEMOS: Demo[] = [
     number: '009',
     title: 'The squaring map',
     about:
-      'A circle orthogonal to the unit circle, and a grid of lines inside it, raised to a power from 1 to 2. The circle becomes a limaçon, and the grid stays square at every crossing.',
+      'A circle orthogonal to the unit circle, and a grid of lines over the square around it, raised to a power from 1 to 2. The circle becomes a limaçon, and the grid’s lines still cross at right angles, since the map is conformal.',
     label:
-      'A circle through n and 1 over n with a grid inside it, raised to a power that moves from 1 to 2, so the circle morphs into a limaçon.',
+      'A circle through n and 1 over n with a grid over the square around it, raised to a power that moves from 1 to 2, so the circle morphs into a limaçon.',
     folder: 'corpus/009-squaring',
     looks: [{ pen: 'corpus/009-squaring/squaring.pen', sheets: [THEME, 'corpus/009-squaring/plain.style'], playground: 'squaring' }],
   },
@@ -178,9 +178,9 @@ export const DEMOS: Demo[] = [
   {
     id: 'circumcircle',
     number: '011',
-    title: 'A circumcircle, going through a line',
+    title: 'A circumcircle, straightening into a line',
     about:
-      'Warm is its negative side. When the corners pass, the circle goes through a line and comes back the other way round, and that side doesn’t change.',
+      'Warm is its negative side. When the three corners line up, the triangle turns over: the circle straightens into a line and comes back the other way round, and that side doesn’t change.',
     label:
       'A triangle and the circle through its corners, warm on one side and cool on the other. When the triangle turns over, the circle straightens into a line and comes back the other way round.',
     folder: 'corpus/011-circumcircle',
@@ -191,9 +191,9 @@ export const DEMOS: Demo[] = [
     number: '012',
     title: 'A limaçon, from both sides of its circles',
     about:
-      'Every circle passes through one point, and each is warm inside and cool outside. They add up, and tanh keeps them in range.',
+      'Every circle passes through one point, with its center on a circle, and each is warm inside and cool outside. They add up, and tanh keeps them in range.',
     label:
-      'Twenty-four circles through one point, whose envelope is a limaçon, each lit warm on its disk and cool outside it, adding up.',
+      'Twenty-four circles through one point, with their centers on a circle, each lit warm on its disk and cool outside it, adding up. The curve they all touch is a limaçon.',
     folder: 'corpus/012-limacon',
     looks: [{ pen: 'corpus/012-limacon/limacon.pen', sheets: ['corpus/012-limacon/plain.style'], playground: 'limacon' }],
   },

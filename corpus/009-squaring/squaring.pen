@@ -1,6 +1,7 @@
 // The squaring map, from Kris's Desmos graph "Squaring map". A circle orthogonal to the unit
-// circle, through n and 1/n, and a grid of lines inside it. Raising them to a power p from 1 to 2
-// morphs the circle into its square, the limaçon, and the grid stays square at every crossing.
+// circle, through n and 1/n, and a grid of lines over the square around it. Raising them to a
+// power p from 1 to 2 morphs the circle into its square, the limaçon, and the grid's lines still
+// cross at right angles.
 doc squaring
 duration 8
 

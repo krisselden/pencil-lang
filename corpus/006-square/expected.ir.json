@@ -690,6 +690,10 @@
       "offset": [-8.0,-12.0]
     }
   ],
+  "poster": {
+    "params": [],
+    "time": 17.5
+  },
   "systems": [],
   "viewport": {
     "fit": 0,

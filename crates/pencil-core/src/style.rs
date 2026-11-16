@@ -534,7 +534,9 @@ fn with_names_in(
                     let local = params.iter().cloned().zip(given).collect();
                     with_names_in(body, names, functions, &local, depth + 1)?
                 }
-                None => Expr::App(head.clone(), given),
+                // A function that is written out in others, as `arctan` is, is here too.
+                None => crate::compile::lowered(head, &given)
+                    .unwrap_or_else(|| Expr::App(head.clone(), given)),
             }
         }
         other => other.clone(),
