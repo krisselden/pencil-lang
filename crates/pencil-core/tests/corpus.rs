@@ -1330,7 +1330,10 @@ fn limacon_ir_matches_golden() {
 }
 
 fn tube_sheets() -> [String; 2] {
-    [square_read("theme.style"), square_read("013-tube/plain.style")]
+    [
+        square_read("theme.style"),
+        square_read("013-tube/plain.style"),
+    ]
 }
 
 #[test]
@@ -1371,8 +1374,16 @@ fn a_row_off_the_top_of_the_tube_comes_back_as_the_next_of_its_arm() {
             let get = |name: &str| env.get(name).unwrap();
             let tau = 2.0 * std::f64::consts::PI;
             // Row 0 leaves through the top, and row p comes in through the bottom, right below.
-            assert!((get("out.y") - tau).abs() < 1e-9, "p = {p}: out at {}", get("out.y"));
-            assert!(get("back.y").abs() < 1e-9, "p = {p}: back at {}", get("back.y"));
+            assert!(
+                (get("out.y") - tau).abs() < 1e-9,
+                "p = {p}: out at {}",
+                get("out.y")
+            );
+            assert!(
+                get("back.y").abs() < 1e-9,
+                "p = {p}: back at {}",
+                get("back.y")
+            );
             assert!((get("out.x") - get("back.x")).abs() < 1e-9, "p = {p}");
             // The row beside it is another arm's unless there's only one arm, and comes in elsewhere.
             if p > 1 {
@@ -1397,8 +1408,7 @@ fn a_row_off_the_top_of_the_tube_comes_back_as_the_next_of_its_arm() {
 /// a turn carries to the back has gone behind the axis.
 #[test]
 fn the_tubes_far_side_is_behind_its_axis() {
-    let doc = square_read("013-tube/tube.pen")
-        + "\nlet middle = rolled(π·i)\nlet seam = rolled(0)";
+    let doc = square_read("013-tube/tube.pen") + "\nlet middle = rolled(π·i)\nlet seam = rolled(0)";
     let figure = build(&doc, &[]).unwrap();
     let at = |roll: f64, turn: f64| {
         let env = pencil_core::eval::frame_env(
@@ -1416,7 +1426,11 @@ fn the_tubes_far_side_is_behind_its_axis() {
     for roll in [0.01, 0.3, 0.5, 1.0] {
         let (middle, seam) = at(roll, 0.0);
         assert!((middle - 1.0 / roll).abs() < 1e-9, "roll = {roll}");
-        assert_eq!(seam < -1e-9, roll > 0.5, "roll = {roll}: the seam is at z = {seam}");
+        assert_eq!(
+            seam < -1e-9,
+            roll > 0.5,
+            "roll = {roll}: the seam is at z = {seam}"
+        );
     }
     // Rolled and turned half way, they've changed places.
     let (middle, seam) = at(1.0, 180.0);
@@ -2494,8 +2508,8 @@ fn scaled_copy() -> pencil_core::Figure {
 #[test]
 fn scaled_copy_ir_matches_golden() {
     let actual = golden_text(&scaled_copy().scene.to_json());
-    let golden = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../corpus/014-scaled-copy/expected.ir.json");
+    let golden =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus/014-scaled-copy/expected.ir.json");
     if std::env::var_os("UPDATE_GOLDENS").is_some() {
         std::fs::write(&golden, &actual).unwrap();
     }
@@ -2519,7 +2533,10 @@ fn instance_of(
     env: &pencil_core::eval::Env,
     id: &str,
     vars: &[(&str, f64)],
-) -> (pencil_core::eval::Env, Option<pencil_core::stroke::Instance>) {
+) -> (
+    pencil_core::eval::Env,
+    Option<pencil_core::stroke::Instance>,
+) {
     use pencil_core::ir::Form;
     let Form::Many { lets, shape, .. } = mark_form(figure, id) else {
         panic!("`{id}` isn't a collection");
@@ -2533,7 +2550,12 @@ fn instance_of(
 }
 
 /// A point along a curve, or along one curve of a collection whose variables are set in `env`.
-fn arc_point(figure: &pencil_core::Figure, env: &pencil_core::eval::Env, id: &str, t: f64) -> [f64; 2] {
+fn arc_point(
+    figure: &pencil_core::Figure,
+    env: &pencil_core::eval::Env,
+    id: &str,
+    t: f64,
+) -> [f64; 2] {
     use pencil_core::{
         eval::real,
         ir::{Form, Shape},
@@ -2548,7 +2570,10 @@ fn arc_point(figure: &pencil_core::Figure, env: &pencil_core::eval::Env, id: &st
     };
     let mut env = env.clone();
     env.set(&arc.var, t);
-    [real(&arc.point[0], &env).unwrap(), real(&arc.point[1], &env).unwrap()]
+    [
+        real(&arc.point[0], &env).unwrap(),
+        real(&arc.point[1], &env).unwrap(),
+    ]
 }
 
 fn near(a: [f64; 2], b: [f64; 2], tolerance: f64) -> bool {
@@ -2604,13 +2629,23 @@ fn the_copy_is_circle_zero_scaled_and_turned() {
             assert!(field_at(image).abs() < 1e-9, "s = {s}: {}", field_at(image));
         }
         let radius = k * 1.45f64.powf(s);
-        assert!((field_at(scale) + radius).abs() < 1e-9, "s = {s}: the center is {} in", field_at(scale));
+        assert!(
+            (field_at(scale) + radius).abs() < 1e-9,
+            "s = {s}: the center is {} in",
+            field_at(scale)
+        );
         let ends: Vec<[f64; 2]> = points
             .iter()
             .map(|p| [real(&p[0], &env).unwrap(), real(&p[1], &env).unwrap()])
             .collect();
-        assert!(near(ends[0], complex_mul(scale, [1.0, 0.0]), 1e-12), "s = {s}");
-        assert!(near(ends[1], complex_mul(scale, [1.0, k]), 1e-12), "s = {s}");
+        assert!(
+            near(ends[0], complex_mul(scale, [1.0, 0.0]), 1e-12),
+            "s = {s}"
+        );
+        assert!(
+            near(ends[1], complex_mul(scale, [1.0, k]), 1e-12),
+            "s = {s}"
+        );
     }
 }
 
@@ -2634,21 +2669,36 @@ fn the_spirals_circles_touch_and_the_copy_lands_on_the_next() {
         let (c, r) = circle(n);
         let scale = scaled_copy_power(n);
         assert!(near(c, scale, 1e-12), "circle {n} at {c:?}");
-        assert!((r - k * 1.45f64.powf(n)).abs() < 1e-12, "circle {n} has radius {r}");
+        assert!(
+            (r - k * 1.45f64.powf(n)).abs() < 1e-12,
+            "circle {n} has radius {r}"
+        );
         // Its tick is circle 0's, carried the same way.
         let (local, _) = instance_of(&figure, &env, "ticks", &[("n", n)]);
         assert!(near(arc_point(&figure, &local, "ticks", 0.0), scale, 1e-12));
-        assert!(near(arc_point(&figure, &local, "ticks", 1.0), complex_mul(scale, [1.0, k]), 1e-12));
+        assert!(near(
+            arc_point(&figure, &local, "ticks", 1.0),
+            complex_mul(scale, [1.0, k]),
+            1e-12
+        ));
         if n < 1.0 {
             let (d, q) = circle(n + 1.0);
             let gap = (c[0] - d[0]).hypot(c[1] - d[1]) - (r + q);
-            assert!(gap.abs() < 1e-12, "circles {n} and {} are {gap} apart", n + 1.0);
+            assert!(
+                gap.abs() < 1e-12,
+                "circles {n} and {} are {gap} apart",
+                n + 1.0
+            );
         }
     }
     // Time eases s from 0 to 1 while the copy glides, and the copy is circle 0, then circle 1.
     for (time, s) in [(0.3, 0.0), (0.9, 0.0), (1.8, 0.5), (2.7, 1.0), (3.8, 1.0)] {
         let env = frame_env(&figure, &Inputs::at(time)).unwrap();
-        assert!((env.get("s").unwrap() - s).abs() < 1e-12, "at {time}, s = {}", env.get("s").unwrap());
+        assert!(
+            (env.get("s").unwrap() - s).abs() < 1e-12,
+            "at {time}, s = {}",
+            env.get("s").unwrap()
+        );
         let trail_end = arc_point(&figure, &env, "trail", s);
         assert!(near(trail_end, scaled_copy_power(s), 1e-12), "at {time}");
     }
@@ -2668,15 +2718,20 @@ fn log_nearest() -> pencil_core::Figure {
 #[test]
 fn log_nearest_ir_matches_golden() {
     let actual = golden_text(&log_nearest().scene.to_json());
-    let golden = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../corpus/015-log-nearest/expected.ir.json");
+    let golden =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus/015-log-nearest/expected.ir.json");
     if std::env::var_os("UPDATE_GOLDENS").is_some() {
         std::fs::write(&golden, &actual).unwrap();
     }
     assert_eq!(actual, std::fs::read_to_string(golden).unwrap());
 }
 
-fn dots_instance(figure: &pencil_core::Figure, env: &pencil_core::eval::Env, id: &str, n: f64) -> [f64; 2] {
+fn dots_instance(
+    figure: &pencil_core::Figure,
+    env: &pencil_core::eval::Env,
+    id: &str,
+    n: f64,
+) -> [f64; 2] {
     match instance_of(figure, env, id, &[("n", n)]).1 {
         Some(pencil_core::stroke::Instance::Dot(p)) => p,
         other => panic!("`{id}` {n} is {other:?}"),
@@ -2712,17 +2767,38 @@ fn each_line_marks_its_own_nearest_and_the_shading_is_where_they_differ() {
         let line_dot = dots_instance(&figure, &env, "line_dots", on_line);
         let log_dot = dots_instance(&figure, &env, "log_dots", on_log);
         assert!((line_dot[0] - on_line.exp()).abs() < 1e-12, "x = {x}");
-        assert!(near(dot_at(&figure, &env, "nearest_on_line"), line_dot, 1e-12), "x = {x}: on the line");
-        assert!(near(dot_at(&figure, &env, "nearest_on_log"), log_dot, 1e-12), "x = {x}: after log");
+        assert!(
+            near(dot_at(&figure, &env, "nearest_on_line"), line_dot, 1e-12),
+            "x = {x}: on the line"
+        );
+        assert!(
+            near(dot_at(&figure, &env, "nearest_on_log"), log_dot, 1e-12),
+            "x = {x}: after log"
+        );
 
         // ln x on the log line, in the scale where its dots are at 0, 1 and 2.
         let [zero, one] = [0.0, 1.0].map(|n| dots_instance(&figure, &env, "log_dots", n));
-        let at = |u: f64| [zero[0] + (one[0] - zero[0]) * u, zero[1] + (one[1] - zero[1]) * u];
-        assert!(near(dot_at(&figure, &env, "X_log"), at(x.ln()), 1e-12), "x = {x}");
-        assert!(near(dot_at(&figure, &env, "X"), [x, line_dot[1]], 1e-12), "x = {x}");
+        let at = |u: f64| {
+            [
+                zero[0] + (one[0] - zero[0]) * u,
+                zero[1] + (one[1] - zero[1]) * u,
+            ]
+        };
+        assert!(
+            near(dot_at(&figure, &env, "X_log"), at(x.ln()), 1e-12),
+            "x = {x}"
+        );
+        assert!(
+            near(dot_at(&figure, &env, "X"), [x, line_dot[1]], 1e-12),
+            "x = {x}"
+        );
 
         let differ = on_line != on_log;
-        assert_eq!(env.get("disagree").unwrap(), if differ { 1.0 } else { 0.0 }, "x = {x}");
+        assert_eq!(
+            env.get("disagree").unwrap(),
+            if differ { 1.0 } else { 0.0 },
+            "x = {x}"
+        );
         let shaded = |id: &str, place: f64| {
             (0..=1).any(|n| {
                 let (local, _) = instance_of(&figure, &env, id, &[("n", n as f64)]);
@@ -2730,8 +2806,16 @@ fn each_line_marks_its_own_nearest_and_the_shading_is_where_they_differ() {
                 a.min(b) <= place && place <= a.max(b)
             })
         };
-        assert_eq!(shaded("disagree_line", x), differ, "x = {x}: shaded on the line");
-        assert_eq!(shaded("disagree_log", at(x.ln())[0]), differ, "x = {x}: shaded after log");
+        assert_eq!(
+            shaded("disagree_line", x),
+            differ,
+            "x = {x}: shaded on the line"
+        );
+        assert_eq!(
+            shaded("disagree_log", at(x.ln())[0]),
+            differ,
+            "x = {x}: shaded after log"
+        );
         disagreed += differ as usize;
     }
     // Both stretches are crossed: from e^½ to (1 + e)/2, and from e^{3/2} to (e + e²)/2.
@@ -2761,12 +2845,19 @@ fn unwrap_ir_matches_golden() {
 }
 
 /// The (a, b) a collection draws this frame, from its own ranges, the second read with the first set.
-fn drawn_pairs(figure: &pencil_core::Figure, env: &pencil_core::eval::Env, id: &str) -> Vec<(i64, i64)> {
+fn drawn_pairs(
+    figure: &pencil_core::Figure,
+    env: &pencil_core::eval::Env,
+    id: &str,
+) -> Vec<(i64, i64)> {
     use pencil_core::{eval::real, ir::Form};
     let Form::Many { vars, .. } = mark_form(figure, id) else {
         panic!("`{id}` isn't a collection");
     };
-    assert_eq!(vars.iter().map(|v| v.0.as_str()).collect::<Vec<_>>(), ["a", "b"]);
+    assert_eq!(
+        vars.iter().map(|v| v.0.as_str()).collect::<Vec<_>>(),
+        ["a", "b"]
+    );
     let mut env = env.clone();
     let mut out = Vec::new();
     let [a0, a1] = [&vars[0].1[0], &vars[0].1[1]].map(|e| real(e, &env).unwrap());
@@ -2803,7 +2894,10 @@ impl LogSpace {
         let w = Self::grid(a, b);
         let big = Self::grid(-Self::P, Self::Q - Self::P);
         let d = big[0] * big[0] + big[1] * big[1];
-        let ratio = [(w[0] * big[0] + w[1] * big[1]) / d, (w[1] * big[0] - w[0] * big[1]) / d];
+        let ratio = [
+            (w[0] * big[0] + w[1] * big[1]) / d,
+            (w[1] * big[0] - w[0] * big[1]) / d,
+        ];
         let tau = std::f64::consts::TAU;
         [-tau * ratio[1], tau * ratio[0]]
     }
@@ -2862,7 +2956,11 @@ fn the_strip_holds_exactly_one_circle_per_period() {
                 seen += 1;
             }
         }
-        assert!(seen > 1000 && drawn.len() > 50, "{seen} points, {} circles", drawn.len());
+        assert!(
+            seen > 1000 && drawn.len() > 50,
+            "{seen} points, {} circles",
+            drawn.len()
+        );
         // The copies a turn away are the same circles.
         assert_eq!(drawn_pairs(&figure, &env, "circles_above"), drawn);
         assert_eq!(drawn_pairs(&figure, &env, "circles_below"), drawn);
@@ -2886,11 +2984,16 @@ fn the_morph_runs_from_the_flat_strip_to_the_spiral() {
         )
         .unwrap()
     };
-    let circle = |env: &pencil_core::eval::Env, id: &str, a: i64, b: i64| {
-        match instance_of(&figure, env, id, &[("a", a as f64), ("b", b as f64)]).1 {
-            Some(Instance::Circle(c, r)) => (c, r),
-            other => panic!("({a}, {b}) is {other:?}"),
-        }
+    let circle = |env: &pencil_core::eval::Env, id: &str, a: i64, b: i64| match instance_of(
+        &figure,
+        env,
+        id,
+        &[("a", a as f64), ("b", b as f64)],
+    )
+    .1
+    {
+        Some(Instance::Circle(c, r)) => (c, r),
+        other => panic!("({a}, {b}) is {other:?}"),
     };
     let cexp = |u: [f64; 2]| [u[0].exp() * u[1].cos(), u[0].exp() * u[1].sin()];
     for t in [0.0, 0.3, 0.55, 1.0] {
@@ -2910,20 +3013,32 @@ fn the_morph_runs_from_the_flat_strip_to_the_spiral() {
                 0.0 => {
                     let off = 1e-4 * (u[0] * u[0] + u[1] * u[1]) + 1e-12;
                     assert!(near(c, [u[0] + 1.0, u[1]], off), "({a}, {b}) flat at {c:?}");
-                    assert!((r - k).abs() < 1e-4 * u[0].abs() * 2.0 * k + 1e-12, "({a}, {b}) flat has radius {r}");
+                    assert!(
+                        (r - k).abs() < 1e-4 * u[0].abs() * 2.0 * k + 1e-12,
+                        "({a}, {b}) flat has radius {r}"
+                    );
                 }
                 // eᵘ and k|eᵘ| exactly.
                 1.0 => {
                     let z = cexp(u);
-                    assert!(near(c, z, 1e-12 * (1.0 + z[0].hypot(z[1]))), "({a}, {b}) at {c:?}");
+                    assert!(
+                        near(c, z, 1e-12 * (1.0 + z[0].hypot(z[1]))),
+                        "({a}, {b}) at {c:?}"
+                    );
                     assert!((r - k * z[0].hypot(z[1])).abs() < 1e-12, "({a}, {b})");
                 }
                 // In between, (e^{tu} − 1)/t + 1, and a radius scaled as the map scales there.
                 _ => {
                     let e = cexp([t * u[0], t * u[1]]);
                     let f = [(e[0] - 1.0) / t + 1.0, e[1] / t];
-                    assert!(near(c, f, 1e-12 * (1.0 + f[0].hypot(f[1]))), "t = {t}: ({a}, {b})");
-                    assert!((r - k * e[0].hypot(e[1])).abs() < 1e-12, "t = {t}: ({a}, {b})");
+                    assert!(
+                        near(c, f, 1e-12 * (1.0 + f[0].hypot(f[1]))),
+                        "t = {t}: ({a}, {b})"
+                    );
+                    assert!(
+                        (r - k * e[0].hypot(e[1])).abs() < 1e-12,
+                        "t = {t}: ({a}, {b})"
+                    );
                 }
             }
             // A turn above and below: the same u, a whole turn up or down.
@@ -2933,13 +3048,19 @@ fn the_morph_runs_from_the_flat_strip_to_the_spiral() {
                     let (copy, _) = circle(&env, id, a, b);
                     let v = [u[0], u[1] + shift];
                     let off = 1e-4 * (v[0] * v[0] + v[1] * v[1]);
-                    assert!(near(copy, [v[0] + 1.0, v[1]], off), "{id} ({a}, {b}) at {copy:?}");
+                    assert!(
+                        near(copy, [v[0] + 1.0, v[1]], off),
+                        "{id} ({a}, {b}) at {copy:?}"
+                    );
                 }
             }
         }
         // 1 never moves.
         let (one, r) = circle(&env, "strip", 0, 0);
-        assert!(near(one, [1.0, 0.0], 1e-12) && (r - k).abs() < 1e-12, "t = {t}: {one:?}");
+        assert!(
+            near(one, [1.0, 0.0], 1e-12) && (r - k).abs() < 1e-12,
+            "t = {t}: {one:?}"
+        );
     }
     // Wrapped, each circle touches its six neighbors, and the rows run through the circles' centers.
     let env = at(1.0);
@@ -2948,7 +3069,10 @@ fn the_morph_runs_from_the_flat_strip_to_the_spiral() {
         for (da, db) in [(1, 0), (0, 1), (1, 1), (-1, 0), (0, -1), (-1, -1)] {
             let (d, s) = circle(&env, "strip", a + da, b + db);
             let gap = (c[0] - d[0]).hypot(c[1] - d[1]) - (r + s);
-            assert!(gap.abs() < 1e-9 * (r + s), "({a}, {b}) to ({da}, {db}): {gap}");
+            assert!(
+                gap.abs() < 1e-9 * (r + s),
+                "({a}, {b}) to ({da}, {db}): {gap}"
+            );
         }
     }
     for (row, (a, b)) in [("row_one", (1.0, 0.0)), ("row_omega", (0.0, 1.0))] {
@@ -2959,7 +3083,10 @@ fn the_morph_runs_from_the_flat_strip_to_the_spiral() {
         for n in -3..=2 {
             let n = n as f64;
             let z = cexp(space.log(a * n, b * n));
-            assert!(near(arc_point(&figure, &env, row, n), z, 1e-9), "{row} at {n}");
+            assert!(
+                near(arc_point(&figure, &env, row, n), z, 1e-9),
+                "{row} at {n}"
+            );
         }
     }
     // Flat, a row is folded into the turn, which keeps its height between −π and π.
@@ -2969,7 +3096,10 @@ fn the_morph_runs_from_the_flat_strip_to_the_spiral() {
         let s = j as f64 / 20.0;
         for row in ["row_one", "row_omega"] {
             let y = arc_point(&figure, &flat, row, s)[1];
-            assert!((-pi - 1e-3..pi + 1e-3).contains(&y), "{row} at {s} is at height {y}");
+            assert!(
+                (-pi - 1e-3..pi + 1e-3).contains(&y),
+                "{row} at {s} is at height {y}"
+            );
         }
     }
 }

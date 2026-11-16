@@ -18,7 +18,9 @@ pub fn time_driven(scene: &Scene) -> Vec<String> {
     // Bindings come in the order they're evaluated, so each reads only those before it.
     for binding in &scene.bindings {
         let mut reads = false;
-        binding.expr.visit_syms(&mut |s| reads |= driven.contains(s));
+        binding
+            .expr
+            .visit_syms(&mut |s| reads |= driven.contains(s));
         if let Expr::App(head, args) = &binding.expr
             && head == "Solved"
             && let Some(Expr::Num(system)) = args.first()
@@ -128,7 +130,10 @@ fn scene_exprs(scene: &Scene, f: &mut impl FnMut(&Expr)) {
                 ..
             } => {
                 values.iter().flat_map(Shown::exprs).for_each(&mut *f);
-                subject.iter().flat_map(|s| s.value.exprs()).for_each(&mut *f);
+                subject
+                    .iter()
+                    .flat_map(|s| s.value.exprs())
+                    .for_each(&mut *f);
                 pair(at, f);
                 pair(offset, f);
                 away.iter().for_each(|p| pair(p, f));
@@ -235,7 +240,10 @@ fn styled_exprs(styled: &Styled, f: &mut impl FnMut(&Expr)) {
         font: _,
     }) = caption
     {
-        [fill, size, halo, distance].into_iter().flatten().for_each(&mut *f);
+        [fill, size, halo, distance]
+            .into_iter()
+            .flatten()
+            .for_each(&mut *f);
     }
     let PanelStyle {
         columns,
@@ -310,16 +318,26 @@ mod tests {
             .collect();
         let doc = read(pen).unwrap();
         // The explainer is a file to a part, each read from beside it.
-        Sources::read(Source { name: pen, text: &doc }, &sheets, &read)
-            .and_then(|sources| sources.compose())
-            .unwrap()
+        Sources::read(
+            Source {
+                name: pen,
+                text: &doc,
+            },
+            &sheets,
+            &read,
+        )
+        .and_then(|sources| sources.compose())
+        .unwrap()
     }
 
     #[test]
     fn beats_bound_to_time_are_stepped_by_seeking_it() {
         // Untimed beats that a `bind` drives from time, and beats with lengths.
         for (pen, sheets) in [
-            ("corpus/004-bounds/bounds.pen", &["corpus/004-bounds/blog.style"][..]),
+            (
+                "corpus/004-bounds/bounds.pen",
+                &["corpus/004-bounds/blog.style"][..],
+            ),
             (
                 "lab/explainer/limacon.pen",
                 &["corpus/theme.style", "lab/explainer/limacon.style"][..],
@@ -335,13 +353,41 @@ mod tests {
     fn which_corpus_figures_need_a_clock() {
         let theme = "corpus/theme.style";
         for (pen, sheets, clock) in [
-            ("corpus/001-circle/circle.pen", vec!["corpus/001-circle/circle.style"], true),
-            ("corpus/002-strokes/ring.pen", vec!["corpus/002-strokes/filled.style"], false),
-            ("corpus/002-strokes/wave.pen", vec!["corpus/002-strokes/taper.style"], false),
-            ("corpus/003-unroll/unroll.pen", vec!["corpus/003-unroll/blog.style"], true),
-            ("corpus/006-square/square.pen", vec![theme, "corpus/006-square/plain.style"], true),
-            ("corpus/007-lattice/lattice.pen", vec![theme, "corpus/007-lattice/plain.style"], false),
-            ("corpus/012-limacon/limacon.pen", vec!["corpus/012-limacon/plain.style"], true),
+            (
+                "corpus/001-circle/circle.pen",
+                vec!["corpus/001-circle/circle.style"],
+                true,
+            ),
+            (
+                "corpus/002-strokes/ring.pen",
+                vec!["corpus/002-strokes/filled.style"],
+                false,
+            ),
+            (
+                "corpus/002-strokes/wave.pen",
+                vec!["corpus/002-strokes/taper.style"],
+                false,
+            ),
+            (
+                "corpus/003-unroll/unroll.pen",
+                vec!["corpus/003-unroll/blog.style"],
+                true,
+            ),
+            (
+                "corpus/006-square/square.pen",
+                vec![theme, "corpus/006-square/plain.style"],
+                true,
+            ),
+            (
+                "corpus/007-lattice/lattice.pen",
+                vec![theme, "corpus/007-lattice/plain.style"],
+                false,
+            ),
+            (
+                "corpus/012-limacon/limacon.pen",
+                vec!["corpus/012-limacon/plain.style"],
+                true,
+            ),
         ] {
             assert_eq!(composition_uses_time(&figure(pen, &sheets)), clock, "{pen}");
         }

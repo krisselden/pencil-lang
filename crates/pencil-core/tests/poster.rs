@@ -25,7 +25,10 @@ fn without_one_its_the_end_of_a_story_or_the_start_of_a_clock() {
     let held = format!("param a = 0 in 0..1\n{story}\nposter {{ a: 1 }}");
     assert_eq!(moment(&held), (4.5, vec![("a".to_string(), 1.0)]));
     // A clock with no story, and a figure with no clock, start at the start.
-    assert_eq!(moment("duration 13\nlet P = (cos(time), sin(time))\ndot P").0, 0.0);
+    assert_eq!(
+        moment("duration 13\nlet P = (cos(time), sin(time))\ndot P").0,
+        0.0
+    );
     assert_eq!(moment("let P = (0, 0)\ndot P").0, 0.0);
 }
 
@@ -40,7 +43,10 @@ fn what_a_page_needs_to_know_survives_being_compiled() {
     let info = composition.info();
     assert_eq!(info["size"].to_string(), "[640.0,400.0]");
     assert_eq!(info["duration"], 13.0);
-    assert_eq!(info["poster"].to_string(), r#"{"params":{"roll":0.6},"time":3.5}"#);
+    assert_eq!(
+        info["poster"].to_string(),
+        r#"{"params":{"roll":0.6},"time":3.5}"#
+    );
     assert_eq!(
         info["colors"].to_string(),
         r#"{"ink":"rgb(18 17 15)","paper_color":"rgb(242 240 235)"}"#
@@ -49,7 +55,13 @@ fn what_a_page_needs_to_know_survives_being_compiled() {
         .as_array()
         .unwrap()
         .iter()
-        .map(|p| (p["id"].as_str().unwrap(), p["min"].as_f64().unwrap(), p["max"].as_f64().unwrap()))
+        .map(|p| {
+            (
+                p["id"].as_str().unwrap(),
+                p["min"].as_f64().unwrap(),
+                p["max"].as_f64().unwrap(),
+            )
+        })
         .collect();
     assert_eq!(params, [("roll", 0.01, 1.0), ("p", 1.0, 3.0)]);
 
@@ -72,5 +84,8 @@ fn a_page_is_told_what_a_reader_can_move() {
             { "panel": 0, "mark": "Q", "param": "b" },
         ])
     );
-    assert_eq!(compose("let P = (0, 0)\ndot P", &[]).unwrap().info()["handles"], serde_json::json!([]));
+    assert_eq!(
+        compose("let P = (0, 0)\ndot P", &[]).unwrap().info()["handles"],
+        serde_json::json!([])
+    );
 }

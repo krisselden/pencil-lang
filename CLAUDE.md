@@ -20,6 +20,7 @@ language decision and why, and the site doesn't render it: add the row there.
 
 ```bash
 cargo test --workspace
+cargo fmt --all && cargo clippy --workspace --all-targets --locked -- -D warnings   # before committing Rust: CI checks both first, and skips the tests when either fails
 UPDATE_GOLDENS=1 cargo test -p pencil-core --test corpus   # after an intended IR change
 cargo run -p pencil-cli -- check corpus/001-circle/circle.pen --style corpus/001-circle/circle.style
 cargo run -p pencil-cli -- render corpus/001-circle/circle.pen --style corpus/001-circle/bands.style --t 1.25 --out out/frame.png

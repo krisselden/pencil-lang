@@ -473,13 +473,20 @@ pub fn nudge_value(
     dx: f64,
     dy: f64,
 ) -> Result<Option<(String, f64)>, Error> {
-    let Some(place) = handle_places(figure, inputs, width, height)?.get(handle).copied().flatten()
+    let Some(place) = handle_places(figure, inputs, width, height)?
+        .get(handle)
+        .copied()
+        .flatten()
     else {
         return Ok(None);
     };
     let param = &figure.scene.handles[handle].param;
     let now = eval::frame_env(figure, inputs)?.get(param);
-    let stepped = figure.scene.params.iter().any(|p| p.id == *param && p.step.is_some());
+    let stepped = figure
+        .scene
+        .params
+        .iter()
+        .any(|p| p.id == *param && p.step.is_some());
     let far = width.max(height) as f64;
     let mut reach = 1.0;
     loop {
@@ -558,7 +565,11 @@ fn label_text(
             _ => filled(text, values, style, digits, env),
         }
     };
-    let default = [if text.is_empty() { TextPart::Value } else { TextPart::Caption }];
+    let default = [if text.is_empty() {
+        TextPart::Value
+    } else {
+        TextPart::Caption
+    }];
     let parts = style.text.as_deref().unwrap_or(&default);
     let mut said: Vec<String> = Vec::new();
     for part in parts {
@@ -615,7 +626,11 @@ fn number(v: f64, digits: usize) -> String {
         format!("{v:.digits$}")
     };
     // Rounding can leave a sign on nothing.
-    if printed.trim_start_matches('-').chars().all(|c| c == '0' || c == '.') {
+    if printed
+        .trim_start_matches('-')
+        .chars()
+        .all(|c| c == '0' || c == '.')
+    {
         printed.trim_start_matches('-').to_string()
     } else {
         printed
@@ -626,7 +641,11 @@ fn number(v: f64, digits: usize) -> String {
 fn written_point(x: f64, y: f64, format: crate::style::Format, digits: usize) -> String {
     use crate::style::Format;
     // A part that would print as zero is left out of a sum, as `i` rather than `0 + 1i`.
-    let zero = |v: f64| number(v, digits).chars().all(|c| c == '0' || c == '.' || c == '-');
+    let zero = |v: f64| {
+        number(v, digits)
+            .chars()
+            .all(|c| c == '0' || c == '.' || c == '-')
+    };
     let imaginary = |v: f64| match number(v, digits).as_str() {
         "1" => "i".to_string(),
         "-1" => "-i".to_string(),
@@ -665,7 +684,11 @@ fn written_point(x: f64, y: f64, format: crate::style::Format, digits: usize) ->
                         -1 => "-".into(),
                         p => p.to_string(),
                     };
-                    if q == 1 { format!("{p}πi") } else { format!("{p}πi/{q}") }
+                    if q == 1 {
+                        format!("{p}πi")
+                    } else {
+                        format!("{p}πi/{q}")
+                    }
                 }
                 None => format!("{}i", number(angle, digits)),
             };
@@ -953,7 +976,10 @@ mod tests {
             let prepared = prepare(&figure, &Inputs::at(0.0), 100, 100, 1.0).unwrap();
             prepared.labels.iter().map(|l| l.text.clone()).collect()
         };
-        assert_eq!(shown(""), ["(−0.50, −0.87)", "(−0.25, −0.43)", "(1, 0)", "(0, 1)"]);
+        assert_eq!(
+            shown(""),
+            ["(−0.50, −0.87)", "(−0.25, −0.43)", "(1, 0)", "(0, 1)"]
+        );
         assert_eq!(
             shown("style label { format: complex }"),
             ["−0.50 − 0.87i", "−0.25 − 0.43i", "1", "i"]
@@ -990,9 +1016,14 @@ mod tests {
             shown("style label { text: name = value; digits: 1 }"),
             ["root = −0.5 − 0.9i", "q = 3", "q − 1 = 2", "3 of them"]
         );
-        assert_eq!(shown("style label { text: caption }"), ["root", "arms", "2", "3 of them"]);
         assert_eq!(
-            shown("style label { text: caption = value } style root { text: name = expr = value; format: polar }"),
+            shown("style label { text: caption }"),
+            ["root", "arms", "2", "3 of them"]
+        );
+        assert_eq!(
+            shown(
+                "style label { text: caption = value } style root { text: name = expr = value; format: polar }"
+            ),
             ["root = σ(2) = e^(−2πi/3)", "arms = 3", "2", "3 of them"]
         );
         let err = crate::build(doc, &["style label { text: nope }"]).unwrap_err();
@@ -1014,7 +1045,10 @@ mod tests {
     fn a_number_rounded_to_nothing_has_no_sign() {
         assert_eq!(super::number(-0.001, 2), "0.00");
         assert_eq!(super::number(-1e-12, 2), "0");
-        assert_eq!(super::written_point(1e-17, -2.0, crate::style::Format::Complex, 2), "-2i");
+        assert_eq!(
+            super::written_point(1e-17, -2.0, crate::style::Format::Complex, 2),
+            "-2i"
+        );
     }
 
     #[test]
@@ -1227,14 +1261,22 @@ mod tests {
             handle P sets a = atan2(max(pointer.y, 0), pointer.x)";
         let f = build(doc, &[]).unwrap();
         let env = eval::frame_env(&f, &Inputs::at(2.4)).unwrap();
-        assert_eq!(env.get("a"), Some(0.95), "the default goes to the nearest step");
+        assert_eq!(
+            env.get("a"),
+            Some(0.95),
+            "the default goes to the nearest step"
+        );
         assert_eq!(env.get("n"), Some(3.0), "so does a binding");
         let read = Inputs {
             time: 0.0,
             params: vec![("a".into(), 1.3)],
         };
         assert_eq!(eval::frame_env(&f, &read).unwrap().get("a"), Some(1.2));
-        let drag = |px: f64, py: f64| drag_value(&f, &Inputs::at(0.0), 0, 400, 400, px, py).unwrap().1;
+        let drag = |px: f64, py: f64| {
+            drag_value(&f, &Inputs::at(0.0), 0, 400, 400, px, py)
+                .unwrap()
+                .1
+        };
         // At 45°, π/4 is nearest 0.7.
         assert!((drag(300.0, 100.0) - 0.7).abs() < 1e-12);
         // The range's end isn't a step, so a drag stops at the last one before it.
@@ -1245,7 +1287,10 @@ mod tests {
     #[test]
     fn a_step_has_to_be_above_zero() {
         let err = build("param n = 1 in 0..4 step 0", &[]).unwrap_err();
-        assert!(err.to_string().contains("a step has to be above 0"), "{err}");
+        assert!(
+            err.to_string().contains("a step has to be above 0"),
+            "{err}"
+        );
     }
 
     #[test]
@@ -1323,14 +1368,28 @@ mod tests {
         let f = build(KEYED, &[]).unwrap();
         let places = handle_places(&f, &Inputs::at(0.0), 400, 400).unwrap();
         // P is at (1, 0) and N at (0, −1.5), in a view 4 across drawn 400 wide.
-        assert_eq!(places, [Some((300.0, 200.0)), Some((200.0, 350.0)), Some((200.0, 100.0))]);
+        assert_eq!(
+            places,
+            [
+                Some((300.0, 200.0)),
+                Some((200.0, 350.0)),
+                Some((200.0, 100.0))
+            ]
+        );
         // A mark that doesn't exist has no place, and a key on it does nothing.
         let hidden = held(&[("shown", 0.0)]);
         assert_eq!(handle_places(&f, &hidden, 400, 400).unwrap()[2], None);
-        assert_eq!(nudge_value(&f, &hidden, 2, 400, 400, 4.0, 0.0).unwrap(), None);
+        assert_eq!(
+            nudge_value(&f, &hidden, 2, 400, 400, 4.0, 0.0).unwrap(),
+            None
+        );
         // A figure with no handles has none.
         let plain = build("let P = (0, 0)\ndot P", &[]).unwrap();
-        assert!(handle_places(&plain, &Inputs::at(0.0), 400, 400).unwrap().is_empty());
+        assert!(
+            handle_places(&plain, &Inputs::at(0.0), 400, 400)
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[test]
@@ -1339,15 +1398,24 @@ mod tests {
         let at = held(&[("theta", std::f64::consts::FRAC_PI_2)]);
         // At the top of the circle, left is counterclockwise: the mark is at (200, 100), and 10
         // pixels left of it is the angle atan2(1, −0.1).
-        let (name, value) = nudge_value(&f, &at, 0, 400, 400, -10.0, 0.0).unwrap().unwrap();
+        let (name, value) = nudge_value(&f, &at, 0, 400, 400, -10.0, 0.0)
+            .unwrap()
+            .unwrap();
         assert_eq!(name, "theta");
         assert!((value - 1.0f64.atan2(-0.1)).abs() < 1e-12, "{value}");
         // Up is straight out from the circle, so the angle stays.
-        let (_, value) = nudge_value(&f, &at, 0, 400, 400, 0.0, -10.0).unwrap().unwrap();
-        assert!((value - std::f64::consts::FRAC_PI_2).abs() < 1e-12, "{value}");
+        let (_, value) = nudge_value(&f, &at, 0, 400, 400, 0.0, -10.0)
+            .unwrap()
+            .unwrap();
+        assert!(
+            (value - std::f64::consts::FRAC_PI_2).abs() < 1e-12,
+            "{value}"
+        );
         // The param's range stops it: past the end of the half circle, it stays at π.
         let end = held(&[("theta", std::f64::consts::PI)]);
-        let (_, value) = nudge_value(&f, &end, 0, 400, 400, 0.0, 10.0).unwrap().unwrap();
+        let (_, value) = nudge_value(&f, &end, 0, 400, 400, 0.0, 10.0)
+            .unwrap()
+            .unwrap();
         assert_eq!(value, std::f64::consts::PI);
     }
 
@@ -1356,15 +1424,23 @@ mod tests {
         let f = build(KEYED, &[]).unwrap();
         // N's steps are 100 pixels apart, and 4 pixels doesn't round to the next one. The move
         // grows until it does.
-        let (name, value) = nudge_value(&f, &Inputs::at(0.0), 1, 400, 400, 4.0, 0.0).unwrap().unwrap();
+        let (name, value) = nudge_value(&f, &Inputs::at(0.0), 1, 400, 400, 4.0, 0.0)
+            .unwrap()
+            .unwrap();
         assert_eq!((name.as_str(), value), ("n", 1.0));
-        let (_, value) = nudge_value(&f, &Inputs::at(0.0), 1, 400, 400, -4.0, 0.0).unwrap().unwrap();
+        let (_, value) = nudge_value(&f, &Inputs::at(0.0), 1, 400, 400, -4.0, 0.0)
+            .unwrap()
+            .unwrap();
         assert_eq!(value, -1.0);
         // At the end of its range there's no next step, and it stays.
-        let (_, value) = nudge_value(&f, &held(&[("n", 1.0)]), 1, 400, 400, 4.0, 0.0).unwrap().unwrap();
+        let (_, value) = nudge_value(&f, &held(&[("n", 1.0)]), 1, 400, 400, 4.0, 0.0)
+            .unwrap()
+            .unwrap();
         assert_eq!(value, 1.0);
         // Up and down don't move it at all.
-        let (_, value) = nudge_value(&f, &Inputs::at(0.0), 1, 400, 400, 0.0, 4.0).unwrap().unwrap();
+        let (_, value) = nudge_value(&f, &Inputs::at(0.0), 1, 400, 400, 0.0, 4.0)
+            .unwrap()
+            .unwrap();
         assert_eq!(value, 0.0);
     }
 

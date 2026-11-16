@@ -40,7 +40,10 @@ fn main() -> io::Result<()> {
         let name = file.strip_prefix(&root).unwrap_or(file);
         // A path and a length before each file, so moving text between files changes the hash.
         let text = fs::read(file)?;
-        feed(&mut hash, name.to_string_lossy().replace('\\', "/").as_bytes());
+        feed(
+            &mut hash,
+            name.to_string_lossy().replace('\\', "/").as_bytes(),
+        );
         feed(&mut hash, &(text.len() as u64).to_le_bytes());
         feed(&mut hash, &text);
     }

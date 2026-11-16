@@ -87,12 +87,24 @@ fn sources(
     let sheets: Vec<Source> = sheets
         .iter()
         .enumerate()
-        .map(|(i, text)| Source { name: name(i + 1), text })
+        .map(|(i, text)| Source {
+            name: name(i + 1),
+            text,
+        })
         .collect();
     let read = |file: &str| {
-        js_sys::Reflect::get(files, &JsValue::from_str(file)).ok()?.as_string()
+        js_sys::Reflect::get(files, &JsValue::from_str(file))
+            .ok()?
+            .as_string()
     };
-    Sources::read(Source { name: name(0), text: doc }, &sheets, &read)
+    Sources::read(
+        Source {
+            name: name(0),
+            text: doc,
+        },
+        &sheets,
+        &read,
+    )
 }
 
 fn js_error(message: impl std::fmt::Display) -> JsError {
@@ -110,8 +122,19 @@ fn compile_error(error: pencil_core::Error) -> JsValue {
     set("line", JsValue::from_f64(error.line as f64));
     set("col", JsValue::from_f64(error.col as f64));
     set("text", JsValue::from_str(&error.message));
-    set("sheet", error.sheet.map_or(JsValue::NULL, |i| JsValue::from_f64(i as f64)));
-    set("file", error.file.as_deref().map_or(JsValue::NULL, JsValue::from_str));
+    set(
+        "sheet",
+        error
+            .sheet
+            .map_or(JsValue::NULL, |i| JsValue::from_f64(i as f64)),
+    );
+    set(
+        "file",
+        error
+            .file
+            .as_deref()
+            .map_or(JsValue::NULL, JsValue::from_str),
+    );
     js.into()
 }
 
@@ -360,7 +383,13 @@ impl Player {
 
     /// Moves a handle by this many device pixels from where it is, through its inverse, as an
     /// arrow key does. Returns the param it set, if the handle's mark exists this frame.
-    pub fn nudge(&mut self, time: f32, index: usize, dx: f64, dy: f64) -> Result<Option<String>, JsError> {
+    pub fn nudge(
+        &mut self,
+        time: f32,
+        index: usize,
+        dx: f64,
+        dy: f64,
+    ) -> Result<Option<String>, JsError> {
         let (Some((panel, handle)), Some((composition, _))) = (self.handle(index), &self.figure)
         else {
             return Ok(None);

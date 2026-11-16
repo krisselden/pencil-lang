@@ -12,7 +12,10 @@ fn value(doc: &str, name: &str, held: &[(&str, f64)]) -> f64 {
         time: 0.0,
         params: held.iter().map(|(id, v)| (id.to_string(), *v)).collect(),
     };
-    eval::frame_env(&figure, &inputs).unwrap().get(name).unwrap()
+    eval::frame_env(&figure, &inputs)
+        .unwrap()
+        .get(name)
+        .unwrap()
 }
 
 const SIDES: &str = "param q = 7 in 3..12 step 1\nparam p = 2 in 0..q step 1\n\
@@ -51,14 +54,23 @@ fn a_page_can_read_the_widest_range_and_what_it_follows() {
     let composition = compose(SIDES, &[]).unwrap();
     let info = composition.info();
     let p = &info["params"][1];
-    assert_eq!((p["id"].as_str(), p["min"].as_f64(), p["max"].as_f64()), (Some("p"), Some(0.0), Some(12.0)));
+    assert_eq!(
+        (p["id"].as_str(), p["min"].as_f64(), p["max"].as_f64()),
+        (Some("p"), Some(0.0), Some(12.0))
+    );
     assert_eq!(p["follows"], serde_json::json!(["q"]));
     assert_eq!(info["params"][0]["follows"], serde_json::json!([]));
     // And the range as it stands in a frame.
     let figure = &composition.panels[0].figure;
-    let held = Inputs { time: 0.0, params: vec![("q".to_string(), 5.0)] };
+    let held = Inputs {
+        time: 0.0,
+        params: vec![("q".to_string(), 5.0)],
+    };
     let env = eval::frame_env(figure, &held).unwrap();
-    assert_eq!(eval::param_range(&figure.scene.params[1], &env).unwrap(), [0.0, 5.0]);
+    assert_eq!(
+        eval::param_range(&figure.scene.params[1], &env).unwrap(),
+        [0.0, 5.0]
+    );
     // The widest is found at the ends of what it reads, whichever way it runs.
     let falls = "param a = 0 in 1..4\nparam b = 0 in -a..10 - 2·a\nlet P = (a, b)\ndot P";
     let scene = build(falls, &[]).unwrap().scene;
@@ -69,11 +81,24 @@ fn a_page_can_read_the_widest_range_and_what_it_follows() {
 fn a_range_reads_numbers_and_params() {
     let message = |doc: &str| build(doc, &[]).unwrap_err().to_string();
     let named = message("let n = 3\nparam p = 0 in 0..n\nlet P = (p, 0)\ndot P");
-    assert!(named.contains("numbers and the params before it, and `n` isn't either"), "{named}");
+    assert!(
+        named.contains("numbers and the params before it, and `n` isn't either"),
+        "{named}"
+    );
     let timed = message("param p = 0 in 0..time\nlet P = (p, 0)\ndot P");
-    assert!(timed.contains("must be constant, and it uses `time`"), "{timed}");
+    assert!(
+        timed.contains("must be constant, and it uses `time`"),
+        "{timed}"
+    );
     // A param can be written after the one whose range reads it, as any name can.
-    assert_eq!(value("param p = 2 in 0..q\nparam q = 1 in 0..4\nlet P = (p, q)\ndot P", "p", &[]), 1.0);
+    assert_eq!(
+        value(
+            "param p = 2 in 0..q\nparam q = 1 in 0..4\nlet P = (p, q)\ndot P",
+            "p",
+            &[]
+        ),
+        1.0
+    );
     let circle = message("param p = 0 in 0..q\nparam q = 0 in 0..p\nlet P = (p, q)\ndot P");
     assert!(circle.contains("is defined in terms of itself"), "{circle}");
 }
@@ -88,7 +113,10 @@ fn a_param_in_a_range_that_time_moves_follows_time() {
 /// Every figure in the corpus and the explainer, with the files it uses.
 fn figures() -> Vec<std::path::PathBuf> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let mut out = vec![root.join("lab/explainer/limacon.pen"), root.join("lab/explainer/proof.pen")];
+    let mut out = vec![
+        root.join("lab/explainer/limacon.pen"),
+        root.join("lab/explainer/proof.pen"),
+    ];
     for entry in std::fs::read_dir(root.join("corpus")).unwrap() {
         let dir = entry.unwrap().path();
         if !dir.is_dir() {
@@ -123,7 +151,9 @@ fn no_figures_own_motion_runs_into_the_end_of_a_range() {
                 let env: Env = eval::frame_env(figure, &Inputs::at(time)).unwrap();
                 for param in &scene.params {
                     let binding = scene.bindings.iter().find(|b| b.id == param.id).unwrap();
-                    let Ok(asked) = eval::real(&binding.expr, &env) else { continue };
+                    let Ok(asked) = eval::real(&binding.expr, &env) else {
+                        continue;
+                    };
                     let [lo, hi] = eval::param_range(param, &env).unwrap();
                     assert!(
                         asked >= lo - 1e-9 && asked <= hi + 1e-9,

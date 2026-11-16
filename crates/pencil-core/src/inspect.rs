@@ -75,7 +75,11 @@ mod tests {
         let euler = inspect("e^(iπ) + 1");
         assert_eq!(
             euler["mathjson"],
-            json!(["Add", ["Power", "ExponentialE", ["Multiply", "ImaginaryUnit", "Pi"]], 1.0])
+            json!([
+                "Add",
+                ["Power", "ExponentialE", ["Multiply", "ImaginaryUnit", "Pi"]],
+                1.0
+            ])
         );
     }
 

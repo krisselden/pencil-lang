@@ -704,9 +704,7 @@ impl Lowerer {
             }
             ("Tuple", [Scalar(x), Scalar(y)]) => Point(x.clone(), y.clone()),
             // A point in space is a vector, and not a number: it adds, subtracts and scales.
-            ("Tuple", [Scalar(x), Scalar(y), Scalar(z)]) => {
-                Point3(x.clone(), y.clone(), z.clone())
-            }
+            ("Tuple", [Scalar(x), Scalar(y), Scalar(z)]) => Point3(x.clone(), y.clone(), z.clone()),
             ("Add", [Point3(ax, ay, az), Point3(bx, by, bz)]) => Point3(
                 plus(ax.clone(), bx.clone()),
                 plus(ay.clone(), by.clone()),
@@ -983,8 +981,11 @@ impl Lowerer {
             // built-in.
             (head, _)
                 if !is_built_in(head)
-                    && crate::suggest::suggestion(head, self.functions.keys().map(String::as_str))
-                        .is_some() =>
+                    && crate::suggest::suggestion(
+                        head,
+                        self.functions.keys().map(String::as_str),
+                    )
+                    .is_some() =>
             {
                 let known = self.functions.keys().map(String::as_str);
                 return Err(Error::new(crate::suggest::unknown("function", head, known)));
@@ -1418,7 +1419,11 @@ impl Lowerer {
         }
         // Each corner of the ranges it reads, which finds the furthest of anything that only
         // rises or falls with each param.
-        let mut furthest = if end { f64::NEG_INFINITY } else { f64::INFINITY };
+        let mut furthest = if end {
+            f64::NEG_INFINITY
+        } else {
+            f64::INFINITY
+        };
         for corner in 0..1u32 << read.len().min(16) {
             let mut env = Env::new(0.0);
             for (k, param) in read.iter().enumerate() {
@@ -1426,7 +1431,11 @@ impl Lowerer {
             }
             let value = eval::real(&limit, &env)
                 .map_err(|err| Error::new(format!("{what} has to have a value: {err}")))?;
-            furthest = if end { furthest.max(value) } else { furthest.min(value) };
+            furthest = if end {
+                furthest.max(value)
+            } else {
+                furthest.min(value)
+            };
         }
         Ok((furthest, Some(limit)))
     }
@@ -1591,7 +1600,15 @@ fn is_built_in(head: &str) -> bool {
     crate::parse::FUNCTIONS.iter().any(|(_, h)| *h == head)
         || matches!(
             head,
-            "Add" | "Subtract" | "Multiply" | "Divide" | "Power" | "Negate" | "Tuple" | "Pixels" | "Ems"
+            "Add"
+                | "Subtract"
+                | "Multiply"
+                | "Divide"
+                | "Power"
+                | "Negate"
+                | "Tuple"
+                | "Pixels"
+                | "Ems"
         )
 }
 
@@ -1712,7 +1729,12 @@ fn renamed_items(
                 },
                 None,
             ),
-            Item::Let { name, expr, text, line } => (
+            Item::Let {
+                name,
+                expr,
+                text,
+                line,
+            } => (
                 Item::Let {
                     name: renamed(&name),
                     expr: rename(&expr, names),
@@ -2160,7 +2182,9 @@ fn refers(e: &Expr, out: &mut Vec<String>) {
 fn refers_in_text(text: &str, out: &mut Vec<String>) {
     let mut rest = text;
     while let Some((_, after)) = rest.split_once('{') {
-        let Some((inner, tail)) = after.split_once('}') else { return };
+        let Some((inner, tail)) = after.split_once('}') else {
+            return;
+        };
         if let Ok(e) = crate::parse::parse_expression(inner) {
             refers(&e, out);
         }
@@ -2183,9 +2207,15 @@ fn needs(item: &Item) -> Vec<String> {
             refers(body, &mut out);
             own.extend(params.iter().map(String::as_str));
         }
-        Item::Param { default, range, step, .. } => {
-            all(&mut [default].into_iter().chain(range).chain(step), &mut out)
-        }
+        Item::Param {
+            default,
+            range,
+            step,
+            ..
+        } => all(
+            &mut [default].into_iter().chain(range).chain(step),
+            &mut out,
+        ),
         Item::Choice { options, .. } => all(&mut options.iter().map(|(e, _)| e), &mut out),
         Item::Duration(e) | Item::Pause(e) => refers(e, &mut out),
         Item::Poster { values, .. } => all(&mut values.iter().map(|(_, e)| e), &mut out),
@@ -2210,7 +2240,14 @@ fn needs(item: &Item) -> Vec<String> {
             }
         }
         Item::Dots { names, .. } => out.extend(names.iter().cloned()),
-        Item::Label { name, text, at, offset, away, .. } => {
+        Item::Label {
+            name,
+            text,
+            at,
+            offset,
+            away,
+            ..
+        } => {
             all(&mut [at].into_iter().chain(offset).chain(away), &mut out);
             if let Some(text) = text {
                 refers_in_text(text, &mut out);
@@ -2223,14 +2260,27 @@ fn needs(item: &Item) -> Vec<String> {
         Item::Text { text, .. } => refers_in_text(text, &mut out),
         Item::DotAt { at, .. } => refers(at, &mut out),
         Item::ArcSegment { point, .. } => refers(point, &mut out),
-        Item::Solve { unknowns, start, equations, .. } => {
+        Item::Solve {
+            unknowns,
+            start,
+            equations,
+            ..
+        } => {
             all(
-                &mut start.iter().chain(equations.iter().flat_map(|(a, b)| [a, b])),
+                &mut start
+                    .iter()
+                    .chain(equations.iter().flat_map(|(a, b)| [a, b])),
                 &mut out,
             );
             own.extend(unknowns.iter().map(String::as_str));
         }
-        Item::Many { value, param, vars, lets, .. } => {
+        Item::Many {
+            value,
+            param,
+            vars,
+            lets,
+            ..
+        } => {
             all(
                 &mut [value]
                     .into_iter()
@@ -2245,10 +2295,18 @@ fn needs(item: &Item) -> Vec<String> {
         Item::Arrow { from, to, .. } => all(&mut [from, to].into_iter(), &mut out),
         Item::Move(m) => {
             refers(&m.length, &mut out);
-            out.extend(m.focus.iter().filter_map(|f| f.when.as_ref().map(|(c, _)| c.clone())));
+            out.extend(
+                m.focus
+                    .iter()
+                    .filter_map(|f| f.when.as_ref().map(|(c, _)| c.clone())),
+            );
         }
         Item::Beat { focus, .. } => {
-            out.extend(focus.iter().filter_map(|f| f.when.as_ref().map(|(c, _)| c.clone())));
+            out.extend(
+                focus
+                    .iter()
+                    .filter_map(|f| f.when.as_ref().map(|(c, _)| c.clone())),
+            );
         }
         Item::Handle { param, inverse, .. } => {
             out.push(param.clone());
@@ -2257,7 +2315,12 @@ fn needs(item: &Item) -> Vec<String> {
         // What a view fits is found at the end, so it needs nothing defined early.
         Item::Viewport { x, y, pad, yaw, .. } => {
             all(
-                &mut x.iter().flatten().chain(y.iter().flatten()).chain(pad).chain(yaw),
+                &mut x
+                    .iter()
+                    .flatten()
+                    .chain(y.iter().flatten())
+                    .chain(pad)
+                    .chain(yaw),
                 &mut out,
             );
         }
@@ -2307,10 +2370,16 @@ fn in_order(items: Vec<Item>) -> Result<Vec<Item>, Error> {
         for name in defines(item) {
             definer.entry(name.to_string()).or_insert(i);
         }
-        if let Item::Move(crate::parse::Move { name: Some(name), .. }) = item {
+        if let Item::Move(crate::parse::Move {
+            name: Some(name), ..
+        }) = item
+        {
             definer.entry(name.clone()).or_insert(i);
         }
-        if matches!(item, Item::Move(_) | Item::Pause(_) | Item::Beat { .. } | Item::EndBeat) {
+        if matches!(
+            item,
+            Item::Move(_) | Item::Pause(_) | Item::Beat { .. } | Item::EndBeat
+        ) {
             earlier[i] = last;
             last = Some(i);
         }
@@ -2340,16 +2409,22 @@ fn in_order(items: Vec<Item>) -> Result<Vec<Item>, Error> {
                 State::Done => return Ok(()),
                 State::Visiting => {
                     let name = match item {
-                        Item::Move(crate::parse::Move { name: Some(name), .. }) => name.as_str(),
+                        Item::Move(crate::parse::Move {
+                            name: Some(name), ..
+                        }) => name.as_str(),
                         _ => defines(item).first().copied().unwrap_or_default(),
                     };
-                    return Err(Error::new(format!("`{name}` is defined in terms of itself")));
+                    return Err(Error::new(format!(
+                        "`{name}` is defined in terms of itself"
+                    )));
                 }
                 State::Waiting => {}
             }
             let holds_marks = matches!(
                 item,
-                Item::Move(crate::parse::Move { block: true, .. }) | Item::Beat { .. } | Item::EndBeat
+                Item::Move(crate::parse::Move { block: true, .. })
+                    | Item::Beat { .. }
+                    | Item::EndBeat
             );
             if early && holds_marks {
                 return Err(Error::new(
@@ -2363,7 +2438,11 @@ fn in_order(items: Vec<Item>) -> Result<Vec<Item>, Error> {
                 .filter(|j| *j != i);
             for j in self.earlier[i].into_iter().chain(wanted) {
                 self.visit(j, true).map_err(|e| match e.line {
-                    0 => Error { line: line_of(item), col: 1, ..e },
+                    0 => Error {
+                        line: line_of(item),
+                        col: 1,
+                        ..e
+                    },
                     _ => e,
                 })?;
             }
@@ -2384,7 +2463,10 @@ fn in_order(items: Vec<Item>) -> Result<Vec<Item>, Error> {
     }
     let order = order.order;
     let mut slots: Vec<Option<Item>> = items.into_iter().map(Some).collect();
-    Ok(order.into_iter().map(|i| slots[i].take().unwrap()).collect())
+    Ok(order
+        .into_iter()
+        .map(|i| slots[i].take().unwrap())
+        .collect())
 }
 
 fn line_of(item: &Item) -> usize {
@@ -2486,9 +2568,16 @@ pub fn compile(doc: &Document) -> Result<Scene, Error> {
     with_texts(&items)?;
     let values = value_names(&items);
     for item in &items {
-        if let Item::Label { name, text: None, line, .. } = item
+        if let Item::Label {
+            name,
+            text: None,
+            line,
+            ..
+        } = item
             && !values.contains(name.as_str())
-            && !items.iter().any(|i| matches!(i, Item::Text { name: n, .. } if n == name))
+            && !items
+                .iter()
+                .any(|i| matches!(i, Item::Text { name: n, .. } if n == name))
         {
             return Err(Error::at(
                 *line,
@@ -2639,7 +2728,9 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
     // Labels that share a value's name, which only one label may do.
     let mut value_labels: HashSet<&str> = HashSet::new();
     let mut lowerer = Lowerer {
-        turned: items.iter().any(|item| matches!(item, Item::Viewport { yaw: Some(_), .. })),
+        turned: items
+            .iter()
+            .any(|item| matches!(item, Item::Viewport { yaw: Some(_), .. })),
         ..Lowerer::default()
     };
     let mut scene = Scene {
@@ -2904,8 +2995,12 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
             } => {
                 claim(name, *line)?;
                 let fail = at_line(*line);
-                let low = lowerer.limit(&range[0], false, &scene.params).map_err(&fail)?;
-                let high = lowerer.limit(&range[1], true, &scene.params).map_err(&fail)?;
+                let low = lowerer
+                    .limit(&range[0], false, &scene.params)
+                    .map_err(&fail)?;
+                let high = lowerer
+                    .limit(&range[1], true, &scene.params)
+                    .map_err(&fail)?;
                 let (range, limits) = ([low.0, high.0], [low.1, high.1]);
                 let step = match step {
                     Some(step) => {
@@ -2935,7 +3030,9 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
                 });
                 lowerer.scalars.insert(name.clone());
             }
-            Item::Let { name, expr, line, .. } => {
+            Item::Let {
+                name, expr, line, ..
+            } => {
                 claim(name, *line)?;
                 let val = lowerer.lower(expr, &none, 0).map_err(at_line(*line))?;
                 lowerer.bind(&mut scene, name, val);
@@ -3174,7 +3271,11 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
                         Some(text) if !text.is_empty() => text.to_string(),
                         _ => name.clone(),
                     };
-                    Some(Subject { name: name.clone(), expr, value: shown(name)? })
+                    Some(Subject {
+                        name: name.clone(),
+                        expr,
+                        value: shown(name)?,
+                    })
                 } else if written == "{}" {
                     Some(Subject {
                         name: sources[0].to_string(),
@@ -3581,7 +3682,13 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
                     inverse,
                 });
             }
-            Item::Viewport { x, y, fit, pad, yaw } => {
+            Item::Viewport {
+                x,
+                y,
+                fit,
+                pad,
+                yaw,
+            } => {
                 if let Some(yaw) = yaw {
                     let turn = lowerer.scalar(yaw, &none)?;
                     scene.bindings.push(Binding {
@@ -4960,7 +5067,10 @@ mod tests {
             panic!();
         };
         let subject = subject.as_ref().unwrap();
-        assert_eq!((text.as_str(), subject.name.as_str(), subject.expr.as_str()), ("", "root", "2·3"));
+        assert_eq!(
+            (text.as_str(), subject.name.as_str(), subject.expr.as_str()),
+            ("", "root", "2·3")
+        );
         // So is a label whose text is one value.
         let s = scene("param q = 3 in 1..9\nlabel n = \"{q - 1}\" at (0, 0)").unwrap();
         let Form::Label { subject, .. } = &s.marks[0].form else {
@@ -5034,11 +5144,18 @@ mod tests {
     /// Where the scene's first dot is drawn.
     fn dot_at(s: &Scene) -> (f64, f64) {
         let env = env_of(s, 0.0);
-        let Some(Form::Dot(at)) = s.marks.iter().map(|m| &m.form).find(|f| matches!(f, Form::Dot(_)))
+        let Some(Form::Dot(at)) = s
+            .marks
+            .iter()
+            .map(|m| &m.form)
+            .find(|f| matches!(f, Form::Dot(_)))
         else {
             panic!("no dot");
         };
-        (eval::real(&at[0], &env).unwrap(), eval::real(&at[1], &env).unwrap())
+        (
+            eval::real(&at[0], &env).unwrap(),
+            eval::real(&at[1], &env).unwrap(),
+        )
     }
 
     #[test]
@@ -5046,7 +5163,10 @@ mod tests {
         // With no view, its x and y are where it is, so nothing with only two parts changes.
         let s = scene("let P = (1, 2, 3)\ndot P").unwrap();
         assert_eq!(dot_at(&s), (1.0, 2.0));
-        assert_eq!(s.to_json()["marks"][0]["form"]["at"], serde_json::json!(["P.x", "P.y"]));
+        assert_eq!(
+            s.to_json()["marks"][0]["form"]["at"],
+            serde_json::json!(["P.x", "P.y"])
+        );
         let env = env_of(&s, 0.0);
         assert_eq!(env.get("P.z"), Some(3.0));
 
@@ -5077,7 +5197,12 @@ mod tests {
         assert_eq!(at("Q"), [-3.0, -1.5, -1.0]);
         assert_eq!(env.get("depth"), Some(1.0));
 
-        for wrong in ["(1, 2, 3)·(1, 2, 3)", "(1, 2, 3) + (1, 2)", "(1, 2, 3) + 1", "exp((1, 2, 3))"] {
+        for wrong in [
+            "(1, 2, 3)·(1, 2, 3)",
+            "(1, 2, 3) + (1, 2)",
+            "(1, 2, 3) + 1",
+            "exp((1, 2, 3))",
+        ] {
             let err = scene(&format!("let P = {wrong}")).unwrap_err();
             assert!(
                 err.message.contains("a point in space"),
@@ -5093,11 +5218,21 @@ mod tests {
         let Form::Parametric(arc) = &s.marks[0].form else {
             panic!();
         };
-        assert_eq!(arc.depth.as_ref().unwrap().to_mathjson().to_string(), r#"["Sin","u"]"#);
-        assert_eq!(s.to_json()["marks"][0]["form"]["arc"]["depth"].to_string(), r#"["Sin","u"]"#);
+        assert_eq!(
+            arc.depth.as_ref().unwrap().to_mathjson().to_string(),
+            r#"["Sin","u"]"#
+        );
+        assert_eq!(
+            s.to_json()["marks"][0]["form"]["arc"]["depth"].to_string(),
+            r#"["Sin","u"]"#
+        );
         // A curve in the plane has none, and its IR says nothing of one.
         let flat = scene("curve c = parametric (u): (cos(u), u) for u in 0..1").unwrap();
-        assert!(flat.to_json()["marks"][0]["form"]["arc"].get("depth").is_none());
+        assert!(
+            flat.to_json()["marks"][0]["form"]["arc"]
+                .get("depth")
+                .is_none()
+        );
 
         // A sheet can read it there, and nowhere else.
         let space = "curve c = parametric (u): (cos(u), u, sin(u)) for u in 0..1";
@@ -5122,15 +5257,22 @@ mod tests {
             &["style d { fill: black; radius: 2px + 2px·sign(self.z) }"],
         )
         .unwrap();
-        let prepared = crate::frame::prepare(&figure, &crate::frame::Inputs::at(0.0), 300, 100, 1.0).unwrap();
-        assert_eq!(prepared.strokes[0].len() / crate::stroke::FLOATS_PER_SEGMENT, 2);
+        let prepared =
+            crate::frame::prepare(&figure, &crate::frame::Inputs::at(0.0), 300, 100, 1.0).unwrap();
+        assert_eq!(
+            prepared.strokes[0].len() / crate::stroke::FLOATS_PER_SEGMENT,
+            2
+        );
     }
 
     #[test]
     fn a_figure_names_its_poster() {
         let s = scene("param roll = 1 in 0..1\nposter { time: 3.5, roll: 0.6 }").unwrap();
         let poster = s.poster.clone().unwrap();
-        assert_eq!((poster.time, &poster.params[..]), (Some(3.5), &[("roll".to_string(), 0.6)][..]));
+        assert_eq!(
+            (poster.time, &poster.params[..]),
+            (Some(3.5), &[("roll".to_string(), 0.6)][..])
+        );
         assert_eq!(
             s.to_json()["poster"].to_string(),
             r#"{"params":[["roll",0.6]],"time":3.5}"#
@@ -5143,7 +5285,12 @@ mod tests {
         assert!(plain.poster.is_none() && plain.to_json().get("poster").is_none());
 
         let err = scene("param roll = 1 in 0..1\nposter { rol: 0.6 }").unwrap_err();
-        assert_eq!((err.line, err.message.contains("did you mean `roll`")), (2, true), "{}", err.message);
+        assert_eq!(
+            (err.line, err.message.contains("did you mean `roll`")),
+            (2, true),
+            "{}",
+            err.message
+        );
         let err = scene("param roll = 1 in 0..1\nposter { roll: time }").unwrap_err();
         assert_eq!(err.line, 2, "{}", err.message);
         let err = scene("poster { time: 1 }\nposter { time: 2 }").unwrap_err();
@@ -5370,12 +5517,21 @@ mod tests {
     #[test]
     fn an_unknown_name_suggests_what_was_meant() {
         for (doc, wanted) in [
-            ("let one = 3\nlet two = 10\nlet a = onetwo", "did you mean `one two`?"),
+            (
+                "let one = 3\nlet two = 10\nlet a = onetwo",
+                "did you mean `one two`?",
+            ),
             ("let radius = 1\nlet a = raduis", "did you mean `radius`?"),
-            ("fn ToCoords(z) = z\nlet a = ToCo(1)", "did you mean `ToCoords`?"),
+            (
+                "fn ToCoords(z) = z\nlet a = ToCo(1)",
+                "did you mean `ToCoords`?",
+            ),
             ("let a = smoothstp(0, 1, 0.5)", "did you mean `smoothstep`?"),
             // A built-in that can't take what it's given says so, whatever else is close.
-            ("fn Sinh2(z) = z\nlet P = (1, 2)\nlet a = sin(P)", "Sin needs a number"),
+            (
+                "fn Sinh2(z) = z\nlet P = (1, 2)\nlet a = sin(P)",
+                "Sin needs a number",
+            ),
         ] {
             let err = scene(doc).unwrap_err().to_string();
             assert!(err.contains(wanted), "{doc}: {err}");

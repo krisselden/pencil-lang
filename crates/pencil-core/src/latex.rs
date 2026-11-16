@@ -43,7 +43,9 @@ pub fn read(latex: &str, functions: &[&str]) -> Result<String, Error> {
 pub fn definitions(latex: &str) -> Vec<String> {
     let mut names = Vec::new();
     for line in latex.lines() {
-        let Ok(mut reader) = Reader::new(line, 1, &[]) else { continue };
+        let Ok(mut reader) = Reader::new(line, 1, &[]) else {
+            continue;
+        };
         reader.defining = reader.toks.iter().any(|(t, _)| *t == T::Ch('='));
         // Only its left side matters, and whatever it finds before anything it can't read.
         let _ = reader.expr();
@@ -68,19 +70,33 @@ enum T {
 }
 
 /// Commands that only space things out.
-const SPACING: [&str; 10] =
-    [",", ":", ";", "!", " ", "quad", "qquad", "displaystyle", "textstyle", "limits"];
+const SPACING: [&str; 10] = [
+    ",",
+    ":",
+    ";",
+    "!",
+    " ",
+    "quad",
+    "qquad",
+    "displaystyle",
+    "textstyle",
+    "limits",
+];
 
 fn lex(line: &str) -> Result<Vec<(T, usize)>, Error> {
     let mut chars: Vec<char> = line.chars().collect();
     // Math delimiters around the whole line, as MathLive copies it: `$$…$$`, `$…$`, `\[…\]`
     // and `\(…\)` become spaces, so columns still count from the line as pasted.
     let text: String = chars.iter().collect();
-    let (start, end) = (text.len() - text.trim_start().len(), text.trim_end().chars().count());
+    let (start, end) = (
+        text.len() - text.trim_start().len(),
+        text.trim_end().chars().count(),
+    );
     let start = text[..start].chars().count();
     for (open, close) in [("$$", "$$"), ("$", "$"), ("\\[", "\\]"), ("\\(", "\\)")] {
         let body: String = chars[start..end].iter().collect();
-        if body.len() >= open.len() + close.len() && body.starts_with(open) && body.ends_with(close) {
+        if body.len() >= open.len() + close.len() && body.starts_with(open) && body.ends_with(close)
+        {
             for i in 0..open.chars().count() {
                 chars[start + i] = ' ';
             }
@@ -123,15 +139,29 @@ fn lex(line: &str) -> Result<Vec<(T, usize)>, Error> {
                     Some('\\') if chars.get(i + 1).is_some_and(char::is_ascii_alphabetic) => {
                         word(i + 1)
                     }
-                    Some('\\') => (chars.get(i + 1).map_or(String::new(), char::to_string), i + 2),
+                    Some('\\') => (
+                        chars.get(i + 1).map_or(String::new(), char::to_string),
+                        i + 2,
+                    ),
                     Some(c) => (c.to_string(), i + 1),
                     None => (String::new(), i),
                 };
                 i = next;
                 let Some(d) = delimiter_char(&delimiter) else {
-                    return Err(Error::at(0, col, format!("unexpected `\\{name}{delimiter}`")));
+                    return Err(Error::at(
+                        0,
+                        col,
+                        format!("unexpected `\\{name}{delimiter}`"),
+                    ));
                 };
-                out.push((if name == "left" { T::Open(d) } else { T::Close(d) }, col));
+                out.push((
+                    if name == "left" {
+                        T::Open(d)
+                    } else {
+                        T::Close(d)
+                    },
+                    col,
+                ));
                 continue;
             }
             out.push((
@@ -265,8 +295,8 @@ const GREEK: [(&str, &str); 40] = [
 /// so one Pencil lacks, as `arcsin`, is an unknown function with a suggestion, not a guess.
 const OPERATORS: [&str; 31] = [
     "sin", "cos", "tan", "sec", "csc", "cot", "sinh", "cosh", "tanh", "coth", "sech", "csch",
-    "arcsin", "arccos", "arctan", "arcsinh", "arccosh", "arctanh", "ln", "log", "lg", "exp",
-    "arg", "min", "max", "gcd", "lcm", "det", "sgn", "Re", "Im",
+    "arcsin", "arccos", "arctan", "arcsinh", "arccosh", "arctanh", "ln", "log", "lg", "exp", "arg",
+    "min", "max", "gcd", "lcm", "det", "sgn", "Re", "Im",
 ];
 
 fn pencil_function(latex: &str) -> &str {
@@ -310,7 +340,15 @@ struct Reader<'a> {
 impl<'a> Reader<'a> {
     fn new(line: &str, number: usize, known: &'a [&'a str]) -> Result<Self, Error> {
         let toks = lex(line).map_err(|e| Error::at(number, e.col, e.message))?;
-        Ok(Reader { toks, pos: 0, line: number, functions: Vec::new(), known, bars: 0, defining: false })
+        Ok(Reader {
+            toks,
+            pos: 0,
+            line: number,
+            functions: Vec::new(),
+            known,
+            bars: 0,
+            defining: false,
+        })
     }
 
     fn peek(&self) -> &T {
@@ -362,7 +400,9 @@ impl<'a> Reader<'a> {
             t if comparison(t) => Err(self.error(
                 "a comparison has no Pencil form yet: Pencil's expressions are numbers and points",
             )),
-            T::Ch(',') => Err(self.error("a list has no Pencil form yet; paste one formula per line")),
+            T::Ch(',') => {
+                Err(self.error("a list has no Pencil form yet; paste one formula per line"))
+            }
             other => Err(self.error(format!("expected the end, found {}", shown(other)))),
         }
     }
@@ -380,7 +420,9 @@ impl<'a> Reader<'a> {
                 T::Ch('+') => "+",
                 T::Ch('-') => "-",
                 T::Cmd(c) if c == "pm" || c == "mp" => {
-                    return Err(self.error("`±` has no Pencil form: write each sign as its own formula"));
+                    return Err(
+                        self.error("`±` has no Pencil form: write each sign as its own formula")
+                    );
                 }
                 _ => return Ok(left),
             };
@@ -433,12 +475,11 @@ impl<'a> Reader<'a> {
             T::Ch(c) => c.is_alphabetic(),
             T::Cmd(c) => {
                 let function = OPERATORS.contains(&c.as_str()) || c == "operatorname";
-                !(argument && function)
-                    && !matches!(
-                        c.as_str(),
-                        "cdot" | "times" | "ast" | "div" | "pm" | "mp" | "circ" | "degree"
-                    )
-                    && !comparison(self.peek())
+                let operator = matches!(
+                    c.as_str(),
+                    "cdot" | "times" | "ast" | "div" | "pm" | "mp" | "circ" | "degree"
+                );
+                !(argument && function || operator || comparison(self.peek()))
             }
             _ => false,
         }
@@ -479,8 +520,12 @@ impl<'a> Reader<'a> {
         if self.eat(&circ) {
             return true;
         }
-        if *self.peek() == T::Ch('{') && self.toks[self.pos + 1].0 == circ
-            && self.toks.get(self.pos + 2).is_some_and(|t| t.0 == T::Ch('}'))
+        if *self.peek() == T::Ch('{')
+            && self.toks[self.pos + 1].0 == circ
+            && self
+                .toks
+                .get(self.pos + 2)
+                .is_some_and(|t| t.0 == T::Ch('}'))
         {
             self.pos += 3;
             return true;
@@ -576,9 +621,9 @@ impl<'a> Reader<'a> {
                 self.expect(T::Ch('}'), "`}`")?;
                 Ok(inner)
             }
-            T::Open('{') => Err(self.error(
-                "Desmos's piecewise `{condition: value}` has no Pencil form yet",
-            )),
+            T::Open('{') => {
+                Err(self.error("Desmos's piecewise `{condition: value}` has no Pencil form yet"))
+            }
             T::Open('[') => Err(self.error("a list has no Pencil form yet")),
             other if comparison(&other) => Err(self.error(
                 "a comparison has no Pencil form yet: Pencil's expressions are numbers and points",
@@ -611,7 +656,9 @@ impl<'a> Reader<'a> {
                     return Err(Error::at(
                         self.line,
                         col,
-                        format!("Desmos's `{word}` has no Pencil form yet: name the value with `let`"),
+                        format!(
+                            "Desmos's `{word}` has no Pencil form yet: name the value with `let`"
+                        ),
                     ));
                 }
                 self.function(pencil_function(&word).to_string())
@@ -630,7 +677,11 @@ impl<'a> Reader<'a> {
                 // `\frac{d}{dx}` is the derivative, not d over d·x.
                 let d = Node::Name("d".into());
                 if top == d && matches!(&bottom, Node::Op("·", f) if f[0] == d) {
-                    return Err(Error::at(self.line, col, "a derivative has no Pencil form yet"));
+                    return Err(Error::at(
+                        self.line,
+                        col,
+                        "a derivative has no Pencil form yet",
+                    ));
                 }
                 Ok(op("/", vec![top, bottom]))
             }
@@ -731,7 +782,9 @@ impl<'a> Reader<'a> {
             Some(T::Ch('x')) => "x",
             Some(T::Ch('y')) => "y",
             Some(T::Ch('z')) => {
-                return Err(self.error("`.z` has no Pencil form: a point in Pencil has two coordinates"));
+                return Err(
+                    self.error("`.z` has no Pencil form: a point in Pencil has two coordinates")
+                );
             }
             Some(T::Cmd(c)) if c == "operatorname" => {
                 self.pos += 2;
@@ -851,7 +904,11 @@ fn comparison(t: &T) -> bool {
 }
 
 fn normal_number(digits: &str) -> String {
-    if digits.starts_with('.') { format!("0{digits}") } else { digits.to_string() }
+    if digits.starts_with('.') {
+        format!("0{digits}")
+    } else {
+        digits.to_string()
+    }
 }
 
 fn shown(t: &T) -> String {
@@ -880,7 +937,11 @@ const ATOM: u8 = 6;
 fn print(node: &Node) -> (String, u8) {
     let at_least = |node: &Node, min: u8| {
         let (text, prec) = print(node);
-        if prec < min { format!("({text})") } else { text }
+        if prec < min {
+            format!("({text})")
+        } else {
+            text
+        }
     };
     match node {
         Node::Num(n) => (n.clone(), ATOM),
@@ -894,18 +955,30 @@ fn print(node: &Node) -> (String, u8) {
             (format!("({})", items.join(", ")), ATOM)
         }
         Node::Op(name, args) => match (*name, args.as_slice()) {
-            ("+" | "-", [a, b]) => (format!("{} {name} {}", at_least(a, SUM), at_least(b, TERM)), SUM),
+            ("+" | "-", [a, b]) => (
+                format!("{} {name} {}", at_least(a, SUM), at_least(b, TERM)),
+                SUM,
+            ),
             ("·", [a, b]) => {
                 if side_by_side(a, b) {
                     (format!("{}{}", print(a).0, print(b).0), SIDE_BY_SIDE)
                 } else {
-                    (format!("{}·{}", at_least(a, TERM), at_least(b, SIDE_BY_SIDE)), TERM)
+                    (
+                        format!("{}·{}", at_least(a, TERM), at_least(b, SIDE_BY_SIDE)),
+                        TERM,
+                    )
                 }
             }
             // A denominator that's a product is bracketed, as `1/(2π)`: Pencil would read
             // `1/2π` the same way, but a reader can't be sure.
-            ("/", [a, b]) => (format!("{}/{}", at_least(a, TERM), at_least(b, UNARY)), TERM),
-            ("^", [a, b]) => (format!("{}^{}", at_least(a, ATOM), at_least(b, UNARY)), POWER),
+            ("/", [a, b]) => (
+                format!("{}/{}", at_least(a, TERM), at_least(b, UNARY)),
+                TERM,
+            ),
+            ("^", [a, b]) => (
+                format!("{}^{}", at_least(a, ATOM), at_least(b, UNARY)),
+                POWER,
+            ),
             ("neg", [a]) => {
                 // -(a·b) and -(a/b) are (-a)·b and (-a)/b, so the sign can lead a term.
                 let (text, prec) = print(a);
@@ -924,7 +997,11 @@ fn print(node: &Node) -> (String, u8) {
 /// one-letter name, a call, or a power of one, and Pencil's lexer will still see two factors
 /// (a number before a letter, or a glyph on either side). `x y` would be one name, `xy`.
 fn side_by_side(a: &Node, b: &Node) -> bool {
-    let letter = |n: &str| n.split('_').next().is_some_and(|stem| stem.chars().count() == 1);
+    let letter = |n: &str| {
+        n.split('_')
+            .next()
+            .is_some_and(|stem| stem.chars().count() == 1)
+    };
     let right = match b {
         Node::Name(n) => letter(n),
         Node::Call(..) => true,
@@ -973,12 +1050,18 @@ mod tests {
         assert_eq!(pencil("a=3\n\nb=\\frac{a}{2}\n"), "a = 3\n\nb = a/2\n");
         // Only a name with parentheses defines a function: `xy=3` is still a product.
         assert_eq!(pencil(r"xy=3"), "x·y = 3");
-        assert_eq!(pencil(r"g\left(t\right)=2g\left(t-1\right)"), "g(t) = 2g(t - 1)");
+        assert_eq!(
+            pencil(r"g\left(t\right)=2g\left(t-1\right)"),
+            "g(t) = 2g(t - 1)"
+        );
     }
 
     #[test]
     fn what_mathlive_copies_reads_as_pencil() {
-        assert_eq!(pencil(r"$$\exponentialE^{\imaginaryI\pi}+1=0$$"), "e^(iπ) + 1 = 0");
+        assert_eq!(
+            pencil(r"$$\exponentialE^{\imaginaryI\pi}+1=0$$"),
+            "e^(iπ) + 1 = 0"
+        );
         assert_eq!(pencil(r"\mathrm{e}^{x}"), "e^x");
         assert_eq!(pencil(r"\frac12"), "1/2");
         assert_eq!(pencil(r"30^{\circ}"), "30·Degrees");
@@ -1012,7 +1095,10 @@ mod tests {
         // A point's parts.
         assert_eq!(pencil(r"a_{2}=C.y-A.y"), "a_2 = C.y - A.y");
         assert_eq!(pencil(r"x_{0}.x+P.\operatorname{real}"), "x_0.x + real(P)");
-        assert_eq!(pencil(r"\left(\sqrt{z_{1}}\right).\operatorname{real}"), "real(sqrt(z_1))");
+        assert_eq!(
+            pencil(r"\left(\sqrt{z_{1}}\right).\operatorname{real}"),
+            "real(sqrt(z_1))"
+        );
         assert_eq!(read(r"T\left(t\right).y", &["T"]).unwrap(), "imag(T(t))");
         assert!(error(r"p.z").contains("two coordinates"));
         // Desmos writes an inverse as a power of −1.
@@ -1028,7 +1114,10 @@ mod tests {
             pencil("G\\left(x,y\\right)^{2}\nG\\left(u,v\\right)=u+v"),
             "G(x, y)^2\nG(u, v) = u + v"
         );
-        assert_eq!(definitions("f\\left(x\\right)=x\ny=2x\ng_{1}\\left(t\\right)=t"), ["f", "g_1"]);
+        assert_eq!(
+            definitions("f\\left(x\\right)=x\ny=2x\ng_{1}\\left(t\\right)=t"),
+            ["f", "g_1"]
+        );
     }
 
     #[test]
@@ -1050,7 +1139,10 @@ mod tests {
     #[test]
     fn the_text_reads_back_as_the_formula() {
         let cases = [
-            (r"\frac{1}{2}x^{2}", r#"["Multiply",["Divide",1.0,2.0],["Power","x",2.0]]"#),
+            (
+                r"\frac{1}{2}x^{2}",
+                r#"["Multiply",["Divide",1.0,2.0],["Power","x",2.0]]"#,
+            ),
             (r"\frac{1}{2\pi}", r#"["Divide",1.0,["Multiply",2.0,"π"]]"#),
             (r"e^{i\pi}", r#"["Power","e",["Multiply","i","π"]]"#),
             (r"2\pi r", r#"["Multiply",["Multiply",2.0,"π"],"r"]"#),
@@ -1058,7 +1150,10 @@ mod tests {
         ];
         for (latex, expected) in cases {
             let text = pencil(latex);
-            let read = parse_whole_expression(&text).unwrap().to_mathjson().to_string();
+            let read = parse_whole_expression(&text)
+                .unwrap()
+                .to_mathjson()
+                .to_string();
             assert_eq!(read, expected, "{latex} printed {text}");
         }
     }
@@ -1088,7 +1183,10 @@ mod tests {
             Node::Num(n) => json!(n.parse::<f64>().unwrap()),
             Node::Name(n) => json!(n),
             Node::Call(f, args) => {
-                let head = FUNCTIONS.iter().find(|(w, _)| w == f).map_or(f.as_str(), |(_, h)| h);
+                let head = FUNCTIONS
+                    .iter()
+                    .find(|(w, _)| w == f)
+                    .map_or(f.as_str(), |(_, h)| h);
                 let mut parts = vec![json!(head)];
                 parts.extend(args.iter().map(expected));
                 serde_json::Value::Array(parts)
@@ -1116,14 +1214,44 @@ mod tests {
     #[test]
     fn every_printed_formula_reads_back_as_its_tree() {
         let formulas = [
-            r"\frac{1}{2}x^{2}", r"\sin\left(2x\right)", r"\left|z\right|^{2}", r"\sqrt{x^{2}+y^{2}}",
-            r"\operatorname{mod}\left(x,2\right)", r"\left(1,2\right)", r"\exponentialE^{\imaginaryI\pi}+1",
-            r"\frac12", r"30^{\circ}", r"xy", r"2\pi r", r"\theta_{1}", r"x_{1}y", r"x_12", r"x^23",
-            r"a\left(x+1\right)", r"\sin x\cos x", r"2\sin x", r"\sin^{2}x+1", r"\sin 2x+1",
-            r"\frac{1}{2\pi}", r"-\frac{b}{2a}", r"\frac{-b+\sqrt{b^{2}-4ac}}{2a}", r"\left(x+1\right)^{-1}",
-            r"\left(-2\right)^{2}", r"a-\left(b-c\right)", r"x^{2n}", r".5x", r"-2x^{2}-x",
-            r"\frac{a}{b}\cdot\frac{c}{d}", r"a\div b\div c", r"a-b-c", r"a-\left(-b\right)",
-            r"2^{-x^{2}}", r"-\left(a+b\right)c", r"\pi_{1}r", r"\frac{x}{y}z", r"e^{-\frac{x^{2}}{2}}",
+            r"\frac{1}{2}x^{2}",
+            r"\sin\left(2x\right)",
+            r"\left|z\right|^{2}",
+            r"\sqrt{x^{2}+y^{2}}",
+            r"\operatorname{mod}\left(x,2\right)",
+            r"\left(1,2\right)",
+            r"\exponentialE^{\imaginaryI\pi}+1",
+            r"\frac12",
+            r"30^{\circ}",
+            r"xy",
+            r"2\pi r",
+            r"\theta_{1}",
+            r"x_{1}y",
+            r"x_12",
+            r"x^23",
+            r"a\left(x+1\right)",
+            r"\sin x\cos x",
+            r"2\sin x",
+            r"\sin^{2}x+1",
+            r"\sin 2x+1",
+            r"\frac{1}{2\pi}",
+            r"-\frac{b}{2a}",
+            r"\frac{-b+\sqrt{b^{2}-4ac}}{2a}",
+            r"\left(x+1\right)^{-1}",
+            r"\left(-2\right)^{2}",
+            r"a-\left(b-c\right)",
+            r"x^{2n}",
+            r".5x",
+            r"-2x^{2}-x",
+            r"\frac{a}{b}\cdot\frac{c}{d}",
+            r"a\div b\div c",
+            r"a-b-c",
+            r"a-\left(-b\right)",
+            r"2^{-x^{2}}",
+            r"-\left(a+b\right)c",
+            r"\pi_{1}r",
+            r"\frac{x}{y}z",
+            r"e^{-\frac{x^{2}}{2}}",
         ];
         for latex in formulas {
             let mut reader = Reader::new(latex, 1, &[]).unwrap();
@@ -1131,7 +1259,11 @@ mod tests {
             let text = print(&node).0;
             let read = parse_whole_expression(&text)
                 .unwrap_or_else(|e| panic!("{latex} printed {text}, which doesn't parse: {e}"));
-            assert_eq!(read.to_mathjson(), expected(&node), "{latex} printed {text}");
+            assert_eq!(
+                read.to_mathjson(),
+                expected(&node),
+                "{latex} printed {text}"
+            );
         }
     }
 

@@ -75,8 +75,11 @@ impl Composition {
                 "this compiled figure is cut short or has extra bytes after it: compile it again",
             ));
         }
-        let mut composition: Composition = postcard::from_bytes(body)
-            .map_err(|e| Error::new(format!("this compiled figure is damaged ({e}): compile it again")))?;
+        let mut composition: Composition = postcard::from_bytes(body).map_err(|e| {
+            Error::new(format!(
+                "this compiled figure is damaged ({e}): compile it again"
+            ))
+        })?;
         share_solved(&mut composition);
         Ok(composition)
     }

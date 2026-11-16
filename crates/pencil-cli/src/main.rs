@@ -113,9 +113,14 @@ fn load(args: &Args) -> Result<Composition, Box<dyn Error>> {
 
 /// As `load`, and lists every file it read into `read_files`: the document, each sheet, and each
 /// file they use. A build writes the list down, so a host knows when the figure is out of date.
-fn load_listing(args: &Args, read_files: &RefCell<Vec<String>>) -> Result<Composition, Box<dyn Error>> {
+fn load_listing(
+    args: &Args,
+    read_files: &RefCell<Vec<String>>,
+) -> Result<Composition, Box<dyn Error>> {
     let read = |p: &Path| {
-        read_files.borrow_mut().push(p.to_string_lossy().into_owned());
+        read_files
+            .borrow_mut()
+            .push(p.to_string_lossy().into_owned());
         fs::read_to_string(p).map_err(|e| format!("{}: {e}", p.display()))
     };
     let name = |p: &Path| p.to_string_lossy().into_owned();
@@ -132,8 +137,12 @@ fn load_listing(args: &Args, read_files: &RefCell<Vec<String>>) -> Result<Compos
         return Composition::from_bytes(&bytes)
             .map_err(|e| format!("{}: {e}", args.doc.display()).into());
     }
-    let text = String::from_utf8(bytes)
-        .map_err(|_| format!("{}: not a Pencil document or a compiled figure", args.doc.display()))?;
+    let text = String::from_utf8(bytes).map_err(|_| {
+        format!(
+            "{}: not a Pencil document or a compiled figure",
+            args.doc.display()
+        )
+    })?;
     let doc = (name(&args.doc), text);
     let sheets = args
         .styles
@@ -252,6 +261,9 @@ fn webp(rgba: &[u8], width: u32, height: u32) -> Result<Vec<u8>, Box<dyn Error>>
     Ok(encoded.to_vec())
 }
 
+/// What `still` draws: a frame's RGBA, its height in pixels, and its paper's color.
+type Still = (Vec<u8>, u32, [f64; 3]);
+
 /// One frame of a figure, as RGBA, with its labels drawn, and its paper's color. `dpr` is the
 /// device pixels to a CSS pixel, as on a screen: a figure with no design width draws its `px` that
 /// many pixels wide.
@@ -262,7 +274,7 @@ fn still(
     dpr: f64,
     args: &Args,
     gpu: Option<&Offscreen>,
-) -> Result<(Vec<u8>, u32, [f64; 3]), Box<dyn Error>> {
+) -> Result<Still, Box<dyn Error>> {
     let height = height_for(composition, width);
     // A figure with no text shouldn't need the machine to have these fonts.
     let fonts = has_text(composition)
@@ -391,7 +403,8 @@ fn build(args: &Args) -> Result<(), Box<dyn Error>> {
         let (rgba, height, _) = still(&composition, &inputs, wide, scale as f64, args, Some(&gpu))?;
         write_png(&dir.join(&name), &rgba, wide, height)?;
         println!("wrote {} ({wide}×{height})", dir.join(&name).display());
-        let mut poster = serde_json::json!({ "src": name, "width": wide, "height": height, "scale": scale });
+        let mut poster =
+            serde_json::json!({ "src": name, "width": wide, "height": height, "scale": scale });
         // The same frame as WebP, for a page to offer first, when that's the smaller of the two.
         // A figure of a few flat colors can be smaller as PNG, and then there's only the PNG.
         let lossy = webp(&rgba, wide, height)?;
@@ -415,7 +428,10 @@ fn build(args: &Args) -> Result<(), Box<dyn Error>> {
     let mut ranges = serde_json::Map::new();
     for param in &first.scene.params {
         values.insert(param.id.clone(), env.get(&param.id).into());
-        ranges.insert(param.id.clone(), serde_json::json!(pencil_core::eval::param_range(param, &env)?));
+        ranges.insert(
+            param.id.clone(),
+            serde_json::json!(pencil_core::eval::param_range(param, &env)?),
+        );
     }
 
     let mut manifest = serde_json::json!({
@@ -451,15 +467,24 @@ fn build(args: &Args) -> Result<(), Box<dyn Error>> {
         for row in 0..height.min(CARD.1) {
             let from = (row * wide * 4) as usize;
             let to = (((top + row) * CARD.0 + left) * 4) as usize;
-            card[to..to + (wide * 4) as usize].copy_from_slice(&rgba[from..from + (wide * 4) as usize]);
+            card[to..to + (wide * 4) as usize]
+                .copy_from_slice(&rgba[from..from + (wide * 4) as usize]);
         }
         let name = format!("{stem}.card.png");
         write_png(&dir.join(&name), &card, CARD.0, CARD.1)?;
-        println!("wrote {} ({}×{})", dir.join(&name).display(), CARD.0, CARD.1);
+        println!(
+            "wrote {} ({}×{})",
+            dir.join(&name).display(),
+            CARD.0,
+            CARD.1
+        );
         manifest["card"] = serde_json::json!({ "src": name, "width": CARD.0, "height": CARD.1 });
     }
 
-    write(&format!("{stem}.json"), serde_json::to_string_pretty(&manifest)?.as_bytes())
+    write(
+        &format!("{stem}.json"),
+        serde_json::to_string_pretty(&manifest)?.as_bytes(),
+    )
 }
 
 /// FNV-1a, to name what a file holds.
@@ -704,9 +729,9 @@ fn latex(paths: &[String]) -> Result<(), Box<dyn Error>> {
         for line in source.lines().filter(|l| !l.trim().is_empty()) {
             match pencil_core::latex::read(line, &functions) {
                 Ok(text) => {
-                    let parses = text.split(" = ").all(|side| {
-                        pencil_core::parse::parse_whole_expression(side).is_ok()
-                    });
+                    let parses = text
+                        .split(" = ")
+                        .all(|side| pencil_core::parse::parse_whole_expression(side).is_ok());
                     if parses {
                         read += 1;
                         println!("{text}");

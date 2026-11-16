@@ -710,7 +710,12 @@ impl Parser {
                     .map(|l| l.split("//").next().unwrap_or(l).trim())
                     .collect();
                 let text = text.join(" ").trim().to_string();
-                items.push(Item::Let { name, expr, text, line });
+                items.push(Item::Let {
+                    name,
+                    expr,
+                    text,
+                    line,
+                });
             }
             "fn" => items.push(self.function(line)?),
             "param" => items.push(self.param(line)?),
@@ -1475,7 +1480,13 @@ impl Parser {
         if fit.is_empty() && (x.is_none() || y.is_none()) {
             return Err(self.error("a viewport needs both `x` and `y`, or `fit`"));
         }
-        Ok(Item::Viewport { x, y, fit, pad, yaw })
+        Ok(Item::Viewport {
+            x,
+            y,
+            fit,
+            pad,
+            yaw,
+        })
     }
 
     fn style(&mut self, line: usize) -> Result<StyleRule, Error> {

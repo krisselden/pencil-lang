@@ -210,8 +210,12 @@ mod tests {
     #[test]
     fn a_used_file_joins_where_its_line_is() {
         let files = [("parts/b.pen", "let b = 2\nlet c = 3")];
-        let (document, origins) =
-            load("a.pen", "let a = 1\nuse \"parts/b.pen\"\nlet d = 4", &among(&files)).unwrap();
+        let (document, origins) = load(
+            "a.pen",
+            "let a = 1\nuse \"parts/b.pen\"\nlet d = 4",
+            &among(&files),
+        )
+        .unwrap();
         assert_eq!(names(&document), ["a", "b", "c", "d"]);
         assert_eq!(origins.used().collect::<Vec<_>>(), ["parts/b.pen"]);
     }
@@ -222,8 +226,7 @@ mod tests {
             ("figures/parts/b.pen", "use \"../shared/c.pen\"\nlet b = 2"),
             ("figures/shared/c.pen", "let c = 3"),
         ];
-        let (document, _) =
-            load("figures/a.pen", "use \"parts/b.pen\"", &among(&files)).unwrap();
+        let (document, _) = load("figures/a.pen", "use \"parts/b.pen\"", &among(&files)).unwrap();
         assert_eq!(names(&document), ["c", "b"]);
 
         assert_eq!(joined("a.pen", "b.pen").unwrap(), "b.pen");
@@ -283,7 +286,12 @@ mod tests {
 
         // In the document, after a used file: the document's line, and no file.
         let files = [("b.pen", "let b = 2\nlet c = 3")];
-        let after = load("a.pen", "use \"b.pen\"\nlet a = 1\nlet d = )", &among(&files)).unwrap_err();
+        let after = load(
+            "a.pen",
+            "use \"b.pen\"\nlet a = 1\nlet d = )",
+            &among(&files),
+        )
+        .unwrap_err();
         assert_eq!((after.file.as_deref(), after.line), (None, 3));
 
         // A file that isn't there, at the line that uses it.
@@ -309,7 +317,10 @@ mod tests {
             text,
         };
         let error = |files: &[(&str, &str)], sheets: &[Source]| {
-            let error = Sources::read(doc, sheets, &among(files)).unwrap().build().unwrap_err();
+            let error = Sources::read(doc, sheets, &among(files))
+                .unwrap()
+                .build()
+                .unwrap_err();
             (error.sheet, error.file.clone(), error.line)
         };
 
@@ -342,11 +353,17 @@ mod tests {
     #[test]
     fn a_host_asks_which_files_a_text_uses() {
         assert_eq!(
-            uses("figures/a.pen", "use \"b.pen\"\nlet a = 1\nuse \"../c.pen\"\nuse \"b.pen\""),
+            uses(
+                "figures/a.pen",
+                "use \"b.pen\"\nlet a = 1\nuse \"../c.pen\"\nuse \"b.pen\""
+            ),
             ["figures/b.pen", "c.pen"]
         );
         // A label can be called `use`, and its text isn't a file.
-        assert_eq!(uses("a.pen", "label use = \"b.pen\" at (0, 0)"), Vec::<String>::new());
+        assert_eq!(
+            uses("a.pen", "label use = \"b.pen\" at (0, 0)"),
+            Vec::<String>::new()
+        );
         assert_eq!(uses("a.pen", "let a = )"), Vec::<String>::new());
     }
 }

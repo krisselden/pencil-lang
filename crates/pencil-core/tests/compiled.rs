@@ -23,7 +23,15 @@ fn compose(pen: &str, sheets: &[&str]) -> Result<Composition, pencil_core::Error
         .map(|(name, text)| Source { name, text })
         .collect();
     let doc = read(pen).unwrap();
-    Sources::read(Source { name: pen, text: &doc }, &sheets, &read)?.compose()
+    Sources::read(
+        Source {
+            name: pen,
+            text: &doc,
+        },
+        &sheets,
+        &read,
+    )?
+    .compose()
 }
 
 /// Every panel's CPU oracle pixels at a few times, in a small frame.
@@ -42,13 +50,21 @@ fn same(name: &str, a: &Composition, b: &Composition) {
     assert_eq!(a.panels.len(), b.panels.len(), "{name}");
     assert_eq!(a.size, b.size, "{name}");
     for (x, y) in a.panels.iter().zip(&b.panels) {
-        assert_eq!(x.figure.scene.to_json(), y.figure.scene.to_json(), "{name}: IR");
+        assert_eq!(
+            x.figure.scene.to_json(),
+            y.figure.scene.to_json(),
+            "{name}: IR"
+        );
         // The JSON leaves out what the sheets add and some of the viewport, and the whole of
         // each is what a figure is, so the rest is compared as it is.
         assert_eq!(x.figure.scene, y.figure.scene, "{name}: scene");
         assert_eq!(x.figure.styles, y.figure.styles, "{name}: styles");
         assert_eq!(x.figure.conditional, y.figure.conditional, "{name}");
-        assert_eq!((&x.id, &x.title, &x.formula), (&y.id, &y.title, &y.formula), "{name}");
+        assert_eq!(
+            (&x.id, &x.title, &x.formula),
+            (&y.id, &y.title, &y.formula),
+            "{name}"
+        );
         assert_eq!(x.rect, y.rect, "{name}");
     }
     assert_eq!(pixels(a), pixels(b), "{name}: pixels");
@@ -81,10 +97,7 @@ fn corpus_cases() -> Vec<(String, Vec<String>)> {
         for pen in files("pen") {
             cases.push((pen.clone(), vec![]));
             for style in files("style") {
-                let sets = [
-                    vec![style.clone()],
-                    vec![theme.into(), style.clone()],
-                ];
+                let sets = [vec![style.clone()], vec![theme.into(), style.clone()]];
                 for sheets in sets {
                     cases.push((pen.clone(), sheets));
                 }
@@ -125,7 +138,11 @@ fn every_figure_reads_back_as_itself() {
         // Written again from what was read, and from a second compile (whose maps hash
         // differently), it's the same bytes.
         assert_eq!(bytes, back.to_bytes().unwrap(), "{name}: written again");
-        assert_eq!(bytes, compose(&pen, &sheets).unwrap().to_bytes().unwrap(), "{name}: compiled again");
+        assert_eq!(
+            bytes,
+            compose(&pen, &sheets).unwrap().to_bytes().unwrap(),
+            "{name}: compiled again"
+        );
         compiled += 1;
         pens.insert(pen);
     }
@@ -162,15 +179,21 @@ fn panels_share_their_answers_after_reading() {
             .map(|p| std::sync::Arc::ptr_eq(&p.figure.solved, first))
             .collect()
     };
-    assert!(shares(&made).contains(&true), "the figure has no panels that share");
+    assert!(
+        shares(&made).contains(&true),
+        "the figure has no panels that share"
+    );
     assert_eq!(shares(&made), shares(&back));
 }
 
 fn sample() -> Vec<u8> {
-    compose("corpus/012-limacon/limacon.pen", &["corpus/012-limacon/plain.style"])
-        .unwrap()
-        .to_bytes()
-        .unwrap()
+    compose(
+        "corpus/012-limacon/limacon.pen",
+        &["corpus/012-limacon/plain.style"],
+    )
+    .unwrap()
+    .to_bytes()
+    .unwrap()
 }
 
 fn refused(bytes: &[u8]) -> String {
@@ -187,7 +210,8 @@ fn another_builds_figure_is_refused_with_a_reason() {
     bytes[8..16].copy_from_slice(&other);
     let said = refused(&bytes);
     assert!(
-        said.contains("compiled by a different build of Pencil") && said.contains("compile it again"),
+        said.contains("compiled by a different build of Pencil")
+            && said.contains("compile it again"),
         "{said}"
     );
 }
@@ -259,11 +283,26 @@ fn bench() {
 
     let theme = "corpus/theme.style";
     let mut cases: Vec<(String, Vec<String>)> = vec![
-        ("corpus/001-circle/circle.pen".into(), vec!["corpus/001-circle/circle.style".into()]),
-        ("corpus/002-strokes/ring.pen".into(), vec!["corpus/002-strokes/filled.style".into()]),
-        ("corpus/002-strokes/wave.pen".into(), vec!["corpus/002-strokes/taper.style".into()]),
-        ("corpus/003-unroll/unroll.pen".into(), vec!["corpus/003-unroll/blog.style".into()]),
-        ("corpus/004-bounds/bounds.pen".into(), vec!["corpus/004-bounds/blog.style".into()]),
+        (
+            "corpus/001-circle/circle.pen".into(),
+            vec!["corpus/001-circle/circle.style".into()],
+        ),
+        (
+            "corpus/002-strokes/ring.pen".into(),
+            vec!["corpus/002-strokes/filled.style".into()],
+        ),
+        (
+            "corpus/002-strokes/wave.pen".into(),
+            vec!["corpus/002-strokes/taper.style".into()],
+        ),
+        (
+            "corpus/003-unroll/unroll.pen".into(),
+            vec!["corpus/003-unroll/blog.style".into()],
+        ),
+        (
+            "corpus/004-bounds/bounds.pen".into(),
+            vec!["corpus/004-bounds/blog.style".into()],
+        ),
     ];
     for (n, name) in [
         ("005-tangents", "tangents"),
@@ -283,7 +322,10 @@ fn bench() {
     cases.push(explainer_case());
 
     let out = std::env::var_os("PENCIL_BENCH_OUT").map(PathBuf::from);
-    println!("{:<34} {:>9} {:>9} {:>11} {:>11}", "figure", "source B", "compiled B", "compile µs", "read µs");
+    println!(
+        "{:<34} {:>9} {:>9} {:>11} {:>11}",
+        "figure", "source B", "compiled B", "compile µs", "read µs"
+    );
     for (pen, sheets) in cases {
         let disk = |p: &str| std::fs::read_to_string(root().join(p)).ok();
         // Everything read once, so the timings are of parsing and compiling and not of the disk.
@@ -300,16 +342,23 @@ fn bench() {
             .zip(&texts)
             .map(|(name, text)| Source { name, text })
             .collect();
-        let sources = Sources::read(Source { name: &pen, text: &doc }, &source_list, &read).unwrap();
+        let sources = Sources::read(
+            Source {
+                name: &pen,
+                text: &doc,
+            },
+            &source_list,
+            &read,
+        )
+        .unwrap();
         let made = sources.compose().unwrap();
         let files = used.into_inner();
-        let source_bytes =
-            doc.len() + texts.iter().map(String::len).sum::<usize>() + files.values().map(String::len).sum::<usize>();
+        let source_bytes = doc.len()
+            + texts.iter().map(String::len).sum::<usize>()
+            + files.values().map(String::len).sum::<usize>();
         let bytes = made.to_bytes().unwrap();
 
-        let from_memory = |p: &str| {
-            std::hint::black_box(files.get(p).cloned())
-        };
+        let from_memory = |p: &str| std::hint::black_box(files.get(p).cloned());
         let median = |mut run: Box<dyn FnMut()>| {
             let mut times = Vec::new();
             let start = Instant::now();
@@ -322,13 +371,28 @@ fn bench() {
             times[times.len() / 2]
         };
         let compile = median(Box::new(|| {
-            let s = Sources::read(Source { name: &pen, text: &doc }, &source_list, &from_memory).unwrap();
+            let s = Sources::read(
+                Source {
+                    name: &pen,
+                    text: &doc,
+                },
+                &source_list,
+                &from_memory,
+            )
+            .unwrap();
             std::hint::black_box(s.compose().unwrap());
         }));
         let read_back = median(Box::new(|| {
             std::hint::black_box(Composition::from_bytes(std::hint::black_box(&bytes)).unwrap());
         }));
-        println!("{:<34} {:>9} {:>9} {:>11.0} {:>11.0}", pen.trim_start_matches("corpus/"), source_bytes, bytes.len(), compile, read_back);
+        println!(
+            "{:<34} {:>9} {:>9} {:>11.0} {:>11.0}",
+            pen.trim_start_matches("corpus/"),
+            source_bytes,
+            bytes.len(),
+            compile,
+            read_back
+        );
 
         if let Some(dir) = &out {
             std::fs::create_dir_all(dir).unwrap();

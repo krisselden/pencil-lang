@@ -156,9 +156,8 @@ mod tests {
                 let tile = (py as f64 / TILE_PX) as usize * tiles_x as usize
                     + (px as f64 / TILE_PX) as usize;
                 let [start, n, ..] = texel(table as usize + tile);
-                let tiled: Vec<[f32; 4]> = (0..n as usize)
-                    .map(|i| texel(start as usize + i))
-                    .collect();
+                let tiled: Vec<[f32; 4]> =
+                    (0..n as usize).map(|i| texel(start as usize + i)).collect();
                 listed += tiled.len();
                 let all = nearest(&segments, x, y).unwrap().0;
                 let some = nearest(&tiled, x, y).unwrap().0;

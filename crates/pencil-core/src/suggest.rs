@@ -59,13 +59,15 @@ fn distance(a: &str, b: &str) -> usize {
     for (i, row) in d.iter_mut().enumerate() {
         row[0] = i;
     }
-    for j in 0..=b.len() {
-        d[0][j] = j;
+    for (j, cell) in d[0].iter_mut().enumerate() {
+        *cell = j;
     }
     for i in 1..=a.len() {
         for j in 1..=b.len() {
             let cost = usize::from(a[i - 1] != b[j - 1]);
-            d[i][j] = (d[i - 1][j] + 1).min(d[i][j - 1] + 1).min(d[i - 1][j - 1] + cost);
+            d[i][j] = (d[i - 1][j] + 1)
+                .min(d[i][j - 1] + 1)
+                .min(d[i - 1][j - 1] + cost);
             if i > 1 && j > 1 && a[i - 1] == b[j - 2] && a[i - 2] == b[j - 1] {
                 d[i][j] = d[i][j].min(d[i - 2][j - 2] + 1);
             }
@@ -82,7 +84,9 @@ fn split(unknown: &str, known: &[&str]) -> Option<String> {
     best[0] = Some((0, 0));
     for end in 1..=chars.len() {
         for start in 0..end {
-            let Some((pieces, _)) = best[start] else { continue };
+            let Some((pieces, _)) = best[start] else {
+                continue;
+            };
             let piece: String = chars[start..end].iter().collect();
             if known.contains(&piece.as_str())
                 && best[end].is_none_or(|(fewest, _)| pieces + 1 < fewest)
@@ -127,7 +131,10 @@ mod tests {
     #[test]
     fn names_run_together_suggest_the_split() {
         let known = ["one", "two", "three", "t"];
-        assert_eq!(suggestion("onetwothree", known), Some("`one two three`".into()));
+        assert_eq!(
+            suggestion("onetwothree", known),
+            Some("`one two three`".into())
+        );
         // Not a split that leaves something undefined, as `t hree` would.
         assert_eq!(suggestion("onetwothre", known), None);
         assert_eq!(

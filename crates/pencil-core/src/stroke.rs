@@ -1243,7 +1243,11 @@ pub fn half_width(style: &MarkStyle, env: &Env, dpr: f64) -> Result<f64, Error> 
     let mut env = env.clone();
     let mut widest: f64 = 0.0;
     // A width that follows depth is tried far behind, at the middle and far in front.
-    let depths: &[f64] = if style.reads_depth() { &[-1e9, 0.0, 1e9] } else { &[0.0] };
+    let depths: &[f64] = if style.reads_depth() {
+        &[-1e9, 0.0, 1e9]
+    } else {
+        &[0.0]
+    };
     for depth in depths {
         env.set(SELF_Z, *depth);
         for k in 0..=16 {
@@ -1818,7 +1822,11 @@ mod tests {
         let doc = "viewport { x: -1..1, y: -1..1 }\n\
                    curve c = implicit (x, y): y = 0.35·x + 0.8 + 0.01·x^2";
         for (width, beyond) in [(2.0, 5.0), (40.0, 21.0), (90.0, 46.0)] {
-            let segments = layer_of(doc, &format!("style c {{ stroke: black; width: {width}px }}"), 256);
+            let segments = layer_of(
+                doc,
+                &format!("style c {{ stroke: black; width: {width}px }}"),
+                256,
+            );
             let first = &segments[..FLOATS_PER_SEGMENT];
             let last = &segments[segments.len() - FLOATS_PER_SEGMENT..];
             for (x, y) in [(first[0], first[1]), (last[2], last[3])] {
@@ -2016,7 +2024,10 @@ mod tests {
         // The line is straight, so it's sampled every 12.5 pixels, and the cut still lands on
         // the crossing, wherever that is between samples.
         for c in [-0.613, 0.0, 0.2071, 0.75] {
-            let s = crossing(c, "style l { stroke: black; width: 2px; opacity: 0.6 + 0.4·sign(self.z) }");
+            let s = crossing(
+                c,
+                "style l { stroke: black; width: 2px; opacity: 0.6 + 0.4·sign(self.z) }",
+            );
             let at = (c + 1.0) * 200.0;
             let (mut behind, mut ahead) = (0, 0);
             for g in s.chunks(FLOATS_PER_SEGMENT) {
@@ -2040,7 +2051,10 @@ mod tests {
 
     #[test]
     fn a_width_that_follows_depth_steps_at_the_crossing() {
-        let s = crossing(0.2071, "style l { stroke: black; width: 4px + 2px·sign(self.z) }");
+        let s = crossing(
+            0.2071,
+            "style l { stroke: black; width: 4px + 2px·sign(self.z) }",
+        );
         let at = 1.2071 * 200.0;
         for g in s.chunks(FLOATS_PER_SEGMENT) {
             let (x0, x1) = (g[0] as f64, g[2] as f64);
@@ -2055,7 +2069,10 @@ mod tests {
     #[test]
     fn a_stroke_that_reads_nothing_along_it_is_cut_nowhere() {
         // The same line with a plain style is its samples and no more, with all its ink.
-        let plain = crossing(0.2071, "style l { stroke: black; width: 2px; opacity: 0.5 }");
+        let plain = crossing(
+            0.2071,
+            "style l { stroke: black; width: 2px; opacity: 0.5 }",
+        );
         assert_eq!(plain.len() / FLOATS_PER_SEGMENT, INITIAL_INTERVALS);
         assert!(plain.chunks(FLOATS_PER_SEGMENT).all(|g| g[11] == 0.0));
         // And a taper, which runs straight between samples, isn't cut either.
@@ -2068,7 +2085,11 @@ mod tests {
         // The curve ends behind, at z = -1, so its head is as faint as the stroke there.
         let doc = "viewport { x: -1..1, y: -1..1 }\n\
                    curve l = parametric (u): (u, 0, -u) for u in -0.8..0.8";
-        let s = layer_of(doc, "style l { stroke: black; width: 2px; head: 12px; opacity: 0.6 + 0.4·sign(self.z) }", 400);
+        let s = layer_of(
+            doc,
+            "style l { stroke: black; width: 2px; head: 12px; opacity: 0.6 + 0.4·sign(self.z) }",
+            400,
+        );
         let head = &s[s.len() - FLOATS_PER_SEGMENT..];
         assert_eq!(head[5], 0.0, "the head comes to a point");
         assert!((head[11] - 0.8).abs() < 1e-6, "{}", head[11]);

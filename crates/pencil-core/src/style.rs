@@ -404,8 +404,17 @@ pub fn type_of(e: &Expr, names: &[&str], spatial: bool) -> Result<Ty, String> {
             Ok(Ty::Real)
         }
         Expr::Sym(s) => {
-            let known = names.iter().copied().chain(SIGNALS).chain(CONSTANTS).chain(COLORS);
-            Err(crate::suggest::unknown("name", s, known.chain(["pi", "π", "e"])))
+            let known = names
+                .iter()
+                .copied()
+                .chain(SIGNALS)
+                .chain(CONSTANTS)
+                .chain(COLORS);
+            Err(crate::suggest::unknown(
+                "name",
+                s,
+                known.chain(["pi", "π", "e"]),
+            ))
         }
         Expr::App(head, args) => {
             let tys = args
@@ -614,7 +623,10 @@ pub fn sheet_names(sheets: &[Document]) -> Result<HashMap<String, Expr>, Error> 
     let mut written: HashMap<&str, (&Expr, usize, usize)> = HashMap::new();
     for (index, sheet) in sheets.iter().enumerate() {
         for item in &sheet.items {
-            if let Item::Let { name, expr, line, .. } = item {
+            if let Item::Let {
+                name, expr, line, ..
+            } = item
+            {
                 written.insert(name, (expr, *line, index));
             }
         }
@@ -1039,7 +1051,9 @@ fn apply(
             target.text = Some(parts?);
             continue;
         }
-        if let (None, "draw" | "blend" | "cap" | "font" | "place" | "format") = (facet, prop.as_str()) {
+        if let (None, "draw" | "blend" | "cap" | "font" | "place" | "format") =
+            (facet, prop.as_str())
+        {
             let word = match value {
                 Expr::Sym(word) => word.as_str(),
                 _ => return Err(format!("`{prop}` needs a keyword")),
@@ -1325,8 +1339,14 @@ mod tests {
     fn an_unknown_name_in_a_sheet_suggests_what_was_meant() {
         let doc = "let O = (0, 0)\nlet A = (1, 0)\ncurve base = ray(O, A)";
         for (sheet, wanted) in [
-            ("let ink = black\nstyle base { stroke: inkk }", "did you mean `ink`"),
-            ("style base { stroke: black; width: sqtr(4) }", "did you mean `sqrt`"),
+            (
+                "let ink = black\nstyle base { stroke: inkk }",
+                "did you mean `ink`",
+            ),
+            (
+                "style base { stroke: black; width: sqtr(4) }",
+                "did you mean `sqrt`",
+            ),
         ] {
             let err = build(doc, &[sheet]).unwrap_err().to_string();
             assert!(err.contains(wanted), "{sheet}: {err}");

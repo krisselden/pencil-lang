@@ -6,8 +6,8 @@
 //! one place each and compared by `pencil check`.
 
 pub mod clock;
-pub mod compiled;
 pub mod compile;
+pub mod compiled;
 pub mod diff;
 pub mod error;
 pub mod eval;
@@ -15,8 +15,8 @@ pub mod fast;
 pub mod files;
 pub mod frame;
 pub mod inspect;
-pub mod latex;
 pub mod ir;
+pub mod latex;
 pub mod nearest;
 pub mod parse;
 pub mod place;
