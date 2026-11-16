@@ -13,6 +13,22 @@ pnpm build                    # into site/dist
 pnpm preview                  # serves site/dist on http://localhost:4322
 ```
 
+## Deploying
+
+The site is a Cloudflare Worker of static files (`wrangler.jsonc`), named `pencil-lang`. CI builds the site on
+every push and pull request, and publishes it from `main` once the checks have passed
+(`.github/workflows/ci.yml`). It builds on GitHub and not on Cloudflare because a build compiles the Rust and
+draws each figure's poster on a GPU, which CI has in software and Cloudflare's build machines don't.
+
+CI doesn't build or publish the site yet: `pencil` reads its label fonts from macOS, so a poster with text can't be
+drawn on CI's Linux. `CAN_DRAW_TEXT` in the workflow turns both steps on once the fonts are in the repo. Until then,
+`pnpm deploy` from a Mac is how it's published.
+
+Publishing needs two secrets in the GitHub repo, `CLOUDFLARE_API_TOKEN` (a token made from Cloudflare's
+"Edit Cloudflare Workers" template) and `CLOUDFLARE_ACCOUNT_ID`. Without them the site is still built, and the
+publish step is skipped. `pnpm deploy` does the same from a machine with `wrangler login`, after the two builds
+above.
+
 The figures come through `@pencil-lang/figure`, the package in `packages/figure`, which the site is the first user of:
 
 - `astro.config.mjs` adds its integration with the repo as the figures' root, and `src/components/Figure.astro` wraps

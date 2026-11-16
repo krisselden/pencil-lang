@@ -4,3 +4,5 @@ packages:
 allowBuilds:
   esbuild: true
   sharp: false
+  # wrangler's local runtime; publishing the site doesn't need its install script.
+  workerd: false
