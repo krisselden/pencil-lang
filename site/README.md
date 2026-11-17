@@ -31,8 +31,13 @@ and publishes that branch as it is. Its settings for the Worker, under Settings,
 
 `pencil` has its label fonts built in (`packages/figure/fonts`), so a poster with text is drawn on CI's Linux as it is
 on a Mac. `CAN_DRAW_TEXT` in the workflow, which held the build and the publish back while the fonts were macOS's, is
-`'true'` since 2026-11-16. That first build on CI hasn't run yet: until it has, `pnpm deploy` from a Mac is the way
-that's known to work.
+`'true'` since 2026-11-16.
+
+The site is at `pencil-lang.dev`. The domain's DNS is on Cloudflare, it's the Worker's custom domain, and a redirect
+rule there sends `www` to it. Those were set in Cloudflare's dashboard, and none of it is in `wrangler.jsonc`.
+
+`public/_headers` says how long a browser keeps each kind of file: what's under `_astro/` and `_pencil/` for good,
+since each is named for its bytes; the icons for a day; and a page not at all, so a deploy shows at once.
 
 `pnpm deploy` publishes from a machine with `wrangler login`, after the two builds above.
 

@@ -6,7 +6,7 @@
 // the files that went into it, or `pencil` itself, is newer.
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { cp, mkdir, readFile, stat } from 'node:fs/promises';
+import { cp, mkdir, readdir, readFile, stat } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { pack } from '../src/pack.js';
@@ -30,6 +30,15 @@ export function config() {
 
 const hash = (text) => createHash('sha1').update(text).digest('hex');
 const modified = async (file) => (await stat(file)).mtimeMs;
+
+/** A hash of every file in `dir`, by its name and its bytes. */
+async function contents(dir) {
+  const sum = createHash('sha1');
+  for (const file of (await readdir(dir)).sort()) {
+    sum.update(`${file}\0`).update(await readFile(path.join(dir, file)));
+  }
+  return sum.digest('hex');
+}
 
 // At most this many `pencil` at once: each starts a GPU.
 const ROOM = 4;
@@ -154,8 +163,10 @@ async function make(cfg, key, { src, sheets, time, params, size, card }) {
     );
   }
 
-  // What a reader fetches is named for what's in it, so a copy they kept is never a stale one.
-  const name = `${stem}-${hash(JSON.stringify(manifest)).slice(0, 12)}`;
+  // What a reader fetches is named for what's in it, so a copy they kept is never a stale one. That's
+  // the files' own bytes: a change to the renderer draws the same figure's poster differently, and
+  // nothing the build wrote about the figure would say so.
+  const name = `${stem}-${(await contents(dir)).slice(0, 12)}`;
   const out = path.join(cfg.cache, 'out', name);
   if (!existsSync(path.join(out, `${stem}.json`))) {
     await mkdir(path.dirname(out), { recursive: true });

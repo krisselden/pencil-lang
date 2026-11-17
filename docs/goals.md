@@ -788,8 +788,9 @@ playground's case, which matters as much and is a different one. The site's page
   and a `<picture>` of their posters. `build()` is the same call for a page that wants a figure's `info` or its card.
 - **Nothing is made twice.** `pencil build` now lists every file that went into a figure, as `sources` in its `.json`, and
   a figure is built again only when one of them, or `pencil`, is newer. The site's 23 builds take 3.4 s from nothing and
-  0.08 s when nothing changed. What a reader fetches is named for what's in it
-  (`_pencil/tube-a5c1afca6244/tube.pfig`), so a copy they kept is never a stale one.
+  0.08 s when nothing changed. What a reader fetches is named for what's in it, a hash of its files' bytes
+  (`_pencil/tube-a5c1afca6244/tube.pfig`), so a copy they kept is never a stale one, and a host can tell a browser to
+  keep it for good. The site does, in `site/public/_headers`.
 - **A build stops if `pencil` and the WASM are different builds.** The WASM exports the core's fingerprint, and the
   integration compares it with each figure's. This happened while building it: the release binary was older than the WASM.
 - **The poster has the figure's exact shape.** Its pixels only round to it, which moved the page a pixel when the figure
