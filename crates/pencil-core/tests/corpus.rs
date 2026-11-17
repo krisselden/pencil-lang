@@ -977,6 +977,108 @@ fn hearts_are_bipolar_coordinates() {
     }
 }
 
+/// The grid is the coordinate circles: constant σ has its center at i·cot σ and radius |csc σ|, and
+/// constant τ its center at coth τ and radius |csch τ|. σ = π and τ = 0 are lines.
+#[test]
+fn hearts_grid_is_the_coordinate_circles() {
+    use pencil_core::{
+        eval::frame_env,
+        frame::Inputs,
+        ir::Form,
+        stroke::{Instance, instance},
+    };
+    let figure = hearts(&[]);
+    // A circle of the grid as (center, radius), or nothing for a line.
+    let circle = |id: &str, k: f64| {
+        let inputs = Inputs {
+            time: 0.0,
+            params: Vec::new(),
+        };
+        let mut env = frame_env(&figure, &inputs).unwrap();
+        let (lets, shape) = figure
+            .scene
+            .marks
+            .iter()
+            .find_map(|mark| match &mark.form {
+                Form::Many { lets, shape, .. } if mark.id == id => Some((lets, shape)),
+                _ => None,
+            })
+            .unwrap();
+        env.set("k", k);
+        let Instance::Cycle([a, bx, by, _]) = instance(lets, shape, &mut env).unwrap().unwrap()
+        else {
+            panic!("the grid's circles go through three points");
+        };
+        (a.abs() > 1e-9 * bx.hypot(by)).then(|| ([bx / a, by / a], 1.0 / a.abs()))
+    };
+    let near = |got: f64, want: f64, what: &str| {
+        assert!(
+            (got - want).abs() < 1e-9 * (1.0 + want.abs()),
+            "{what}: {got} {want}"
+        );
+    };
+    for k in 1..=8 {
+        let sigma = k as f64 * std::f64::consts::TAU / 16.0;
+        match circle("through_foci", k as f64) {
+            Some(([x, y], r)) => {
+                near(x, 0.0, "σ center");
+                near(y, sigma.cos() / sigma.sin(), "σ center");
+                near(r, 1.0 / sigma.sin().abs(), "σ radius");
+                // Through both foci.
+                near((1.0f64).hypot(y), r, "σ circle at a focus");
+            }
+            None => assert_eq!(k, 8, "only σ = π is a line"),
+        }
+    }
+    for k in 1..=15 {
+        let angle = k as f64 * std::f64::consts::PI / 16.0 - std::f64::consts::PI;
+        let tau = (angle.cos() * 0.999999).atanh();
+        match circle("around_foci", k as f64) {
+            Some(([x, y], r)) => {
+                near(x, 1.0 / tau.tanh(), "τ center");
+                near(y, 0.0, "τ center");
+                near(r, 1.0 / tau.sinh().abs(), "τ radius");
+            }
+            None => assert_eq!(k, 8, "only τ = 0 is a line"),
+        }
+    }
+}
+
+/// A figure keeps what a frame traced and worked out for its collections while nothing they read
+/// changes. A frame must be what a figure that kept nothing would draw: at the same moment
+/// again, after another moment, at another size, and after a param the hearts read has moved.
+#[test]
+fn what_a_figure_keeps_between_frames_changes_none_of_them() {
+    use pencil_core::frame::{Inputs, prepare};
+    let sheet = square_read("008-hearts/glow.style");
+    let frame = |figure: &pencil_core::Figure, time: f64, shift: f64, width: u32| {
+        let inputs = Inputs {
+            time,
+            params: vec![("shift".to_string(), shift)],
+        };
+        let p = prepare(figure, &inputs, width, width, 1.0).unwrap();
+        (p.sides, p.traced, p.nearest, p.strokes, p.values)
+    };
+    let kept = hearts(&[&sheet]);
+    for (time, shift, width) in [
+        (2.4, 0.0, 320),
+        (2.4, 0.0, 320),
+        (7.0, 0.0, 320),
+        (7.0, 0.0, 200),
+        (7.0, 0.9, 200),
+        (2.4, 0.0, 320),
+    ] {
+        let fresh = hearts(&[&sheet]);
+        assert!(
+            frame(&kept, time, shift, width) == frame(&fresh, time, shift, width),
+            "time {time}, shift {shift}, width {width}"
+        );
+    }
+    // And there is something to keep: the hearts are traced, and the grid has sides.
+    let (sides, traced, ..) = frame(&kept, 2.4, 0.0, 320);
+    assert!(!sides.is_empty() && traced.iter().filter(|t| !t.is_empty()).count() == 2);
+}
+
 /// The coordinate curves are the circles they should be. Constant τ has its center at coth τ and
 /// radius |csch τ|, and constant σ has its center at i·cot σ and radius |csc σ|.
 #[test]
@@ -3100,6 +3202,39 @@ fn the_morph_runs_from_the_flat_strip_to_the_spiral() {
                 (-pi - 1e-3..pi + 1e-3).contains(&y),
                 "{row} at {s} is at height {y}"
             );
+        }
+    }
+}
+
+/// The hearts' light is measured to each heart as it is traced, which goes through both foci,
+/// where the curve turns back on itself in a cusp. A level set traced on a grid loses a cusp some
+/// pixels short, by an amount that changes with the frame's size, so this holds at many.
+#[test]
+fn the_hearts_light_reaches_both_foci_at_every_size() {
+    use pencil_core::frame::{Inputs, prepare};
+    let sheet = square_read("008-hearts/glow.style");
+    let figure = hearts(&[&sheet]);
+    for width in [
+        343u32, 686, 880, 1000, 1040, 1100, 1158, 1200, 1280, 1500, 1633, 2080,
+    ] {
+        let inputs = Inputs {
+            time: 5.0,
+            params: Vec::new(),
+        };
+        let p = prepare(&figure, &inputs, width, width, 1.0).unwrap();
+        let w = f64::from(width);
+        let lit: Vec<_> = p.traced.iter().filter(|t| !t.is_empty()).collect();
+        assert_eq!(lit.len(), 2, "both hearts are measured");
+        for segments in lit {
+            for focus in [-1.0f64, 1.0] {
+                let (fx, fy) = ((focus + 2.0) / 4.0 * w, w / 2.0);
+                let near = segments
+                    .iter()
+                    .flat_map(|s| [(s[0], s[1]), (s[2], s[3])])
+                    .map(|(x, y)| (f64::from(x) - fx).hypot(f64::from(y) - fy))
+                    .fold(f64::INFINITY, f64::min);
+                assert!(near < 1.0, "{near} px short of {focus} at {width} px");
+            }
         }
     }
 }

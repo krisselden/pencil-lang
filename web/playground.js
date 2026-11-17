@@ -32,7 +32,9 @@ const FIGURES = [
   ['005 tangents', 'corpus/005-tangents/tangents.pen', [['tangents', [THEME, 'corpus/005-tangents/plain.style']]]],
   ['006 square', 'corpus/006-square/square.pen', [['square', [THEME, 'corpus/006-square/plain.style']]]],
   ['007 lattice', 'corpus/007-lattice/lattice.pen', [['lattice', [THEME, 'corpus/007-lattice/plain.style']]]],
-  ['008 hearts', 'corpus/008-hearts/hearts.pen', [['hearts', [THEME, 'corpus/008-hearts/plain.style']]]],
+  ['008 hearts', 'corpus/008-hearts/hearts.pen', [
+    ['hearts', [THEME, 'corpus/008-hearts/plain.style']],
+    ['hearts-glow', ['corpus/008-hearts/glow.style']]]],
   ['009 squaring', 'corpus/009-squaring/squaring.pen', [['squaring', [THEME, 'corpus/009-squaring/plain.style']]]],
   ['010 Möbius', 'corpus/010-mobius/mobius.pen', [['mobius', [THEME, 'corpus/010-mobius/plain.style']]]],
   ['011 circumcircle', 'corpus/011-circumcircle/circumcircle.pen', [['circumcircle', ['corpus/011-circumcircle/plain.style']]]],

@@ -145,11 +145,15 @@ export const DEMOS: Demo[] = [
     id: 'hearts',
     number: '008',
     title: 'Bipolar hearts',
-    about: 'Two hearts in bipolar coordinates around the foci at ±1, with the coordinate circles through a moving point on each.',
+    about:
+      'Two hearts in bipolar coordinates around the foci at ±1, over the grid of coordinate circles, with the two circles through a moving point on each. Its second sheet makes every line a light that glows by its distance, and they add where they cross.',
     label:
-      'Two hearts in bipolar coordinates around the foci at plus and minus 1, with the coordinate circles through a moving point on each.',
+      'Two hearts in bipolar coordinates around the foci at plus and minus 1, over the grid of coordinate circles, with the two circles through a moving point on each.',
     folder: 'corpus/008-hearts',
-    looks: [{ pen: 'corpus/008-hearts/hearts.pen', sheets: [THEME, 'corpus/008-hearts/plain.style'], dark: [DARK], playground: 'hearts' }],
+    looks: [
+      { name: 'plain.style', pen: 'corpus/008-hearts/hearts.pen', sheets: [THEME, 'corpus/008-hearts/plain.style'], dark: [DARK], playground: 'hearts' },
+      { name: 'glow.style', pen: 'corpus/008-hearts/hearts.pen', sheets: ['corpus/008-hearts/glow.style'], playground: 'hearts-glow' },
+    ],
   },
   {
     id: 'squaring',

@@ -4,7 +4,8 @@ import Figure from '../components/Figure.astro';
 import Source from '../components/Source.astro';
 import { DEMOS, REPO } from '../lib/figures';
 
-const limacon = DEMOS.find((d) => d.id === 'limacon')!;
+const hearts = DEMOS.find((d) => d.id === 'hearts')!;
+const glowing = hearts.looks.filter((look) => look.name === 'glow.style');
 const circle = DEMOS.find((d) => d.id === 'circle')!;
 const [plainCircle, bandedCircle] = circle.looks;
 ---
@@ -30,10 +31,11 @@ const [plainCircle, bandedCircle] = circle.looks;
         </div>
       </div>
       <figure class="plate" style="margin: 0">
-        <Figure id="hero" looks={limacon.looks} label={limacon.label} controls={false} priority />
+        <Figure id="hero" looks={glowing} label={hearts.label} controls={false} priority />
         <figcaption>
-          Twenty-four circles through one point, with their centers on a circle, each warm inside and cool
-          outside, adding up. The curve they all touch is a limaçon. <a href="/demos/#limacon">Its document</a> is nine lines, and its sheet five rules.
+          Two hearts in bipolar coordinates, over the two families of circles the coordinates are made of.
+          The sheet makes each line a light that glows by its distance, and they add where they cross, which is why
+          the crossings and the foci burn white. <a href="/demos/#hearts">The document</a> has no colors in it.
         </figcaption>
       </figure>
     </section>
