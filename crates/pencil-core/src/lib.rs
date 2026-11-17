@@ -41,6 +41,9 @@ pub struct Figure {
     /// A cache, so a compiled figure doesn't carry it: `compiled` shares it again on reading.
     #[serde(skip)]
     pub solved: std::sync::Arc<eval::Solved>,
+    /// What its last frame worked out that the next may not have to. See `frame::Kept`.
+    #[serde(skip)]
+    pub kept: std::sync::Arc<frame::Kept>,
 }
 
 /// Where one collection's sides are in the frame's data texture.
@@ -208,6 +211,7 @@ impl Sources {
             styles,
             conditional,
             solved: Default::default(),
+            kept: Default::default(),
         })
     }
 
@@ -306,6 +310,7 @@ impl Sources {
                     conditional,
                     // The same equations and the same params have the same answers.
                     solved: Default::default(),
+                    kept: Default::default(),
                 },
             ));
             let newest = figures.len() - 1;

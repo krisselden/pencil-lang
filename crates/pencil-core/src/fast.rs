@@ -137,6 +137,11 @@ impl Slots {
         self.generation.set(self.generation.get() + 1);
     }
 
+    /// What a slot holds.
+    pub fn get(&self, slot: u32) -> f64 {
+        self.values[slot as usize]
+    }
+
     /// The piece this key names, or this node as a new one. A piece of leaves is cheaper to work
     /// out than to remember.
     fn piece(&mut self, key: PieceKey, node: Node) -> (Node, u32) {

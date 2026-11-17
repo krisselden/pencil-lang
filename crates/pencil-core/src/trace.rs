@@ -9,6 +9,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::error::Error;
 use crate::eval::{self, Env};
+use crate::fast;
 use crate::ir::{Expr, Viewport};
 
 const NEWTON_STEPS: usize = 3;
@@ -31,21 +32,70 @@ struct Field<'a> {
     field: &'a Expr,
     grad: &'a [Expr; 2],
     env: Env,
+    /// The field and its gradient resolved once, since a trace works them out at every corner of
+    /// its grid, every frame. `eval` stays the definition, and is asked whenever these can't say.
+    slots: fast::Slots,
+    at: [u32; 2],
+    quick: Option<[fast::Node; 3]>,
 }
 
-impl Field<'_> {
+impl<'a> Field<'a> {
+    fn new(vars: &'a [String; 2], field: &'a Expr, grad: &'a [Expr; 2], env: &Env) -> Self {
+        let mut slots = fast::Slots::new();
+        let at = [slots.variable(&vars[0]), slots.variable(&vars[1])];
+        let quick = (|| {
+            Some([
+                fast::compile(field, &mut slots, env)?,
+                fast::compile(&grad[0], &mut slots, env)?,
+                fast::compile(&grad[1], &mut slots, env)?,
+            ])
+        })();
+        Field {
+            vars,
+            field,
+            grad,
+            env: env.clone(),
+            slots,
+            at,
+            quick,
+        }
+    }
+
     fn at(&mut self, p: [f64; 2]) -> Result<f64, Error> {
+        if let Some([field, ..]) = &self.quick {
+            self.slots.set(self.at[0], p[0]);
+            self.slots.set(self.at[1], p[1]);
+            if let Ok(value) = fast::run(field, &self.slots) {
+                return Ok(value);
+            }
+        }
         self.env.set(&self.vars[0], p[0]);
         self.env.set(&self.vars[1], p[1]);
         eval::real(self.field, &self.env)
+    }
+
+    /// The gradient at `p`.
+    fn slope(&mut self, p: [f64; 2]) -> Result<[f64; 2], Error> {
+        if let Some([_, gx, gy]) = &self.quick {
+            self.slots.set(self.at[0], p[0]);
+            self.slots.set(self.at[1], p[1]);
+            if let (Ok(gx), Ok(gy)) = (fast::run(gx, &self.slots), fast::run(gy, &self.slots)) {
+                return Ok([gx, gy]);
+            }
+        }
+        self.env.set(&self.vars[0], p[0]);
+        self.env.set(&self.vars[1], p[1]);
+        Ok([
+            eval::real(&self.grad[0], &self.env)?,
+            eval::real(&self.grad[1], &self.env)?,
+        ])
     }
 
     /// Newton steps along the gradient, which is safe where the curve crosses zero.
     fn project(&mut self, mut p: [f64; 2]) -> Result<[f64; 2], Error> {
         for _ in 0..NEWTON_STEPS {
             let f = self.at(p)?;
-            let gx = eval::real(&self.grad[0], &self.env)?;
-            let gy = eval::real(&self.grad[1], &self.env)?;
+            let [gx, gy] = self.slope(p)?;
             let g2 = gx * gx + gy * gy;
             // Where the gradient vanishes or is infinite, as at a cusp, a step goes nowhere useful.
             if !(1e-12..f64::INFINITY).contains(&g2) {
@@ -75,12 +125,7 @@ pub fn trace(
     margin: u32,
 ) -> Result<Vec<Polyline>, Error> {
     let margin = margin.max(1);
-    let mut field = Field {
-        vars,
-        field: expr,
-        grad,
-        env: env.clone(),
-    };
+    let mut field = Field::new(vars, expr, grad, env);
     let (cell_x, cell_y) = (
         (view.x[1] - view.x[0]) / cols as f64,
         (view.y[1] - view.y[0]) / rows as f64,

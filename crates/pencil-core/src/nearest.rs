@@ -15,14 +15,22 @@ pub const TEXTURE_WIDTH: usize = 1024;
 pub const TEXTURE_ROWS: usize = 2048;
 
 /// Whether a mark's distance is measured to its traced curve: an implicit curve that isn't
-/// already an exact distance, where the distance is read at all, by a fill or a field stroke.
+/// already an exact distance, where the distance is read at all, by a fill or a field stroke, and
+/// a parametric curve whose stroke is drawn per pixel, with `draw: field`. That one has no sides,
+/// so its distance has no sign.
 pub fn measures(mark: &Mark, style: &MarkStyle) -> bool {
-    matches!(mark.form, Form::Field { exact: false, .. })
-        && (style.negative.is_some()
-            || style.positive.is_some()
-            || style.inside.is_some()
-            || style.outside.is_some()
-            || (style.stroke.is_some() && !style.stroke_is_line(&mark.form)))
+    let field_stroke = style.stroke.is_some() && !style.stroke_is_line(&mark.form);
+    match mark.form {
+        Form::Field { exact: false, .. } => {
+            style.negative.is_some()
+                || style.positive.is_some()
+                || style.inside.is_some()
+                || style.outside.is_some()
+                || field_stroke
+        }
+        Form::Parametric(_) => field_stroke,
+        _ => false,
+    }
 }
 
 /// The squared distance from a point to a segment `x0 y0 x1 y1`, and the way from the segment's

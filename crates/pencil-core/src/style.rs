@@ -240,8 +240,9 @@ impl MarkStyle {
                 Draw::Field => false,
                 Draw::Auto => !exact || self.needs_arc_length(),
             },
-            Form::Parametric(_)
-            | Form::Polyline { .. }
+            // Per pixel, by its distance to the curve as sampled, when a sheet asks for that.
+            Form::Parametric(_) => self.draw != Draw::Field,
+            Form::Polyline { .. }
             | Form::Region(_)
             | Form::Arrow { .. }
             | Form::Outline { .. }
@@ -940,6 +941,18 @@ pub fn resolve_keeping(
         }
     }
     for (mark, style) in scene.marks.iter().zip(&styled.marks) {
+        let reads_distance = [&style.stroke, &style.opacity]
+            .into_iter()
+            .flatten()
+            .any(|e| uses(e, SELF_DIST) || uses(e, SELF_PIXEL));
+        if matches!(mark.form, Form::Parametric(_)) && reads_distance && style.draw != Draw::Field {
+            return Err(Error::new(format!(
+                "`{}` is drawn as a line, which has no distance: add `draw: field` for its stroke to use `self.dist`",
+                mark.id
+            )));
+        }
+    }
+    for (mark, style) in scene.marks.iter().zip(&styled.marks) {
         if style.needs_arc_length() && style.draw == Draw::Field {
             return Err(Error::new(format!(
                 "`{}`: dashes and tapers need position along the curve, so they can't use `draw: field`",
@@ -1064,7 +1077,7 @@ fn apply(
                 ("draw", "auto") => target.draw = Draw::Auto,
                 ("draw", "line") => target.draw = Draw::Line,
                 ("draw", "field") => {
-                    if !matches!(form, Form::Field { .. }) {
+                    if !matches!(form, Form::Field { .. } | Form::Parametric(_)) {
                         return Err(format!(
                             "`{id}` has no field, so it can't use `draw: field`"
                         ));
@@ -1161,7 +1174,9 @@ fn apply(
             scope.extend(lets.iter().map(|(name, _)| name.as_str()));
         }
         // `fill_opacity` is a measure that can still fade with distance, as a glow does.
-        let spatial = !measure || prop == "fill_opacity";
+        // And so can the `opacity` of a parametric curve whose stroke is drawn per pixel.
+        let traced = matches!(form, Form::Parametric(_));
+        let spatial = !measure || prop == "fill_opacity" || (traced && prop == "opacity");
         if !clear {
             let ty = type_of(value, &scope, spatial)?;
             let want = if measure { Ty::Real } else { Ty::Color };
@@ -1169,7 +1184,14 @@ fn apply(
                 return Err(format!("`{prop}` needs a {want:?}, found a {ty:?}"));
             }
         }
-        if spatial && !spatial_ok && (uses(value, SELF_DIST) || uses(value, SELF_PIXEL)) {
+        // A parametric curve's stroke has a distance when it's drawn per pixel, which is checked
+        // once the whole sheet is read.
+        let traced_stroke = traced && (prop == "stroke" || prop == "opacity");
+        if spatial
+            && !spatial_ok
+            && !traced_stroke
+            && (uses(value, SELF_DIST) || uses(value, SELF_PIXEL))
+        {
             return Err(format!(
                 "`{id}` has no distance, so it can't use `self.dist`"
             ));
@@ -1548,6 +1570,35 @@ mod tests {
         assert!(f.styles.marks[1].stroke_is_line(&f.scene.marks[1].form));
     }
 
+    /// A parametric curve's stroke can be drawn per pixel, by its distance to the curve as sampled.
+    #[test]
+    fn a_parametric_stroke_can_be_a_field() {
+        let doc = "curve p = parametric (t): (cos(t), sin(t)) for t in 0..6";
+        let glow = "style p { draw: field; width: 40px; stroke: white·tanh(self.pixel / abs(self.dist)); opacity: tanh(self.pixel / abs(self.dist)) }";
+        let f = build(doc, &[glow]).unwrap();
+        assert!(!f.styles.marks[0].stroke_is_line(&f.scene.marks[0].form));
+        assert!(crate::nearest::measures(
+            &f.scene.marks[0],
+            &f.styles.marks[0]
+        ));
+        // As a line it has no distance, and the error says what to add.
+        let err = build(
+            doc,
+            &["style p { stroke: white·tanh(self.pixel / abs(self.dist)) }"],
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("add `draw: field`"), "{err}");
+        let faded = "style p { stroke: white; opacity: tanh(1 / abs(self.dist)) }";
+        let err = build(doc, &[faded]).unwrap_err().to_string();
+        assert!(err.contains("add `draw: field`"), "{err}");
+        // It still has no sides.
+        let err = build(doc, &["style p::inside { fill: white }"])
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("has no sides"), "{err}");
+    }
+
     #[test]
     fn mistakes_fail_loudly() {
         for (sheet, expected) in [
@@ -1646,9 +1697,12 @@ mod tests {
 
     #[test]
     fn forms_without_a_field_or_distance_say_so() {
-        let doc = "curve p = parametric (t): (t, t) for t in 0..1";
-        let err = build(doc, &["style p { draw: field }"]).unwrap_err();
+        let doc = "curve p = parametric (t): (t, t) for t in 0..1\nsegment s = (0, 0), (1, 1)";
+        let err = build(doc, &["style s { draw: field }"]).unwrap_err();
         assert!(err.message.contains("has no field"), "{err}");
+        let err = build(doc, &["style s { stroke: mix(white, black, self.dist) }"]).unwrap_err();
+        assert!(err.message.contains("has no distance"), "{err}");
+        // A parametric curve has one only when it's drawn per pixel.
         let err = build(doc, &["style p { stroke: mix(white, black, self.dist) }"]).unwrap_err();
         assert!(err.message.contains("has no distance"), "{err}");
     }

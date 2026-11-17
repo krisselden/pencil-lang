@@ -503,6 +503,17 @@ pub fn emit(figure: &Figure) -> String {
                 out.push_str("        let dist_px = rho - radius;\n");
                 out.push_str("        let self_dist = dist_px * pixel;\n");
             }
+            // `eval::Frame::shade`: to the curve as sampled, with no sign. With nothing sampled
+            // there's nothing near.
+            Form::Parametric(_) if nearest::measures(mark, style) => {
+                out.push_str(&format!(
+                    "        let near = nearest_curve({traced}, local);\n\
+                     \x20       let dist_px = select(1e9, near.x, near.x >= 0.0);\n\
+                     \x20       let normal = select(vec2<f32>(1.0, 0.0), near.yz / near.x, near.x > 1e-6);\n\
+                     \x20       let self_dist = dist_px * pixel;\n"
+                ));
+                traced += 1;
+            }
             _ => measured = false,
         }
         out.push_str(&format!("        let opacity = {};\n", opacity_of(style)));

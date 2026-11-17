@@ -1,6 +1,9 @@
 //! Everything a frame needs that's computed on the CPU: bindings, region boundaries,
 //! stroke segments and label positions. The GPU and the oracle both consume this.
 
+use std::collections::HashMap;
+use std::sync::Mutex;
+
 use crate::Figure;
 use crate::error::Error;
 use crate::eval::{self, Env};
@@ -712,6 +715,52 @@ pub fn prepare(
 }
 
 /// `prepare`, with a renderer's own text widths, for laying out expressions.
+/// What a figure's last frame worked out for a mark, and every value that depended on, kept as
+/// `eval::Solved` keeps a system's answer. Tracing an implicit curve and working out a
+/// collection's circles cost the same every frame whether or not anything they read has changed,
+/// and in most figures most of them haven't: a grid stays where it is while a point moves over
+/// it. The key is everything the work reads, so keeping it can't change what a frame shows.
+#[derive(Debug, Default)]
+pub struct Kept {
+    traces: Memo<Vec<crate::trace::Polyline>>,
+    sides: Memo<Vec<f32>>,
+    /// The traced curves the last distance texture was tiled from, at what size, and the texture.
+    nearest: Mutex<Option<(Tiled, Vec<f32>)>>,
+}
+
+/// What `nearest::texture` reads: each measured mark's segments, and the frame's size.
+type Tiled = (Vec<Vec<[f32; 4]>>, u32, u32);
+
+/// For each mark, the key its answer was worked out under, and the answer.
+type Memo<T> = Mutex<HashMap<usize, (Vec<u64>, T)>>;
+
+/// The values these expressions read, and `also`, as a key: the same key means the same answer.
+fn kept_key<'a>(exprs: impl IntoIterator<Item = &'a Expr>, env: &Env, also: &[f64]) -> Vec<u64> {
+    let mut key: Vec<u64> = also.iter().map(|v| v.to_bits()).collect();
+    for e in exprs {
+        e.visit_syms(&mut |name| key.push(env.get(name).map_or(u64::MAX, f64::to_bits)));
+    }
+    key
+}
+
+/// The answer kept under `key` for this mark, or `work`'s, which is then kept.
+fn kept<T: Clone>(
+    memo: &Memo<T>,
+    mark: usize,
+    key: Vec<u64>,
+    work: impl FnOnce() -> Result<T, Error>,
+) -> Result<T, Error> {
+    let mut entries = memo.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some((known, answer)) = entries.get(&mark)
+        && *known == key
+    {
+        return Ok(answer.clone());
+    }
+    let answer = work()?;
+    entries.insert(mark, (key, answer.clone()));
+    Ok(answer)
+}
+
 pub fn prepare_with(
     figure: &Figure,
     inputs: &Inputs,
@@ -792,7 +841,27 @@ pub fn prepare_with(
     }
     for group in &sided {
         let mark = &scene.marks[group.mark];
-        let found = stroke::sided_instances(mark, group, &env)?;
+        let found = match &mark.form {
+            Form::Many { vars, lets, shape } => {
+                let ranges = vars.iter().flat_map(|(_, range)| range);
+                let exprs = ranges
+                    .chain(lets.iter().map(|(_, e)| e))
+                    .chain(stroke::shape_exprs(shape));
+                // What a style reads per instance can be something of the frame's, too.
+                let read: Vec<f64> = group
+                    .names
+                    .iter()
+                    .map(|name| env.get(name).unwrap_or(f64::NAN))
+                    .collect();
+                kept(
+                    &figure.kept.sides,
+                    group.mark,
+                    kept_key(exprs, &env, &read),
+                    || stroke::sided_instances(mark, group, &env),
+                )?
+            }
+            _ => stroke::sided_instances(mark, group, &env)?,
+        };
         let count = found.len() / (group.stride * 4);
         if count > MAX_SIDED_CIRCLES {
             return Err(Error::new(format!(
@@ -844,7 +913,27 @@ pub fn prepare_with(
             } else {
                 0.0
             };
-            let lines = stroke::lines(&mark.form, &env, view, width, height, true, reach)?;
+            let trace = || stroke::lines(&mark.form, &env, view, width, height, true, reach);
+            let frame = [
+                view.x[0],
+                view.x[1],
+                view.y[0],
+                view.y[1],
+                f64::from(width),
+                f64::from(height),
+                reach,
+            ];
+            let lines = match &mark.form {
+                Form::Field { field, grad, .. } => {
+                    let exprs = [field, &grad[0], &grad[1]];
+                    kept(&figure.kept.traces, i, kept_key(exprs, &env, &frame), trace)?
+                }
+                Form::Parametric(arc) => {
+                    let exprs = arc.point.iter().chain(&arc.range).chain(&arc.depth);
+                    kept(&figure.kept.traces, i, kept_key(exprs, &env, &frame), trace)?
+                }
+                _ => trace()?,
+            };
             for line in &lines {
                 for pair in line.points.windows(2) {
                     let (ax, ay) = device(pair[0][0], pair[0][1], view, width, height);
@@ -860,7 +949,23 @@ pub fn prepare_with(
         traced.push(segments);
     }
     let strokes = stroke::build(figure, &env, view, width, height, dpr, &shown, &curves)?;
-    let nearest = nearest::texture(&traced, width, height);
+    let nearest = {
+        let mut last = figure
+            .kept
+            .nearest
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        match &*last {
+            Some(((from, w, h), texture)) if *from == traced && (*w, *h) == (width, height) => {
+                texture.clone()
+            }
+            _ => {
+                let texture = nearest::texture(&traced, width, height);
+                *last = Some(((traced.clone(), width, height), texture.clone()));
+                texture
+            }
+        }
+    };
     if nearest.len() > nearest::TEXTURE_WIDTH * nearest::TEXTURE_ROWS * 4 {
         return Err(Error::new(format!(
             "measuring distances to curves needs {} texels, and the limit is {} for now",

@@ -867,7 +867,7 @@ impl Instance {
     }
 }
 
-fn shape_exprs(shape: &Shape) -> Vec<&Expr> {
+pub(crate) fn shape_exprs(shape: &Shape) -> Vec<&Expr> {
     match shape {
         Shape::Dots(at) => at.iter().collect(),
         Shape::Circles { center, r } => vec![&center[0], &center[1], r],
@@ -918,8 +918,21 @@ pub fn sided_instances(
     let mut local = env.clone();
     let mut out = Vec::new();
     let mut count = 0;
+    // A circle through three points of a map is a long expression, worked out for every
+    // instance, every frame, so it goes the fast way where that can say.
+    let mut run = FastInstances::new(vars, lets, shape, &MarkStyle::default(), env);
     for_each(vars, &mut local, &mut count, &mut |env| {
-        let coefficients = match instance(lets, shape, env)? {
+        let found = match run.numbers(vars, shape, env) {
+            Some(found) => {
+                // Its `with` names, for what its style reads.
+                if !group.names.is_empty() {
+                    run.leave(lets, env);
+                }
+                found
+            }
+            None => instance(lets, shape, env)?,
+        };
+        let coefficients = match found {
             Some(Instance::Cycle(coefficients)) => coefficients,
             Some(Instance::Circle([x, y], r)) => {
                 [1.0 / r, x / r, y / r, (x * x + y * y - r * r) / r]
@@ -1000,6 +1013,13 @@ impl FastInstances {
             radius: constant(&style.radius),
             half: constant(&style.width),
             slots,
+        }
+    }
+
+    /// Puts the instance's `with` names in `env`, as `instance` leaves them.
+    fn leave(&self, lets: &[(String, Expr)], env: &mut Env) {
+        for ((name, _), (slot, _)) in lets.iter().zip(self.lets.iter().flatten()) {
+            env.set(name, self.slots.get(*slot));
         }
     }
 

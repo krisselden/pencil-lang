@@ -666,11 +666,30 @@ impl<'a> Frame<'a> {
                 }
                 Form::Label { .. } | Form::Term { .. } => continue,
                 Form::Outline { .. } => None,
+                // To the curve as sampled, with no sign, since it has no sides.
+                Form::Parametric(_) if nearest::measures(mark, style) => {
+                    traced += 1;
+                    nearest::nearest(&self.prepared.traced[traced - 1], px, py).map(
+                        |(rho, (vx, vy))| {
+                            let n = if rho > 1e-6 {
+                                (vx / rho, vy / rho)
+                            } else {
+                                (1.0, 0.0)
+                            };
+                            (rho, n)
+                        },
+                    )
+                }
                 Form::Parametric(_)
                 | Form::Polyline { .. }
                 | Form::Arrow { .. }
                 | Form::Many { .. } => None,
             };
+            // A stroke drawn per pixel can fade with its distance.
+            if let Some((dist_px, _)) = measured {
+                env.set(SELF_DIST, dist_px * pixel);
+                env.set(SELF_PIXEL, pixel);
+            }
             let opacity = match &style.opacity {
                 // One that varies along a stroke is already in its coverage.
                 Some(_) if style.ink().is_some() => 1.0,

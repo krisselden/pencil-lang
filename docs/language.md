@@ -534,7 +534,7 @@ the color stays with the disk. A style can tell which it is from `self.curvature
 
 | Name | Meaning |
 |---|---|
-| `self.dist` | Distance to the mark, in `fill`, `stroke` and `fill_opacity`, on marks that have one, and negative inside. It's a true distance: an implicit curve's is measured to the curve as traced in view, so `cos(24·self.dist)` makes even bands. |
+| `self.dist` | Distance to the mark, in `fill`, `stroke` and `fill_opacity`, on marks that have one, and negative inside. It's a true distance: an implicit curve's is measured to the curve as traced in view, so `cos(24·self.dist)` makes even bands. A parametric curve has one for its `stroke` and `opacity` when its stroke is drawn per pixel, with `draw: field`: the distance to the curve as sampled, with no sign, since such a curve has no sides. |
 | `self.pixel` | How big a device pixel is in world units, wherever `self.dist` is, so that a glow can be a number of the screen's pixels across. It's what the screen can resolve, not the design: `1px` is a device pixel only at the design size on a 1× screen. |
 | `self.curvature` | A circle's signed curvature: above 0 counterclockwise, below 0 clockwise, and 0 on a line. |
 | `self.t` | Position along a stroke, 0 to 1, in `width`, and in a curve's `opacity`. |
@@ -567,7 +567,7 @@ pixels, so they can't be in `em`.
 | `head`, `head_span` | Curves | With `head: 13px`, a curve ends in an arrowhead. `head_span: 1` holds it to 60% of the last 1 of the curve's parameter, so it can't dwarf a spiral's tight turns. |
 | `dash`, `gap` | Lines | Lengths. A loop gets a whole number of dashes, stretched to fit. `dash: 0`, like `dash: none`, is solid. |
 | `cap` | Lines | `butt` (default) or `round`. |
-| `draw` | Strokes | A hint: `auto` (default), `line` or `field`. |
+| `draw` | Strokes | A hint: `auto` (default), `line` or `field`. `field` draws an implicit or a parametric curve's stroke per pixel from its distance, so a parametric curve's `stroke` and `opacity` can fall off with `self.dist`: `draw: field; width: 8; stroke: white; opacity: tanh(2·self.pixel / abs(self.dist))` is a line of light. A stroke drawn that way has no dashes, taper or `trim`. |
 | `blend` | Edges, sides | `gamma` (default, as SVG does), `linear`, or `add`, which adds to what's there in display values and never covers it. |
 | `tone` | `paper` | `clip` (default) or `tanh`, which runs the finished picture through `tanh` in display values, so that what `blend: add` piles up stays in range. Or a number from 0 to 1 between them, which can change, so a figure can turn into one that adds light: `tone: glow` with a beat named `glow`. |
 | `opacity` | Any mark | Scales the whole mark. On a `curve` or `curves` it can vary along the stroke, with `self.t` and `self.z`: each part of the stroke has that much ink, and where parts overlap the most ink shows. |
