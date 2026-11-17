@@ -162,9 +162,18 @@ pub fn settle(
     let (frame_w, frame_h) = (width as f64 / dpr, height as f64 / dpr);
     let extent = |l: &Label| {
         let size = l.size / dpr;
-        let half_w = l.text.chars().count() as f64 * EM_PER_CHAR * size / 2.0;
-        let half_h = size * LINE_PER_EM / 2.0;
-        (half_w, half_h)
+        let line = size * LINE_PER_EM / 2.0;
+        match &l.laid {
+            // What was laid out has its own size, and can be taller than a line.
+            Some(laid) => (
+                laid.width / dpr / 2.0,
+                line.max(laid.above / dpr).max(laid.below / dpr),
+            ),
+            None => (
+                l.text.chars().count() as f64 * EM_PER_CHAR * size / 2.0,
+                line,
+            ),
+        }
     };
     let home: Vec<[f64; 2]> = prepared
         .labels

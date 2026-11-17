@@ -22,6 +22,7 @@ export {
   functions,
   is_latex,
   from_latex,
+  symbols,
 } from '../pkg/pencil_web.js';
 import { uses } from '../pkg/pencil_web.js';
 

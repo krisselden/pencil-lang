@@ -4,69 +4,118 @@
 //! whole pixels. `lab/text` compared this with the alternatives: it's within 0.02 RMS
 //! coverage of exact at about 0.5 ms for 269 glyphs. Kerning comes from the font's `kern`
 //! table, and there's no shaping yet.
+//!
+//! The fonts are the package's, `packages/figure/fonts`, built into the command, so a frame is
+//! the same on any machine and the same faces a page draws with.
 
 use std::error::Error;
 use std::path::Path;
 
-use ab_glyph::{Font, FontVec, GlyphId, ScaleFont, point};
+use ab_glyph::{Font, FontArc, GlyphId, PxScale, ScaleFont, point};
 use pencil_core::eval::srgb_encode;
+use pencil_core::formula::{Face, Rule};
 use pencil_core::frame::Label;
 use pencil_core::style::Font as FontRole;
 use pencil_core::terms::TextWidths;
 
-/// System fonts close to the blog's labels. Not redistributable, so a real pipeline would
-/// take fonts from the document or style. `(path, index in a font collection)`.
-const SANS: [(&str, u32); 3] = [
-    ("/System/Library/Fonts/SFNS.ttf", 0),
-    ("/System/Library/Fonts/Helvetica.ttc", 0),
-    ("/System/Library/Fonts/Supplemental/Arial.ttf", 0),
-];
-const MATH: [(&str, u32); 3] = [
-    ("/System/Library/Fonts/Supplemental/Charter.ttc", 1),
-    ("/System/Library/Fonts/Supplemental/Georgia Italic.ttf", 0),
-    (
-        "/System/Library/Fonts/Supplemental/Times New Roman Italic.ttf",
-        0,
-    ),
-];
+/// Libertinus 7.051, under the SIL Open Font License 1.1 (`packages/figure/fonts/OFL.txt`).
+const SANS: &[u8] = include_bytes!("../../../packages/figure/fonts/LibertinusSans-Regular.otf");
+const ITALIC: &[u8] = include_bytes!("../../../packages/figure/fonts/LibertinusSerif-Italic.otf");
+const MATH: &[u8] = include_bytes!("../../../packages/figure/fonts/LibertinusMath-Regular.otf");
 
-pub struct Fonts {
-    sans: FontVec,
-    math: FontVec,
+/// A role's faces, in order: a character is drawn by the first that has it, so a text face
+/// can leave `ℝ`, `∇` and the arrows to a math font behind it.
+pub struct Role {
+    faces: Vec<FontArc>,
 }
 
-fn first_font(candidates: &[(&str, u32)]) -> Result<FontVec, Box<dyn Error>> {
-    for (path, index) in candidates {
-        let Ok(bytes) = std::fs::read(path) else {
-            continue;
-        };
-        if let Ok(font) = FontVec::try_from_vec_and_index(bytes, *index) {
-            return Ok(font);
-        }
+/// One glyph of a line: which face drew it, and where its pen is from the line's start.
+struct Placed {
+    face: usize,
+    id: GlyphId,
+    pen: f32,
+}
+
+impl Role {
+    fn new(faces: Vec<FontArc>) -> Self {
+        assert!(!faces.is_empty());
+        Self { faces }
     }
-    Err("no system font found, so pass --font".into())
+
+    /// The first face with the character. With none, the first face's missing glyph.
+    fn glyph(&self, c: char) -> (usize, GlyphId) {
+        self.faces
+            .iter()
+            .enumerate()
+            .map(|(i, face)| (i, face.glyph_id(c)))
+            .find(|(_, id)| id.0 != 0)
+            .unwrap_or((0, GlyphId(0)))
+    }
+
+    /// A line's glyphs and its advance. Kerning is each face's own, between its own glyphs.
+    fn line(&self, text: &str, size: f32) -> (Vec<Placed>, f32) {
+        let mut advance = 0.0f32;
+        let mut placed: Vec<Placed> = Vec::with_capacity(text.len());
+        for c in text.chars() {
+            let (face, id) = self.glyph(c);
+            let font = &self.faces[face];
+            let scaled = font.as_scaled(em_scale(font, size));
+            if let Some(last) = placed.last()
+                && last.face == face
+            {
+                advance += scaled.kern(last.id, id);
+            }
+            placed.push(Placed {
+                face,
+                id,
+                pen: advance,
+            });
+            advance += scaled.h_advance(id);
+        }
+        (placed, advance)
+    }
+
+    /// The line box is the first face's, whatever a fallback's is.
+    fn ascent_descent(&self, size: f32) -> (f32, f32) {
+        let font = &self.faces[0];
+        let scaled = font.as_scaled(em_scale(font, size));
+        (scaled.ascent(), scaled.descent())
+    }
+}
+
+pub struct Fonts {
+    sans: Role,
+    math: Role,
+    /// The math font, which a label's mathematics is set in whatever its role.
+    formula: FontArc,
+}
+
+fn bundled(bytes: &'static [u8]) -> FontArc {
+    FontArc::try_from_slice(bytes).expect("the fonts in packages/figure/fonts are fonts")
 }
 
 impl Fonts {
-    /// `--font` replaces both roles, for machines without these system fonts.
+    /// `--font` replaces the text face of both roles. The math font stays behind it, for what
+    /// it lacks.
     pub fn load(path: Option<&Path>) -> Result<Self, Box<dyn Error>> {
-        if let Some(p) = path {
-            let read = || -> Result<FontVec, Box<dyn Error>> {
+        let math = bundled(MATH);
+        let (sans, italic) = match path {
+            None => (bundled(SANS), bundled(ITALIC)),
+            Some(p) => {
                 let bytes = std::fs::read(p).map_err(|e| format!("{}: {e}", p.display()))?;
-                Ok(FontVec::try_from_vec(bytes)?)
-            };
-            return Ok(Self {
-                sans: read()?,
-                math: read()?,
-            });
-        }
+                let font =
+                    FontArc::try_from_vec(bytes).map_err(|e| format!("{}: {e}", p.display()))?;
+                (font.clone(), font)
+            }
+        };
         Ok(Self {
-            sans: first_font(&SANS)?,
-            math: first_font(&MATH)?,
+            sans: Role::new(vec![sans, math.clone()]),
+            math: Role::new(vec![italic, math.clone()]),
+            formula: math,
         })
     }
 
-    fn of(&self, role: FontRole) -> &FontVec {
+    fn of(&self, role: FontRole) -> &Role {
         match role {
             FontRole::Sans => &self.sans,
             FontRole::Math => &self.math,
@@ -76,22 +125,12 @@ impl Fonts {
 
 impl TextWidths for Fonts {
     fn width(&self, text: &str, size: f64, font: FontRole) -> f64 {
-        let font = self.of(font);
-        let scaled = font.as_scaled(em_scale(font, size as f32));
-        let ids: Vec<GlyphId> = text.chars().map(|c| font.glyph_id(c)).collect();
-        let mut advance = 0.0f32;
-        for (i, id) in ids.iter().enumerate() {
-            if i > 0 {
-                advance += scaled.kern(ids[i - 1], *id);
-            }
-            advance += scaled.h_advance(*id);
-        }
-        advance as f64
+        self.of(font).line(text, size as f32).1 as f64
     }
 }
 
 /// `ab_glyph` scales by line height, but a font size means the em, as it does in CSS.
-fn em_scale(font: &FontVec, size: f32) -> f32 {
+fn em_scale(font: &FontArc, size: f32) -> f32 {
     size * font.height_unscaled() / font.units_per_em().unwrap_or(1000.0)
 }
 
@@ -104,43 +143,39 @@ struct Bitmap {
     coverage: Vec<f32>,
 }
 
-fn rasterize(label: &Label, font: &FontVec) -> Bitmap {
-    let px = em_scale(font, label.size as f32);
-    let scaled = font.as_scaled(px);
-    let ids: Vec<GlyphId> = label.text.chars().map(|c| font.glyph_id(c)).collect();
-    let mut advance = 0.0f32;
-    let mut pens = Vec::with_capacity(ids.len());
-    for (i, id) in ids.iter().enumerate() {
-        if i > 0 {
-            advance += scaled.kern(ids[i - 1], *id);
+impl Bitmap {
+    /// Room for ink from `left` to `right` and `top` to `bottom`, in frame pixels, and a halo.
+    fn new(left: f64, top: f64, right: f64, bottom: f64, halo: f64) -> Self {
+        let margin = halo.ceil() as i64 + 3;
+        let x = left.floor() as i64 - margin;
+        let y = top.floor() as i64 - margin;
+        let width = right.ceil() as i64 + margin + 1 - x;
+        let height = bottom.ceil() as i64 + margin + 1 - y;
+        Self {
+            x,
+            y,
+            width,
+            height,
+            coverage: vec![0.0; (width * height) as usize],
         }
-        pens.push(advance);
-        advance += scaled.h_advance(*id);
     }
-    let (ascent, descent) = (scaled.ascent(), scaled.descent());
 
-    // Center the advance box and line box on the label's point, keeping the fractions.
-    let left = label.x - advance as f64 / 2.0;
-    let baseline = label.y + (ascent + descent) as f64 / 2.0;
-    let margin = label.halo.ceil() as i64 + 3;
-    let x = left.floor() as i64 - margin;
-    let y = (label.y - (ascent - descent) as f64 / 2.0).floor() as i64 - margin;
-    let width = advance.ceil() as i64 + margin * 2 + 2;
-    let height = (ascent - descent).ceil() as i64 + margin * 2 + 2;
-    let mut coverage = vec![0.0f32; (width * height) as usize];
-
-    for (id, pen) in ids.iter().zip(&pens) {
-        let glyph = id.with_scale_and_position(
-            px,
-            point(
-                (left + *pen as f64 - x as f64) as f32,
-                (baseline - y as f64) as f32,
-            ),
+    /// One glyph with its origin at `(x, y)` in frame pixels, `tall` times its font's height.
+    fn glyph(&mut self, font: &FontArc, id: GlyphId, size: f32, tall: f32, x: f64, y: f64) {
+        let scale = em_scale(font, size);
+        let positioned = id.with_scale_and_position(
+            PxScale {
+                x: scale,
+                y: scale * tall,
+            },
+            point((x - self.x as f64) as f32, (y - self.y as f64) as f32),
         );
-        let Some(outlined) = font.outline_glyph(glyph) else {
-            continue;
+        let Some(outlined) = font.outline_glyph(positioned) else {
+            return;
         };
         let bounds = outlined.px_bounds();
+        let (width, height) = (self.width, self.height);
+        let coverage = &mut self.coverage;
         outlined.draw(|gx, gy, c| {
             let (cx, cy) = (
                 bounds.min.x as i64 + gx as i64,
@@ -152,13 +187,83 @@ fn rasterize(label: &Label, font: &FontVec) -> Bitmap {
             }
         });
     }
-    Bitmap {
-        x,
-        y,
-        width,
-        height,
-        coverage,
+
+    /// A rule, by how much of each pixel it covers.
+    fn rule(&mut self, rule: &Rule, at: [f64; 2]) {
+        let (left, top) = (
+            at[0] + rule.x - self.x as f64,
+            at[1] + rule.y - self.y as f64,
+        );
+        let (right, bottom) = (left + rule.width, top + rule.height);
+        for y in (top.floor() as i64).max(0)..(bottom.ceil() as i64).min(self.height) {
+            let rows = (bottom.min(y as f64 + 1.0) - top.max(y as f64)).clamp(0.0, 1.0);
+            for x in (left.floor() as i64).max(0)..(right.ceil() as i64).min(self.width) {
+                let columns = (right.min(x as f64 + 1.0) - left.max(x as f64)).clamp(0.0, 1.0);
+                let slot = &mut self.coverage[(y * self.width + x) as usize];
+                *slot = slot.max((rows * columns) as f32);
+            }
+        }
     }
+
+    /// A line of a role's text from `left`, on `baseline`.
+    fn line(&mut self, role: &Role, text: &str, size: f32, left: f64, baseline: f64) {
+        for glyph in &role.line(text, size).0 {
+            let font = &role.faces[glyph.face];
+            self.glyph(font, glyph.id, size, 1.0, left + glyph.pen as f64, baseline);
+        }
+    }
+}
+
+fn rasterize(label: &Label, fonts: &Fonts) -> Bitmap {
+    let role = fonts.of(label.font);
+    let size = label.size as f32;
+    let Some(laid) = &label.laid else {
+        let advance = role.line(&label.text, size).1;
+        let (ascent, descent) = role.ascent_descent(size);
+        // Center the advance box and line box on the label's point, keeping the fractions.
+        let left = label.x - advance as f64 / 2.0;
+        let top = label.y - (ascent - descent) as f64 / 2.0;
+        let mut bitmap = Bitmap::new(
+            left,
+            top,
+            left + advance as f64,
+            top + (ascent - descent) as f64,
+            label.halo,
+        );
+        let baseline = label.y + (ascent + descent) as f64 / 2.0;
+        bitmap.line(role, &label.text, size, left, baseline);
+        return bitmap;
+    };
+    // What core laid out: runs and rules at their own places from the label's point.
+    let line = label.size * 0.6;
+    let mut bitmap = Bitmap::new(
+        label.x - laid.width / 2.0,
+        label.y - laid.above.max(line),
+        label.x + laid.width / 2.0,
+        label.y + laid.below.max(line),
+        label.halo,
+    );
+    for run in &laid.runs {
+        let (x, y) = (label.x + run.x, label.y + run.y);
+        match run.face {
+            Face::Text => bitmap.line(role, &run.text, run.size as f32, x, y),
+            Face::Math => {
+                let font = &fonts.formula;
+                let scaled = font.as_scaled(em_scale(font, run.size as f32));
+                let mut pen = 0.0f32;
+                for c in run.text.chars() {
+                    let id = font.glyph_id(c);
+                    let tall = run.stretch as f32;
+                    bitmap.glyph(font, id, run.size as f32, tall, x + pen as f64, y);
+                    pen += scaled.h_advance(id);
+                }
+            }
+        }
+    }
+    for rule in &laid.rules {
+        bitmap.rule(rule, [label.x, label.y]);
+    }
+    bitmap
 }
 
 /// A halo is the text grown by its radius, with soft edges from the text's own coverage.
@@ -273,17 +378,14 @@ pub fn draw_labels(
     let visible: Vec<&Label> = labels.iter().filter(|l| l.opacity > 0.0).collect();
     // Leaders under everything, since they stop short of their text anyway.
     for label in &visible {
-        let half = [
-            fonts.width(&label.text, label.size, label.font) / 2.0,
-            label.size * pencil_core::frame::TEXT_HALF_HEIGHT,
-        ];
+        let half = label.half(fonts);
         if let Some(ends) = pencil_core::frame::leader_ends(label, half) {
             draw_leader(frame, width, height, label, ends);
         }
     }
     let bitmaps: Vec<_> = visible
         .iter()
-        .map(|label| rasterize(label, fonts.of(label.font)))
+        .map(|label| rasterize(label, fonts))
         .collect();
     // Every halo first, so one label's can't eat into a neighbor, as in an expression's terms.
     for (label, bitmap) in visible.iter().zip(&bitmaps) {
@@ -324,21 +426,31 @@ mod tests {
             anchor: [x, y],
             place: Default::default(),
             leader: None,
+            laid: None,
         }
     }
 
-    /// These use the machine's fonts, so they say so and pass where there are none.
-    fn fonts() -> Option<Fonts> {
-        let found = Fonts::load(None).ok();
-        if found.is_none() {
-            eprintln!("skipped: no system fonts");
+    fn fonts() -> Fonts {
+        Fonts::load(None).expect("the fonts are built in")
+    }
+
+    /// What the system fonts drew as boxes: each role has a face for every one of these.
+    #[test]
+    fn a_math_figures_glyphs_are_all_there() {
+        let fonts = fonts();
+        let needed = "αβγθλμπφωΔΣΩ→←↔⇒↦ℝℂℤℕℚ∇∂∞∫∑√−·×±≤≥≠≈∈⁰¹²³⁴⁵⁶⁷⁸⁹ⁱⁿ₀₁₂₃₄₅₆₇₈₉ℯ|°";
+        for role in [FontRole::Sans, FontRole::Math] {
+            let missing: String = needed
+                .chars()
+                .filter(|c| fonts.of(role).glyph(*c).1.0 == 0)
+                .collect();
+            assert!(missing.is_empty(), "{role:?} lacks {missing}");
         }
-        found
     }
 
     /// Where a label's ink is centered in the frame, in pixels.
     fn ink_center(fonts: &Fonts, label: &Label) -> (f64, f64) {
-        let bitmap = rasterize(label, fonts.of(label.font));
+        let bitmap = rasterize(label, fonts);
         let (mut total, mut mx, mut my) = (0.0f64, 0.0f64, 0.0f64);
         for y in 0..bitmap.height {
             for x in 0..bitmap.width {
@@ -351,10 +463,113 @@ mod tests {
         (mx / total, my / total)
     }
 
+    /// Core lays mathematics out from numbers its build read out of the math font, and this
+    /// draws with the font itself, so they have to be the same font's.
+    #[test]
+    fn cores_metrics_are_this_fonts() {
+        let fonts = fonts();
+        let font = &fonts.formula;
+        let scaled = font.as_scaled(em_scale(font, 1000.0));
+        for (source, drawn) in [("sin", "sin"), ("xyz", "𝑥𝑦𝑧"), ("ℝ∇∂", "ℝ∇∂"), ("2π", "2𝜋")]
+        {
+            let laid = pencil_core::formula::lay_math(source, 1000.0);
+            let text: String = laid.runs.iter().map(|r| r.text.as_str()).collect();
+            assert_eq!(text, drawn);
+            let advance: f32 = drawn
+                .chars()
+                .map(|c| scaled.h_advance(font.glyph_id(c)))
+                .sum();
+            // Spacing between atoms isn't glyphs', so these are ones set solid.
+            let wide = laid.runs.last().map(|r| r.x).unwrap() - laid.runs[0].x
+                + advance_of(&scaled, font, &laid.runs.last().unwrap().text);
+            assert!(
+                (wide - advance as f64).abs() < 0.01,
+                "{source}: {wide} {advance}"
+            );
+        }
+        // And every glyph a run is set in is one the font has.
+        let laid = pencil_core::formula::lay_math("f: ℝ → ℝ, ∇f(x_0) ≤ √(a/b) ≠ e^(iπ)", 20.0);
+        for run in &laid.runs {
+            for c in run.text.chars() {
+                assert_ne!(font.glyph_id(c).0, 0, "{c}");
+            }
+        }
+    }
+
+    fn advance_of(scaled: &ab_glyph::PxScaleFont<&FontArc>, font: &FontArc, text: &str) -> f64 {
+        text.chars()
+            .map(|c| scaled.h_advance(font.glyph_id(c)) as f64)
+            .sum()
+    }
+
+    /// What `packages/figure/tests/formulas.spec.js` holds a page to: the same widths, from the
+    /// same files, with no kerning on either side.
+    #[test]
+    fn the_widths_a_page_is_held_to() {
+        let fonts = fonts();
+        let wide = |text: &str, role| (fonts.width(text, 1000.0, role) * 10.0).round() / 10.0;
+        assert_eq!(wide("arg z", FontRole::Math), ARG_Z);
+        assert_eq!(wide("Pencil", FontRole::Sans), PENCIL);
+        // And a run of mathematics, which core measures and both draw.
+        assert_eq!(pencil_core::formula::lay_math("sin", 1000.0).width, SIN);
+    }
+    const ARG_Z: f64 = 2006.0;
+    const PENCIL: f64 = 2492.0;
+    const SIN: f64 = 1203.0;
+
+    /// A fraction is drawn: ink above its bar, the bar solid across, ink below.
+    #[test]
+    fn a_fraction_is_drawn_about_its_bar() {
+        let fonts = fonts();
+        let mut half = label("$1/2$", 100.0, 100.0, 60.0);
+        half.laid = pencil_core::formula::lay(&half.text, half.size, half.font, &fonts);
+        let laid = half.laid.clone().expect("laid out");
+        let bitmap = rasterize(&half, &fonts);
+        let bar = laid.rules[0];
+        let row = |y: f64| -> f32 {
+            let at = (y - bitmap.y as f64) as i64;
+            (0..bitmap.width)
+                .map(|x| bitmap.coverage[(at * bitmap.width + x) as usize])
+                .sum()
+        };
+        let middle = half.y + bar.y + bar.height / 2.0;
+        // The bar is solid for its width, give or take the pixels its ends share.
+        assert!(
+            (row(middle) as f64 - bar.width).abs() < 1.5,
+            "{}",
+            row(middle)
+        );
+        let ink = |from: f64, to: f64| -> f32 {
+            ((from.ceil() as i64)..(to.floor() as i64))
+                .map(|y| row(y as f64))
+                .sum()
+        };
+        assert!(ink(half.y - laid.above, half.y + bar.y - 2.0) > 50.0);
+        assert!(ink(half.y + bar.y + bar.height + 2.0, half.y + laid.below) > 50.0);
+    }
+
+    /// A root over something tall is the same glyph drawn taller, down to the same baseline.
+    #[test]
+    fn a_tall_root_is_its_glyph_stretched() {
+        let fonts = fonts();
+        let rows = |text: &str| {
+            let mut root = label(text, 200.0, 200.0, 60.0);
+            root.laid = pencil_core::formula::lay(&root.text, root.size, root.font, &fonts);
+            let bitmap = rasterize(&root, &fonts);
+            (0..bitmap.height)
+                .filter(|y| {
+                    (0..bitmap.width)
+                        .any(|x| bitmap.coverage[(y * bitmap.width + x) as usize] > 0.5)
+                })
+                .count()
+        };
+        assert!(rows("$√(1/2)$") as f64 > rows("$√2$") as f64 * 1.3);
+    }
+
     /// The bug this replaced: whole-pixel placement made moving labels jump.
     #[test]
     fn labels_move_by_fractions_of_a_pixel() {
-        let Some(fonts) = fonts() else { return };
+        let fonts = fonts();
         let base = ink_center(&fonts, &label("e", 100.0, 100.0, 24.0));
         for k in 1..=16 {
             let d = k as f64 / 8.0;
@@ -369,25 +584,26 @@ mod tests {
     /// `ab_glyph` scales by line height, so an unconverted size draws about 1.3× too small.
     #[test]
     fn a_font_size_means_the_em() {
-        let Some(fonts) = fonts() else { return };
-        let font = fonts.of(FontRole::Sans);
+        let fonts = fonts();
+        let role = fonts.of(FontRole::Sans);
+        let font = &role.faces[0];
         let scaled = font.as_scaled(em_scale(font, 100.0));
         let em = scaled.ascent() - scaled.descent();
         let expected = font.height_unscaled() / font.units_per_em().unwrap() * 100.0;
         assert!((em - expected).abs() < 0.01);
         // A capital is most of an em in any ordinary font, which it isn't at the wrong scale.
-        let bitmap = rasterize(&label("H", 100.0, 100.0, 100.0), font);
+        let bitmap = rasterize(&label("H", 100.0, 100.0, 100.0), &fonts);
         let rows = (0..bitmap.height)
             .filter(|y| {
                 (0..bitmap.width).any(|x| bitmap.coverage[(y * bitmap.width + x) as usize] > 0.5)
             })
             .count();
-        assert!((66..=80).contains(&rows), "cap height {rows}");
+        assert!((60..=80).contains(&rows), "cap height {rows}");
     }
 
     #[test]
     fn labels_center_on_their_point() {
-        let Some(fonts) = fonts() else { return };
+        let fonts = fonts();
         let (x, _) = ink_center(&fonts, &label("H", 200.0, 100.0, 40.0));
         assert!((x - 200.0).abs() < 1.5, "{x}");
     }

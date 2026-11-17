@@ -17,9 +17,9 @@ jobs:
     env:
       # Whether the repo has what publishing needs. A fork, or a pull request from one, doesn't.
       CAN_PUBLISH: ${{ secrets.CLOUDFLARE_API_TOKEN != '' }}
-      # The command reads its label fonts from macOS for now, so a figure with text can't be drawn
-      # here. Set this to 'true' once the fonts are in the repo.
-      CAN_DRAW_TEXT: 'false'
+      # The command has its label fonts built in, from packages/figure/fonts, so a figure with text
+      # is drawn here as it is anywhere.
+      CAN_DRAW_TEXT: 'true'
     steps:
       - uses: actions/checkout@v4
       # A fixed version, so that a new release's lints don't fail a commit that didn't change.

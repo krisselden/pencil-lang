@@ -8,11 +8,58 @@ const REST = 0.01;
 const LEADER_MARGIN = 0.25;
 const TEXT_HALF_HEIGHT = 0.35;
 const SVG = 'http://www.w3.org/2000/svg';
+// The size text is measured at, in pixels.
+const RULER = 100;
 
-const FAMILY = {
-  math: "Charter, 'Bitstream Charter', 'Sitka Text', Cambria, serif",
-  sans: 'system-ui, -apple-system, sans-serif',
+// The package's own fonts, Libertinus under the SIL Open Font License (`../fonts/OFL.txt`): the
+// files the `pencil` command has built in, so a poster and the figure that takes over from it
+// set the same glyphs at the same widths. A role is a text face with the math font behind it,
+// for what the text face lacks. The math font is registered as italic too, so the browser
+// doesn't slant an `ℝ` it finds there for a label in italics.
+const FILES = {
+  sans: new URL('../fonts/LibertinusSans-Regular.otf', import.meta.url),
+  italic: new URL('../fonts/LibertinusSerif-Italic.otf', import.meta.url),
+  math: new URL('../fonts/LibertinusMath-Regular.otf', import.meta.url),
 };
+
+// As `formula::BASELINE`: how far below the middle of a line the fonts' baseline is, in ems.
+const BASELINE = 0.324;
+
+export const FAMILY = {
+  math: "'Pencil Serif', 'Pencil Math', Charter, 'Bitstream Charter', 'Sitka Text', Cambria, serif",
+  sans: "'Pencil Sans', 'Pencil Math', system-ui, -apple-system, sans-serif",
+};
+
+// The command sets glyphs one after another by their advances, with no kerning or ligatures, so
+// the page does too.
+export const LABEL_CSS = `
+.label { position: absolute; left: 0; top: 0; white-space: nowrap; font-family: ${FAMILY.sans}; line-height: 1; will-change: transform; font-kerning: none; font-variant-ligatures: none; font-feature-settings: "calt" 0; }
+.label.math { font-family: ${FAMILY.math}; font-style: italic; }
+/* A label with mathematics in it is a point, with each run and rule the core laid out placed from
+   it. A run is set from the top of its line, and a stretched one grows about its baseline. */
+.label.laid { width: 0; height: 0; }
+.label .run { position: absolute; white-space: pre; line-height: 1; transform-origin: 0 ${(0.5 + BASELINE) * 100}%; }
+.label .run.formula { font-family: 'Pencil Math', ${FAMILY.math}; font-style: normal; }
+.label .rule { position: absolute; background: var(--rule); outline: var(--grow, 0px) solid var(--rule); }
+`;
+
+/** Registers the faces, and resolves when the two text faces are in, or can't be had. The math
+ * font is fetched when something is first set in it. */
+function loadFonts() {
+  if (typeof document === 'undefined' || typeof FontFace === 'undefined') return Promise.resolve();
+  const face = (family, url, style) => {
+    const made = new FontFace(family, `url("${url.href}")`, { style });
+    document.fonts.add(made);
+    return made;
+  };
+  const text = [face('Pencil Sans', FILES.sans, 'normal'), face('Pencil Serif', FILES.italic, 'italic')];
+  face('Pencil Math', FILES.math, 'normal');
+  face('Pencil Math', FILES.math, 'italic');
+  // A figure without its fonts still draws, in the fallbacks.
+  return Promise.allSettled(text.map((made) => made.load())).then(() => {});
+}
+
+export const fonts = loadFonts();
 
 export class LabelLayer {
   constructor(stage, dpr) {
@@ -27,6 +74,7 @@ export class LabelLayer {
     this.glyphs = this.makeLayer();
     this.ruler = document.createElement('canvas').getContext('2d');
     this.items = new Map();
+    this.advances = new Map();
     this.last = 0;
     this.still = matchMedia('(prefers-reduced-motion: reduce)').matches;
   }
@@ -38,11 +86,29 @@ export class LabelLayer {
     return layer;
   }
 
-  /** For `Player.set_measure`: a width in device pixels, in the same font labels are drawn in. */
+  /** For `Player.set_measure`: a width in device pixels, in the same font labels are drawn in.
+   * It's the sum of each character's advance, as the command measures, so no kerning. */
   measure = (text, size, math) => {
-    this.ruler.font = `${math ? 'italic ' : ''}${size / this.dpr}px ${math ? FAMILY.math : FAMILY.sans}`;
-    return this.ruler.measureText(text).width * this.dpr;
+    const role = math ? 'math' : 'sans';
+    let width = 0;
+    for (const character of text) {
+      const key = role + character;
+      let advance = this.advances.get(key);
+      if (advance === undefined) {
+        // At a large size, so the browser's rounding of a small one doesn't add up.
+        this.ruler.font = `${math ? 'italic ' : ''}${RULER}px ${FAMILY[role]}`;
+        advance = this.ruler.measureText(character).width / RULER;
+        this.advances.set(key, advance);
+      }
+      width += advance;
+    }
+    return width * size;
   };
+
+  /** Forgets what was measured, when a font arrives after text was measured without it. */
+  remeasure() {
+    this.advances.clear();
+  }
 
   /** Takes a frame's labels. One that isn't listed doesn't exist this frame. */
   update(labels) {
@@ -55,6 +121,8 @@ export class LabelLayer {
         const span = document.createElement('span');
         span.className = 'label';
         const halo = span.cloneNode();
+        // Which label it is, for whoever looks: a page's own script, or a test.
+        span.dataset.label = label.id;
         this.halos.append(halo);
         this.glyphs.append(span);
         const line = document.createElementNS(SVG, 'line');
@@ -78,17 +146,30 @@ export class LabelLayer {
       item.math = label.math;
       item.line.style.stroke = label.color;
       item.line.style.opacity = label.opacity;
+      // What's laid out is rebuilt only when it changes, which a label that only moves doesn't.
+      const laid = label.laid ? JSON.stringify(label.laid) : '';
+      item.half = label.laid ? [label.laid.halfWidth, label.laid.halfHeight] : null;
       for (const part of [span, halo]) {
-        if (part.textContent !== label.text) part.textContent = label.text;
+        if (label.laid) {
+          if (part.laid !== laid) this.lay(part, label.laid);
+        } else if (part.laid || part.textContent !== label.text) {
+          part.textContent = label.text;
+        }
+        part.laid = laid;
+        part.classList.toggle('laid', !!label.laid);
         part.hidden = false;
         part.classList.toggle('math', label.math);
         part.style.fontSize = `${label.size / this.dpr}px`;
         part.style.opacity = label.opacity;
       }
       span.style.color = label.color;
+      span.style.setProperty('--rule', label.color);
       halo.style.color = 'transparent';
       halo.style.webkitTextStrokeColor = label.haloColor;
       halo.style.webkitTextStrokeWidth = `${label.halo / this.dpr}px`;
+      // A rule's halo is the rule grown by half the halo's width, as a glyph's is its outline's.
+      halo.style.setProperty('--rule', label.halo > 0 ? label.haloColor : 'transparent');
+      halo.style.setProperty('--grow', `${label.halo / 2 / this.dpr}px`);
     }
     for (const [id, item] of this.items) {
       if (!present.has(id)) {
@@ -99,6 +180,27 @@ export class LabelLayer {
       }
     }
     this.place();
+  }
+
+  /** Fills a label with what the core laid out: runs of text and rules, in device pixels from the
+   * label's point. */
+  lay(part, laid) {
+    const px = (v) => `${v / this.dpr}px`;
+    part.textContent = '';
+    for (const run of laid.runs) {
+      const piece = document.createElement('span');
+      piece.className = run.math ? 'run formula' : 'run';
+      piece.textContent = run.text;
+      piece.style.cssText = `left:${px(run.x)};top:${px(run.top)};font-size:${px(run.size)}`;
+      if (run.stretch !== 1) piece.style.transform = `scaleY(${run.stretch})`;
+      part.append(piece);
+    }
+    for (const rule of laid.rules) {
+      const piece = document.createElement('span');
+      piece.className = 'rule';
+      piece.style.cssText = `left:${px(rule.x)};top:${px(rule.y)};width:${px(rule.width)};height:${px(rule.height)}`;
+      part.append(piece);
+    }
   }
 
   place() {
@@ -120,7 +222,7 @@ export class LabelLayer {
     let end = -Infinity;
     if (leader && apart > 0) {
       const [ux, uy] = [dx / apart, dy / apart];
-      const half = [this.measure(item.text, item.size, item.math) / 2, item.size * TEXT_HALF_HEIGHT];
+      const half = item.half ?? [this.measure(item.text, item.size, item.math) / 2, item.size * TEXT_HALF_HEIGHT];
       const toEdge = Math.min(half[0] / Math.max(Math.abs(ux), 1e-9), half[1] / Math.max(Math.abs(uy), 1e-9));
       end = apart - toEdge - LEADER_MARGIN * item.size;
       if (end > leader.gap) {

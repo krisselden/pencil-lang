@@ -373,6 +373,30 @@ test.describe('the playground', () => {
     const [chooser] = await Promise.all([page.waitForEvent('filechooser'), page.keyboard.press('Enter')]);
     expect(chooser.isMultiple()).toBe(true);
   });
+
+  test('the editor writes a symbol for its name, and for an arrow typed in a label', async ({ page }) => {
+    await openPlayground(page, 'figure=circle');
+    const source = page.locator('#source');
+    // A name after a backslash, done by whatever can't continue it, which stays.
+    await typeAtEnd(page, '\nlet \\theta ');
+    await expect(source).toHaveValue(/\nlet θ $/);
+    // It says what it wrote.
+    await expect(page.locator('#pasted')).toHaveText(/θ/);
+    await typeAtEnd(page, '= 1\n');
+    await expect(source).toHaveValue(/\nlet θ = 1\n$/);
+    // In a label's text an arrow is its symbol, and a name still is.
+    await typeAtEnd(page, 'label q = "$f: \\R \\to \\R, x |-> x^2, a <= b$" at (0, 0)\n');
+    await expect(source).toHaveValue(/label q = "\$f: ℝ → ℝ, x ↦ x\^2, a ≤ b\$" at \(0, 0\)\n$/);
+    // Outside one it's what was typed, since there it could be anything.
+    await typeAtEnd(page, '// a -> b, and \\nosuchname stays\n');
+    await expect(source).toHaveValue(/\/\/ a -> b, and \\nosuchname stays\n$/);
+    // Tab finishes a name with nothing after it, and is two spaces anywhere else.
+    await typeAtEnd(page, '// \\alpha');
+    await page.keyboard.press('Tab');
+    await expect(source).toHaveValue(/\/\/ α$/);
+    await page.keyboard.press('Tab');
+    await expect(source).toHaveValue(/\/\/ α {2}$/);
+  });
 });
 
 test.describe('the playground in a frame', () => {

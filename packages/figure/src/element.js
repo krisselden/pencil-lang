@@ -40,7 +40,7 @@
 // size or its em changes (its `detail.em`, in CSS pixels), `input` when a reader
 // drags a param, `play` and `pause`, and `error` (its `detail.error`) when one can't load or draw.
 import { Player, figure_size, figure_size_compiled, ready, isReady, gather, ahead } from './host.js';
-import { LabelLayer } from './labels.js';
+import { LABEL_CSS, LabelLayer, fonts } from './labels.js';
 import { match } from './fit.js';
 
 // How long time runs before it loops, for a figure that declares no `duration`.
@@ -77,9 +77,7 @@ slot { display: none; }
 .handle:focus-visible { outline: 2px solid var(--pencil-focus, currentColor); outline-offset: 1px; box-shadow: 0 0 0 2px var(--pencil-focus-halo, Canvas); }
 .handle[hidden] { display: none; }
 .said { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-.label { position: absolute; left: 0; top: 0; white-space: nowrap; font-family: system-ui, -apple-system, sans-serif; line-height: 1; will-change: transform; }
-.label.math { font-family: Charter, 'Bitstream Charter', 'Sitka Text', Cambria, serif; font-style: italic; }
-`;
+${LABEL_CSS}`;
 
 /** `a: 0.5; beat: 2` as pairs. */
 const parseParams = (text) =>
@@ -234,12 +232,22 @@ export class PencilFigure extends HTMLElement {
       this.#refetch();
     });
     this.#children.observe(this, { childList: true, attributes: true, subtree: true, attributeFilter: ['media', 'src', 'sheets', 'compiled'] });
+    document.fonts?.addEventListener('loadingdone', this.#fontsChanged);
     this.#wait();
     this.#listen();
     this.#refetch();
   }
 
+  /** A font that arrives after text was measured without it, as the math font does the first time
+   * a label needs a glyph from it: what was measured is forgotten, here and in the player. */
+  #fontsChanged = () => {
+    this.#layer.remeasure();
+    this.#player?.set_measure(this.#layer.measure);
+    this.#invalidate();
+  };
+
   disconnectedCallback() {
+    document.fonts?.removeEventListener('loadingdone', this.#fontsChanged);
     this.#seen?.disconnect();
     this.#resized?.disconnect();
     this.#children?.disconnect();
@@ -281,7 +289,8 @@ export class PencilFigure extends HTMLElement {
     this.#starting = true;
     const generation = this.#generation;
     try {
-      await ready();
+      // The text faces too, so labels are measured and first drawn in the fonts the poster has.
+      await Promise.all([ready(), fonts]);
       if (generation !== this.#generation) return;
       match(this.#canvas);
       const player = await Player.create(this.#canvas, this.hasAttribute('gl'));

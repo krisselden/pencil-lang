@@ -1,0 +1,5 @@
+style figure { width: 640px; height: 320px }
+style paper { fill: white }
+style label { font: math; fill: black; halo: 0.18em }
+style w { text: name = value; format: polar }
+style plain { font: sans }

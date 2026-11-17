@@ -13,6 +13,7 @@ pub mod error;
 pub mod eval;
 pub mod fast;
 pub mod files;
+pub mod formula;
 pub mod frame;
 pub mod inspect;
 pub mod ir;
@@ -558,7 +559,7 @@ impl Composition {
         widths: &dyn terms::TextWidths,
     ) -> Result<Vec<frame::Label>, Error> {
         let mut out = Vec::new();
-        self.captions(frames, inputs, &mut out)?;
+        self.captions(frames, inputs, widths, &mut out)?;
         for (panel, frame) in self.panels.iter().zip(frames) {
             let (ox, oy) = (frame.origin[0] as f64, frame.origin[1] as f64);
             if panel.title.is_some() || panel.formula.is_some() {
@@ -579,10 +580,11 @@ impl Composition {
                 ];
                 for (text, part, font, fill) in parts {
                     let Some(text) = text else { continue };
-                    let wide = widths.width(text, size, font);
+                    let wide = formula::width(text, size, font, widths);
                     let at = [x + wide / 2.0, y];
                     out.push(frame::Label {
                         id: format!("{}/{part}", panel.id),
+                        laid: formula::lay(text, size, font, widths),
                         text: text.clone(),
                         x: at[0],
                         y: at[1],
@@ -625,6 +627,7 @@ impl Composition {
         &self,
         frames: &[PanelFrame],
         inputs: &frame::Inputs,
+        widths: &dyn terms::TextWidths,
         out: &mut Vec<frame::Label>,
     ) -> Result<(), Error> {
         let (Some(panel), Some(first)) = (self.panels.first(), frames.first()) else {
@@ -688,6 +691,7 @@ impl Composition {
             if opacity > 1e-9 && !beats[start].is_empty() {
                 out.push(frame::Label {
                     id: format!("caption/{start}"),
+                    laid: formula::lay(&beats[start], size, style.font, widths),
                     text: beats[start].clone(),
                     x: at[0],
                     y: at[1],

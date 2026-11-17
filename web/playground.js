@@ -7,6 +7,7 @@
 // of those at a time, kept whole in this browser, apart from the examples' edits.
 import { PencilFigure } from '@pencil-lang/figure';
 import { ready as readingReady, readingAt, pasteLatex } from './reading.js';
+import { typeSymbols, finishSymbol } from './symbols.js';
 import { viewing } from './controls.js';
 import { uses } from '@pencil-lang/figure/host';
 import { pack, unpack } from '@pencil-lang/figure/pack';
@@ -373,14 +374,17 @@ function showReading() {
   out.append('reads as  ', read);
   out.title = JSON.stringify(at.mathjson);
 }
-// What a LaTeX paste became, until the next edit.
+// What a LaTeX paste became, or what symbol was written for what was typed, until the next edit.
 let pasting = false;
-pasteLatex(textarea, (text) => {
+const said = (text) => {
   $('pasted').textContent = text;
   pasting = true;
   // A paste that stays as written still edits, after this, in the same task.
   setTimeout(() => (pasting = false));
-});
+};
+pasteLatex(textarea, said);
+// `\to` and `\theta` as they're typed, and `->` in a label's text, for a keyboard without them.
+typeSymbols(textarea, said);
 textarea.addEventListener('input', () => {
   if (!pasting) $('pasted').textContent = '';
 });
@@ -392,9 +396,10 @@ readingReady.then(() => {
 });
 textarea.addEventListener('keydown', (e) => {
   if (e.key === 'Tab' && !e.metaKey && !e.ctrlKey && !e.altKey) {
-    // Two spaces, through the browser's own editing so undo still works.
+    // It finishes a symbol's name, as `\theta`. Otherwise two spaces, through the browser's own
+    // editing so undo still works.
     e.preventDefault();
-    document.execCommand('insertText', false, '  ');
+    if (!finishSymbol(textarea, said)) document.execCommand('insertText', false, '  ');
   } else if (e.key === 'Escape') {
     textarea.blur();
     figure.focus();

@@ -14,7 +14,7 @@ const WASM = 'packages/figure/pkg/pencil_web_bg.wasm';
 // What is served, from the repo root. Each figure page in `web/` reloads its files every half
 // second while Kris edits, which a published site shouldn't do, so only the playground and the
 // page that shows how text parses go out, with what they import.
-const DIRS = ['corpus', 'lab/explainer', 'packages/figure/pkg'];
+const DIRS = ['corpus', 'lab/explainer', 'packages/figure/pkg', 'packages/figure/fonts'];
 const FILES = /^(?:web\/(?:[a-z-]+\.js|playground\.html|ast\.html)|packages\/figure\/src\/[a-z-]+\.js)$/;
 // Folders with nothing of their own to serve, on the way to something that is.
 const WAY = ['web', 'lab', 'packages', 'packages/figure', 'packages/figure/src'];
@@ -25,6 +25,7 @@ const TYPES = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
   '.wasm': 'application/wasm',
+  '.otf': 'font/otf',
   '.json': 'application/json',
   '.pen': 'text/plain; charset=utf-8',
   '.style': 'text/plain; charset=utf-8',

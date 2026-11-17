@@ -458,7 +458,7 @@
         "at": [["Multiply",0.5,["Cos",["Divide","angle",2.0]]],["Multiply",0.5,["Sin",["Divide","angle",2.0]]]],
         "kind": "label",
         "offset": [0.0,-6.0],
-        "text": "arg z",
+        "text": "$arg z$",
         "values": []
       },
       "id": "arg_first",
@@ -472,7 +472,7 @@
         "at": [["Multiply",0.7,["Cos",["Multiply",1.5,"angle"]]],["Multiply",0.7,["Sin",["Multiply",1.5,"angle"]]]],
         "kind": "label",
         "offset": [0.0,-6.0],
-        "text": "arg z",
+        "text": "$arg z$",
         "values": []
       },
       "id": "arg_second",
@@ -486,7 +486,7 @@
         "at": [["Multiply",0.5,"Z.x"],["Multiply",0.5,"Z.y"]],
         "kind": "label",
         "offset": [-14.0,-12.0],
-        "text": "|z|",
+        "text": "$|z|$",
         "values": []
       },
       "id": "length_z",
@@ -500,7 +500,7 @@
         "at": [["Multiply",0.55,"Z_2.x"],["Multiply",0.55,"Z_2.y"]],
         "kind": "label",
         "offset": [-18.0,-10.0],
-        "text": "|z|²",
+        "text": "$|z|^2$",
         "values": []
       },
       "id": "length_z2",

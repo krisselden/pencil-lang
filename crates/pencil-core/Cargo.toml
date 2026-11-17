@@ -10,5 +10,10 @@ postcard = { version = "1", default-features = false, features = ["alloc"] }
 serde = { version = "1", features = ["derive"] }
 serde_json.workspace = true
 
+# For build.rs, which reads the package's math font into the metrics `formula` uses. It isn't in
+# what's built, so the WASM has no font parser.
+[build-dependencies]
+ttf-parser = "0.25"
+
 [dev-dependencies]
 naga = { version = "30", features = ["wgsl-in"] }

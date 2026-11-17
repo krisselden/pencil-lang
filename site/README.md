@@ -20,9 +20,10 @@ every push and pull request, and publishes it from `main` once the checks have p
 (`.github/workflows/ci.yml`). It builds on GitHub and not on Cloudflare because a build compiles the Rust and
 draws each figure's poster on a GPU, which CI has in software and Cloudflare's build machines don't.
 
-CI doesn't build or publish the site yet: `pencil` reads its label fonts from macOS, so a poster with text can't be
-drawn on CI's Linux. `CAN_DRAW_TEXT` in the workflow turns both steps on once the fonts are in the repo. Until then,
-`pnpm deploy` from a Mac is how it's published.
+`pencil` has its label fonts built in (`packages/figure/fonts`), so a poster with text is drawn on CI's Linux as it is
+on a Mac. `CAN_DRAW_TEXT` in the workflow, which held the build and the publish back while the fonts were macOS's, is
+`'true'` since 2026-11-16. That first build on CI hasn't run yet: until it has, `pnpm deploy` from a Mac is the way
+that's known to work.
 
 Publishing needs two secrets in the GitHub repo, `CLOUDFLARE_API_TOKEN` (a token made from Cloudflare's
 "Edit Cloudflare Workers" template) and `CLOUDFLARE_ACCOUNT_ID`. Without them the site is still built, and the

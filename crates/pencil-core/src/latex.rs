@@ -269,7 +269,7 @@ fn op(name: &'static str, args: Vec<Node>) -> Node {
     Node::Op(name, args)
 }
 
-const GREEK: [(&str, &str); 40] = [
+pub(crate) const GREEK: [(&str, &str); 40] = [
     ("alpha", "α"),
     ("beta", "β"),
     ("gamma", "γ"),

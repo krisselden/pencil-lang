@@ -36,6 +36,9 @@ build writes what a page needs for one figure under one set of sheets: the compi
 poster at its design size and at twice it, and a .json that says what they are and what the figure
 is. The poster is the moment the document's `poster` names, unless --t or --param say another.
 
+Labels are set in the fonts built into this command, the ones a page draws with. --font FILE, on
+any command that draws, sets their words in another font. Their mathematics keeps the built-in one.
+
 svg writes one frame as vector graphics, at the poster's moment and the figure's design size
 unless told another: strokes, flat fills, dots and arrowheads as shapes, and labels as text. A
 style that is worked out per pixel has no vector form: a fill or stroke that reads `self.dist`,

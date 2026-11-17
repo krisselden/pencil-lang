@@ -143,8 +143,12 @@ Proposed by Claude on 2026-11-09, not yet agreed:
 
 - **Is WebGPU needed?** Not for strokes or fields: both ran the same on WebGL2. Text is the untested part. Vello relies on compute
   shaders, which wgpu's WebGL2 backend lacks, and the winding integral as written needs storage buffers.
-- **How should a `.pen` file name fonts?** `font: math | sans` are roles. Video uses system fonts, which can't be redistributed,
-  so someone else's render looks different. The math font also has `ᵗ` but not `ⁱ`, with no fallback.
+- **How should a `.pen` file name fonts?** `font: math | sans` are roles, and since 2026-11-16 both are fonts the package
+  ships (Libertinus, `packages/figure/fonts`), the same in the command and on a page, with the math font behind each. A
+  document or a sheet still can't choose a face, a weight or a bold, and `--font` is the command's only way to another.
+- **Should a span take TeX too?** A label's mathematics is Pencil's own notation in `$…$` (`language.md`, Mathematics in
+  labels). Kris is on the fence about TeX inside the span, which a LaTeX or manim user types from memory. Its braces collide
+  with `{expr}`, and it would be a second notation.
 - **How should a moving loop's dashes behave?** A loop gets a whole number of dashes, so they jump as it grows: about 25 times a
   cycle on the breathing circle, by arithmetic, not watched. The blog's hysteresis depends on history, which breaks seeking. A
   related one: dashes on a moving range ride with its start, and a real string's would stay put as it unwinds.
@@ -194,6 +198,12 @@ Built, and wrong or short in a known way. None has blocked a figure.
 - **Tracing** uses a fixed 6-pixel cell, so it misses fine detail and is the least accurate path at small sizes. It still evaluates
   through `eval`, about 6 ms a frame for one curve in WASM, since `fast.rs` only serves curves and collections.
 - **Terms:** a term that isn't an operator sets tight (`cosh s` printed as `coshs`), and a label is always centered on its point.
+- **Mathematics in labels** (2026-11-16; `language.md`, Mathematics in labels) has no matrices, aligned lines, limits above a
+  sum, accents or bold. A tall root or bracket is the glyph stretched, not the font's larger variant, and scripts are the
+  full-size glyphs scaled, not the font's `ssty` alternates: a page can't ask for a glyph that has no character, and both
+  renderers have to draw the same thing. Text has no kerning in either renderer. `pencil svg` writes a label's mathematics
+  as its plain words, `x^2/2`, not laid out. Checked in Chromium and WebKit on a Mac and by the command on Linux; not in
+  Firefox or on Windows, where a page's line box could sit differently.
 - **A trimmed circle starts due east,** since circles keep only a center and radius.
 - **SVG export** (`pencil svg`, 2026-11-16; `language.md`, A figure as SVG) leaves out two things that do have a vector form:
   a dashed stroke whose width varies, and the side of a curve that leaves the frame, each with a line saying so. A label's
@@ -762,9 +772,9 @@ playground's case, which matters as much and is a different one. The site's page
   page kept in script, which the site's controls never had. `info.params` gives each param's widest `min` and `max`, its `step`
   and what its range `follows`, and `figure.range(name)` gives the range this frame. The site's `<figure-controls>`, the
   playground and `web/lattice.html` set their sliders from those, and the core keeps the value in range whatever a page does.
-- **Not checked:** a phone, a browser without WebGPU, and print. **Known:** the poster's labels are drawn by the CLI's fonts
-  and the page's by the browser's, so text can shift a little when the figure takes over. The tube has one label and it
-  wasn't noticeable.
+- **Not checked:** a phone, a browser without WebGPU, and print. The poster's labels and the page's are the same fonts since
+  2026-11-16, at the same widths (`formulas.spec.js` holds a page to the command's), where before the page's were the
+  browser's own.
 
 **Built 2026-11-15: the package and the Astro component,** and `pencil-lang.dev` moved onto them.
 

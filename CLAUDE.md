@@ -40,15 +40,16 @@ cd site && pnpm install && pnpm build   # the pencil-lang.dev site into site/dis
 ## Layout
 
 - `crates/pencil-core`: parser, IR, symbolic derivatives, styles, tracing, strokes, CPU oracle,
-  WGSL emitter, `svg` (a frame as vector graphics, from what a frame prepares for the renderers), and `compiled` (a Composition as bytes, stamped with a hash of the core's source by `build.rs`).
+  WGSL emitter, `svg` (a frame as vector graphics, from what a frame prepares for the renderers), `formula` (a label's mathematics, `$…$`, laid out from the math font's metrics, which `build.rs` reads from the package's fonts), and `compiled` (a Composition as bytes, stamped with a hash of the core's source by `build.rs`).
 - `crates/pencil-render`: wgpu pipeline shared by the native and browser paths.
 - `crates/pencil-cli`: the `pencil` command, including `check` (GPU against the oracle) and
   `video`.
 - `crates/pencil-web`: the WASM host.
 - `packages/figure`: `@pencil-lang/figure`, what a site installs. `.` is the `<pencil-figure>` element, `./host` the
   WASM as a page calls it, and `./astro` with `./Figure.astro` the Astro integration and component, which run
-  `pencil build` and write the element around a compiled figure and its poster. Its tests are Playwright's. The repo
-  is a pnpm workspace of it and `site/`.
+  `pencil build` and write the element around a compiled figure and its poster. Its tests are Playwright's. Its `fonts/`
+  are the fonts labels are set in, and the only copies: the element loads them, the command has them built in, and the
+  core's build reads the math font's metrics. The repo is a pnpm workspace of it and `site/`.
 - `web/`: the playground, where a reader opens, changes and shares a figure's sources (a link's `#pen=` carries a whole
   figure), and a live-reloading page for most figures. They load the package's files as they are, through the import map
   `web/imports.js` writes, or its minified bundle with `?min`. A figure on a site is built by the package's Astro
@@ -61,7 +62,9 @@ cd site && pnpm install && pnpm build   # the pencil-lang.dev site into site/dis
   images and results for `/web/text.html`.
 
 Two pairs must stay in step, and `pencil check` compares them: `eval::Frame::shade` with
-`wgsl::emit`, and `stroke::segment_coverage` with `wgsl::COVERAGE_SHADER`.
+`wgsl::emit`, and `stroke::segment_coverage` with `wgsl::COVERAGE_SHADER`. A third is held by tests: the command's
+`text.rs` and the element's `labels.js` draw a label from the same layout at the same widths (`formulas.spec.js`, and the
+widths `text.rs` pins beside it).
 
 ## Working rules
 

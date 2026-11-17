@@ -5,6 +5,7 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 
+use pencil_core::formula;
 use pencil_core::frame::{self, Inputs};
 use pencil_core::style::Font;
 use pencil_core::terms::{Estimate, TextWidths};
@@ -590,8 +591,41 @@ impl Player {
         let labels: Vec<_> = labels
             .iter()
             .map(|l| {
+                // What core laid out, for the page to set piece by piece: each run by the top of
+                // its line box, which is where a page places text from, and each rule.
+                let laid = l.laid.as_ref().map(|laid| {
+                    let [half_width, half_height] = l.half(&widths);
+                    let runs: Vec<_> = laid
+                        .runs
+                        .iter()
+                        .map(|run| {
+                            serde_json::json!({
+                                "text": run.text, "x": run.x,
+                                "top": run.y - (0.5 + formula::BASELINE) * run.size,
+                                "size": run.size,
+                                "math": run.face == formula::Face::Math,
+                                "stretch": run.stretch,
+                            })
+                        })
+                        .collect();
+                    let rules: Vec<_> = laid
+                        .rules
+                        .iter()
+                        .map(|rule| {
+                            serde_json::json!({
+                                "x": rule.x, "y": rule.y,
+                                "width": rule.width, "height": rule.height,
+                            })
+                        })
+                        .collect();
+                    serde_json::json!({
+                        "halfWidth": half_width, "halfHeight": half_height,
+                        "runs": runs, "rules": rules,
+                    })
+                });
                 serde_json::json!({
-                    "id": l.id, "text": l.text, "x": l.x, "y": l.y, "size": l.size,
+                    "id": l.id, "text": l.words(), "laid": laid,
+                    "x": l.x, "y": l.y, "size": l.size,
                     "color": css(l.color), "halo": l.halo, "haloColor": css(paper),
                     "opacity": l.opacity,
                     "math": l.font == pencil_core::style::Font::Math,
@@ -685,6 +719,18 @@ pub fn functions() -> String {
 pub fn from_latex(latex: &str, functions: Vec<String>) -> Result<String, JsValue> {
     let names: Vec<&str> = functions.iter().map(String::as_str).collect();
     pencil_core::latex::read(latex, &names).map_err(compile_error)
+}
+
+/// What an editor writes as symbols are typed, as JSON: `names`, each written for its name after
+/// a backslash, as `\to` is `→`, and `digraphs`, each written for what's typed in a label's text,
+/// as `->` is. Pencil's text is the symbol, so this is only for a keyboard that lacks it.
+#[wasm_bindgen]
+pub fn symbols() -> String {
+    serde_json::json!({
+        "names": pencil_core::formula::symbols(),
+        "digraphs": pencil_core::formula::digraphs(),
+    })
+    .to_string()
 }
 
 /// Whether pasted text is LaTeX rather than Pencil.

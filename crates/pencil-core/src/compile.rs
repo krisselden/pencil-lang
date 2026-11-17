@@ -3443,6 +3443,7 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
                     rest = tail;
                 }
                 written.push_str(rest);
+                crate::formula::check(&written).map_err(|e| fail(Error::new(e)))?;
                 // What the label is about, which its style can write as a name, an expression,
                 // a value, or an equation of them: the value it's named after, or else the one
                 // thing its text shows.

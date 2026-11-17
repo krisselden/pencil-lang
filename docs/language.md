@@ -60,7 +60,7 @@ that names them. `lab/explainer/limacon.pen` is the example: a file to each part
 | `rightangle m = A, V, B size 0.2` | A right-angle mark at `V`, a world size along each side. |
 | `region r = A, f(t) for t in 0..1` | A filled area bounded by points and arcs. |
 | `dot P, Q` | Draws point bindings. A dot takes its point's name, so a style can target it. |
-| `label n = "−{q}" at P away D` | Text at a point, on the side `D` points to, in the figure's own coordinates. Its style's `distance` says how far. `{expr}` in the text is a value: a number, written to the style's `digits` and whole if it's whole, or a point, written as its style's `format` says. What a label says about a value is its style's `text`. Without text, each panel gives it (see Panels). A figure without panels needs text, unless the label is a value's. |
+| `label n = "−{q}" at P away D` | Text at a point, on the side `D` points to, in the figure's own coordinates. Its style's `distance` says how far. `{expr}` in the text is a value: a number, written to the style's `digits` and whole if it's whole, or a point, written as its style's `format` says. `$…$` in the text is mathematics, laid out (see Mathematics in labels). What a label says about a value is its style's `text`. Without text, each panel gives it (see Panels). A figure without panels needs text, unless the label is a value's. |
 | `label root at P` | A label named after a value is that value's label, as a dot is its point's, so one rule styles both. It's about that value, and its style's `text` says what it shows of it: with no text of its own, the value. A value has one label. A label whose text is one value, `"{q - 1}"`, is about that value in the same way. |
 | `label n = "P" at P offset (12, -12)` | The same, at a fixed shift in `px` with y down. A sheet can't change it, so prefer `away`. |
 | `arrow v = A, B` | A shaft and a head, as one line. |
@@ -297,7 +297,50 @@ Terms are separated by spaces. Nothing is diffed: identity is what's written.
 - When a copy goes, it moves into a term of the same name at the same place: factoring.
 
 Each term is a mark named `work.z.1`, with the tags `term`, `work` and `z`, so `style term.a { fill: blue }`
-colors every `a`. A renderer measures the text with its own font, and core says where each term goes.
+colors every `a`. A term is mathematics, so under `font: math` it's laid out as a label's `$…$` is, and `x^2` as a term
+has a real exponent (see Mathematics in labels). In any other font it's text, which a renderer measures, and core says
+where each term goes.
+
+### Mathematics in labels
+
+`$…$` in a label's text is mathematics, laid out: `"area = $x^2/2$"` is the words, then x squared over two. Inside a span the
+notation is Pencil's own, the one a `let` is written in, with parentheses to group. It isn't TeX, and there's no backslash.
+
+| Written | Drawn |
+|---|---|
+| `x^2`, `x^(n + 1)`, `e^(iπ)`, `x^-1` | A superscript. Parentheses that only group aren't drawn. `x²` is the same as `x^2`. |
+| `x_1`, `x_(i + 1)`, `a_n^2` | A subscript, and both together. `x1` and `x₁` are `x_1`, as they are in an expression. |
+| `x^2/2`, `(a + b)/2`, `1/2π` | A fraction. The bar takes the product before it and the factors right after it, so `1/2π` is 1 over 2π and `1/2 x` is a half, times x, as Pencil computes them. Parentheses the bar makes unnecessary aren't drawn. |
+| `sqrt(x + 1)`, `√2`, `√(x + 1)` | A root, with its bar over what it holds. |
+| `abs(z)` | `\|z\|`. |
+| `(1/2)^2` | Brackets as tall as what they hold. |
+| `sin x`, `arg z`, `ln(x)`, `lim`, `det`, `gcd` | A function's name upright, a thin space from what it's of. These are Pencil's functions and a few more names mathematics sets upright. |
+| `a + b = c`, `z ↦ z^2`, `f: ℝ → ℝ`, `-7` | Operators and relations spaced as TeX spaces them, however the source is spaced. A hyphen is a minus, and `*` is `·`. |
+
+- **Letters are variables, in italics,** and letters written together stay together, so `2ab` reads as it does in a product. Digits,
+  operators, brackets and capital Greek are upright.
+- **`{expr}` is a value in a span as it is outside one,** since a span groups with parentheses and never braces: `"$z^{n}$"` is
+  z to whatever `n` is this frame. What the value prints is laid out too, so a `polar` point's `e^(2πi/3)` has a real exponent.
+- **A fraction stacks at the label's own size.** Inside a superscript or a subscript, or inside another fraction, it stays on the
+  line with a slash, where a stacked one would be too small to read. `∕` (U+2215) or `÷` keeps one on the line anywhere.
+- **Some text is mathematics without being marked:** an expression's terms, and what a label writes about a value, its
+  `name`, `expr` and `value`. Under `font: math` they're laid out as a span is. In any other font they're text, as before.
+- **A dollar sign is `$$`,** and a `$` that nothing closes is an error.
+- **What it can't typeset:** matrices, lines aligned on their `=`, limits above and below a `∑` or `∫` (they sit beside it, as a
+  subscript and a superscript), accents such as hats, bars and vector arrows, and bold. A tall root or bracket is the font's
+  glyph made taller, not a larger one drawn for the size, so its strokes thicken a little.
+
+The command and a page draw one layout. The core places every glyph and rule from the metrics of the math font they both
+draw with, so a formula is the same in a video, in a poster and live on a page, and the label's size, which placement and
+leaders use, is the layout's.
+
+**Typing the symbols.** Pencil's text is the symbol itself: `→`, `θ`, `ℝ`. The playground's editor writes them for a keyboard
+that lacks them. A LaTeX name after a backslash becomes its symbol when it's finished by a space, by anything else that can't
+continue it, or by Tab: `\to` → `→`, `\theta` → `θ`, `\R` → `ℝ`, `\nabla` → `∇`, `\le` → `≤`, `\in` → `∈`, `\infty` → `∞`,
+`\partial` → `∂`, `\mapsto` → `↦`, `\times` → `×`, `\pm` → `±`, and the rest of LaTeX's Greek, relations, arrows and set
+symbols (`formula::symbols` in the core has the list). Inside a label's text, `->`, `|->`, `<=`, `>=`, `!=`, `~=` and `+-`
+become `→`, `↦`, `≤`, `≥`, `≠`, `≈` and `±`. Undo gives back what was typed. Nothing in a file is ever read that way: a
+`.pen` holds the symbols, so an agent or a script writes them directly.
 
 ## Expressions
 
@@ -576,7 +619,7 @@ pixels, so they can't be in `em`.
 | `radius` | Dots, circles, outlines | A length. A dot's size, a cap on a collection's circles, or an outline's least half-size. |
 | `size` | Labels | A length, usually in `em`. Defaults to 1 em. |
 | `halo` | Labels | Its full width, in the paper's color. |
-| `font` | Labels | A role: `sans` (default) or `math`. |
+| `font` | Labels | A role: `sans` (default) or `math`, an italic for names and notes. Both are the package's own fonts, Libertinus Sans and Libertinus Serif Italic, the same files in the command and on a page, with Libertinus Math behind each for the symbols a text face lacks and for a label's mathematics. Under `math`, a term and what a label writes about a value are laid out as mathematics. |
 | `place` | Labels | `fixed` (default) at its `offset`, or `settle`, tied there by a spring and pushed off what's drawn and other labels. |
 | `format` | Labels | How a point in its text is written: `point` (default) as `(−0.50, −0.87)`, `complex` as `−0.50 − 0.87i`, or `polar` as `e^(−2πi/3)`, with an angle that's a fraction of π up to twelfths written as one. A point and a complex number are one thing in Pencil, so which it reads as is the sheet's. |
 | `text` | Labels | What a label says about the value it's about, as parts joined by `=`: `caption` (its own words, or the value's name if it has none), `name`, `expr` (the expression as written: a `let`'s right side, or what's between the braces) and `value`. `text: expr = value` is `σ(2) = −0.50 − 0.87i`, `text: name = value` is `root = −0.50 − 0.87i`, and `text: caption` is the words alone. Parts that come out the same are said once, so a param's `expr = value` is `q = 3`. Without it, a label says its own words, or its value if it has none. A label that isn't about one value says its words whatever this is. |

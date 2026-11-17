@@ -76,10 +76,10 @@ arrow square = O, Z2
 
 curve first_angle = parametric (t): (0.42·cos(t), 0.42·sin(t)) for t in 0..angle
 curve second_angle = parametric (t): (0.62·cos(t), 0.62·sin(t)) for t in angle..2·angle
-label arg_first = "arg z" at (0.5·cos(angle / 2), 0.5·sin(angle / 2)) offset (0, -6) tag note
-label arg_second = "arg z" at (0.7·cos(1.5·angle), 0.7·sin(1.5·angle)) offset (0, -6) tag note
-label length_z = "|z|" at Z·0.5 offset (-14, -12) tag note
-label length_z2 = "|z|²" at Z2·0.55 offset (-18, -10) tag note
+label arg_first = "$arg z$" at (0.5·cos(angle / 2), 0.5·sin(angle / 2)) offset (0, -6) tag note
+label arg_second = "$arg z$" at (0.7·cos(1.5·angle), 0.7·sin(1.5·angle)) offset (0, -6) tag note
+label length_z = "$|z|$" at Z·0.5 offset (-14, -12) tag note
+label length_z2 = "$|z|^2$" at Z2·0.55 offset (-18, -10) tag note
 
 place at_a = (a / 2, 0) offset (0, 22) hang middle
 place at_b = (a, b / 2) offset (6, 6)

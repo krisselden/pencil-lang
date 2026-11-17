@@ -29,7 +29,12 @@ It owns the canvas, the labels over it, the GPU and the clock. It starts the GPU
 under `prefers-reduced-motion`, and every handle and beat can be worked from the keyboard. Its attributes, methods and
 events are described at the top of [`src/element.js`](src/element.js).
 
-A bundler has to keep the WASM beside the script that loads it. Vite does, once the package is left out of its
+Labels are set in the package's own fonts, in [`fonts/`](fonts/README.md): Libertinus, under the SIL Open Font License.
+They're the files the `pencil` command draws a poster with, so the figure that takes over from a poster sets the same
+glyphs in the same places. The element fetches the two text faces when it loads, and the math font the first time a
+label needs it.
+
+A bundler has to keep the WASM and the fonts where the scripts that load them look, `../pkg` and `../fonts` from `src/`. Vite does, once the package is left out of its
 dependency pre-bundling (`optimizeDeps: { exclude: ['@pencil-lang/figure'] }`), which the Astro integration sets.
 
 `scripts/build-web.sh` ends by writing `pkg/pencil-figure.min.js`, the element and the host bundled and minified into

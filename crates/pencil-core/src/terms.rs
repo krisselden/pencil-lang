@@ -16,6 +16,7 @@ use std::collections::HashMap;
 use crate::Figure;
 use crate::error::Error;
 use crate::eval::{self, Env, snap};
+use crate::formula;
 use crate::frame::{self, DEFAULT_LABEL_SIZE, Label};
 use crate::ir::{Expression, Form, Hang, Piece, Viewport};
 use crate::style::{Font, Place};
@@ -39,6 +40,15 @@ pub const EM_PER_CHAR: f64 = 0.55;
 impl TextWidths for Estimate {
     fn width(&self, text: &str, size: f64, _font: Font) -> f64 {
         text.chars().count() as f64 * EM_PER_CHAR * size
+    }
+}
+
+/// How wide a term is. A term is mathematics, and under `font: math` it's laid out as it, so its
+/// width is the layout's. In any other font it's the renderer's text.
+fn term_width(text: &str, size: f64, font: Font, widths: &dyn TextWidths) -> f64 {
+    match font {
+        Font::Math => formula::lay_math(text, size).width,
+        Font::Sans => widths.width(text, size, font),
     }
 }
 
@@ -135,7 +145,7 @@ impl Scope<'_> {
                 } else {
                     0.0
                 };
-                advances.push((self.widths.width(text, size, font), pad));
+                advances.push((term_width(text, size, font, self.widths), pad));
             }
             let total: f64 = advances.iter().map(|(w, pad)| w + 2.0 * pad).sum();
             let mut left = dx + ox * self.dpr
@@ -295,12 +305,18 @@ pub fn labels(
                 Some(o) => eval::real(o, env)?.clamp(0.0, 1.0),
                 None => 1.0,
             };
+            let size = scope.size_and_font(key)?.0;
             out.push(Label {
                 id: mark.id.clone(),
-                text: text.clone(),
+                laid: (style.font == Font::Math).then(|| formula::lay_math(text, size)),
+                // Marked as the mathematics it is, as a label's own would be.
+                text: match style.font {
+                    Font::Math => format!("${text}$"),
+                    Font::Sans => text.clone(),
+                },
                 x: at[0],
                 y: at[1],
-                size: scope.size_and_font(key)?.0,
+                size,
                 color: match &style.negative {
                     Some(c) => eval::color(c, env)?,
                     None => [0.0; 3],
@@ -443,6 +459,42 @@ mod tests {
     }
 
     /// A term fading in travels with the rest, not ahead of it at its final spot.
+    /// A term is mathematics. Under `font: math` core lays it out and knows its width, and in
+    /// any other font it's the renderer's text.
+    #[test]
+    fn a_term_in_the_math_font_is_laid_out() {
+        let doc = "viewport { x: 0..400, y: 0..400 } style figure { width: 400px }
+            param step = 1 in 0..1
+            place one = (100, 100)
+            expression e by step {
+              \"x^2 + 1\" at one
+            }";
+        let inputs = Inputs {
+            time: 0.0,
+            params: vec![("step".to_string(), 1.0)],
+        };
+        let labels = |sheet: &str| {
+            let f = build(doc, &[sheet]).unwrap();
+            frame::prepare(&f, &inputs, 400, 400, 1.0).unwrap().labels
+        };
+        let math = labels("style term { font: math; size: 20px }");
+        let square = find(&math, "e.x^2");
+        assert_eq!(
+            (square.text.as_str(), square.words().as_str()),
+            ("$x^2$", "x^2")
+        );
+        let laid = square.laid.as_ref().expect("laid out");
+        assert!(laid.runs[1].size < laid.runs[0].size);
+        // Its neighbor starts where its layout ends, plus the operator's own clear space.
+        let plus = find(&math, "e.+");
+        let plus_left = plus.x - plus.laid.as_ref().unwrap().width / 2.0;
+        let apart = plus_left - (square.x + laid.width / 2.0);
+        assert!((apart - OPERATOR_PAD * 20.0).abs() < 1e-9, "{apart}");
+        let sans = labels("style term { font: sans; size: 20px }");
+        let square = find(&sans, "e.x^2");
+        assert_eq!((square.text.as_str(), &square.laid), ("x^2", &None));
+    }
+
     #[test]
     fn a_new_term_rides_with_its_neighbors() {
         let doc = "viewport { x: 0..400, y: 0..400 } style figure { width: 400px }

@@ -8,6 +8,7 @@ use crate::Figure;
 use crate::error::Error;
 use crate::eval::{self, Env};
 use crate::fast;
+use crate::formula;
 use crate::ir::{Expr, Form, Part, Shown, Subject, Viewport};
 use crate::nearest;
 use crate::place;
@@ -64,6 +65,33 @@ pub struct Label {
     pub place: Place,
     /// A line from near its point to near its text, in its color, where it finally sits.
     pub leader: Option<Leader>,
+    /// Its text laid out, if it has mathematics in it. `text` then still has the `$` around
+    /// each span, and `words` is how it reads.
+    pub laid: Option<formula::Laid>,
+}
+
+impl Label {
+    /// Half the width and height of its text's box: what was laid out, or a line of text as
+    /// wide as the renderer's font sets it.
+    pub fn half(&self, widths: &dyn terms::TextWidths) -> [f64; 2] {
+        let line = self.size * TEXT_HALF_HEIGHT;
+        match &self.laid {
+            Some(laid) => [laid.width / 2.0, line.max(laid.above).max(laid.below)],
+            None => [widths.width(&self.text, self.size, self.font) / 2.0, line],
+        }
+    }
+
+    /// Its text as it reads, without the marks around its mathematics.
+    pub fn words(&self) -> String {
+        match formula::has_math(&self.text) {
+            true => self
+                .text
+                .replace("$$", "\u{0}")
+                .replace('$', "")
+                .replace('\u{0}', "$"),
+            false => self.text.clone(),
+        }
+    }
 }
 
 /// A label's leader, in device pixels.
@@ -551,6 +579,9 @@ pub fn drag_value(
 /// What a label says: its caption, or what its style's `text` makes of the value it's about,
 /// as `expr = value`. A label with no words of its own shows its value. Parts that come out
 /// the same aren't said twice, so a param's `name = expr = value` is `q = 3`.
+///
+/// A value's name, its expression and the value are mathematics, so under `font: math` they're
+/// marked as it, and laid out as a label's own `$…$` is.
 fn label_text(
     text: &str,
     values: &[Shown],
@@ -574,21 +605,46 @@ fn label_text(
         TextPart::Caption
     }];
     let parts = style.text.as_deref().unwrap_or(&default);
-    let mut said: Vec<String> = Vec::new();
+    // Each part, and whether it's mathematics rather than the label's own words.
+    let mut said: Vec<(String, bool)> = Vec::new();
     for part in parts {
         let piece = match (part, subject) {
-            (TextPart::Caption, _) => caption(subject)?,
+            (TextPart::Caption, Some(subject)) if text.is_empty() => (subject.name.clone(), true),
+            (TextPart::Caption, _) => (caption(subject)?, false),
             // A label that isn't about a value just says what it says.
-            (_, None) => caption(None)?,
-            (TextPart::Name, Some(subject)) => subject.name.replace('-', "−"),
-            (TextPart::Expr, Some(subject)) => subject.expr.replace('-', "−"),
-            (TextPart::Value, Some(subject)) => written(&subject.value, style, digits, env)?,
+            (_, None) => (caption(None)?, false),
+            (TextPart::Name, Some(subject)) => (subject.name.replace('-', "−"), true),
+            (TextPart::Expr, Some(subject)) => (subject.expr.replace('-', "−"), true),
+            (TextPart::Value, Some(subject)) => {
+                (written(&subject.value, style, digits, env)?, true)
+            }
         };
-        if said.last() != Some(&piece) {
+        if said.last().map(|(last, _)| last) != Some(&piece.0) {
             said.push(piece);
         }
     }
-    Ok(said.join(" = "))
+    let math = style.font == Font::Math;
+    let mut out = String::new();
+    // Whether a span of mathematics is open. An equals sign between two pieces of it is in it.
+    let mut open = false;
+    for (i, (piece, is_math)) in said.iter().enumerate() {
+        let marked = math && *is_math;
+        if open && !marked {
+            out.push('$');
+        }
+        if i > 0 {
+            out.push_str(" = ");
+        }
+        if marked && !open {
+            out.push('$');
+        }
+        out.push_str(piece);
+        open = marked;
+    }
+    if open {
+        out.push('$');
+    }
+    Ok(out)
 }
 
 /// A value as a label writes it: to `digits` places, and a point in the style's `format`.
@@ -1016,12 +1072,15 @@ pub fn prepare_with(
                 }
             }
         };
+        let text = label_text(text, values, subject.as_ref(), style, &env)?;
+        let size = length_or_em(&style.size, DEFAULT_LABEL_SIZE, &env)?;
         labels.push(Label {
             id: mark.id.clone(),
-            text: label_text(text, values, subject.as_ref(), style, &env)?,
+            laid: formula::lay(&text, size, style.font, widths),
+            text,
             x: dx + ox,
             y: dy + oy,
-            size: length_or_em(&style.size, DEFAULT_LABEL_SIZE, &env)?,
+            size,
             color: match &style.negative {
                 Some(c) => eval::color(c, &env)?,
                 None => [0.0; 3],
@@ -1207,6 +1266,70 @@ mod tests {
     }
     use super::*;
     use crate::build;
+
+    fn label_of(doc: &str, sheet: &str, id: &str) -> Label {
+        let figure = crate::build(doc, &[sheet]).unwrap();
+        let prepared = prepare(&figure, &Inputs::default(), 400, 400, 1.0).unwrap();
+        prepared.labels.iter().find(|l| l.id == id).unwrap().clone()
+    }
+
+    #[test]
+    fn a_labels_mathematics_is_laid_out_and_its_words_arent() {
+        let doc = "viewport { x: -2..2, y: -2..2 }
+                   let n = 3
+                   label plain = \"arg z\" at (0, 0)
+                   label power = \"area = $x^{n}/2$\" at (0, 0)
+                   label price = \"$$5\" at (0, 0)";
+        let plain = label_of(doc, "", "plain");
+        assert!(plain.laid.is_none());
+        assert_eq!(
+            plain.half(&terms::Estimate)[1],
+            plain.size * TEXT_HALF_HEIGHT
+        );
+        // A value goes into a span as it does into words, and is laid out with it.
+        let power = label_of(doc, "", "power");
+        assert_eq!(power.text, "area = $x^3/2$");
+        assert_eq!(power.words(), "area = x^3/2");
+        let laid = power.laid.as_ref().expect("laid out");
+        assert_eq!(laid.rules.len(), 1);
+        assert!(laid.runs.iter().any(|r| r.text == "3"));
+        // A fraction is taller than a line, and the label's box says so.
+        let [half_width, half_height] = power.half(&terms::Estimate);
+        assert_eq!(half_width, laid.width / 2.0);
+        assert!(half_height > power.size * TEXT_HALF_HEIGHT);
+        // Two dollar signs are one, in words.
+        assert_eq!(label_of(doc, "", "price").words(), "$5");
+        let open = "label n = \"area = $x^2\" at (0, 0)";
+        let err = crate::build(open, &[]).unwrap_err();
+        assert!(err.message.contains("no `$` closes"), "{err}");
+    }
+
+    /// What Pencil writes about a value is mathematics, and `font: math` sets it as it.
+    #[test]
+    fn a_values_label_is_mathematics_in_the_math_font() {
+        let doc = "viewport { x: -2..2, y: -2..2 }
+                   let root = (-0.5, sqrt(3)/2)
+                   label root at root
+                   label note = \"the root\" at root";
+        let sheet = |font: &str| {
+            format!("style label {{ font: {font}; text: name = value; format: polar }}")
+        };
+        let math = label_of(doc, &sheet("math"), "root");
+        assert_eq!(math.text, "$root = e^(2πi/3)$");
+        assert_eq!(math.words(), "root = e^(2πi/3)");
+        // The power is a real superscript: smaller, and above the line.
+        let laid = math.laid.as_ref().expect("laid out");
+        let (base, power) = (&laid.runs[0], laid.runs.last().unwrap());
+        assert!(power.size < base.size && power.y < base.y, "{laid:?}");
+        // In any other font it's the text it always was, and so are a label's own words.
+        let sans = label_of(doc, &sheet("sans"), "root");
+        assert_eq!(
+            (sans.text.as_str(), &sans.laid),
+            ("root = e^(2πi/3)", &None)
+        );
+        let note = label_of(doc, &sheet("math"), "note");
+        assert_eq!((note.text.as_str(), &note.laid), ("the root", &None));
+    }
 
     #[test]
     fn a_label_sits_away_from_its_point_at_the_distance_its_style_sets() {

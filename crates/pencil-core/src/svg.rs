@@ -1158,10 +1158,7 @@ fn text(
             Font::Math => (MATH, " font-style=\"italic\""),
         };
         let (x, anchor) = match from_left.contains(&label.id) {
-            true => (
-                label.x - widths.width(&label.text, label.size, label.font) / 2.0,
-                " text-anchor=\"start\"",
-            ),
+            true => (label.x - label.half(widths)[0], " text-anchor=\"start\""),
             false => (label.x, ""),
         };
         format!(
@@ -1173,10 +1170,7 @@ fn text(
     };
     let mut out = String::new();
     for label in &visible {
-        let half = [
-            widths.width(&label.text, label.size, label.font) / 2.0,
-            label.size * frame::TEXT_HALF_HEIGHT,
-        ];
+        let half = label.half(widths);
         if let (Some([a, b]), Some(leader)) = (frame::leader_ends(label, half), label.leader) {
             let _ = writeln!(
                 out,
@@ -1200,7 +1194,7 @@ fn text(
             set(label),
             num(label.halo),
             faded(label),
-            escape(&label.text),
+            escape(&label.words()),
         );
     }
     for label in &visible {
@@ -1211,7 +1205,7 @@ fn text(
             set(label),
             hex(label.color),
             faded(label),
-            escape(&label.text),
+            escape(&label.words()),
         );
     }
     if out.is_empty() {
