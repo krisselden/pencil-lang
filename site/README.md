@@ -10,7 +10,7 @@ cd site
 pnpm install
 pnpm dev                      # http://localhost:4321
 pnpm build                    # into site/dist
-pnpm preview                  # serves site/dist on http://localhost:4322
+pnpm preview                  # serves site/dist on http://localhost:4322 as the Worker does, headers and all
 ```
 
 ## Deploying

@@ -5,14 +5,20 @@
 // around it, so a phone keeps its height for the editor and the figure: the playground itself
 // offers to open alone when it's framed.
 import Base from '../layouts/Base.astro';
+
+// The site's host serves a page without its `.html`, and answers the longer address with a
+// redirect to the shorter: a round trip before the playground, on every visit. So a build asks
+// for the shorter. `astro dev` serves the file by its name.
+const page = import.meta.env.DEV ? '/web/playground.html' : '/web/playground';
 ---
 <Base title="Playground" section="playground" full description="Edit any Pencil figure and its style sheets in the browser, and watch it recompile.">
-  <iframe class="playground" id="playground" src="/web/playground.html" title="Pencil playground" allow="fullscreen; clipboard-write"></iframe>
+  <iframe class="playground" id="playground" src={page} title="Pencil playground" allow="fullscreen; clipboard-write"></iframe>
 </Base>
 
 <script>
   const frame = document.getElementById('playground') as HTMLIFrameElement;
-  const PAGE = '/web/playground.html';
+  // The frame's own address, as the page was written with it.
+  const PAGE = new URL(frame.src).pathname;
   // What says which figure: an example's id, or a whole figure after `#pen=`.
   const figure = new URLSearchParams(location.search).get('figure');
   const inner = () => `${PAGE}${figure ? `?figure=${encodeURIComponent(figure)}` : ''}${location.hash}`;

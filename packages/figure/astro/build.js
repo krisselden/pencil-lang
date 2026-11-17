@@ -6,7 +6,7 @@
 // the files that went into it, or `pencil` itself, is newer.
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { cp, mkdir, readdir, readFile, stat } from 'node:fs/promises';
+import { cp, mkdir, readdir, readFile, rm, stat } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { pack } from '../src/pack.js';
@@ -168,6 +168,8 @@ async function make(cfg, key, { src, sheets, time, params, size, card }) {
     if (size != null) args.push('--size', String(size));
     if (card) args.push('--card');
     args.push('--out', dir);
+    // Whatever an older `pencil` left there under another name would be shipped, and named in.
+    await rm(dir, { recursive: true, force: true });
     try {
       await turn(() => run(cfg.bin, args, cfg.root));
     } catch (error) {

@@ -461,7 +461,9 @@ fn build(args: &Args) -> Result<(), Box<dyn Error>> {
     let width = still_width(&composition, args);
     let gpu = Offscreen::new()?;
     let mut posters = Vec::new();
-    for (scale, name) in [(1, format!("{stem}.png")), (2, format!("{stem}@2x.png"))] {
+    // Not `@2x`: a host can answer an `@` in a file's name with a redirect to `%40`, as Cloudflare
+    // does, and that's a round trip before every poster on a dense screen.
+    for (scale, name) in [(1, format!("{stem}.png")), (2, format!("{stem}-2x.png"))] {
         let wide = width * scale;
         let (rgba, height, _) = still(&composition, &inputs, wide, scale as f64, args, Some(&gpu))?;
         write_png(&dir.join(&name), &rgba, wide, height)?;
