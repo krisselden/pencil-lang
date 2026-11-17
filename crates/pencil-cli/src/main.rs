@@ -23,17 +23,24 @@ usage:
   pencil ir     DOC.pen
   pencil wgsl   DOC.pen [--style FILE]...
   pencil render DOC.pen [--style FILE]... [--t SECONDS] [--param NAME=VALUE]... [--size WIDTH] [--cpu] --out FRAME.png
+  pencil svg    DOC.pen [--style FILE]... [--t SECONDS] [--param NAME=VALUE]... [--size WIDTH] --out FIGURE.svg
   pencil check  DOC.pen [--style FILE]... [--t SECONDS]... [--param NAME=VALUE]... [--size WIDTH] [--out DIR]
   pencil video  DOC.pen [--style FILE]... [--size WIDTH] [--fps N] [--seconds S] [--font FILE] --out MOVIE.mp4
   pencil latex  FILE.tex...
   pencil help
 
-ir, wgsl, render, check and video take a compiled figure (the file `compile` writes, which has its
-sheets in it) in place of DOC.pen.
+ir, wgsl, render, svg, check and video take a compiled figure (the file `compile` writes, which has
+its sheets in it) in place of DOC.pen.
 
 build writes what a page needs for one figure under one set of sheets: the compiled figure, a
 poster at its design size and at twice it, and a .json that says what they are and what the figure
 is. The poster is the moment the document's `poster` names, unless --t or --param say another.
+
+svg writes one frame as vector graphics, at the poster's moment and the figure's design size
+unless told another: strokes, flat fills, dots and arrowheads as shapes, and labels as text. A
+style that is worked out per pixel has no vector form: a fill or stroke that reads `self.dist`,
+`blend: add`, and the paper's `tone`. What has none is left out, and a line on stderr names each
+mark and the property.
 ";
 
 /// The most any channel may differ from the CPU oracle, out of 255. The GPU is
@@ -346,6 +353,76 @@ fn render(args: &Args) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+/// The moment a still shows: the document's poster, and a flag can say another.
+fn still_moment(composition: &Composition, args: &Args) -> Inputs {
+    let mut inputs = composition.poster();
+    if let Some(time) = args.times.first() {
+        inputs.time = *time;
+    }
+    for (name, value) in &args.params {
+        inputs.params.retain(|(held, _)| held != name);
+        inputs.params.push((name.clone(), *value));
+    }
+    inputs
+}
+
+/// How wide a still is. A figure with a design width is drawn at it. One without is as wide as
+/// it's told. Panels are laid out in design pixels, so their size is one. A lone figure's size is
+/// only its shape unless its sheet gives a height too, and its width is the sheet's.
+fn still_width(composition: &Composition, args: &Args) -> u32 {
+    let design = match composition.panels.len() {
+        1 => composition.panels[0].figure.scene.viewport.design_width,
+        _ => Some(composition.size[0]),
+    };
+    match (design, args.sized) {
+        (Some(design), false) => design.round() as u32,
+        _ => args.size,
+    }
+}
+
+/// Writes one frame as SVG, from what a frame prepares for the renderers, with labels as text.
+/// What a style leaves with no vector form isn't drawn, and each such mark is named on stderr.
+fn svg(args: &Args) -> Result<(), Box<dyn Error>> {
+    let composition = load(args)?;
+    let out = args.out.as_ref().ok_or("svg needs --out")?;
+    let inputs = still_moment(&composition, args);
+    let width = still_width(&composition, args);
+    let height = height_for(&composition, width);
+    // Text is written as text, so a font is only for where labels settle and where a leader
+    // stops. Without the machine's, an estimate does, unless a font was asked for by name.
+    let fonts = match (has_text(&composition), &args.font) {
+        (false, _) => None,
+        (true, Some(font)) => Some(text::Fonts::load(Some(font))?),
+        (true, None) => text::Fonts::load(None).ok(),
+    };
+    let widths: &dyn TextWidths = match &fonts {
+        Some(fonts) => fonts,
+        None => &Estimate,
+    };
+    let mut frames = composition.prepare(&inputs, width, height, 1.0, None, widths)?;
+    let mut caches: Vec<_> = composition
+        .panels
+        .iter()
+        .map(|_| Default::default())
+        .collect();
+    spring_all(&composition, &mut frames, &inputs, &mut caches)?;
+    let labels = composition.labels(&frames, &inputs, widths)?;
+    let drawn = composition.svg(&frames, &inputs, width, height, &labels, widths)?;
+    if let Some(parent) = out.parent().filter(|p| !p.as_os_str().is_empty()) {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(out, &drawn.svg).map_err(|e| format!("{}: {e}", out.display()))?;
+    for skipped in &drawn.skipped {
+        eprintln!("svg: {skipped}");
+    }
+    println!(
+        "wrote {} ({width}×{height}, {} bytes)",
+        out.display(),
+        drawn.svg.len()
+    );
+    Ok(())
+}
+
 /// A share card's size, as the sites that show one expect.
 const CARD: (u32, u32) = (1200, 630);
 /// How much of a card's width and height its figure may take.
@@ -377,26 +454,8 @@ fn build(args: &Args) -> Result<(), Box<dyn Error>> {
     let figure = format!("{stem}.pfig");
     write(&figure, &bytes)?;
 
-    // The poster's moment is the document's, and a flag can say another.
-    let mut inputs = composition.poster();
-    if let Some(time) = args.times.first() {
-        inputs.time = *time;
-    }
-    for (name, value) in &args.params {
-        inputs.params.retain(|(held, _)| held != name);
-        inputs.params.push((name.clone(), *value));
-    }
-    // A figure with a design width is drawn at it. One without is as wide as it's told. Panels
-    // are laid out in design pixels, so their size is one. A lone figure's size is only its
-    // shape unless its sheet gives a height too, and its width is the sheet's.
-    let design = match composition.panels.len() {
-        1 => composition.panels[0].figure.scene.viewport.design_width,
-        _ => Some(composition.size[0]),
-    };
-    let width = match (design, args.sized) {
-        (Some(design), false) => design.round() as u32,
-        _ => args.size,
-    };
+    let inputs = still_moment(&composition, args);
+    let width = still_width(&composition, args);
     let gpu = Offscreen::new()?;
     let mut posters = Vec::new();
     for (scale, name) in [(1, format!("{stem}.png")), (2, format!("{stem}@2x.png"))] {
@@ -811,6 +870,7 @@ fn run() -> Result<(), Box<dyn Error>> {
         "compile" => compile(&parsed)?,
         "build" => build(&parsed)?,
         "render" => render(&parsed)?,
+        "svg" => svg(&parsed)?,
         "check" => check(&parsed)?,
         "video" => video(&parsed)?,
         other => return Err(format!("unknown command `{other}`\n{USAGE}").into()),

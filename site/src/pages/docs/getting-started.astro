@@ -126,6 +126,7 @@ pencil build  DOC.pen [--style FILE]... [--t SECONDS] [--param NAME=VALUE]... [-
 pencil ir     DOC.pen
 pencil wgsl   DOC.pen [--style FILE]...
 pencil render DOC.pen [--style FILE]... [--t SECONDS] [--param NAME=VALUE]... [--size WIDTH] [--cpu] --out FRAME.png
+pencil svg    DOC.pen [--style FILE]... [--t SECONDS] [--param NAME=VALUE]... [--size WIDTH] --out FIGURE.svg
 pencil check  DOC.pen [--style FILE]... [--t SECONDS]... [--param NAME=VALUE]... [--size WIDTH] [--out DIR]
 pencil video  DOC.pen [--style FILE]... [--size WIDTH] [--fps N] [--seconds S] [--font FILE] --out MOVIE.mp4
 pencil latex  FILE.tex...
@@ -135,6 +136,13 @@ pencil help</code></pre>
     <code>ir</code> prints a figure’s compiled form, and <code>wgsl</code> the shader it becomes.
     <code>compile</code> writes a figure and its sheets as one file a page loads without parsing, and
     <code>build</code> writes that with its poster, which is what the package runs for a site.
+  </p>
+  <p>
+    <code>svg</code> writes one frame as vector graphics, for a paper or a drawing program: strokes,
+    flat fills, dots and arrowheads as shapes, and labels as text. A style that is worked out per
+    pixel, such as a fill that reads <code>self.dist</code>, has no vector form, so that part is left
+    out and a line names the mark. The <a href="/docs/language/#a-figure-as-svg">language reference</a>
+    lists what exports.
   </p>
 
   <h2 id="next">Where next</h2>

@@ -24,6 +24,7 @@ pub mod presence;
 pub mod stroke;
 pub mod style;
 pub mod suggest;
+pub mod svg;
 pub mod terms;
 pub mod trace;
 pub mod wgsl;

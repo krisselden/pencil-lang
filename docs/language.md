@@ -586,6 +586,31 @@ pixels, so they can't be in `em`.
 | `show` | Any mark | Draws it only while this is above 0, decided per frame. Can also read `view.width`, the view's width in world units, for zoom levels. |
 | `trim` | Curves, lines, arrows, circles | How much of the stroke is drawn, from its start: 0 to 1 of a curve's parameter, or of a straight line's length. An arrow grows from its tail. A circle starts due east of its center and runs counterclockwise, and is drawn as a line to be trimmed. A collection of curves can trim each one with its variables. A traced curve, a region, dots and circles in a collection have no start, so they can't. |
 
+### A figure as SVG
+
+`pencil svg DOC.pen --style … --out FIGURE.svg` writes one frame as vector graphics, for a paper, a slide or a drawing
+program. It's the poster's moment unless `--t` or `--param` say another, at the figure's design size unless `--size` does.
+It is written from the lines, regions and label places a frame prepares for the renderers, so it matches `pencil render` of
+the same frame. Each mark is an element, or a group of them, with the mark's name as its `id`, and a label is text.
+
+**A style has a vector form when its value is one color or one number for a whole mark, for one of a collection, or along a
+stroke.** What's worked out per pixel has none. That part is left out, and a line on stderr names each mark and the property,
+so nothing is drawn as something it isn't.
+
+| In a sheet | In the SVG |
+|---|---|
+| `stroke` with `width`, `dash`, `gap`, `cap`, `trim`, `ticks` | A path with that stroke. A curve is the short straight pieces it's traced in, flat to a small fraction of a pixel at the size it's written for. |
+| `head`, and an `arrow` | The stroke, and a triangle for its head. |
+| A `width` that varies along the stroke, with `self.t` or `self.z` | The stroke's outline, as a filled shape. With a `dash` as well it's left out, for now. |
+| An `opacity` that varies along the stroke | A mask over the stroke's color, lighter where there's more ink. |
+| `fill` and `fill_opacity` on a region, a dot, the sides of a circle or of a curve that closes inside the frame, and each circle of a collection | A filled shape. The side of a curve that leaves the frame is left out, for now. |
+| `opacity`, `show`, `radius` | As drawn. |
+| A label, with `size`, `font`, `halo`, `leader` and where `place` put it | `<text>` centered on its place, in the fonts a page draws labels in, over the same text stroked in the paper's color for its halo. A viewer with another font moves only the glyphs. |
+| A `fill`, `fill_opacity` or `stroke` that reads `self.dist` | That fill or stroke is left out, and the rest of the mark is drawn. |
+| `blend: add` | The mark is left out: SVG has no paint that adds light. |
+| `blend: linear` | Drawn, as `gamma`, which is how SVG blends. |
+| `tone` on `paper` | Not applied. Colors are as their styles give them, so what a `tanh` would have dimmed is brighter. |
+
 **A figure's size is a sheet's, and so is how panels are laid out.** These values hold for the whole figure, so they can't read a
 param, and a rule for a panel that doesn't exist is a mistake. All panels have to be one size, for now.
 

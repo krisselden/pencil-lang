@@ -24,6 +24,7 @@ cargo fmt --all && cargo clippy --workspace --all-targets --locked -- -D warning
 UPDATE_GOLDENS=1 cargo test -p pencil-core --test corpus   # after an intended IR change
 cargo run -p pencil-cli -- check corpus/001-circle/circle.pen --style corpus/001-circle/circle.style
 cargo run -p pencil-cli -- render corpus/001-circle/circle.pen --style corpus/001-circle/bands.style --t 1.25 --out out/frame.png
+cargo run -p pencil-cli -- svg corpus/005-tangents/tangents.pen --style corpus/theme.style --style corpus/005-tangents/plain.style --out out/tangents.svg   # one frame as vector graphics; what a style works out per pixel is left out, and stderr names each mark
 cargo run -p pencil-cli -- compile corpus/001-circle/circle.pen --style corpus/001-circle/circle.style --out out/circle.pfig   # one file a page loads without parsing; only this build can read it
 cargo run --release -p pencil-cli -- build corpus/013-tube/tube.pen --style corpus/theme.style --style corpus/013-tube/plain.style --card --out out/tube   # what a page needs: the compiled figure, its poster as PNG and WebP, a card and a .json. The Astro component in packages/figure runs this for a site; a page isn't written around it by hand
 cargo run -p pencil-cli -- render out/circle.pfig --t 1.25 --out out/frame.png   # render, check, video, ir and wgsl take a compiled file too
@@ -39,7 +40,7 @@ cd site && pnpm install && pnpm build   # the pencil-lang.dev site into site/dis
 ## Layout
 
 - `crates/pencil-core`: parser, IR, symbolic derivatives, styles, tracing, strokes, CPU oracle,
-  WGSL emitter, and `compiled` (a Composition as bytes, stamped with a hash of the core's source by `build.rs`).
+  WGSL emitter, `svg` (a frame as vector graphics, from what a frame prepares for the renderers), and `compiled` (a Composition as bytes, stamped with a hash of the core's source by `build.rs`).
 - `crates/pencil-render`: wgpu pipeline shared by the native and browser paths.
 - `crates/pencil-cli`: the `pencil` command, including `check` (GPU against the oracle) and
   `video`.

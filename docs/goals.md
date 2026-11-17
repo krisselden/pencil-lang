@@ -195,6 +195,10 @@ Built, and wrong or short in a known way. None has blocked a figure.
   through `eval`, about 6 ms a frame for one curve in WASM, since `fast.rs` only serves curves and collections.
 - **Terms:** a term that isn't an operator sets tight (`cosh s` printed as `coshs`), and a label is always centered on its point.
 - **A trimmed circle starts due east,** since circles keep only a center and radius.
+- **SVG export** (`pencil svg`, 2026-11-16; `language.md`, A figure as SVG) leaves out two things that do have a vector form:
+  a dashed stroke whose width varies, and the side of a curve that leaves the frame, each with a line saying so. A label's
+  baseline is set 0.355 em below its center, which suits the fonts a page uses, and isn't read from the font that placed it.
+  No test rasterizes an SVG: it was compared with `pencil render` once, by hand, in Chromium.
 - **A Möbius pole exactly on one of the three points** loses that circle for the frame.
 - **Panels** all have to be one size, and a sheet can't hide or move one.
 - **Older figures:** those before the lattice still use `offset`, which a sheet can't move, and their pages keep their own palettes.
