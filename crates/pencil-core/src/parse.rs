@@ -325,6 +325,8 @@ struct Lexed {
     tok: Tok,
     line: usize,
     col: usize,
+    /// Whether a space or a comment comes right before it, which is what tells `1/2 π` from `1/2π`.
+    spaced: bool,
 }
 
 const PUNCT: [&str; 16] = [
@@ -364,10 +366,13 @@ const GLYPHS: [char; 4] = ['π', 'ℯ', 'ⅈ', 'ⅇ'];
 fn lex(src: &str) -> Result<Vec<Lexed>, Error> {
     let chars: Vec<char> = src.chars().collect();
     let (mut i, mut line, mut col) = (0, 1, 1);
-    let mut out = Vec::new();
+    let mut out: Vec<Lexed> = Vec::new();
+    // Whether anything but a token has been passed since the last one.
+    let mut gap = false;
     while i < chars.len() {
         let c = chars[i];
         let (start_line, start_col) = (line, col);
+        let first = out.len();
         let advance = |n: usize, i: &mut usize, col: &mut usize| {
             *i += n;
             *col += n;
@@ -413,6 +418,7 @@ fn lex(src: &str) -> Result<Vec<Lexed>, Error> {
                 .map_err(|_| Error::at(line, col, format!("bad number `{text}`")))?;
             advance(j - i, &mut i, &mut col);
             out.push(Lexed {
+                spaced: false,
                 tok: Tok::Num(value),
                 line: start_line,
                 col: start_col,
@@ -429,7 +435,12 @@ fn lex(src: &str) -> Result<Vec<Lexed>, Error> {
                     .is_some_and(|c| c.is_alphanumeric() || *c == '_')
             });
             if let Some(tok) = unit {
-                out.push(Lexed { tok, line, col });
+                out.push(Lexed {
+                    tok,
+                    line,
+                    col,
+                    spaced: false,
+                });
                 advance(2, &mut i, &mut col);
             }
         } else if c.is_alphabetic() || c == '_' {
@@ -471,6 +482,7 @@ fn lex(src: &str) -> Result<Vec<Lexed>, Error> {
                 advance(close + 1 - i, &mut i, &mut col);
             }
             out.push(Lexed {
+                spaced: false,
                 tok: Tok::Ident(subscripted(&name)),
                 line: start_line,
                 col: start_col,
@@ -487,6 +499,7 @@ fn lex(src: &str) -> Result<Vec<Lexed>, Error> {
             let text: String = chars[start..j].iter().collect();
             advance(j + 1 - i, &mut i, &mut col);
             out.push(Lexed {
+                spaced: false,
                 tok: Tok::Str(text),
                 line: start_line,
                 col: start_col,
@@ -495,6 +508,7 @@ fn lex(src: &str) -> Result<Vec<Lexed>, Error> {
             let n = if c == '²' { 2.0 } else { 3.0 };
             advance(1, &mut i, &mut col);
             out.push(Lexed {
+                spaced: false,
                 tok: Tok::Sup(n),
                 line: start_line,
                 col: start_col,
@@ -502,6 +516,7 @@ fn lex(src: &str) -> Result<Vec<Lexed>, Error> {
         } else if c == '·' {
             advance(1, &mut i, &mut col);
             out.push(Lexed {
+                spaced: false,
                 tok: Tok::Punct("*"),
                 line: start_line,
                 col: start_col,
@@ -513,13 +528,22 @@ fn lex(src: &str) -> Result<Vec<Lexed>, Error> {
             };
             advance(p.chars().count(), &mut i, &mut col);
             out.push(Lexed {
+                spaced: false,
                 tok: Tok::Punct(p),
                 line: start_line,
                 col: start_col,
             });
         }
+        match out.get_mut(first) {
+            Some(token) => {
+                token.spaced = gap;
+                gap = false;
+            }
+            None => gap = true,
+        }
     }
     out.push(Lexed {
+        spaced: false,
         tok: Tok::Eof,
         line,
         col,
@@ -1576,6 +1600,8 @@ impl Parser {
         }
     }
 
+    /// Products and quotients, left to right. Factors with a space between them multiply here,
+    /// as `a b` and `1/2 π` do, so the space ends a denominator: `1/2 π` is π/2.
     fn term(&mut self) -> Result<Expr, Error> {
         let mut left = self.product()?;
         loop {
@@ -1583,6 +1609,8 @@ impl Parser {
                 "Multiply"
             } else if self.eat("/") {
                 "Divide"
+            } else if self.side_by_side() {
+                "Multiply"
             } else {
                 return Ok(left);
             };
@@ -1590,11 +1618,11 @@ impl Parser {
         }
     }
 
-    /// Factors written side by side multiply, as `2π`, `2(x + 1)`, `(a + b)(a - b)` and `a b`.
-    /// It binds tighter than `/`, so `1/2π` is 1/(2π), as a reader takes it.
+    /// Factors written right against each other multiply, as `2π`, `2(x + 1)` and
+    /// `(a + b)(a - b)`. They bind tighter than `/`, so `1/2π` is 1/(2π), as a reader takes it.
     fn product(&mut self) -> Result<Expr, Error> {
         let mut left = self.unary()?;
-        while self.side_by_side() {
+        while self.side_by_side() && !self.toks[self.pos].spaced {
             left = Expr::app("Multiply", vec![left, self.power()?]);
         }
         Ok(left)
@@ -1861,6 +1889,16 @@ mod tests {
         assert_eq!(expr("π₁"), Expr::sym("π_1"));
         // Tighter than `/`, as a reader takes `1/2π`.
         same("1/2π", "1/(2·π)");
+        // A space ends the denominator, so what follows multiplies the quotient.
+        same("1/2 π", "(1/2)·π");
+        same("(k - 1)/N π - π", "((k - 1)/N)·π - π");
+        same("x/2π r", "(x/(2·π))·r");
+        same("6/2(1 + 2)", "6/(2·(1 + 2))");
+        same("6/2 (1 + 2)", "(6/2)·(1 + 2)");
+        same("a b c", "a·b·c");
+        same("a b^2 c", "a·b^2·c");
+        // A comment or the end of a line isn't a space between factors.
+        same("1/2 // half\n", "1/2");
         // A name before `(` is a call, and two letters together are one name.
         assert_eq!(expr("f(x)"), Expr::app("f", vec![Expr::sym("x")]));
         assert_eq!(expr("ab"), Expr::sym("ab"));

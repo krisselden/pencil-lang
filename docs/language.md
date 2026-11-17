@@ -301,9 +301,11 @@ colors every `a`. A renderer measures the text with its own font, and core says 
 
 ## Expressions
 
-Numbers, names, `+ - * / ^`, `·` for multiply, `²` and `³`, unary `-`, and calls. Factors side by side multiply, as `2π`, `2(x + 1)`, `(a + b)(a - b)` and `a b`, and bind
-tighter than `/`, so `1/2π` is 1/(2π). A product doesn't reach past the end of its line or a word that follows an expression,
-such as `for`, `in`, `step` or `tag`. A name right before `(` is a call, and letters together are one name, so `ab` is a name and `a b` is a product. The
+Numbers, names, `+ - * / ^`, `·` for multiply, `²` and `³`, unary `-`, and calls. Factors side by side multiply, as `2π`, `2(x + 1)`, `(a + b)(a - b)` and `a b`. Right against
+each other they bind tighter than `/`, so `1/2π` is 1/(2π). A space ends that: `1/2 π` is π/2, and `(k - 1)/N π` is the quotient times π, as it
+reads in Desmos, where the fraction's bar stops. A product doesn't reach past the end of its line or a word that follows an expression,
+such as `for`, `in`, `step` or `tag`. A function's name before `(` is a call. Any other name there multiplies the parentheses, so `π(t - 1)` and
+`a (b + c)` are products, and a power after them is the parentheses' own: `a(b + c)²` is a·(b + c)². Letters together are one name, so `ab` is a name and `a b` is a product. The
 constants' own glyphs `π`, `ℯ`, `ⅈ` and `ⅇ` never join a name, so `2πi`, `2πr` and `iπ` are products, and `π_1` is still a name. `(a, b)` is a
 point, which is also a complex number (see below), and `P.x` and `P.y` read one. Names can be Unicode. A subscript is part of a name, and
 `x1`, `x_1`, `x₁` and `x_{1}` are all the name `x_1`, as in Desmos and LaTeX; digits inside a name, as in `p2q`, aren't one. `time` is always available. `pi` and `π` are π, and `e`

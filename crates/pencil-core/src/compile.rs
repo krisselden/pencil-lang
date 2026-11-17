@@ -551,9 +551,49 @@ impl Lowerer {
         }
     }
 
+    /// Whether `name` is a value here, and not a function: a constant, a param, or something the
+    /// figure defines.
+    fn is_value(&self, name: &str, locals: &Locals) -> bool {
+        !self.functions.contains_key(name)
+            && !is_built_in(name)
+            && (locals.contains_key(name)
+                || self.shapes.contains_key(name)
+                || self.scalars.contains(name)
+                || SIGNALS.contains(&name)
+                || CONSTANTS.contains(&name)
+                || written_constant(name).is_some())
+    }
+
+    /// What `name(…)` means when `name` is a value and not a function: their product, as
+    /// `π(t - 1)` and `a(b + c)` are in Desmos. A power after it is the parentheses' own, so
+    /// `a(b + c)²` is a·(b + c)².
+    fn times_parentheses(&self, e: &Expr, locals: &Locals) -> Option<Expr> {
+        let product = |name: &String, inside: &[Expr]| {
+            let inside = match inside {
+                [] => return None,
+                [one] => one.clone(),
+                parts => Expr::app("Tuple", parts.to_vec()),
+            };
+            self.is_value(name, locals)
+                .then(|| (Expr::Sym(name.clone()), inside))
+        };
+        let Expr::App(head, args) = e else {
+            return None;
+        };
+        if let ("Power", [Expr::App(name, inside), power]) = (head.as_str(), args.as_slice()) {
+            let (value, inside) = product(name, inside)?;
+            return Some(mul(value, Expr::app("Power", vec![inside, power.clone()])));
+        }
+        let (value, inside) = product(head, args)?;
+        Some(mul(value, inside))
+    }
+
     fn lower(&self, e: &Expr, locals: &Locals, depth: usize) -> Result<Val, Error> {
         if depth > MAX_INLINE_DEPTH {
             return Err(Error::new("functions nest too deeply, or recurse"));
+        }
+        if let Some(product) = self.times_parentheses(e, locals) {
+            return self.lower(&product, locals, depth + 1);
         }
         Ok(match e {
             Expr::Num(_) => Val::Scalar(e.clone()),
@@ -4646,6 +4686,43 @@ mod tests {
         // Scaling and adding points still mean what they did.
         close("z·2", (6.0, 8.0));
         close("z + w", (1.0, 4.5));
+    }
+
+    #[test]
+    fn a_value_before_parentheses_multiplies_them() {
+        let number = |expr: &str| {
+            let doc = format!("let a = 5\nfn f(x) = x + 1\nlet v = {expr}");
+            let s = scene(&doc).unwrap_or_else(|e| panic!("{expr}: {e}"));
+            env_of(&s, 0.0).get("v").unwrap()
+        };
+        let near = |expr: &str, want: f64| {
+            let got = number(expr);
+            assert!((got - want).abs() < 1e-12, "{expr}: {got}, wanted {want}");
+        };
+        use std::f64::consts::{E, PI};
+        near("π(1 + 2)", 3.0 * PI);
+        near("π (1 + 2)", 3.0 * PI);
+        near("2π(1 + 2)", 6.0 * PI);
+        near("pi(2)", 2.0 * PI);
+        near("e(2)", 2.0 * E);
+        near("a(1 + 2)", 15.0);
+        near("2 a (3)", 30.0);
+        // A power is the parentheses' own.
+        near("a(1 + 2)²", 45.0);
+        near("a(2)^3", 40.0);
+        // Still tighter than `/` when nothing separates them.
+        near("1/a(2)", 0.1);
+        // A function is still called, with a space or without.
+        near("f(2)", 3.0);
+        near("f (2)", 3.0);
+        near("a f(2)", 15.0);
+        // A value times a point scales it.
+        let scaled = complex_value("t(3, 4)");
+        assert!((scaled.0 - 2.1).abs() < 1e-12 && (scaled.1 - 2.8).abs() < 1e-12);
+        assert_eq!(complex_value("i(2)"), (0.0, 2.0));
+        // A name that is nothing is still an unknown function.
+        let err = scene("let v = sine(2)").unwrap_err().to_string();
+        assert!(err.contains("unknown function `sine`"), "{err}");
     }
 
     /// The numbers against Rust's own functions, and the complex values against Python's `cmath`,
