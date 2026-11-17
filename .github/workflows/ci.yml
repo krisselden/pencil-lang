@@ -14,9 +14,10 @@ concurrency:
 jobs:
   check:
     runs-on: ubuntu-latest
+    # To push the built site to the `deploy` branch. A pull request from a fork doesn't get this.
+    permissions:
+      contents: write
     env:
-      # Whether the repo has what publishing needs. A fork, or a pull request from one, doesn't.
-      CAN_PUBLISH: ${{ secrets.CLOUDFLARE_API_TOKEN != '' }}
       # The command has its label fonts built in, from packages/figure/fonts, so a figure with text
       # is drawn here as it is anywhere.
       CAN_DRAW_TEXT: 'true'
@@ -68,11 +69,22 @@ jobs:
       - name: Build the site
         if: env.CAN_DRAW_TEXT == 'true'
         run: pnpm --dir site build
-      # Only from main, and only after everything above has passed.
-      - name: Publish the site
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && env.CAN_PUBLISH == 'true' && env.CAN_DRAW_TEXT == 'true'
-        run: pnpm --dir site exec wrangler deploy
+      # Only from main, and only after everything above has passed. Cloudflare is connected to the
+      # repo and publishes what it finds on the `deploy` branch, with no build of its own: it can't
+      # build the site, which takes Rust and a GPU. The branch is one commit, replaced each time,
+      # holding the built files and the Worker's config, so the repo doesn't grow with every build.
+      - name: Hand the built site to Cloudflare
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && env.CAN_DRAW_TEXT == 'true'
+        run: |
+          out="$(mktemp -d)"
+          cp -R site/dist "$out/dist"
+          cp site/wrangler.jsonc "$out/wrangler.jsonc"
+          cd "$out"
+          git init --quiet --initial-branch=deploy
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add --all
+          git commit --quiet --message "The site, built from $GITHUB_SHA"
+          git push --force "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" deploy
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          WRANGLER_SEND_METRICS: 'false'
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

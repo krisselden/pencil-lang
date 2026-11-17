@@ -16,19 +16,25 @@ pnpm preview                  # serves site/dist on http://localhost:4322
 ## Deploying
 
 The site is a Cloudflare Worker of static files (`wrangler.jsonc`), named `pencil-lang`. CI builds the site on
-every push and pull request, and publishes it from `main` once the checks have passed
-(`.github/workflows/ci.yml`). It builds on GitHub and not on Cloudflare because a build compiles the Rust and
-draws each figure's poster on a GPU, which CI has in software and Cloudflare's build machines don't.
+every push and pull request (`.github/workflows/ci.yml`). It builds on GitHub and not on Cloudflare because a build
+compiles the Rust and draws each figure's poster on a GPU, which CI has in software and Cloudflare's build machines
+don't.
+
+Publishing takes no token. From `main`, once the checks have passed, CI pushes the built files and `wrangler.jsonc`
+to the `deploy` branch, as one commit that replaces the last. Cloudflare is connected to the repo (Workers Builds),
+and publishes that branch as it is. Its settings for the Worker, under Settings, Build:
+
+- Production branch: `deploy`, with builds for other branches off, so a push to `main` doesn't start one.
+- Root directory: `/`.
+- Build command: none.
+- Deploy command: `npx wrangler deploy`.
 
 `pencil` has its label fonts built in (`packages/figure/fonts`), so a poster with text is drawn on CI's Linux as it is
 on a Mac. `CAN_DRAW_TEXT` in the workflow, which held the build and the publish back while the fonts were macOS's, is
 `'true'` since 2026-11-16. That first build on CI hasn't run yet: until it has, `pnpm deploy` from a Mac is the way
 that's known to work.
 
-Publishing needs two secrets in the GitHub repo, `CLOUDFLARE_API_TOKEN` (a token made from Cloudflare's
-"Edit Cloudflare Workers" template) and `CLOUDFLARE_ACCOUNT_ID`. Without them the site is still built, and the
-publish step is skipped. `pnpm deploy` does the same from a machine with `wrangler login`, after the two builds
-above.
+`pnpm deploy` publishes from a machine with `wrangler login`, after the two builds above.
 
 The figures come through `@pencil-lang/figure`, the package in `packages/figure`, which the site is the first user of:
 
