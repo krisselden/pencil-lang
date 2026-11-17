@@ -26,7 +26,7 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { PUBLIC } from './build.js';
 
-export { build, PUBLIC } from './build.js';
+export { alternates, build, PUBLIC } from './build.js';
 
 const PACKAGE = fileURLToPath(new URL('..', import.meta.url));
 

@@ -8,7 +8,7 @@ compiles is only read by the WASM built from the same source.
 | `@pencil-lang/figure` | Defines `<pencil-figure>`, and exports `PencilFigure`. |
 | `@pencil-lang/figure/host` | The WASM as a page calls it: `ready()`, `Player`, `gather`, `uses`, `inspect`, `from_latex` and the rest. |
 | `@pencil-lang/figure/pack` | `pack` and `unpack`: a figure's sources as a string for a link's `#pen=`, which the playground opens. |
-| `@pencil-lang/figure/astro` | The Astro integration (the default export) and `build()`. |
+| `@pencil-lang/figure/astro` | The Astro integration (the default export), `build()` and `alternates()`. |
 | `@pencil-lang/figure/Figure.astro` | The Astro component. |
 
 It isn't published yet. From another project, install it from a checkout, after building the WASM into `pkg/` here:
@@ -84,6 +84,11 @@ import Figure from '@pencil-lang/figure/Figure.astro';
 figure's `info` (its size, params with their ranges, beats and captions, and the colors its sheets name) and its
 `moment` (the time, and every param's value and range, where the poster shows it), to write its controls in their
 first state before any script runs, or with `card: true` for a 1200×630 image for sharing.
+
+`alternates({ sheets, dark, narrow, narrowMedia })` gives the sets of sheets the component builds a figure under: its
+own as `sheets`, and as `others` each `{ media, sheets }` it writes a `<source>` for. A page that swaps one figure
+for another, as a choice of styles does, swaps those `<source>`s too: one whose media matches is used before the
+element's own attributes.
 
 With `playground` set on the integration to a playground's address, as `https://pencil-lang.dev/playground/`,
 `build()` also gives `playground`: a link that opens the figure's sources there, for a reader to read and change. A

@@ -20,7 +20,7 @@
 // A build knows what such a figure will fetch once its script runs, the compiled figure and the
 // WASM, so a line of script in the page starts on them as it's read, behind the poster.
 // Anything else (`id`, `class`, `params`, `paused`, `gl`, `data-*`) goes on `<pencil-figure>`.
-import { build } from './build.js';
+import { alternates, build } from './build.js';
 import wasm from '../pkg/pencil_web_bg.wasm?url';
 
 interface Props {
@@ -37,19 +37,9 @@ interface Props {
   [attribute: string]: unknown;
 }
 
-const { src, sheets, dark, narrow, narrowMedia = '(max-width: 600px)', alt, poster = {}, priority = false, ...attributes } = Astro.props;
-const list = (value: unknown) => (Array.isArray(value) ? value : String(value ?? '').split(/\s+/).filter(Boolean));
-const [always, whenDark, whenNarrow] = [list(sheets), list(dark), list(narrow)];
-const DARK = '(prefers-color-scheme: dark)';
-
-// As in `<picture>`, the first that matches wins, so the narrowest case goes first.
-const choices = [
-  whenNarrow.length && whenDark.length
-    ? { media: `${narrowMedia} and ${DARK}`, sheets: [...always, ...whenNarrow, ...whenDark] }
-    : null,
-  whenDark.length ? { media: DARK, sheets: [...always, ...whenDark] } : null,
-  whenNarrow.length ? { media: narrowMedia, sheets: [...always, ...whenNarrow] } : null,
-].filter((choice) => choice !== null);
+const { src, sheets, dark, narrow, narrowMedia, alt, poster = {}, priority = false, ...attributes } = Astro.props;
+// As in `<picture>`, the first choice that matches wins, so the narrowest case comes first.
+const { sheets: always, others: choices } = alternates({ sheets, dark, narrow, narrowMedia });
 
 const [main, ...others] = await Promise.all(
   [{ sheets: always }, ...choices].map((choice) => build({ src, sheets: choice.sheets, ...poster })),

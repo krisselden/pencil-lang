@@ -88,6 +88,28 @@ async function fresh(manifestFile, cfg) {
   }
 }
 
+const list = (value) => (Array.isArray(value) ? value : String(value ?? '').split(/\s+/).filter(Boolean));
+
+/**
+ * The sets of sheets a reader can get: the figure's own as `sheets`, and as `others` each set that
+ * stands in for them under a media query, `{ media, sheets }`. `dark` are added after `sheets`
+ * when the reader's theme is dark, and `narrow` before those when `narrowMedia` matches. As in
+ * `<picture>` the first that matches wins, so the narrowest case goes first. Each of `sheets`,
+ * `dark` and `narrow` is a list, or names with spaces between.
+ */
+export function alternates({ sheets, dark, narrow, narrowMedia = '(max-width: 600px)' }) {
+  const [always, whenDark, whenNarrow] = [list(sheets), list(dark), list(narrow)];
+  const DARK = '(prefers-color-scheme: dark)';
+  const others = [
+    whenNarrow.length && whenDark.length
+      ? { media: `${narrowMedia} and ${DARK}`, sheets: [...always, ...whenNarrow, ...whenDark] }
+      : null,
+    whenDark.length ? { media: DARK, sheets: [...always, ...whenDark] } : null,
+    whenNarrow.length ? { media: narrowMedia, sheets: [...always, ...whenNarrow] } : null,
+  ].filter((choice) => choice !== null);
+  return { sheets: always, others };
+}
+
 /** A link into a playground that carries everything the figure was built from, or nothing if
  * the integration wasn't given a playground. */
 async function playgroundLink(cfg, name, doc, sheets, sources) {

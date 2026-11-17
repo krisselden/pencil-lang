@@ -5,7 +5,7 @@
 // says of the figure, as it will stand when it starts and disabled, so they're in the page with
 // their size before the figure is. `<figure-controls>` turns them on when it loads.
 import PencilFigure from '@pencil-lang/figure/Figure.astro';
-import { build } from '@pencil-lang/figure/astro';
+import { alternates, build } from '@pencil-lang/figure/astro';
 import type { Look } from '../lib/figures';
 import { markup, shape } from '../scripts/controls-markup.js';
 
@@ -39,14 +39,22 @@ const poster = { time: start, params: held };
 // is known here, so it's that wide before it loads. The stylesheet says when `--fit-width` applies.
 const { info, moment } = await build({ src: look.pen, sheets: look.sheets, ...poster });
 const fit = info ? `--fit-width: calc(85vh * ${info.size[0] / info.size[1]})` : undefined;
-// A figure with more than one look has each built, and its controls swap one for another.
+// A figure with more than one look has each built, and its controls swap one for another. A look
+// has its own sheets for a dark theme or a narrow page, or none, so each brings the `<source>`s
+// the figure needs while it's the one showing: the first look's would otherwise go on applying.
+type Built = Awaited<ReturnType<typeof build>>;
+const from = (built: Built) =>
+  built.src ? { src: built.src, sheets: built.sheets.join(' ') } : { compiled: built.compiled };
 const choices = looks.length > 1
   ? JSON.stringify(
       await Promise.all(
         looks.map(async (each) => {
-          const built = await build({ src: each.pen, sheets: each.sheets, ...poster });
-          const from = built.src ? { src: built.src, sheets: built.sheets.join(' ') } : { compiled: built.compiled };
-          return { name: each.name, playground: each.playground, ...from };
+          const { sheets, others } = alternates({ sheets: each.sheets, dark: each.dark, narrow: each.narrow });
+          const [main, ...rest] = await Promise.all(
+            [{ sheets }, ...others].map((choice) => build({ src: each.pen, sheets: choice.sheets, ...poster })),
+          );
+          const sources = rest.map((built, i) => ({ media: others[i].media, ...from(built) }));
+          return { name: each.name, playground: each.playground, ...from(main), sources };
         }),
       ),
     )

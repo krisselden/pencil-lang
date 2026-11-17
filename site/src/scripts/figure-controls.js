@@ -10,7 +10,8 @@
 //
 // `bare` holds nothing, and only says why a figure couldn't be drawn, if it couldn't.
 // `looks` on the element, a JSON list of `{ name, compiled }` or `{ name, src, sheets }`, adds a
-// choice between them, for a figure shown in more than one style.
+// choice between them, for a figure shown in more than one style. A look's `sources` are the
+// `<source>`s the figure has while it shows, each `{ media, compiled }` or `{ media, src, sheets }`.
 import { markup, shape, steps, beatAt, valueText, timeText } from './controls-markup.js';
 
 class FigureControls extends HTMLElement {
@@ -118,6 +119,17 @@ class FigureControls extends HTMLElement {
         if (look[name] == null) figure.removeAttribute(name);
         else figure.setAttribute(name, look[name]);
       }
+      // The figure's `<source>`s are for the look it had, and one whose media matches is used
+      // before the figure's own attributes: a reader in a dark theme would keep the first look's
+      // dark sheets whatever they picked. So this look's take their place.
+      for (const source of figure.querySelectorAll(':scope > source')) source.remove();
+      figure.prepend(
+        ...(look.sources ?? []).map((each) => {
+          const source = document.createElement('source');
+          for (const [name, value] of Object.entries(each)) source.setAttribute(name, value);
+          return source;
+        }),
+      );
       this.dispatchEvent(new CustomEvent('look', { detail: look, bubbles: true }));
     }
   }
