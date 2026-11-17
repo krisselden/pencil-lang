@@ -20,7 +20,12 @@
 //   no sources, so the link carries them, after its `#`, which no server is sent.
 // - `bin`: the `pencil` command. By default PENCIL_BIN, then `target/release/pencil` in the repo
 //   around `root` or around this package, then `pencil` on the PATH.
-import { cp, readFile, rm, stat } from 'node:fs/promises';
+// - `kept`: a folder in the project to keep built figures in, for a site whose build runs where
+//   there's no `pencil` or no GPU. Figures are built where there are, and the folder is committed
+//   with the site. A build uses what's kept for a figure while its sources hold what they did
+//   when it was built and the package's WASM is the build that compiled it. Otherwise it builds
+//   the figure again, or stops and says which one, if `pencil` isn't there.
+import { cp, readdir, readFile, rm, stat } from 'node:fs/promises';
 import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
@@ -66,7 +71,7 @@ async function wasmBuild() {
   return wasm.fingerprint();
 }
 
-export default function pencil({ root, bin, playground } = {}) {
+export default function pencil({ root, bin, playground, kept } = {}) {
   let cfg;
   return {
     name: '@pencil-lang/figure',
@@ -77,6 +82,7 @@ export default function pencil({ root, bin, playground } = {}) {
           root: figures,
           bin: findBin(bin && path.resolve(fileURLToPath(config.root), bin), figures),
           cache: path.join(fileURLToPath(config.cacheDir), 'pencil'),
+          kept: kept ? path.resolve(fileURLToPath(config.root), kept) : null,
           wasm: await wasmBuild(),
           dev: command === 'dev',
           base: config.base,
@@ -126,6 +132,7 @@ export default function pencil({ root, bin, playground } = {}) {
       // What goes out is what this build's pages asked for, and nothing an earlier one left.
       'astro:build:start': async () => {
         await rm(path.join(cfg.cache, 'out'), { recursive: true, force: true });
+        await rm(path.join(cfg.cache, 'used'), { recursive: true, force: true });
       },
 
       'astro:build:done': async ({ dir, logger }) => {
@@ -133,6 +140,13 @@ export default function pencil({ root, bin, playground } = {}) {
         if (!existsSync(out)) return;
         await cp(out, path.join(fileURLToPath(dir), PUBLIC), { recursive: true });
         logger.info(`wrote the figures to ${PUBLIC}/`);
+        // A figure whose params or sheets changed is kept under another name, and the old folder
+        // stays. Nothing here removes one: a build that leaves drafts out asks for fewer.
+        if (cfg.kept && existsSync(cfg.kept)) {
+          const used = new Set(await readdir(path.join(cfg.cache, 'used')).catch(() => []));
+          const spare = (await readdir(cfg.kept)).filter((name) => !name.startsWith('.') && !used.has(name));
+          if (spare.length) logger.info(`kept but not asked for by this build: ${spare.join(', ')}`);
+        }
       },
     },
   };

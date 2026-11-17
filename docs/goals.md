@@ -110,11 +110,17 @@ GLSL shaders draw through one SVG system (`src/lib/plot.ts`), and nothing is mad
    `<Figure>` in it. In short: a build makes a compiled figure, a poster and what the page needs to know about the figure,
    for each set of sheets a page can pick. The element shows the poster until its first frame and picks the set by media
    query. The Astro component does both for a page. Not done: trying it on the blog.
+
+   **Decided with Kris on 2026-11-17, for the blog:** Cloudflare builds its preview on every push, where there's no
+   `pencil` and no GPU, so the blog keeps its built figures in its repo. The integration's `kept` names the folder: a
+   figure is built on a machine that has both and committed, and a build uses it while its sources hold what they did.
+   The blog installs the package from npm, as any other site would. Not chosen: building the blog on GitHub as this
+   site is, which makes a preview take minutes, and teaching `pencil` to draw on the CPU, which is the most work.
 3. **`pencil-lang.dev`:** the docs, the playground and the corpus as demos. An Astro site in `site/`, so it's the first user of
-   the integration, before the blog. **A first version is built (2026-11-14)** and not deployed: a landing page, the language
-   reference rendered from `docs/language.md`, the corpus and the explainer drawn live, and the playground in a frame
-   (`site/README.md`). Since 2026-11-15 its figures come through the package's `<Figure>`: compiled at build, each with a
-   poster, and no sources shipped. Kris hasn't looked at it.
+   the integration, before the blog. **Deployed on 2026-11-17** (`site/README.md`, Deploying): a landing page, the language
+   reference rendered from `docs/language.md`, the corpus and the explainer drawn live, and the playground in a frame.
+   Since 2026-11-15 its figures come through the package's `<Figure>`: compiled at build, each with a poster, and no
+   sources shipped. CI builds it, since a build needs `pencil` and a GPU, and Cloudflare publishes what CI built.
 4. **The move itself is tracked in `docs/migration.md`:** the order, what's done, and each of the site's 31 figures with the
    corpus figure that covers it and what Pencil lacks for it. **The Doyle series goes first** (Kris, 2026-11-14), in its own
    order, and the shader post's three GLSL figures stay GLSL, since that post is about writing a shader. Keyboard use comes
@@ -172,8 +178,9 @@ Proposed by Claude on 2026-11-09, not yet agreed:
 - **Should a `fit` view ease** when something it fits vanishes? It jumps, which is correct.
 - **Where do easing and themes live?** The power in moves is a language default, and a theme is where it belongs. Sheets are
   picked by the page, since the language has no media query.
-- **Does Cloudflare Workers static assets take a `_headers` file** for cross-origin `.pen` embeds? Unconfirmed
-  (`design-notes.md`, "Hosting").
+- **Does a `_headers` file's `Access-Control-Allow-Origin` reach a cross-origin `.pen` embed?** Cloudflare Workers
+  static assets take the file: the site sets how long a browser keeps each kind of file in one (`site/public/_headers`,
+  2026-11-17). The header an embed from another origin needs hasn't been tried (`design-notes.md`, "Hosting").
 - **Where is `SPEC/18`?** The July 9 chat mentions it, and the plan's list stops at 17.
 - **The specs' own open questions** (SPEC/16 §8, SPEC/50 §7) are about relations, rigs and extensions, none of which a figure has
   needed yet.

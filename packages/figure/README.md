@@ -77,6 +77,13 @@ import Figure from '@pencil-lang/figure/Figure.astro';
   media picks, at low priority, so they start as the page is read and not after the element's script has run. The
   element takes them over, and each is downloaded once. (`<link rel="preload" as="fetch">` isn't used: WebKit fetches
   the file again.)
+- **A site can keep its built figures in its repo,** for a build that runs where there's no `pencil` or no GPU, as
+  most hosts' builders are. `pencil({ kept: 'figures' })` builds into that folder, and the folder is committed with
+  the site. A build uses what's kept for a figure for as long as its sources hold what they did when it was built,
+  and builds it again otherwise. Where `pencil` isn't there, it stops and says which figure needs building and why.
+  A compiled figure is read only by the build of Pencil that wrote it, so after the package is upgraded every figure
+  is built again, with a `pencil` from the same source as the package. A build names the folders nothing asked for,
+  and leaves them: one that skips drafts asks for fewer.
 - **`alt` is required.** It's the poster's text and the figure's name.
 - Anything else, such as `id`, `class`, `params`, `paused` or `data-*`, goes on `<pencil-figure>`.
 

@@ -28,6 +28,13 @@ below can ship when it's done.
 
    **Built 2026-11-15:** `@pencil-lang/figure` in `packages/figure`, with `<Figure>` for Astro, and `pencil-lang.dev` draws
    through it. Left: the blog installs it and one done figure goes through it. The blog is on the same Astro, 7.
+
+   **Tried 2026-11-17, in a scratch copy of the blog:** the package, packed as npm would ship it, installs there, and a
+   page with the squaring figure builds with `pencil` and again without it, from the figures the first build kept
+   (`goals.md`, The blog on Pencil). The figure runs. Left: publishing the package to npm, which is Kris's to do, then the
+   same in the blog itself, with `SquareZ` in its post. Found on the way: the blog's theme toggle sets `data-theme` on
+   the page, and the element picks a figure's dark sheets by `prefers-color-scheme` alone, so a reader who toggles would
+   get the page in one theme and its figures in the other. That needs settling before the first figure goes in.
 1. **Keyboard use, with the host.** Kris: accessibility matters, so a ported figure keeps the keys it has on the site, and none
    is ported without them. Twelve figures have them (see "Keyboard, hover and linked panels").
    1. Each handle is something a reader can tab to, named for its point, with a visible focus.

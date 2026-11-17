@@ -3,10 +3,12 @@
 // page can too, for a figure's `info` or its card.
 //
 // Nothing is made twice: what a build wrote is kept in Astro's cache, and used again until one of
-// the files that went into it, or `pencil` itself, is newer.
+// the files that went into it, or `pencil` itself, is newer. A site can keep it in its own repo
+// instead (the integration's `kept`), and then a build that has no `pencil` uses what was
+// committed, for as long as the sources still hold what they did.
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { cp, mkdir, readdir, readFile, rm, stat } from 'node:fs/promises';
+import { cp, mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { pack } from '../src/pack.js';
@@ -16,8 +18,9 @@ export const PUBLIC = '_pencil';
 
 /** What the integration worked out, which it leaves in the environment for the pages it renders,
  * since they're bundled and can run apart from it: where the figures are (`root`), the `pencil`
- * command (`bin`), where to keep what's made (`cache`), which build of the core the package's
- * WASM is (`wasm`), whether this is `astro dev` (`dev`), and the site's `base`. */
+ * command (`bin`), where to keep what's made (`cache`), the folder in the site's repo that holds
+ * built figures if it keeps them there (`kept`), which build of the core the package's WASM is
+ * (`wasm`), whether this is `astro dev` (`dev`), and the site's `base`. */
 export function config() {
   const text = process.env.PENCIL_FIGURE;
   if (!text) {
@@ -31,11 +34,11 @@ export function config() {
 const hash = (text) => createHash('sha1').update(text).digest('hex');
 const modified = async (file) => (await stat(file)).mtimeMs;
 
-/** A hash of every file in `dir`, by its name and its bytes. */
+/** A hash of every file a build wrote into `dir`, by its name and its bytes. */
 async function contents(dir) {
   const sum = createHash('sha1');
   for (const file of (await readdir(dir)).sort()) {
-    sum.update(`${file}\0`).update(await readFile(path.join(dir, file)));
+    if (file !== STAMP) sum.update(`${file}\0`).update(await readFile(path.join(dir, file)));
   }
   return sum.digest('hex');
 }
@@ -62,29 +65,54 @@ const run = (bin, args, cwd) =>
     execFile(bin, args, { cwd, maxBuffer: 1 << 24 }, (error, stdout, stderr) => {
       if (!error) return resolve(stdout);
       if (error.code === 'ENOENT') {
-        return reject(
-          new Error(
-            `@pencil-lang/figure: couldn't run \`${bin}\`. Build it with \`cargo build --release -p pencil-cli\`, or say where it is with the integration's \`bin\` or PENCIL_BIN.`,
-          ),
+        const missing = new Error(
+          `@pencil-lang/figure: couldn't run \`${bin}\`. Build it with \`cargo build --release -p pencil-cli\`, or say where it is with the integration's \`bin\` or PENCIL_BIN.`,
         );
+        missing.missing = true;
+        return reject(missing);
       }
       // The CLI's own message says the file, the line and what's wrong.
       reject(new Error((stderr || stdout || error.message).trim()));
     });
   });
 
-/** Whether what's in `dir` is still what a build would write. */
-async function fresh(manifestFile, cfg) {
+/** In a folder of kept figures, what its sources held when it was built. */
+const STAMP = 'sources.sha1';
+
+/** A hash of a figure's sources, by each one's path and what it holds. */
+async function sourcesHash(sources, cfg) {
+  const sum = createHash('sha1');
+  for (const file of sources) sum.update(`${file}\0`).update(await readFile(path.resolve(cfg.root, file))).update('\0');
+  return sum.digest('hex');
+}
+
+/** What a build wrote into `dir`, as `{ manifest }` if it's still what a build would write, and
+ * otherwise `{ why }`, which says what's the matter with it. */
+async function fresh(dir, stem, cfg) {
+  let manifest;
   try {
-    const since = await modified(manifestFile);
-    const manifest = JSON.parse(await readFile(manifestFile, 'utf8'));
+    manifest = JSON.parse(await readFile(path.join(dir, `${stem}.json`), 'utf8'));
+  } catch {
+    return { why: 'nothing is built for it' };
+  }
+  try {
+    if (cfg.kept) {
+      // A checkout gives every file the time it was checked out, so what's kept in a repo is
+      // compared by what its sources hold. A compiled figure is read only by the build of the core
+      // that wrote it, so one from another build is as good as none.
+      if (manifest.build !== cfg.wasm) return { why: 'what is kept was built by another build of Pencil' };
+      const stamp = (await readFile(path.join(dir, STAMP), 'utf8')).trim();
+      if (stamp !== (await sourcesHash(manifest.sources, cfg))) return { why: 'a source has changed since it was built' };
+      return { manifest };
+    }
+    const since = await modified(path.join(dir, `${stem}.json`));
     const inputs = [...manifest.sources.map((file) => path.resolve(cfg.root, file))];
     // `pencil` is found on the PATH when it isn't a path, and then its age isn't known.
     if (path.isAbsolute(cfg.bin)) inputs.push(cfg.bin);
-    for (const file of inputs) if ((await modified(file)) > since) return null;
-    return manifest;
+    for (const file of inputs) if ((await modified(file)) > since) return { why: 'a source or `pencil` is newer' };
+    return { manifest };
   } catch {
-    return null;
+    return { why: 'a source has changed since it was built' };
   }
 }
 
@@ -157,10 +185,16 @@ async function make(cfg, key, { src, sheets, time, params, size, card }) {
     ? { src: `${base}/src/${src}`, sheets: sheets.map((sheet) => `${base}/src/${sheet}`) }
     : {};
   const stem = path.basename(src).replace(/\.[^.]+$/, '');
-  const dir = path.join(cfg.cache, 'made', `${stem}-${key.slice(0, 12)}`);
+  const folder = `${stem}-${key.slice(0, 12)}`;
+  const dir = path.join(cfg.kept ?? path.join(cfg.cache, 'made'), folder);
   const manifestFile = path.join(dir, `${stem}.json`);
+  // So a build can say afterwards which kept folders nothing asked for.
+  if (cfg.kept && !cfg.dev) {
+    await mkdir(path.join(cfg.cache, 'used'), { recursive: true });
+    await writeFile(path.join(cfg.cache, 'used', folder), '');
+  }
 
-  let manifest = await fresh(manifestFile, cfg);
+  let { manifest, why } = await fresh(dir, stem, cfg);
   if (!manifest) {
     const args = ['build', src, ...sheets.flatMap((sheet) => ['--style', sheet])];
     if (time != null) args.push('--t', String(time));
@@ -174,11 +208,22 @@ async function make(cfg, key, { src, sheets, time, params, size, card }) {
       await turn(() => run(cfg.bin, args, cfg.root));
     } catch (error) {
       // While a figure is being written it's often broken for a moment.
-      if (!cfg.dev) throw error;
-      console.warn(`[pencil] ${error.message}`);
-      return { ...sources, compiled: null, poster: null, card: null, info: null, moment: null, playground: null, hash: null };
+      if (cfg.dev) {
+        console.warn(`[pencil] ${error.message}`);
+        return { ...sources, compiled: null, poster: null, card: null, info: null, moment: null, playground: null, hash: null };
+      }
+      // A site that keeps its figures is built where there's no `pencil`, and then the one thing
+      // to say is which figure isn't what was committed, and why.
+      if (cfg.kept && error.missing) {
+        const kept = path.relative(process.cwd(), cfg.kept) || '.';
+        throw new Error(
+          `@pencil-lang/figure: \`${src}\`${sheets.length ? ` with ${sheets.join(', ')}` : ''} needs building (${why}), and \`${cfg.bin}\` isn't here to build it. Build the site where \`pencil\` and a GPU are, and commit \`${kept}\`.`,
+        );
+      }
+      throw error;
     }
     manifest = JSON.parse(await readFile(manifestFile, 'utf8'));
+    if (cfg.kept) await writeFile(path.join(dir, STAMP), `${await sourcesHash(manifest.sources, cfg)}\n`);
   }
 
   if (manifest.build !== cfg.wasm) {
@@ -194,7 +239,7 @@ async function make(cfg, key, { src, sheets, time, params, size, card }) {
   const out = path.join(cfg.cache, 'out', name);
   if (!existsSync(path.join(out, `${stem}.json`))) {
     await mkdir(path.dirname(out), { recursive: true });
-    await cp(dir, out, { recursive: true });
+    await cp(dir, out, { recursive: true, filter: (file) => path.basename(file) !== STAMP });
   }
   const url = (file) => `${base}/${name}/${file}`;
   const [one, two] = manifest.poster.images;

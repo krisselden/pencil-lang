@@ -32,6 +32,9 @@
     "fonts",
     "astro"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
   "sideEffects": [
     "./src/element.js",
     "./astro/client.js"
