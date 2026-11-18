@@ -58,6 +58,11 @@ Nothing from the rest of the repo is copied into `src/`:
   so it finds them as it does under `scripts/serve.py`. A build points its loader at the WASM the site's pages already
   ship, so a reader fetches that once.
 
+Every page's link preview (`og:image` and `twitter:image`, written by `src/layouts/Base.astro`) is the 1200×630 image
+that is the poster of the hearts figure under the glow sheet, the home page's hero, and then
+`corpus/008-hearts/card.style`, which reshapes the figure to that size so the poster needs no padding. A pasted address
+shows the same image whatever the page.
+
 `src/lib/figures.ts` lists the demos, with the sheets each figure's page in `web/` loads.
 `src/scripts/controls-markup.js` writes each demo's controls from what the figure declares: into the page at build,
 disabled and in their first state, so nothing moves when the figure loads. `src/scripts/figure-controls.js` turns them

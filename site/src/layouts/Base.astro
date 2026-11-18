@@ -1,6 +1,7 @@
 ---
 import '../styles/site.css';
-import { REPO } from '../lib/figures';
+import { build } from '@pencil-lang/figure/astro';
+import { DEMOS, REPO } from '../lib/figures';
 
 interface Props {
   title?: string;
@@ -29,6 +30,13 @@ const nav = [
   { href: '/demos/', label: 'Demos', key: 'demos' },
   { href: '/playground/', label: 'Playground', key: 'playground' },
 ];
+// The link preview is the hearts figure the home page opens with, under the same sheets, then `card.style`,
+// which makes the figure 1200 by 630, so its poster is the card as it is, with no paper around it.
+const hearts = DEMOS.find((d) => d.id === 'hearts')!;
+const glow = hearts.looks.find((look) => look.name === 'glow.style')!;
+const { poster: card } = await build({ src: glow.pen, sheets: [...glow.sheets, 'corpus/008-hearts/card.style'] });
+const canonical = new URL(Astro.url.pathname, Astro.site).href;
+const image = card ? new URL(card.src, Astro.site).href : undefined;
 ---
 <!doctype html>
 <html lang="en">
@@ -38,6 +46,24 @@ const nav = [
     <meta name="color-scheme" content="light dark" />
     <title>{fullTitle}</title>
     <meta name="description" content={description} />
+    <link rel="canonical" href={canonical} />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Pencil" />
+    <meta property="og:title" content={fullTitle} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonical} />
+    <meta name="twitter:title" content={fullTitle} />
+    <meta name="twitter:description" content={description} />
+    {image && (
+      <>
+        <meta property="og:image" content={image} />
+        <meta property="og:image:width" content={String(card.width)} />
+        <meta property="og:image:height" content={String(card.height)} />
+        <meta property="og:image:alt" content={hearts.label} />
+        <meta name="twitter:card" content="summary_large_image" />
+        <meta name="twitter:image" content={image} />
+      </>
+    )}
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
   </head>
