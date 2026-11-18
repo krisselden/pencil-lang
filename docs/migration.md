@@ -33,8 +33,12 @@ below can ship when it's done.
    page with the squaring figure builds with `pencil` and again without it, from the figures the first build kept
    (`goals.md`, The blog on Pencil). The figure runs. Left: publishing the package to npm, which is Kris's to do, then the
    same in the blog itself, with `SquareZ` in its post. Found on the way: the blog's theme toggle sets `data-theme` on
-   the page, and the element picks a figure's dark sheets by `prefers-color-scheme` alone, so a reader who toggles would
-   get the page in one theme and its figures in the other. That needs settling before the first figure goes in.
+   the page, and the element picked a figure's dark sheets by `prefers-color-scheme` alone, so a reader who toggled would
+   have had the page in one theme and its figures in the other.
+
+   **Published 2026-11-17** as `@pencil-lang/figure@0.0.1`. **Built 2026-11-18,** for 0.0.2: a figure follows the
+   scheme a page pins with `color-scheme` in its CSS, which the blog's toggle already sets, for its sheets and its
+   poster (`packages/figure/src/scheme.js`). Left: publishing 0.0.2, and `SquareZ` in its post.
 1. **Keyboard use, with the host.** Kris: accessibility matters, so a ported figure keeps the keys it has on the site, and none
    is ported without them. Twelve figures have them (see "Keyboard, hover and linked panels").
    1. Each handle is something a reader can tab to, named for its point, with a visible focus.

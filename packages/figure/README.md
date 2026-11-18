@@ -65,6 +65,11 @@ import Figure from '@pencil-lang/figure/Figure.astro';
   `dark` added under a dark theme, and `narrow` added when `narrowMedia` matches (`(max-width: 600px)` unless said).
   The page ships the compiled figures and their posters under `_pencil/`, and no sources. A figure that doesn't
   compile stops the build with the compiler's message.
+- **A page's own theme toggle is followed.** A page that pins a theme over the reader's system says so in its CSS,
+  as `:root[data-theme='dark'] { color-scheme: dark; }`, and a figure there takes its dark sheets and its dark
+  poster, from the first paint. With `color-scheme` listing both or neither, the reader's system picks. The element
+  does this for any `<source media="(prefers-color-scheme: …)">` among its children, and looks again when `<html>`
+  or `<body>` changes an attribute (`src/scheme.js`).
 - **The poster is an image with the figure's size,** so the page is laid out before any script runs. It's offered as
   WebP, with the PNG behind it. It shows until the
   figure's first frame, and stays where a figure can't run. Nothing moves when the figure takes over. `poster={{ time,

@@ -29,6 +29,8 @@
 // already has its shape. A `<source>` child picks other sources while its `media` matches, as in
 // `<picture>`: the first that matches wins, and the element's own attributes are the rest. It can
 // give `compiled`, or `sheets` (and `src`, which is the element's if it gives none).
+// Where a page pins a theme over the reader's system, with `color-scheme` in its CSS, the element
+// answers `prefers-color-scheme` in those `media` with the page's scheme (`scheme.js`).
 //
 // Attributes: `src` and `sheets` (space-separated URLs, in order), or `compiled`, `params`
 // (`a: 0.5; beat: 2`, held as if a reader set them), `paused` to start paused, and `gl` to skip
@@ -42,6 +44,7 @@
 import { Player, figure_size, figure_size_compiled, ready, isReady, gather, ahead } from './host.js';
 import { LABEL_CSS, LabelLayer, fonts } from './labels.js';
 import { match } from './fit.js';
+import { follow, settle, unfollow } from './scheme.js';
 
 // How long time runs before it loops, for a figure that declares no `duration`.
 const LOOP = 10;
@@ -161,9 +164,9 @@ export class PencilFigure extends HTMLElement {
 
   // ---- The poster and the sources ----
 
-  /** Whether the element has a poster: any child that isn't a `<source>`. */
+  /** Whether the element has a poster: any child that isn't a `<source>`, or a script. */
   #hasPoster() {
-    return [...this.children].some((child) => child.localName !== 'source');
+    return [...this.children].some((child) => child.localName !== 'source' && child.localName !== 'script');
   }
 
   /** Shows the poster until a frame is drawn. */
@@ -227,12 +230,16 @@ export class PencilFigure extends HTMLElement {
     this.#resized.observe(this.#em);
     // Children can arrive after the element does, while the page is still being read.
     this.#children = new MutationObserver(() => {
+      // A `<source>` that has just arrived is answered too. What that changes comes back here
+      // once, and then changes nothing.
+      settle(this);
       this.#wait();
       this.#listen();
       this.#refetch();
     });
     this.#children.observe(this, { childList: true, attributes: true, subtree: true, attributeFilter: ['media', 'src', 'sheets', 'compiled'] });
     document.fonts?.addEventListener('loadingdone', this.#fontsChanged);
+    follow(this);
     this.#wait();
     this.#listen();
     this.#refetch();
@@ -251,6 +258,7 @@ export class PencilFigure extends HTMLElement {
     this.#seen?.disconnect();
     this.#resized?.disconnect();
     this.#children?.disconnect();
+    unfollow(this);
     this.#listen();
     this.#visible = false;
     this.#sync();

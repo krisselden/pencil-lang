@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>pinned</title>
+<script>
+  // A page's theme toggle, as its reader left it: `?theme=dark` stands in for what it stored.
+  const theme = new URLSearchParams(location.search).get('theme');
+  if (theme) document.documentElement.dataset.theme = theme;
+</script>
+<style>
+  :root { color-scheme: light dark; }
+  :root[data-theme='light'] { color-scheme: light; }
+  :root[data-theme='dark'] { color-scheme: dark; }
+  body { margin: 0; padding: 8px; }
+  main { max-width: 765px; margin: 0 auto; }
+  pencil-figure { touch-action: none; }
+</style>
+</head>
+<body>
+<main>
+  <pencil-figure id="figure" src="../../../../corpus/001-circle/circle.pen" sheets="../../../../corpus/theme.style ../../../../corpus/001-circle/circle.style" paused
+    aria-label="A circle in the page's colors.">
+    <source media="(prefers-color-scheme: dark)" sheets="../../../../corpus/theme.style ../../../../corpus/001-circle/circle.style ../../../../corpus/dark.style">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="./poster.svg?dark" width="400" height="400">
+      <img id="poster" src="./poster.svg" width="400" height="400" alt="A circle">
+    </picture>
+  </pencil-figure>
+</main>
+<script type="module" src="./boot.js"></script>
+</body>
+</html>
