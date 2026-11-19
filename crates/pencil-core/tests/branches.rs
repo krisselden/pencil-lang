@@ -94,6 +94,15 @@ fn a_list_counts_over_its_values_in_the_order_written() {
         dots("dots d = (i, s) for s in {-1, 1}, i in 0..1"),
         [[0.0, -1.0], [1.0, -1.0], [0.0, 1.0], [1.0, 1.0]]
     );
+    // A later range can read a list's value, a number or a point's part.
+    assert_eq!(
+        dots("dots d = (k, s) for s in {1, 2}, k in 0..s"),
+        [[0.0, 1.0], [1.0, 1.0], [0.0, 2.0], [1.0, 2.0], [2.0, 2.0]]
+    );
+    assert_eq!(
+        dots("dots d = (k, p.y) for p in {(0, 0), (0, 2)}, k in 0..p.y"),
+        [[0.0, 0.0], [0.0, 2.0], [1.0, 2.0], [2.0, 2.0]]
+    );
     // A value can read an earlier variable.
     assert_eq!(
         dots("dots d = (i, s) for i in 1..2, s in {i, -i}"),

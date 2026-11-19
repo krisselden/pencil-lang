@@ -2412,14 +2412,14 @@ fn unsigned(e: &Expr) -> Expr {
 
 /// A collection's variable over a list of values: a whole-number variable, `{var}.index`, counts
 /// through them, and `var` is the value it's at, picked as a choice param picks its option.
-/// Numbers go with points as points on the real axis.
+/// Numbers go with points as points on the real axis. Returns the value picked, written out.
 fn listed(
     var: &str,
     mut values: Vec<Val>,
     vars: &mut Vec<(String, [Expr; 2])>,
     named: &mut Vec<(String, Expr)>,
     locals: &mut Locals,
-) -> Result<(), Error> {
+) -> Result<Val, Error> {
     if values.iter().any(|v| matches!(v, Val::Point(..))) {
         for v in &mut values {
             if let Val::Scalar(x) = v {
@@ -2453,20 +2453,21 @@ fn listed(
             .map(|(before, here)| Expr::app("IfNonnegative", vec![reached.clone(), here, before]))
             .collect();
     }
-    match values[0].with_fields(fields) {
+    let picked = values[0].with_fields(fields);
+    match &picked {
         Val::Scalar(e) => {
-            named.push((var.to_string(), e));
+            named.push((var.to_string(), e.clone()));
             locals.insert(var.to_string(), Val::Scalar(Expr::sym(var)));
         }
         Val::Point(x, y) => {
             let (fx, fy) = (format!("{var}.x"), format!("{var}.y"));
-            named.push((fx.clone(), x));
-            named.push((fy.clone(), y));
+            named.push((fx.clone(), x.clone()));
+            named.push((fy.clone(), y.clone()));
             locals.insert(var.to_string(), Val::Point(Expr::sym(fx), Expr::sym(fy)));
         }
         _ => unreachable!("a list holds numbers or points"),
     }
-    Ok(())
+    Ok(picked)
 }
 
 /// What a statement needs defined first: every name it refers to, less the ones it binds
@@ -3698,8 +3699,11 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
                 } else {
                     (value, param, lets)
                 };
-                // A later variable's range can use an earlier one.
+                // A later variable's range can use an earlier one. What counts the instances sets
+                // only the variables, so a list's value is written out there, from its index,
+                // where everything after reads it by name.
                 let mut locals = Locals::new();
+                let mut counting = Locals::new();
                 let mut lowered = Vec::with_capacity(vars.len() + usize::from(signed));
                 let mut named = Vec::with_capacity(lets.len());
                 for (var, over) in vars {
@@ -3708,20 +3712,22 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
                             lowered.push((
                                 var.clone(),
                                 [
-                                    lowerer.scalar(&range[0], &locals).map_err(&fail)?,
-                                    lowerer.scalar(&range[1], &locals).map_err(&fail)?,
+                                    lowerer.scalar(&range[0], &counting).map_err(&fail)?,
+                                    lowerer.scalar(&range[1], &counting).map_err(&fail)?,
                                 ],
                             ));
                             locals.insert(var.clone(), Val::Scalar(Expr::sym(var)));
+                            counting.insert(var.clone(), Val::Scalar(Expr::sym(var)));
                         }
                         Over::List(values) => {
                             let values = values
                                 .iter()
-                                .map(|v| lowerer.lower(v, &locals, 0))
+                                .map(|v| lowerer.lower(v, &counting, 0))
                                 .collect::<Result<Vec<_>, Error>>()
                                 .map_err(&fail)?;
-                            listed(var, values, &mut lowered, &mut named, &mut locals)
+                            let picked = listed(var, values, &mut lowered, &mut named, &mut locals)
                                 .map_err(&fail)?;
+                            counting.insert(var.clone(), picked);
                         }
                     }
                 }
