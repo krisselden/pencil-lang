@@ -157,19 +157,48 @@ test.describe('a handle that sets two params', () => {
     await onFigure(page, (f) => {
       f.hold('c', 1.5);
       f.hold('d', 3);
+      f.hold('e', -1.5);
     });
     await expect.poll(() => value(page, 'c')).toBe(1.5);
+    await expect.poll(() => value(page, 'e')).toBe(-1.5);
     const [from, ...rest] = await path(page, [[0, 0], [0.5, 0.25]]);
     await page.mouse.move(from.x, from.y);
     await page.mouse.down();
     for (const p of rest) await page.mouse.move(p.x, p.y);
     await page.mouse.up();
 
-    // c's binding reads a, so it's a's again. d's reads time, so it stays held.
+    // c's binding reads a and e's reads b, so each goes back to its binding. d's reads time,
+    // so it stays held.
     const now = await held(page);
     expect(Object.keys(now).sort()).toEqual(['a', 'b', 'd']);
     expect(now.d).toBe(3);
     await expect.poll(() => value(page, 'c')).toBeCloseTo(await value(page, 'a'), 9);
     expect(await value(page, 'c')).toBeCloseTo(0.5, 1);
+    expect(await value(page, 'e')).toBeCloseTo(2 * (await value(page, 'b')), 9);
+    expect(await value(page, 'e')).toBeCloseTo(0.5, 1);
+  });
+
+  test('the two params one handle sets don\'t hand each other back', async ({ page }) => {
+    // b's binding reads a, so a reader setting a alone hands b back to it.
+    await onFigure(page, (f) => f.hold('b', -0.25));
+    await onFigure(page, (f) => f.hold('a', 0.4));
+    await expect.poll(() => value(page, 'b')).toBeCloseTo(0.4, 9);
+    // One drag sets both, and b keeps its own value, not a's, through the drag and after it.
+    for (const [x, y] of [[0.6, -0.3], [-0.2, 0.35]]) {
+      const [from, ...rest] = await path(page, [[await value(page, 'a'), await value(page, 'b')], [x, y]]);
+      await page.mouse.move(from.x, from.y);
+      await page.mouse.down();
+      for (const p of rest) await page.mouse.move(p.x, p.y);
+      await page.mouse.up();
+      const now = await held(page);
+      expect(Object.keys(now).sort()).toEqual(['a', 'b']);
+      expect(now.a).toBeCloseTo(x, 1);
+      expect(now.b).toBeCloseTo(y, 1);
+      expect(await value(page, 'b')).toBeCloseTo(now.b, 9);
+    }
+    // The keys hold both too.
+    await page.keyboard.press('ArrowRight');
+    await expect.poll(async () => (await held(page)).a).toBeGreaterThan(-0.2);
+    expect(await value(page, 'b')).toBeCloseTo(0.35, 1);
   });
 });

@@ -1,14 +1,19 @@
 // A point dragged in two dimensions: z = a + b·i, set by one handle, each param in its own
-// range. c follows a through its binding, so a drag of z hands a held c back; d follows time,
-// which a drag doesn't touch.
+// range. b follows a through its binding until it's held, and one drag holds both, so neither
+// hands the other back. c follows a and e follows b, so a drag of z hands a held c or e back;
+// d follows time, which a drag doesn't touch.
 viewport { x: -2..2, y: -2..2 }
 param a = 0 in -1..1
 param b = 0 in -0.5..0.5
 param c = 0 in -2..2
 param d = 0 in 0..10
+param e = 0 in -2..2
+bind b = a
 bind c = a
 bind d = time
+bind e = 2·b
 let z = a + b·i
 let Q = (c, -1.5)
-dot z, Q
+let R = (e, 1.5)
+dot z, Q, R
 handle z sets a = pointer.x, b = pointer.y
