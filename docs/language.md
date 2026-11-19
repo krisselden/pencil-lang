@@ -45,7 +45,7 @@ that names them. `lab/explainer/limacon.pen` is the example: a file to each part
 | `let x = expr` | A named value: a number, point, circle or line. |
 | `fn f(a, b) = expr` | A function, inlined where it's called. No recursion. |
 | `param a = 1 in 0..2·π` | A root that time or a reader can drive. It stays in its range however it's driven: its default, a binding, a reader's control and a drag all stop at the range's ends. |
-| `param p = 2 in 0..q step 1` | A range whose end follows other params, here one that says `p` can't pass `q`. An end is numbers and params, and nothing else: not a `let`, and not `time`. The figure keeps `p` inside the range as it stands each frame, so a reader who lowers `q` below `p` brings `p` down with it. What the reader set isn't lost: raise `q` again and `p` goes back to it. A page reads the widest the range gets and which params move it (`info.params`: `min`, `max`, `follows`), and the range as it stands (`figure.range("p")`), so a control built from them stops where the figure does. The widest is found at the ends of the ranges it reads, which is right for an end that only rises or falls with each. A range that ends before it starts leaves its start. |
+| `param p = 2 in 0..q step 1` | A range whose end follows other params, here one that says `p` can't pass `q`. An end is numbers, constants such as π, and params, declared before or after it: not a `let`, a choice's value or `time`. The figure keeps `p` inside the range as it stands each frame, so a reader who lowers `q` below `p` brings `p` down with it. What the reader set isn't lost: raise `q` again and `p` goes back to it. A page reads the widest the range gets and which params move it (`info.params`: `min`, `max`, `follows`), and the range as it stands (`figure.range("p")`), so a control built from them stops where the figure does. The widest is found at the ends of the ranges it reads, which is right for an end that only rises or falls with each. A range that ends before it starts leaves its start. |
 | `param n = 3 in 1..12 step 1` | A param that only takes its range's start plus whole steps, however it's driven: its default, a binding, a reader or a drag goes to the nearest one. A step of 1 makes it a whole number, and a page's control steps the same way. |
 | `param axis in {ω, 1, 1 + ω}` | A param that's one of these values, the first unless `= 1` names another as written. They can be any one kind, and numbers go with points as points on the real axis. The name is the chosen value, so the math can use it directly: `imag(conj(axis)·P)` is the cross product with whichever direction was chosen. The param a reader sets is `axis.index`, which option it is, from 0, and a page labels each option with its text, or with its name: in `{"p = 0": 2·π / q, "q = 2p": …}` a page shows the names and the math gets the values, and `= "q = 2p"` starts there. |
 | `solve (x, y) from 0, 1: f(x, y) = 0, g(x, y) = 2` | Unknowns defined by equations (see below). |
@@ -97,8 +97,8 @@ A parametric range can run down as well as up, and the curve is drawn from its f
 `for u in 0..t` sweeps an angle from 0 to `t` whichever sign `t` has. `trim` and a `head` follow that
 direction. A collection's `for i in a..b` counts up, and is empty when `b` is below `a`.
 
-**A range can be written `med ± dev`,** the tolerance reading of `±`, as in x = 5 ± 2: it's `(med - dev)..(med + dev)`,
-anywhere a range is written. `for k in 2 ± 1` counts 1, 2 and 3, `for t in 0 ± π` runs from −π to π, `param a = 1 in 1 ± 0.5
+**A range can be written `med ± dev`,** the tolerance reading of `±`, as in x = 5 ± 2: it's `(med - abs(dev))..(med + abs(dev))`,
+anywhere a range is written, the interval between its two values whichever is larger, so a negative `dev` never reverses it. `for k in 2 ± 1` counts 1, 2 and 3, `for t in 0 ± π` runs from −π to π, `param a = 1 in 1 ± 0.5
 step 0.25` steps through 0.5 to 1.5, and `viewport { x: 0 ± 2 }` is `-2..2`. It's only a spelling: each place takes what
 it takes of a range's ends, and it doesn't make a collection two branches, so `for k in 2 ± 1` has no `self.sign`. It's
 the whole range or nothing. `±x` alone would be the two values +x and −x, so it's an error that offers `{x, -x}` for those
@@ -228,11 +228,15 @@ statement can have both: `dots d = (k, ±1) for k in 2 ± 1` is k from 1 to 3, t
 A style reads which branch an instance is as `self.sign`, 1 for the first and −1 for the second, wherever it reads the
 collection's variables: `style hyp { width: 2px + self.sign·1px }`. Lists in one expression zip, as Desmos's do, and a
 `for` is for every combination; `±` is the only list an expression can hold for now, so there's no question of lengths.
-Anywhere but a collection, `±` is an error that names the collection to use, since it would draw two marks: a `let`, a
-`curve`, a `param`, a `bind`, a `handle`, a function and a style. A collection's variable can't count over it either, since
-the sign is the last variable. In a label's text it's the character. Underneath, a list is a whole-number variable,
-`s.index`, and `s` is the value it picks, as a choice param's is, and the sign is a list `self.sign in {1, -1}`. A
-statement with a `±` can't also name a variable or a `with` `sign`, which `self.sign` could be taken for.
+Underneath, a list is a whole-number variable, `s.index`, and `s` is the value it picks, as a choice param's is, and the
+sign is a list `self.sign in {1, -1}`. A statement with a `±` can't also name a variable or a `with` `sign`, which
+`self.sign` could be taken for.
+
+**`±` has two uses, and anywhere else it's an error.** In what a collection draws it's two branches. As the whole of a
+range, `med ± dev`, it's an interval, drawn once. In a `let`, a `curve`'s expression, a `param`'s default, a `bind`, a
+`handle`, a function or a style it would draw two marks, so the error names the collection to use. In one end of a range it
+would make two ranges, and as a list's value, `s in {±1}`, it would be a variable over the signs, which `±` already is, so
+those errors say to count over the signs as values, `s in {1, -1}`. In a label's text it's the character.
 
 A curve has its own parameter too, which runs smoothly, and comes first. So what Desmos writes as `s = [-3...3] / 3` is:
 
@@ -449,8 +453,10 @@ Undo takes it back. Text with a backslash, a `^{`, or a leading `$` is LaTeX, an
   `arctan`, and `\log` is base 10 while `\log_{2}x` is `ln(x)/ln(2)`.
 - **A function LaTeX has and Pencil doesn't yet keeps its name,** as `\gcd`, `\lcm`, `\det` and `\lg` do, so the figure's error names
   it. `pencil latex` writes such a line as a comment that says which.
-- **What has no Pencil form is an error,** and the LaTeX pastes as written: Desmos's piecewise braces, `with` and `for`, comparisons, lists, derivatives, `±` (which only a collection
-  can hold, so the paste can't tell where it goes), an n-th root (`x^(1/n)` differs from it for negative x), 3D points, and infinity.
+- **`\pm` and `\mp` are `±` and `∓`,** as `(-b ± sqrt(b^2 - 4a·c))/(2a)` and `x = 5 ± 2`, and a sign before a product brackets it,
+  `±(2x)`. Where the text goes decides whether Pencil takes it: in what a collection draws it's two branches, as a whole range
+  an interval, and anywhere else the figure's error says why.
+- **What has no Pencil form is an error,** and the LaTeX pastes as written: Desmos's piecewise braces, `with` and `for`, comparisons, lists, derivatives, an n-th root (`x^(1/n)` differs from it for negative x), 3D points, and infinity.
 
 ### Numbers
 

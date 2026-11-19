@@ -80,15 +80,46 @@ fn a_page_can_read_the_widest_range_and_what_it_follows() {
 #[test]
 fn a_range_reads_numbers_and_params() {
     let message = |doc: &str| build(doc, &[]).unwrap_err().to_string();
+    let ends =
+        "a param's range is numbers, constants such as π, and params, declared before or after it";
+    // Each says what the name is that it can't read.
     let named = message("let n = 3\nparam p = 0 in 0..n\nlet P = (p, 0)\ndot P");
     assert!(
-        named.contains("numbers, constants such as π, and params, declared before or after it, and `n` isn't one: not a `let`, and not `time`"),
+        named.contains(&format!(
+            "`n` is a `let`, and a range's end can't read one: {ends}"
+        )),
         "{named}"
     );
-    let timed = message("param p = 0 in 0..time\nlet P = (p, 0)\ndot P");
+    for doc in [
+        "param p = 0 in 0..time\nlet P = (p, 0)\ndot P",
+        "param q = 1 in 0..2\nparam p = 0 in 0..q + time\nlet P = (p, 0)\ndot P",
+    ] {
+        let timed = message(doc);
+        assert!(
+            timed.contains(&format!("a range's end can't read `time`: {ends}")),
+            "{timed}"
+        );
+    }
+    let chosen = message("param k in {1, 2}\nparam p = 0 in 0..k\nlet P = (p, 0)\ndot P");
     assert!(
-        timed.contains("must be constant, and it uses `time`"),
-        "{timed}"
+        chosen.contains(&format!(
+            "`k` is a choice, and a range's end can't read its value: {ends}, and the param that picks it is `k.index`"
+        )),
+        "{chosen}"
+    );
+    // Which it names it can read.
+    assert_eq!(
+        value(
+            "param k = 2 in {1, 2}\nparam p = 9 in 0..k.index\nlet P = (p, 0)\ndot P",
+            "p",
+            &[]
+        ),
+        1.0
+    );
+    // Constants such as π are numbers.
+    assert_eq!(
+        value("param p = 9 in 0..π\nlet P = (p, 0)\ndot P", "p", &[]),
+        std::f64::consts::PI
     );
     // A param can be written after the one whose range reads it, as any name can.
     assert_eq!(
@@ -164,4 +195,14 @@ fn no_figures_own_motion_runs_into_the_end_of_a_range() {
             }
         }
     }
+}
+
+#[test]
+fn a_range_in_a_choices_braces_says_where_it_goes() {
+    let err = build("param k in {1..3}\nlet P = (k, 0)\ndot P", &[]).unwrap_err();
+    assert_eq!((err.line, err.col), (1, 14));
+    assert_eq!(
+        err.message,
+        "a choice's options are values, written one by one: `k in {1, 2, 3}`, and a range goes outside the braces: `k in 1..3`"
+    );
 }

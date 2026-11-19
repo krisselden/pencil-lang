@@ -193,7 +193,7 @@ Proposed by Claude on 2026-11-09, not yet agreed:
     now count over a list, `for s in {-1, 1}` (`language.md`, Collections, 2026-11-18).
   - Can a parametric curve take a ±? Desmos needs a list for it, `[-1, 1]`, and does support it. Built on 2026-11-18 for
     collections: `±` draws both branches there, and is an error anywhere else. And as a whole range, `med ± dev` is the
-    interval `(med - dev)..(med + dev)`, in every place a range is written (Kris, 2026-11-18).
+    interval `(med - abs(dev))..(med + abs(dev))`, never reversed, in every place a range is written (Kris, 2026-11-18).
   - He found it confusing which space a range is in. How should a range say it?
   - Still open: zipping a range used as a value, Desmos's `([1...5], [1...5]²)`. The only lists an expression zips are
     `±` and `∓`.
@@ -221,7 +221,7 @@ Proposed by Claude on 2026-11-09, not yet agreed:
   | a collection's variable, `for i in a..b` | whole numbers only, from the start rounded up to the end rounded down, both included (`0.5..2.7` is 1 and 2); none when `b` is below `a` | no | anything: params, `let`s, `time`, and earlier variables |
   | `viewport { x: -2..2 }` | every real value | no | constants only: numbers and constants such as π, not a `let`, a param or `time` |
 
-  Every one of these can be written `med ± dev` instead, which is `(med - dev)..(med + dev)` with that place's rules for
+  Every one of these can be written `med ± dev` instead, which is `(med - abs(dev))..(med + abs(dev))` with that place's rules for
   its ends. Other differences: only `param` takes `step`; `for` means "over a range" in a collection and "for this long" in a beat;
   and `0..q` on a param means it can't pass q, while on a collection it means count up to q rounded down, which the
   reference doesn't say.

@@ -352,6 +352,55 @@ fn med_plus_minus_dev_is_a_range_wherever_a_range_is() {
 }
 
 #[test]
+fn a_negative_dev_is_the_same_interval_never_reversed() {
+    // A constant.
+    let f = build("param a = 1 in 1 ± -0.5", &[]).unwrap();
+    assert_eq!(f.scene.params[0].range, [0.5, 1.5]);
+    assert_eq!(
+        dots("dots d = (k, 0) for k in 2 ± -1"),
+        [[1.0, 0.0], [2.0, 0.0], [3.0, 0.0]]
+    );
+    let f = build("viewport { x: 0 ± -2, y: 1 ± -1 }", &[]).unwrap();
+    assert_eq!(
+        (f.scene.viewport.x, f.scene.viewport.y),
+        ([-2.0, 2.0], [0.0, 2.0])
+    );
+    // A param that passes through zero: the range narrows to its middle and opens again, and
+    // what was held comes back.
+    let f = build("param d = -0.5 in -1..1\nparam p = 1.2 in 1 ± d", &[]).unwrap();
+    let p = f.scene.params.iter().find(|p| p.id == "p").unwrap();
+    assert_eq!(p.range, [0.0, 2.0]);
+    for (d, range, value) in [
+        (-0.5, [0.5, 1.5], 1.2),
+        (-0.1, [0.9, 1.1], 1.1),
+        (0.0, [1.0, 1.0], 1.0),
+        (0.1, [0.9, 1.1], 1.1),
+        (0.5, [0.5, 1.5], 1.2),
+    ] {
+        let inputs = Inputs {
+            time: 0.0,
+            params: vec![("d".into(), d), ("p".into(), 1.2)],
+        };
+        let env = eval::frame_env(&f, &inputs).unwrap();
+        let [lo, hi] = eval::param_range(p, &env).unwrap();
+        assert!(
+            (lo - range[0]).abs() < 1e-12 && (hi - range[1]).abs() < 1e-12,
+            "d = {d}: {lo}..{hi}"
+        );
+        assert!((env.get("p").unwrap() - value).abs() < 1e-12, "d = {d}");
+    }
+    // A collection counts the same either side of zero.
+    for d in [-1.0, 1.0] {
+        let doc = format!("param d = {d} in -1..1\ndots c = (k, 0) for k in 0 ± d");
+        assert_eq!(dots(&doc), [[-1.0, 0.0], [0.0, 0.0], [1.0, 0.0]], "d = {d}");
+    }
+    assert_eq!(
+        dots("param d = 0 in -1..1\ndots c = (k, 0) for k in 0 ± d"),
+        [[0.0, 0.0]]
+    );
+}
+
+#[test]
 fn a_range_and_two_branches_in_one_statement_keep_to_themselves() {
     // The range is 1..3, and the `±` in what it draws makes two of each, the sign fastest.
     let f = build("dots d = (k, ±1) for k in 2 ± 1", &[]).unwrap();

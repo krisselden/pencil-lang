@@ -1376,7 +1376,7 @@ impl Parser {
         })
     }
 
-    /// `a..b`, or `med ± dev` as the whole range, which is `(med - dev)..(med + dev)`: the
+    /// `a..b`, or `med ± dev` as the whole range, `(med - abs(dev))..(med + abs(dev))`: the
     /// tolerance reading of `±`, as in x = 5 ± 2. It's sugar, so each place allows what it
     /// allows of a range's ends. A `±` anywhere else in a range would make two ranges, which a
     /// list says instead.
@@ -1396,7 +1396,13 @@ impl Parser {
             match (&lo, found.as_slice()) {
                 (Expr::App(head, parts), [_]) if head == PLUS_MINUS && parts.len() == 2 => {
                     self.branches = outer;
-                    let [med, dev] = [parts[0].clone(), parts[1].clone()];
+                    // The interval between the two values, whichever is larger, so a
+                    // negative `dev` doesn't reverse it.
+                    let med = parts[0].clone();
+                    let dev = match &parts[1] {
+                        Expr::Num(n) => Expr::Num(n.abs()),
+                        dev => Expr::app("Abs", vec![dev.clone()]),
+                    };
                     return Ok([
                         Expr::app("Subtract", vec![med.clone(), dev.clone()]),
                         Expr::app("Add", vec![med, dev]),
@@ -1541,6 +1547,11 @@ impl Parser {
                 };
                 let from = self.pos;
                 let option = self.expr()?;
+                if *self.peek() == Tok::Punct("..") {
+                    return Err(self.error(format!(
+                        "a choice's options are values, written one by one: `{name} in {{1, 2, 3}}`, and a range goes outside the braces: `{name} in 1..3`"
+                    )));
+                }
                 let text = named.unwrap_or_else(|| self.text(from, self.pos));
                 options.push((option, text));
                 if self.eat("}") {

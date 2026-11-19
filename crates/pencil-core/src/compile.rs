@@ -1583,6 +1583,18 @@ impl Lowerer {
     /// for an end, found at the ends of the ranges of the params it reads.
     fn limit(&self, e: &Expr, end: bool, params: &[Param]) -> Result<(f64, Option<Expr>), Error> {
         let what = "a param's range";
+        let ends = "a param's range is numbers, constants such as π, and params, declared before or after it";
+        let mut signal = None;
+        e.visit_syms(&mut |s| {
+            if SIGNALS.contains(&s) {
+                signal = Some(s.to_string());
+            }
+        });
+        if let Some(s) = signal {
+            return Err(Error::new(format!(
+                "a range's end can't read `{s}`: {ends}, so it's the same each frame unless a param moves it"
+            )));
+        }
         let mut reads_names = false;
         // A signal is left for `constant` to refuse, which says why.
         e.visit_syms(&mut |s| reads_names |= constant_value(s).is_none() && !SIGNALS.contains(&s));
@@ -1599,9 +1611,15 @@ impl Lowerer {
             None => {}
         });
         if let Some(name) = other {
-            return Err(Error::new(format!(
-                "{what} is numbers, constants such as π, and params, declared before or after it, and `{name}` isn't one: not a `let`, and not `time`"
-            )));
+            // A choice's value is a binding, read through the param that picks it.
+            let index = format!("{name}.index");
+            return Err(Error::new(if params.iter().any(|p| p.id == index) {
+                format!(
+                    "`{name}` is a choice, and a range's end can't read its value: {ends}, and the param that picks it is `{index}`"
+                )
+            } else {
+                format!("`{name}` is a `let`, and a range's end can't read one: {ends}")
+            }));
         }
         if read.is_empty() {
             return Ok((constant(&limit, what)?, None));
@@ -4328,7 +4346,7 @@ mod tests {
         let err = scene("duration time").unwrap_err();
         assert!(err.message.contains("uses `time`"), "{err}");
         let err = scene("param a in 0..time").unwrap_err();
-        assert!(err.message.contains("uses `time`"), "{err}");
+        assert!(err.message.contains("can't read `time`"), "{err}");
         assert!(
             scene("viewport { x: -2·pi..2·pi, y: -2..2 } style figure { width: 640px }").is_ok()
         );
