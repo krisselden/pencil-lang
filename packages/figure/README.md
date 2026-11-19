@@ -34,6 +34,11 @@ the case is set after a drag: the core says which params each binding reads (`in
 hands them back, so a page needs no `release` of its own for it. Params held together, by the `params` attribute or
 setter, keep each other.
 
+A handle that sets two params, a point dragged in two dimensions, sets both in one move and holds them together, and
+its `input` event names both in `detail.values`. It's a slider to a screen reader, described as a 2D slider, whose
+text says both values (`a = 0.3, b = 0.5`). Its arrows move it on the page, and Home, End, Page Up and Page Down are
+the long moves left, right, up and down, since it has no one range to go to the end of.
+
 When a browser loses the GPU under a figure, as Chrome does after sleep or when its GPU process restarts, the figure
 starts its GPU again where it was: the same sources, time, held params and pause, with its poster showing meanwhile. It
 tries at once, after a second and after five, and then sends `error` (with `detail.gpu`), trying once more each time
@@ -153,7 +158,8 @@ pnpm test
 Playwright's, in [`tests/`](tests), against the corpus in this repo, headless, on its own Chromium and WebKit: each at
 a desktop size and as a phone (a Pixel 7 and an iPhone 15, emulated). They cover drawing, every key on a handle and on
 beats, a mouse drag and a touch drag, a swipe that scrolls past a figure, a drag that selects no text, a range that follows another param, reduced motion, sheets picked by theme, the
-poster's swap, and a compiled figure. `PENCIL_GL=1 pnpm test` runs them all on WebGL2 in place of WebGPU, and `PENCIL_MIN=1 pnpm test` on the minified bundle.
+poster's swap, and a compiled figure. `PENCIL_GL=1 pnpm test` runs them all on WebGL2 in place of WebGPU, and `PENCIL_MIN=1 pnpm test` on the minified bundle. They serve the repo on
+port 8743, and reuse a server already there, so a second checkout runs them on its own with `PENCIL_PORT=8751 pnpm test`.
 [`playwright.config.js`](playwright.config.js) says which GPU path each browser has headless. An emulated phone is a
 desktop engine at a phone's size with touch, not Mobile Safari: a real iPhone isn't covered, and touches are sent
 through Chromium's CDP, so the touch tests run on the Pixel 7 only.

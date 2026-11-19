@@ -1777,6 +1777,29 @@ mod tests {
         assert_eq!(values, [("a".to_string(), 1.0), ("b".to_string(), 0.5)]);
     }
 
+    #[test]
+    fn an_inverse_with_no_answer_leaves_only_its_own_param() {
+        // b is where the line from the origin through the pointer meets y = 1, which a level
+        // pointer never does.
+        let f = build(
+            "viewport { x: -2..2, y: -2..2 }
+             param a = 0.5 in -2..2
+             param b = 0.5 in -2..2
+             let P = (a, b)
+             dot P
+             handle P sets a = pointer.x, b = real(intersect(line((0, 0), pointer), line((0, 1), (1, 1))))",
+            &[],
+        )
+        .unwrap();
+        let drag = |x: f64, y: f64| {
+            let (px, py) = pixel(2.0, x, y);
+            drag_value(&f, &Inputs::at(0.0), 0, 400, 400, px, py).unwrap()
+        };
+        let pairs = |a: f64, b: f64| vec![("a".to_string(), a), ("b".to_string(), b)];
+        assert_eq!(drag(1.0, 0.0), pairs(1.0, 0.5));
+        assert_eq!(drag(1.0, 1.0), pairs(1.0, 1.0));
+    }
+
     /// Kris's lattice: z = a + bω, and the handle turns the pointer into the two coefficients.
     fn lattice(step: &str) -> String {
         format!(

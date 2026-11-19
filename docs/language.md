@@ -75,7 +75,8 @@ that names them. `lab/explainer/limacon.pen` is the example: a file to each part
 | `panel p "Title" { … }` | One view of the figure, with its own marks (see below). |
 | `place p = P offset (8, 18) hang end` | Where an expression can sit (see below). |
 | `expression e by step { … }` | A list of states whose matching parts move (see below). |
-| `handle P sets a = expr` | Dragging `P` sets param `a`. `expr` can use `pointer.x` and `pointer.y`. Dragging, or the keys on the handle, take `a` over from its binding, until a param that binding reads is set (see `bind`). The handle is `a`'s control: the site's controls give a param a handle sets no slider. |
+| `handle P sets a = expr` | Dragging `P` sets param `a` to `expr`, the inverse from the pointer to the param, written out. `expr` can use `pointer.x` and `pointer.y`, and `pointer` by itself is the pointer's point, so `abs(pointer)` is its distance from the origin and `real(ln(pointer))` the log of that. `a` takes the value within its range and step, which is what constrains the drag. Dragging, or the keys on the handle, take `a` over from its binding, until a param that binding reads is set (see `bind`). The handle is `a`'s control: the site's controls give a param a handle sets no slider. |
+| `handle z sets a = expr, b = expr` | A point dragged in two dimensions: dragging `z` sets two params, each to its own expression, which can use the pointer as above. For `let z = a + b·i` it's `a = pointer.x, b = pointer.y`, and for a point on a lattice, `z = a + b·ω`, the two expressions turn the pointer into its coefficients: `a = pointer.x - pointer.y·real(ω)/imag(ω), b = pointer.y/imag(ω)`. Both are worked out from the same pointer and the params as they were, then each param takes its value within its own range and step, so at the end of one range that param stops and the other goes on. One drag sets both, so they don't hand each other back. Arrow keys move the point on the page through the same expressions, and Home, End, Page Up and Page Down are long moves left, right, up and down. Two at most, each a `param`, each named once. |
 | `style selector { … }` | A style rule (see below). |
 | `tag a, b` | After a statement, tags the marks it made. |
 
@@ -532,7 +533,7 @@ the difference. What that means for each thing that uses one:
 | A parametric curve's point | Leaves a gap there, and the curve can come in pieces. |
 | A region's boundary | Hides the region: with a gap it doesn't enclose anything. |
 | `fit` | Skips it, and if nothing is left, uses the declared `x` and `y`. |
-| `handle` | Can't be grabbed. An inverse with no answer leaves the param where it is. |
+| `handle` | Can't be grabbed. An inverse with no answer leaves its param where it is, and a handle's other param still moves. |
 | `paper` | A compile error: there has to be something to draw on. |
 | A curve's field | Has to name the value with `let` first: a field runs per pixel, and existence is decided per frame. |
 

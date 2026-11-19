@@ -48,8 +48,10 @@
 // says `error` (with `detail.gpu`), and tries once more each time the page is shown.
 // Events: `load` when a figure is compiled, `draw` after each frame drawn, `resize` when its drawn
 // size or its em changes (its `detail.em`, in CSS pixels), `input` when a reader
-// drags a param, `play` and `pause`, `error` (its `detail.error`) when one can't load or draw, and
-// `recover` when one that said `error` because it lost its GPU draws again.
+// drags a param (its `detail.name` and `detail.value`, and `detail.values`, every param that one
+// move set, by name: two for a point dragged in two dimensions), `play` and `pause`, `error` (its
+// `detail.error`) when one can't load or draw, and `recover` when one that said `error` because it
+// lost its GPU draws again.
 import { Player, let_go, figure_size, figure_size_compiled, ready, isReady, gather, ahead } from './host.js';
 import { LABEL_CSS, LabelLayer, fonts } from './labels.js';
 import { match } from './fit.js';
@@ -1039,15 +1041,21 @@ export class PencilFigure extends HTMLElement {
     this.#moved(this.#player.drag(this.#time, x, y));
   }
 
-  /** A handle set this param in the player: hold it here too, draw, and tell the page. */
-  #moved(name) {
-    if (!name) return;
-    const value = this.#player.value(name, this.#time);
-    this.#reclaim([name]);
-    this.#held.delete(name);
-    this.#held.set(name, value);
+  /**
+   * A handle set these params in the player, one or two: hold them here too, draw, and tell the
+   * page. Two are held together, so neither hands the other back.
+   */
+  #moved(names) {
+    if (!names?.length) return;
+    const values = Object.fromEntries(names.map((name) => [name, this.#player.value(name, this.#time)]));
+    this.#reclaim(names);
+    for (const name of names) {
+      this.#held.delete(name);
+      this.#held.set(name, values[name]);
+    }
     this.#invalidate();
-    this.dispatchEvent(new CustomEvent('input', { bubbles: true, detail: { name, value } }));
+    const [name] = names;
+    this.dispatchEvent(new CustomEvent('input', { bubbles: true, detail: { name, value: values[name], values } }));
   }
 
   // ---- Keys: every handle can be tabbed to and moved, and beats stepped ----
@@ -1061,9 +1069,10 @@ export class PencilFigure extends HTMLElement {
   /**
    * Makes what a reader can do with the figure reachable without a pointer, once it's known.
    * Each handle gets something to focus, named for its mark, that says its param's value as a
-   * slider does. A figure with beats becomes a tab stop itself, unless the page has said where
-   * it is in the tab order, and a figure with either is a group, so its name is read. One with
-   * neither is an image.
+   * slider does. One that sets two params is a 2D slider, as React Aria's color area calls its
+   * own, and says both. A figure with beats becomes a tab stop itself, unless the page has said
+   * where it is in the tab order, and a figure with either is a group, so its name is read. One
+   * with neither is an image.
    */
   #operable() {
     const handles = this.#info.handles ?? [];
@@ -1076,6 +1085,7 @@ export class PencilFigure extends HTMLElement {
         el.setAttribute('part', 'handle');
         el.setAttribute('role', 'slider');
         el.setAttribute('aria-label', handle.mark);
+        if (handle.params.length > 1) el.setAttribute('aria-roledescription', '2D slider');
         el.tabIndex = 0;
         el.hidden = true;
         el.addEventListener('keydown', (e) => this.#handleKey(e, index));
@@ -1123,16 +1133,18 @@ export class PencilFigure extends HTMLElement {
         const reach = cut.some((c) => c > 0) ? `inset(${cut.map((c) => `${Math.max(0, c).toFixed(1)}px`).join(' ')})` : 'none';
         if (el.style.getPropertyValue('--reach') !== reach) el.style.setProperty('--reach', reach);
       }
-      const param = this.#info.handles[i].param;
-      const value = this.#valueAt(param, this.#time);
-      const [min, max] = this.range(param);
-      const said = [min, max, value].join(' ');
+      // A slider has one number, so a handle that sets two gives its first as the number, and
+      // says both in its text, which is what a screen reader reads.
+      const params = this.#info.handles[i].params;
+      const values = params.map((param) => this.#valueAt(param, this.#time));
+      const [min, max] = this.range(params[0]);
+      const said = [min, max, ...values].join(' ');
       if (el.dataset.said === said) return;
       el.dataset.said = said;
       el.setAttribute('aria-valuemin', String(min));
       el.setAttribute('aria-valuemax', String(max));
-      el.setAttribute('aria-valuenow', String(value));
-      el.setAttribute('aria-valuetext', `${param} = ${this.#format(param, value)}`);
+      el.setAttribute('aria-valuenow', String(values[0]));
+      el.setAttribute('aria-valuetext', params.map((param, k) => `${param} = ${this.#format(param, values[k])}`).join(', '));
     });
   }
 
@@ -1145,18 +1157,23 @@ export class PencilFigure extends HTMLElement {
 
   /**
    * A key on a focused handle. An arrow moves it that way on the page, a hundredth of the
-   * figure's shorter side, or a tenth with Shift, through the handle's own inverse, as a drag
-   * that far would. A param with steps goes to its next one that way. Home and End take the
-   * param to the ends of its range, and Page Up and Page Down move it a tenth of the range.
+   * figure's shorter side, or a tenth with Shift, through the handle's own inverses, as a drag
+   * that far would. A param with steps goes to its next one that way. On a handle that sets one
+   * param, Home and End take it to the ends of its range, and Page Up and Page Down move it a
+   * tenth of the range. A handle that sets two has no one range to go to the end of, so those
+   * keys are the long moves on the page, as in a 2D slider: Home and End left and right, Page
+   * Up and Page Down up and down, as far as Shift and an arrow.
    */
   #handleKey(e, index) {
     if (!this.#player || e.altKey || e.ctrlKey || e.metaKey) return;
-    const way = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key];
-    const param = this.#info.handles[index].param;
+    const params = this.#info.handles[index].params;
+    const [param] = params;
+    const long = params.length > 1 && { Home: [-1, 0], End: [1, 0], PageUp: [0, -1], PageDown: [0, 1] }[e.key];
+    const way = long || { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key];
     try {
       if (way) {
         const { width, height } = this.#canvas;
-        const step = Math.max(Math.min(width, height) / 100, 2 * (window.devicePixelRatio || 1)) * (e.shiftKey ? 10 : 1);
+        const step = Math.max(Math.min(width, height) / 100, 2 * (window.devicePixelRatio || 1)) * (e.shiftKey || long ? 10 : 1);
         this.pause();
         this.#moved(this.#player.nudge(this.#time, index, way[0] * step, way[1] * step));
       } else if (['Home', 'End', 'PageUp', 'PageDown'].includes(e.key)) {
@@ -1165,7 +1182,7 @@ export class PencilFigure extends HTMLElement {
         const to = { Home: min, End: max, PageUp: now + (max - min) / 10, PageDown: now - (max - min) / 10 }[e.key];
         this.pause();
         this.#player.set_param(param, to);
-        this.#moved(param);
+        this.#moved([param]);
       } else {
         return;
       }

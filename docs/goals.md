@@ -131,8 +131,8 @@ GLSL shaders draw through one SVG system (`src/lib/plot.ts`), and nothing is mad
    post's `ScaledCopy`, `LogNearest` and `UnwrapMorph` on 2026-11-15, drawn on the site's demos page at 1633×919 and
    375×812, light and dark), 6
    are ports with what exists, 9 need one or two features, 5 need design and 3 stay. What most figures lack is around the figure
-   and not in it: arrow keys (12 figures), dragging a point in two dimensions (5), Newton's steps as values (4) and panels of
-   different sizes (4).
+   and not in it: arrow keys (12 figures), dragging a point in two dimensions (5, built 2026-11-18: a handle that sets two
+   params), Newton's steps as values (4) and panels of different sizes (4).
 
 ### Proposed order after that
 
@@ -185,6 +185,13 @@ Proposed by Claude on 2026-11-09, not yet agreed:
   static assets take the file: the site sets how long a browser keeps each kind of file in one (`site/public/_headers`,
   2026-11-17). The header an embed from another origin needs hasn't been tried (`design-notes.md`, "Hosting").
 - **Where is `SPEC/18`?** The July 9 chat mentions it, and the plan's list stops at 17.
+- **A consistency pass on ranges (Kris, 2026-11-18).** He wants it done once more of the language is filled in, and
+  raised these as questions while two-dimensional dragging was decided. Nothing here is answered yet:
+  - A range sometimes means every value between its ends and sometimes only whole numbers, even with no `step`: a family
+    seems to need whole numbers. Should they read the same?
+  - Is a collection tied to `for … in` over whole numbers, or can it run over something else?
+  - Can a parametric curve take a ±? Desmos needs a list for it, `[-1, 1]`, and does support it.
+  - He found it confusing which space a range is in. How should a range say it?
 - **The specs' own open questions** (SPEC/16 §8, SPEC/50 §7) are about relations, rigs and extensions, none of which a figure has
   needed yet.
 
