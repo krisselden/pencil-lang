@@ -54,9 +54,13 @@ export interface FigureInfo {
     max: number;
     step: number | null;
     follows: string[];
+    /** The other params its binding reads: a reader setting one of them hands it back to its binding. */
+    reads: string[];
     choice: { of: string; options: string[] } | null;
   }[];
-  handles: { panel: number; mark: string; param: string }[];
+  /** Each mark a reader can move, in every panel: its panel, its mark, and the params it sets, one or
+   * two (a point dragged in two dimensions). */
+  handles: { panel: number; mark: string; params: string[] }[];
   poster: { time: number; params: Record<string, number> };
   /** The named colors its sheets define, as CSS. */
   colors: Record<string, string>;
