@@ -8,7 +8,8 @@ style leg_b { stroke: green; width: 3px; opacity: self.life·mix(0.3, 1, smooths
 style hypotenuse { stroke: ink; width: 2.5px; opacity: smoothstep(0, 1, self.life) }
 style fo { stroke: blue; width: 3px; opacity: smoothstep(0, 1, self.life) }
 style il { stroke: green; width: 3px; opacity: smoothstep(0, 1, self.life) }
-style turning { stroke: green; width: 1.5px; dash: 3px; gap: 3px; opacity: smoothstep(0, 1, self.life) }
+// The arc is the path of the tip as i turns the copy, so it is drawn as it is swept, and fades only as the copy slides away.
+style turning { stroke: green; width: 1.5px; dash: 3px; gap: 3px; opacity: 1 - smoothstep(0, 1, slide) }
 style square { stroke: ink; width: 3px; opacity: smoothstep(0, 1, self.life) }
 
 // Blue stays the a side and green the bi side: the color ties the big triangle to the small.
