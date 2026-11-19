@@ -685,14 +685,39 @@ fn a_sheet_sets_how_the_panels_sit() {
     assert_eq!(wide.size, [814.0, 826.0]);
     assert_eq!(wide.panels[1].rect[0], 414.0 / 814.0);
 
+    // The phone's sheet keeps the grid, with smaller panels.
     let narrow = lattice_with(&["007-lattice/narrow.style"]);
-    assert_eq!(narrow.size, [360.0, 4.0 * (300.0 + 24.0) + 3.0 * 12.0]);
+    assert_eq!(narrow.size, [2.0 * 168.0 + 8.0, 2.0 * (160.0 + 20.0) + 8.0]);
     for (i, panel) in narrow.panels.iter().enumerate() {
+        let (column, row) = ((i % 2) as f64, (i / 2) as f64);
+        assert_eq!(
+            panel.rect[0],
+            column * (168.0 + 8.0) / narrow.size[0],
+            "{}",
+            panel.id
+        );
+        assert_eq!(panel.rect[2], 168.0 / narrow.size[0]);
+        let top = (row * (160.0 + 20.0 + 8.0) + 20.0) / narrow.size[1];
+        assert!((panel.rect[1] - top).abs() < 1e-12, "{}", panel.id);
+        assert_eq!(panel.figure.scene.viewport.design_height, Some(160.0));
+    }
+    // And a sheet can stack them in one column.
+    let [theme, plain, phone] = [
+        square_read("theme.style"),
+        square_read("007-lattice/plain.style"),
+        square_read("007-lattice/narrow.style"),
+    ];
+    let column = pencil_core::compose(
+        &square_read("007-lattice/lattice.pen"),
+        &[&theme, &plain, &phone, "style panels { columns: 1 }"],
+    )
+    .unwrap();
+    assert_eq!(column.size, [168.0, 4.0 * (160.0 + 20.0) + 3.0 * 8.0]);
+    for (i, panel) in column.panels.iter().enumerate() {
         assert_eq!(panel.rect[0], 0.0, "{} isn't in the one column", panel.id);
         assert_eq!(panel.rect[2], 1.0);
-        let top = (i as f64 * (300.0 + 24.0 + 12.0) + 24.0) / narrow.size[1];
+        let top = (i as f64 * (160.0 + 20.0 + 8.0) + 20.0) / column.size[1];
         assert!((panel.rect[1] - top).abs() < 1e-12, "{}", panel.id);
-        assert_eq!(panel.figure.scene.viewport.design_height, Some(300.0));
     }
     // An outline shows what its panel shows under this sheet, not under the document alone.
     let outlined = narrow.panels[2]
@@ -705,7 +730,7 @@ fn a_sheet_sets_how_the_panels_sit() {
             _ => None,
         })
         .unwrap();
-    assert_eq!(outlined.design_height, Some(300.0));
+    assert_eq!(outlined.design_height, Some(160.0));
     assert_eq!(outlined.pad, 0.08);
     assert_eq!(wide.panels[0].figure.scene.viewport.pad, 0.15);
     assert_eq!(wide.panels[3].figure.scene.viewport.pad, 0.08);

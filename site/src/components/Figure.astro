@@ -45,20 +45,41 @@ const fit = info ? `--fit-width: calc(85vh * ${info.size[0] / info.size[1]})` : 
 type Built = Awaited<ReturnType<typeof build>>;
 const from = (built: Built) =>
   built.src ? { src: built.src, sheets: built.sheets.join(' ') } : { compiled: built.compiled };
-const choices = looks.length > 1
-  ? JSON.stringify(
-      await Promise.all(
-        looks.map(async (each) => {
-          const { sheets, others } = alternates({ sheets: each.sheets, dark: each.dark, narrow: each.narrow });
-          const [main, ...rest] = await Promise.all(
-            [{ sheets }, ...others].map((choice) => build({ src: each.pen, sheets: choice.sheets, ...poster })),
-          );
-          const sources = rest.map((built, i) => ({ media: others[i].media, ...from(built) }));
-          return { name: each.name, playground: each.playground, ...from(main), sources };
-        }),
-      ),
-    )
-  : undefined;
+// A page that sizes figures by their tier (the demos page) reads, from the wrapper, the figure's
+// shape, the width its sheets were designed at, and whether its panels stand in more than one row,
+// which gets more height. Panels are always in design pixels. A figure without them has a design
+// width only when its sheets give one, and without it its size is its view's, in its own units.
+// Each set of sheets a reader can get has its own, so they're written as the poster's shape is:
+// under each one's media query, the first that matches winning, so in reverse. A look brings its
+// own rules, which the controls put in place of these when a reader picks it.
+const sizing = (built: Built) => {
+  const info = built.info;
+  if (!info) return undefined;
+  const design = info.panels.length > 1 ? info.size[0] : info.viewport.width;
+  const rows = new Set(info.panels.map((panel) => panel.rect[1])).size;
+  return `--aspect: ${info.size[0] / info.size[1]}; --design-width: ${design ? `${design}px` : 'initial'}; --rows: ${rows > 1 ? 2 : 1}`;
+};
+const at = `[data-sizes="${id}"]`;
+const built = await Promise.all(
+  looks.map(async (each) => {
+    const { sheets, others } = alternates({ sheets: each.sheets, dark: each.dark, narrow: each.narrow });
+    const [main, ...rest] = await Promise.all(
+      [{ sheets }, ...others].map((choice) => build({ src: each.pen, sheets: choice.sheets, ...poster })),
+    );
+    const own = sizing(main);
+    const sizes = [
+      own && `${at}{${own}}`,
+      ...rest
+        .map((each, i) => ({ media: others[i].media, vars: sizing(each) }))
+        .filter((each) => each.vars)
+        .reverse()
+        .map((each) => `@media ${each.media}{${at}{${each.vars}}}`),
+    ].join('');
+    const sources = rest.map((each, i) => ({ media: others[i].media, ...from(each) }));
+    return { name: each.name, playground: each.playground, ...from(main), sources, sizes };
+  }),
+);
+const choices = looks.length > 1 ? JSON.stringify(built) : undefined;
 const named = choices ? JSON.parse(choices) : [];
 // The poster's moment is where the figure starts, so its values are the controls' first ones.
 // Without them (a figure that doesn't compile, in `astro dev`), the page writes them on load.
@@ -66,7 +87,8 @@ const written = controls && info
   ? markup({ id, info, moment, paused: Boolean(paused), looks: named, looksLabel: choose, disabled: true })
   : '';
 ---
-<div class:list={['live', className]}>
+{built[0].sizes && <style is:inline data-sizes-for={id} set:html={built[0].sizes}></style>}
+<div class:list={['live', className]} data-sizes={id}>
   <PencilFigure
     id={id}
     src={look.pen}

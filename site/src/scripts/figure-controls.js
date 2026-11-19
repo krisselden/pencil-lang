@@ -132,6 +132,10 @@ class FigureControls extends HTMLElement {
           return source;
         }),
       );
+      // A page that sizes the figure by its sheets has their sizes for each look, under the
+      // same media queries as its sources (components/Figure.astro), and this look's replace them.
+      const sizes = document.querySelector(`style[data-sizes-for="${CSS.escape(figure.id)}"]`);
+      if (sizes && look.sizes != null) sizes.textContent = look.sizes;
       this.dispatchEvent(new CustomEvent('look', { detail: look, bubbles: true }));
     }
   }

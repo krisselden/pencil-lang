@@ -34,7 +34,7 @@ const files = (demo: (typeof DEMOS)[number]) => [
     </nav>
     <ol class="demos">
       {DEMOS.map((demo, i) => (
-        <li class="demo" id={demo.id}>
+        <li class="demo" data-tier={demo.tier} id={demo.id}>
           <Figure
             priority={i === 0}
             id={`figure-${demo.id}`}

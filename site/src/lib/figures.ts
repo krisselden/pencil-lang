@@ -23,8 +23,17 @@ export interface Look {
   playground: string;
 }
 
+/**
+ * How big a demo is drawn, named as the blog names its figures' sizes (its `docs/figures.md`, "Size by
+ * importance"): `hero` a post's opening figure, `primary` a section's key figure, `supporting` one
+ * that backs up the text, and `aside` a small one beside the text (the blog's side figure). A
+ * figure ported from the blog has the tier the blog gives it.
+ */
+export type Tier = 'hero' | 'primary' | 'supporting' | 'aside';
+
 export interface Demo {
   id: string;
+  tier: Tier;
   number: string;
   title: string;
   /** A sentence or two on what it shows, from its page in `web/` or the comment atop its `.pen`.
@@ -47,6 +56,7 @@ export interface Demo {
 export const DEMOS: Demo[] = [
   {
     id: 'circle',
+    tier: 'supporting',
     number: '001',
     title: 'A breathing circle',
     about:
@@ -60,6 +70,7 @@ export const DEMOS: Demo[] = [
   },
   {
     id: 'strokes',
+    tier: 'supporting',
     number: '002',
     title: 'Strokes',
     about:
@@ -74,6 +85,7 @@ export const DEMOS: Demo[] = [
   },
   {
     id: 'unroll',
+    tier: 'primary',
     number: '003',
     title: 'Unwinding a string from a circle',
     about:
@@ -88,6 +100,7 @@ export const DEMOS: Demo[] = [
   },
   {
     id: 'bounds',
+    tier: 'primary',
     number: '004',
     title: 'The two boundary flowers, by ruler and compass',
     about:
@@ -100,6 +113,7 @@ export const DEMOS: Demo[] = [
   },
   {
     id: 'tangents',
+    tier: 'supporting',
     number: '005',
     title: 'A point and a circle',
     about:
@@ -107,12 +121,13 @@ export const DEMOS: Demo[] = [
     label:
       'A circle and a point P. With P outside the circle, the two tangents from P are drawn. With P inside, the chord through P at right angles to OP is drawn.',
     folder: 'corpus/005-tangents',
-    looks: [{ pen: 'corpus/005-tangents/tangents.pen', sheets: [THEME, 'corpus/005-tangents/plain.style'], playground: 'tangents' }],
+    looks: [{ pen: 'corpus/005-tangents/tangents.pen', sheets: [THEME, 'corpus/005-tangents/plain.style'], dark: [DARK], playground: 'tangents' }],
     params: 'd: 3',
     paused: true,
   },
   {
     id: 'square',
+    tier: 'aside',
     number: '006',
     title: 'Squaring z = a + bi',
     about:
@@ -120,10 +135,11 @@ export const DEMOS: Demo[] = [
     label:
       'z = a + bi is built from a and bi. A copy of z is scaled by a, and another by b and turned 90 degrees by i. Tip to tail they make z squared, at twice the angle and the length squared.',
     folder: 'corpus/006-square',
-    looks: [{ pen: 'corpus/006-square/square.pen', sheets: [THEME, 'corpus/006-square/plain.style'], playground: 'square' }],
+    looks: [{ pen: 'corpus/006-square/square.pen', sheets: [THEME, 'corpus/006-square/plain.style'], dark: [DARK], playground: 'square' }],
   },
   {
     id: 'lattice',
+    tier: 'primary',
     number: '007',
     title: 'One lattice, through the maps that make a Doyle spiral',
     about:
@@ -143,6 +159,7 @@ export const DEMOS: Demo[] = [
   },
   {
     id: 'hearts',
+    tier: 'supporting',
     number: '008',
     title: 'Bipolar hearts',
     about:
@@ -157,6 +174,7 @@ export const DEMOS: Demo[] = [
   },
   {
     id: 'squaring',
+    tier: 'supporting',
     number: '009',
     title: 'The squaring map',
     about:
@@ -164,10 +182,11 @@ export const DEMOS: Demo[] = [
     label:
       'A circle through n and 1 over n with a grid over the square around it, raised to a power that moves from 1 to 2, so the circle morphs into a limaçon.',
     folder: 'corpus/009-squaring',
-    looks: [{ pen: 'corpus/009-squaring/squaring.pen', sheets: [THEME, 'corpus/009-squaring/plain.style'], playground: 'squaring' }],
+    looks: [{ pen: 'corpus/009-squaring/squaring.pen', sheets: [THEME, 'corpus/009-squaring/plain.style'], dark: [DARK], playground: 'squaring' }],
   },
   {
     id: 'mobius',
+    tier: 'primary',
     number: '010',
     title: 'Coxeter’s loxodromic sequence, through a Möbius map',
     about:
@@ -181,6 +200,7 @@ export const DEMOS: Demo[] = [
   },
   {
     id: 'circumcircle',
+    tier: 'supporting',
     number: '011',
     title: 'A circumcircle, straightening into a line',
     about:
@@ -192,6 +212,7 @@ export const DEMOS: Demo[] = [
   },
   {
     id: 'limacon',
+    tier: 'supporting',
     number: '012',
     title: 'A limaçon, from both sides of its circles',
     about:
@@ -203,6 +224,7 @@ export const DEMOS: Demo[] = [
   },
   {
     id: 'tube',
+    tier: 'primary',
     number: '013',
     title: 'Rolling the strip into a tube',
     about:
@@ -214,6 +236,7 @@ export const DEMOS: Demo[] = [
   },
   {
     id: 'scaled-copy',
+    tier: 'aside',
     number: '014',
     title: 'A circle of the spiral, scaled and turned',
     about:
@@ -232,6 +255,7 @@ export const DEMOS: Demo[] = [
   },
   {
     id: 'log-nearest',
+    tier: 'supporting',
     number: '015',
     title: 'Nearest isn’t nearest after log',
     about:
@@ -251,6 +275,7 @@ export const DEMOS: Demo[] = [
   },
   {
     id: 'unwrap',
+    tier: 'primary',
     number: '016',
     title: 'Unwrapping the spiral',
     about:
@@ -270,6 +295,7 @@ export const DEMOS: Demo[] = [
   },
   {
     id: 'explainer',
+    tier: 'primary',
     number: 'Lab',
     title: 'Explainer: the limaçon from its central circle',
     about:

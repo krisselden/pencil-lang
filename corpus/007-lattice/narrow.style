@@ -1,6 +1,15 @@
-// The same figure for a phone: one column, with shorter panels.
-style panels { columns: 1; gap: 12px; title: 24px }
-style panel { width: 360px; height: 300px }
+// The same figure for a phone: still two by two, as the blog keeps its facets, with panels about
+// as big as a phone draws them, so a pixel here is about a pixel there and the whole figure is
+// shorter than the screen. The titles are smaller to fit a panel's width beside their formulas.
+style panels { columns: 2; gap: 8px; title: 20px }
+style panel { width: 168px; height: 160px }
+style title { size: 0.7em }
+// Lines and dots as thin as the wide sheet's look where a page draws it at about 0.8 of its size.
+style curve { width: 2px; head: 10px }
+style .steps { radius: 2.75px }
+style grid_points { radius: 1.75px }
+style zero { width: 2px; radius: 4px }
+style end_point { radius: 4px }
 // Labels sit closer in, and the counts stay readable at this size.
 style label { size: 0.88em; distance: 0.82em }
 style label.tick { size: 0.7em }
