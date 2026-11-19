@@ -22,7 +22,6 @@
   #caption { color: var(--ink); min-height: 3em; }
   #readout { font-variant-numeric: tabular-nums; }
   #error { color: var(--bad); white-space: pre-wrap; font-family: ui-monospace, monospace; font-size: 0.8125rem; }
-  pencil-figure { touch-action: none; }
 </style>
 </head>
 <body>
@@ -52,12 +51,7 @@
   const figure = $('figure');
   if (new URLSearchParams(location.search).has('gl')) figure.setAttribute('gl', '');
 
-  // q and the case close the flower by setting θ through its binding, so changing one hands θ back
-  // from a drag.
-  const set = (name, value) => {
-    figure.hold(name, value);
-    figure.release('theta');
-  };
+  const set = (name, value) => figure.hold(name, value);
 
   function controls() {
     const box = $('params');

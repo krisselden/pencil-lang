@@ -13,6 +13,7 @@ import init from '../pkg/pencil_web.js';
 
 export {
   Player,
+  let_go,
   figure_size,
   figure_size_compiled,
   named_colors,

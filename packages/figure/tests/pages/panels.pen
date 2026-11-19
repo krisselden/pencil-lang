@@ -1,0 +1,19 @@
+// Two panels, one over the other, and a handle in the top one near its lower edge, for where a
+// handle's reach stops.
+param y = 0.03 in 0..1
+let P = (0.5, y)
+let a = (0, 0)
+let b = (1, 1)
+group frame() {
+  segment diagonal = a, b
+  dot P
+}
+panel top "Top" {
+  viewport { x: 0..1, y: 0..1 }
+  use frame()
+  handle P sets y = pointer.y
+}
+panel bottom "Bottom" {
+  viewport { x: 0..1, y: 0..1 }
+  use frame()
+}

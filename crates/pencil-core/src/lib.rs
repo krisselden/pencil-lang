@@ -431,6 +431,8 @@ impl Composition {
     pub fn info(&self) -> serde_json::Value {
         let figure = &self.panels[0].figure;
         let poster = self.poster();
+        let reads: std::collections::HashMap<String, Vec<String>> =
+            clock::param_reads(&figure.scene).into_iter().collect();
         serde_json::json!({
             "size": self.size,
             "panels": self.panels.iter().map(|p| serde_json::json!({
@@ -452,6 +454,9 @@ impl Composition {
                 // for the range as it stands when it draws one of those.
                 "id": p.id, "min": p.range[0], "max": p.range[1], "step": p.step,
                 "follows": p.follows(),
+                // The other params its binding reads: a reader setting one of them hands it back
+                // to its binding.
+                "reads": reads.get(&p.id).cloned().unwrap_or_default(),
                 "choice": p.choice.as_ref().map(|c| serde_json::json!({ "of": c.of, "options": c.options })),
             })).collect::<Vec<_>>(),
             // Each mark a reader can move, in every panel, in the order a page asks about them:

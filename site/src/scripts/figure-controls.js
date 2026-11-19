@@ -28,6 +28,8 @@ class FigureControls extends HTMLElement {
     this.#figure.addEventListener('play', () => this.#paintPlay(), { signal });
     this.#figure.addEventListener('pause', () => this.#paintPlay(), { signal });
     this.#figure.addEventListener('error', (e) => this.#fail(e.detail?.error), { signal });
+    // A figure that lost its GPU and said so can come back, and then what it said is gone.
+    this.#figure.addEventListener('recover', () => this.#recovered(), { signal });
     // One listener for each kind of thing a reader does, whatever controls are written in.
     this.addEventListener('input', (e) => this.#input(e.target), { signal });
     this.addEventListener('change', (e) => this.#change(e.target), { signal });
@@ -181,6 +183,11 @@ class FigureControls extends HTMLElement {
       parts.back.disabled = beat <= range.min;
       parts.next.disabled = beat >= range.max;
     }
+  }
+
+  #recovered() {
+    this.querySelector('.error')?.remove();
+    this.hidden = this.children.length === 0;
   }
 
   #fail(error) {

@@ -49,7 +49,7 @@ that names them. `lab/explainer/limacon.pen` is the example: a file to each part
 | `param n = 3 in 1..12 step 1` | A param that only takes its range's start plus whole steps, however it's driven: its default, a binding, a reader or a drag goes to the nearest one. A step of 1 makes it a whole number, and a page's control steps the same way. |
 | `param axis in {ω, 1, 1 + ω}` | A param that's one of these values, the first unless `= 1` names another as written. They can be any one kind, and numbers go with points as points on the real axis. The name is the chosen value, so the math can use it directly: `imag(conj(axis)·P)` is the cross product with whichever direction was chosen. The param a reader sets is `axis.index`, which option it is, from 0, and a page labels each option with its text, or with its name: in `{"p = 0": 2·π / q, "q = 2p": …}` a page shows the names and the math gets the values, and `= "q = 2p"` starts there. |
 | `solve (x, y) from 0, 1: f(x, y) = 0, g(x, y) = 2` | Unknowns defined by equations (see below). |
-| `bind a = expr` | What drives a param when no reader has taken it over. |
+| `bind a = expr` | What drives a param when no reader has taken it over. A param with a binding has two drivers, the binding and the reader, and the reader's last action picks. Setting it, with a drag, a key, a control or a page's `hold`, takes it over. Setting a param its binding reads, directly, through other bindings, a choice's options or a range, hands it back: in `bind theta = case`, where the case's options read `q`, setting `q` or the case brings θ back to its binding. Params set together, as in the element's `params="q: 8; theta: 1"`, keep each other. Time is the same: setting it, or playing, hands back what it drives. A page reads which params each binding reads in `info.params` (`reads`), and needs no script of its own for this. |
 | `beat "caption" tag t { … }` | A discrete step of a construction (see below). |
 | `beat spin "caption" for 2 show P drop c focus P, .arms` | One move of a figure's story, with a length (see below). |
 | `pause 0.4` | A hold between moves, in seconds. |
@@ -75,7 +75,7 @@ that names them. `lab/explainer/limacon.pen` is the example: a file to each part
 | `panel p "Title" { … }` | One view of the figure, with its own marks (see below). |
 | `place p = P offset (8, 18) hang end` | Where an expression can sit (see below). |
 | `expression e by step { … }` | A list of states whose matching parts move (see below). |
-| `handle P sets a = expr` | Dragging `P` sets param `a`. `expr` can use `pointer.x` and `pointer.y`. |
+| `handle P sets a = expr` | Dragging `P` sets param `a`. `expr` can use `pointer.x` and `pointer.y`. Dragging, or the keys on the handle, take `a` over from its binding, until a param that binding reads is set (see `bind`). The handle is `a`'s control: the site's controls give a param a handle sets no slider. |
 | `style selector { … }` | A style rule (see below). |
 | `tag a, b` | After a statement, tags the marks it made. |
 

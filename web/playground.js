@@ -680,6 +680,11 @@ figure.addEventListener('draw', (e) => {
   readControls();
   $('status').textContent = `${figure.backend} · ${viewing(figure)} · ${compiled}`;
 });
+// A figure that lost its GPU, said so, and then drew again: the warning is gone with it.
+figure.addEventListener('recover', () => {
+  warning = null;
+  paintErrors();
+});
 figure.addEventListener('error', (e) => {
   const { error, time, fresh } = e.detail;
   // It compiled but can't draw. Go back to what last drew, so the figure stays on screen.

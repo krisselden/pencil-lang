@@ -1,7 +1,7 @@
 //! What time drives in a figure, so a host knows whether it needs a clock at all, and whether
 //! stepping a param means seeking time or setting the param.
 
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 use crate::compile::SIGNALS;
 use crate::ir::{Arc, Expr, Form, Scene, Shape, Shown};
@@ -38,6 +38,81 @@ pub fn time_driven(scene: &Scene) -> Vec<String> {
         }
     }
     found
+}
+
+/// For each param, in the scene's order, the other params its binding reads: directly, through
+/// the bindings it reads, through a choice's options, through a system it's solved in, or
+/// through the range of a param it reads. A param has two drivers, its binding and the reader,
+/// and the reader's last action picks: setting one of these hands the param back to its binding.
+/// A param's own range isn't its binding's value, so the params that range follows aren't in it.
+pub fn param_reads(scene: &Scene) -> Vec<(String, Vec<String>)> {
+    let params: HashMap<&str, &crate::ir::Param> =
+        scene.params.iter().map(|p| (p.id.as_str(), p)).collect();
+    // What each binding reads directly: the names in its expression, which holds a choice's
+    // options, and the inputs of a system it's solved in.
+    let mut direct: Vec<(&str, Vec<String>)> = Vec::new();
+    for binding in &scene.bindings {
+        let mut names: Vec<String> = Vec::new();
+        binding.expr.visit_syms(&mut |s| {
+            if !names.iter().any(|n| n == s) {
+                names.push(s.to_string());
+            }
+        });
+        if let Expr::App(head, args) = &binding.expr
+            && head == "Solved"
+            && let Some(Expr::Num(system)) = args.first()
+        {
+            for depend in &scene.systems[*system as usize].depends {
+                if !names.contains(depend) {
+                    names.push(depend.clone());
+                }
+            }
+        }
+        direct.push((&binding.id, names));
+    }
+    // A param read is read with its range, so what its range follows counts too.
+    let follows: HashMap<&str, Vec<String>> = scene
+        .params
+        .iter()
+        .map(|p| (p.id.as_str(), p.follows()))
+        .collect();
+    // Then what each reads through those, until nothing more is found. Bindings are in the order
+    // they're evaluated, but a range's end can be bound later than a binding that reads the param,
+    // so one pass in order isn't enough.
+    let mut reads: HashMap<&str, BTreeSet<String>> = HashMap::new();
+    loop {
+        let mut changed = false;
+        for (id, names) in &direct {
+            let mut found: BTreeSet<String> = reads.get(id).cloned().unwrap_or_default();
+            let before = found.len();
+            let through = |name: &str, found: &mut BTreeSet<String>| {
+                found.insert(name.to_string());
+                found.extend(reads.get(name).into_iter().flatten().cloned());
+            };
+            for name in names {
+                through(name, &mut found);
+                for follow in follows.get(name.as_str()).into_iter().flatten() {
+                    through(follow, &mut found);
+                }
+            }
+            if found.len() != before {
+                changed = true;
+                reads.insert(id, found);
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+    scene
+        .params
+        .iter()
+        .map(|p| {
+            let read = reads.get(p.id.as_str()).into_iter().flatten();
+            let read = read.filter(|name| *name != &p.id && params.contains_key(name.as_str()));
+            (p.id.clone(), read.cloned().collect())
+        })
+        .collect()
 }
 
 /// Whether anything in the figure changes with time: a binding time drives, or `time` read
@@ -346,6 +421,61 @@ mod tests {
             let c = figure(pen, sheets);
             let driven = time_driven(&c.panels[0].figure.scene);
             assert!(driven.contains(&"beat".to_string()), "{pen}: {driven:?}");
+        }
+    }
+
+    #[test]
+    fn a_bound_param_reads_the_params_its_binding_does() {
+        // θ is bound to the case, whose options read q: setting either hands θ back.
+        let c = figure(
+            "corpus/004-bounds/bounds.pen",
+            &["corpus/004-bounds/blog.style"],
+        );
+        let reads: HashMap<String, Vec<String>> =
+            param_reads(&c.panels[0].figure.scene).into_iter().collect();
+        let mut theta = reads["theta"].clone();
+        theta.sort();
+        assert_eq!(theta, ["case.index", "q"]);
+        assert!(reads["q"].is_empty(), "{:?}", reads["q"]);
+        assert!(reads["case.index"].is_empty(), "{:?}", reads["case.index"]);
+        // `beat` reads time, which isn't a param.
+        assert!(reads["beat"].is_empty(), "{:?}", reads["beat"]);
+    }
+
+    #[test]
+    fn reads_go_through_bindings_and_ranges_but_not_a_params_own_range() {
+        let c = compiled(
+            "param n = 4 in 1..9 step 1\nparam p = 2 in 0..n\nparam a in 0..1\nlet half = p / 2\nbind a = half / 10\nlet q = (a, 0)\ndot q\n",
+            &[],
+        );
+        let reads: HashMap<String, Vec<String>> =
+            param_reads(&c.panels[0].figure.scene).into_iter().collect();
+        // a reads p through `half`, and n through p's range.
+        let mut a = reads["a"].clone();
+        a.sort();
+        assert_eq!(a, ["n", "p"]);
+        // p's range follows n, but p's binding is a number: setting n keeps a held p.
+        assert!(reads["p"].is_empty(), "{:?}", reads["p"]);
+    }
+
+    #[test]
+    fn reads_go_through_a_range_bound_later_in_either_order() {
+        // `a` reads p, whose range follows n, which q drives: setting q hands a back, whichever
+        // of the two bindings is written first.
+        let head =
+            "param q = 1 in 0..5\nparam n = 2 in 1..9\nparam p = 1 in 0..n\nparam a in 0..10\n";
+        let tail = "let pt = (a, 0)\ndot pt\n";
+        for binds in [
+            "bind a = p\nbind n = q + 1\n",
+            "bind n = q + 1\nbind a = p\n",
+        ] {
+            let c = compiled(&format!("{head}{binds}{tail}"), &[]);
+            let reads: HashMap<String, Vec<String>> =
+                param_reads(&c.panels[0].figure.scene).into_iter().collect();
+            assert_eq!(reads["a"], ["n", "p", "q"], "{binds}");
+            assert_eq!(reads["n"], ["q"], "{binds}");
+            // p's own range follows n, but p's binding is a number.
+            assert!(reads["p"].is_empty(), "{binds}: {:?}", reads["p"]);
         }
     }
 

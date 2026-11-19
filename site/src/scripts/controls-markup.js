@@ -1,5 +1,5 @@
 // What `<figure-controls>` holds, as HTML: a choice of looks, a play button and a time slider,
-// beat stepping with its caption, and a control for each param. One function writes it, for the
+// beat stepping with its caption, and a control for each param a handle doesn't set. One function writes it, for the
 // build and for the page. The build writes it into the page from what `pencil build` says of the
 // figure, as the figure will stand when it starts and with everything disabled, so the controls
 // have their place and their size before any script runs. The page writes it again only when a
@@ -26,6 +26,10 @@ export const decimals = (param) => (param.step == null ? 2 : (String(param.step)
 export const valueText = (param, value) => (Number.isFinite(value) ? value.toFixed(decimals(param)) : '—');
 
 export const timeText = (seconds) => `${seconds.toFixed(1)} s`;
+
+/** Whether a handle sets this param. Its handle is its control: it takes focus and the arrow
+ * keys, and says its value to a screen reader, so the param gets no slider. */
+export const handled = (info, param) => (info.handles ?? []).some((handle) => handle.param === param.id);
 
 /** Whether the figure has beats to step through. */
 export const steps = (info) => info.beats.length > 0 && info.params.some((p) => p.id === 'beat');
@@ -59,7 +63,7 @@ export function shape(info, looks = []) {
     info.duration,
     info.beats,
     timed(info),
-    info.params.map((p) => [p.id, p.min, p.max, p.step, p.choice]),
+    info.params.map((p) => [p.id, p.min, p.max, p.step, p.choice, handled(info, p)]),
     looks.map((look) => look.name),
   ]);
   let hash = 5381;
@@ -123,6 +127,7 @@ export function markup({ id, info, moment, paused = false, looks = [], look = 0,
 
   for (const param of params) {
     if (param.id === 'beat' && stepped) continue;
+    if (handled(info, param)) continue;
     const inputId = `${id}-param-${param.id}`;
     const value = values[param.id];
     const [min, max] = ranges[param.id] ?? [param.min, param.max];

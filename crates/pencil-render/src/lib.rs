@@ -5,7 +5,6 @@ use pencil_core::eval::srgb_encode;
 use pencil_core::frame::{GEOMETRY_VEC4S, Prepared, SIDE_TEXTURE_WIDTH, VALUE_VEC4S, side_rows};
 use pencil_core::nearest;
 use pencil_core::{Figure, stroke, wgsl};
-use wgpu::util::DeviceExt;
 
 /// A frame's inputs, matching `Uniforms` in `pencil_core::wgsl`.
 #[derive(Clone, Copy, Debug)]
@@ -101,15 +100,19 @@ impl FigurePipeline {
             label: Some("pencil figure"),
             source: wgpu::ShaderSource::Wgsl(wgsl::emit(figure).into()),
         });
-        let uniforms = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        // Buffers start as zeros, and none is mapped when it's made: a browser that has lost its
+        // GPU throws on a mapped one, which wgpu can't return, and a page would trap.
+        let uniforms = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("pencil uniforms"),
-            contents: &[0; UNIFORM_BYTES],
+            size: UNIFORM_BYTES as u64,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
         });
-        let geometry = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        let geometry = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("pencil geometry"),
-            contents: &[0; GEOMETRY_BYTES],
+            size: GEOMETRY_BYTES as u64,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
         });
         let uniform_entry = |visibility| wgpu::BindGroupLayoutEntry {
             binding: 0,
@@ -428,11 +431,16 @@ impl FigurePipeline {
                 ..Default::default()
             });
             let bytes: Vec<u8> = segments.iter().flat_map(|f| f.to_le_bytes()).collect();
-            let instances = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            // Written through the queue, not mapped when it's made (see `new`).
+            let instances = device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("pencil segments"),
-                contents: &bytes,
-                usage: wgpu::BufferUsages::VERTEX,
+                size: bytes.len() as u64,
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
             });
+            if !bytes.is_empty() {
+                queue.write_buffer(&instances, 0, &bytes);
+            }
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("pencil coverage"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {

@@ -74,6 +74,9 @@ belongs: `language.md` for the language, the section below for a figure.
      arguments R passes it. The IR keeps expressions symbolic, so the text is there. A style's `text: expr = value` (2026-11-13) writes the
      expression as typed and its value as a number; what's left is writing it as math (`σ(2)` set as notation, not code) and
      an exact value, `−½ − (√3/2)i`, where one exists.
+- **A figure after its GPU is lost, on Kris's devices** ("The element", A lost GPU). Built and tested headless on
+  2026-11-18. Still to see: Chrome on the Mac after sleep or a GPU switch, which is how Kris met it, and Safari on the
+  iPhone after the phone has locked, which no test can lose a GPU in.
 
 ### The blog on Pencil
 
@@ -289,7 +292,9 @@ graphs aren't forms yet. Both reduce to parametric, so they'd be cheap additions
 that refits on those but not during a drag.
 
 - **The param model held.** A beat is a discrete param, `q` sets θ through its binding, and a drag
-  overrides that binding, which is the same mechanism as time and the slider in `Unroll`. The same
+  overrides that binding, which is the same mechanism as time and the slider in `Unroll`. Setting `q` or the
+  case hands θ back to its binding. The page did that in script at first, and since 2026-11-18 the figure does, for
+  every page: a param goes back to its binding when the reader sets one its binding reads (`decisions.md`). The same
   file also steps through its beats in an MP4, because `beat` is bound to time.
 - **Constructions stay symbolic.** `circle`, `ray`, `intersect`, `mirror` and `perpendicular` lower to
   named scalars, and circles get exact distance fields. The pedal curve is written in the language.
@@ -708,6 +713,45 @@ the M1 Pro, on WebGPU and `?gl`.
 - **The labels were drawn at twice their distance** whenever the device pixel ratio changed after the page loaded. The label layer
   kept the ratio it was made with, and every page made it once. The element reads the ratio each frame, so zooming and moving
   a window between screens are covered too.
+- **A lost GPU, 2026-11-18.** Kris found figures dead after a page had been open a while, in Chrome on the Mac: the
+  playground said "drawing failed at 0.77 s: unreachable", and fragcoord.xyz broke at the same time, which is Chrome's GPU
+  process resetting every tab's. Reproduced headless by crashing Chromium's GPU process over the DevTools protocol
+  (`Browser.crashGpuProcess`). On WebGPU the device was lost, and the next draw trapped in wgpu, at
+  `wgpu-30.0.1/src/backend/webgpu.rs:2461:63`: "called `Result::unwrap()` on an `Err` value: RangeError: … createBuffer
+  failed, size (48) is too large for the implementation when mappedAtCreation == true". After a trap the player throws
+  "recursive use of an object" on every call. On WebGL2 the context was lost and nothing trapped: draws went on drawing
+  nothing. Destroying the device from the page doesn't reproduce it, since a destroyed device takes a mapped buffer.
+  - **What changed.** The renderer makes no buffer mapped, writing through the queue, so a lost device can't throw there.
+    The player records GPU errors instead of panicking on them, knows when its device is lost, and says so at once
+    (`on_lost`), and a draw on a lost device is an error and not an attempt. The element starts the GPU again when it hears
+    the device is lost, when WebGL says its context is, or when a draw fails on the GPU's side, trap included: a new player
+    and canvas, with the figure's sources, time, held params and pause kept, and its poster meanwhile. It tries at once,
+    after a second and after five, then sends `error` with `detail.gpu`, and tries once more each time the page is shown;
+    one that draws again then sends `recover`, which the site's controls and the playground take their message down on.
+    A GPU error on a device that isn't lost is the figure's, and an `error` at once. A figure that has drawn for 30 s
+    since, or that the reader has come back to, has its tries back. With no player its handles take no pointer, so a
+    touch there scrolls, and in a figure of several panels a handle's reach stops at its panel's edge.
+  - **Contexts.** A trapped player can't be freed: its call never returned, so what it holds stays referenced. Its
+    device is let go of by its number (`let_go`), and so is what it was to say when lost. On WebGL2 the canvas keeps its
+    context, lost with `WEBGL_lose_context` and brought back for the next player, since WebKit counts a context against
+    its cap of 16 until its canvas is collected: making a new canvas each time, it lost the page's other figure's context
+    after 14 restarts, plain or trapped, where Chromium frees the slot at once. A context the browser lost and doesn't
+    bring back within 2 s is given up on, for a new canvas.
+  - **Other figures.** A trap leaves only its own player unusable. On a page with two figures the other draws on, and a
+    new player made after a trap works, on both backends and in WebKit. wgpu's state on WebGL2 is per player. Rust counts
+    the panic and never uncounts it, since a trap ends it, so a second panic anywhere on the page aborts without the
+    "panicked at" line. It still traps the same way, and a figure gets past it the same way.
+  - **Tested** (`tests/lost.spec.js`): losing the GPU and resizing, on WebGPU (the GPU process crashed in Chromium, the
+    device destroyed in WebKit) and on WebGL2 (`WEBGL_lose_context`), draws again at the same time with the same held
+    params, no `error` and no panic in the console. Two figures, one lost, the other draws on. Every device lost at once,
+    both come back. Traps one after another: at once, after 1 s, after 5 s, then an `error`, and `recover` once it draws
+    again. Starts that keep failing are an `error` in about six seconds with the page in view. A start some other way
+    (scrolled back, put back) isn't dropped by the next tab switch, and one put back sends `load`. A playing figure plays
+    on. A handle with no player takes no pointer, and in two panels its reach stops at the edge. Twenty losses and
+    twenty traps in a row on WebGL2 keep the other figure's context, in Chromium and WebKit.
+  - **Not covered:** the exact race of a draw before the word that the device is lost ("no surface texture" before,
+    "GPU surface texture unavailable" now, which starts it again) can't be made to happen on purpose, nor a GPU
+    validation error on a device that isn't lost.
 - **A hidden pane doesn't render,** so it runs no animation frames, no `IntersectionObserver` callbacks and no document timeline.
   The desktop app's pane was hidden, so these checks drove headless Chrome over the DevTools protocol instead, with a counter
   wrapped around `requestAnimationFrame`.

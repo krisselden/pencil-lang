@@ -38,10 +38,19 @@
 // is defined: changes made before that script finishes are fetched once.
 // Its labels are an em of the text where it sits, and follow when a reader changes their text size.
 // `reload()` fetches the sources again, for a page that watches them change.
+// A handle is dragged with a mouse, a pen or a finger, or tabbed to and moved with the keys. A touch
+// within a handle's reach drags it and doesn't scroll the page; anywhere else on the figure the
+// page scrolls and zooms as it would over an image. Nothing in the figure is text to select, and a
+// drag never selects the page's. The element does all this itself: a page needs no CSS for it.
+// A browser can lose the GPU under a figure, after sleep or when its GPU process restarts. The
+// figure then starts its GPU again, keeping its sources, time, held params and whether it's
+// paused, and shows its poster meanwhile. It tries at once, after a second and after five, then
+// says `error` (with `detail.gpu`), and tries once more each time the page is shown.
 // Events: `load` when a figure is compiled, `draw` after each frame drawn, `resize` when its drawn
 // size or its em changes (its `detail.em`, in CSS pixels), `input` when a reader
-// drags a param, `play` and `pause`, and `error` (its `detail.error`) when one can't load or draw.
-import { Player, figure_size, figure_size_compiled, ready, isReady, gather, ahead } from './host.js';
+// drags a param, `play` and `pause`, `error` (its `detail.error`) when one can't load or draw, and
+// `recover` when one that said `error` because it lost its GPU draws again.
+import { Player, let_go, figure_size, figure_size_compiled, ready, isReady, gather, ahead } from './host.js';
 import { LABEL_CSS, LabelLayer, fonts } from './labels.js';
 import { match } from './fit.js';
 import { follow, settle, unfollow } from './scheme.js';
@@ -53,6 +62,12 @@ const REACH = 24;
 // How far from the viewport the GPU starts, so a figure is drawn by the time it's scrolled to.
 const NEAR = '200px';
 
+// How long a figure has to draw after starting again before a loss counts as a new one.
+const SETTLED = 30_000;
+// When a figure that has lost its GPU tries again: at once, then after a moment for a GPU process
+// that's restarting, then a little longer. After those it says `error`.
+const RETRIES = [0, 1000, 5000];
+
 const fetchText = async (url) => {
   const response = await fetch(new URL(url, document.baseURI));
   if (!response.ok) throw new Error(`${url}: ${response.status}`);
@@ -60,7 +75,10 @@ const fetchText = async (url) => {
 };
 
 const CSS = `
+/* Nothing in a figure is text to select, and a long press on it shows no callout: a handle is
+   pressed and held to be dragged. WebKit doesn't carry the host's down, so each part says it. */
 :host { display: block; }
+:host, .stage *, ::slotted(*) { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
 :host([hidden]) { display: none; }
 .stage { position: relative; overflow: hidden; width: 100%; }
 canvas { display: block; width: 100%; aspect-ratio: var(--pencil-aspect, 16 / 9); outline: none; }
@@ -72,11 +90,17 @@ slot { display: none; }
 ::slotted(source) { display: none; }
 ::slotted(img), ::slotted(picture) { display: block; width: 100%; height: auto; }
 .em { position: absolute; left: 0; top: 0; width: 1em; height: 0; visibility: hidden; pointer-events: none; }
-/* Something to focus over each handle. The pointer goes through it to the canvas, which is where
-   a drag is taken, and a reader on a keyboard tabs to it and moves it with the arrow keys. Its
-   ring is two tones, so it shows on any paper. */
+/* Something to focus over each handle: a reader on a keyboard tabs to it and moves it with the
+   arrow keys. Its ring is two tones, so it shows on any paper. A pointer takes it within the
+   handle's reach, the circle its ::before fills, and a touch there drags the handle and doesn't
+   scroll the page. Anywhere else on the figure the touch goes to the canvas, which leaves the
+   page to scroll and zoom as it would over an image. */
 .handles { position: absolute; inset: 0; pointer-events: none; }
-.handle { position: absolute; left: -14px; top: -14px; width: 28px; height: 28px; border-radius: 50%; outline: none; will-change: transform; }
+.handle { position: absolute; left: -14px; top: -14px; width: 28px; height: 28px; border-radius: 50%; outline: none; will-change: transform; pointer-events: auto; touch-action: none; }
+.handle::before { content: ''; position: absolute; inset: ${14 - REACH}px; border-radius: 50%; clip-path: var(--reach, none); }
+/* With no GPU, as while the poster shows, a handle can't be dragged, so it takes no pointer, and
+   a touch on it scrolls the page. The keys still find it. */
+.stage:not(.live) .handle { pointer-events: none; touch-action: auto; }
 .handle:focus-visible { outline: 2px solid var(--pencil-focus, currentColor); outline-offset: 1px; box-shadow: 0 0 0 2px var(--pencil-focus-halo, Canvas); }
 .handle[hidden] { display: none; }
 .said { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
@@ -132,6 +156,24 @@ export class PencilFigure extends HTMLElement {
   #fresh = false;
   #seen = null;
   #resized = null;
+  // Starting again after the GPU is lost: how many times since the figure last settled, when it
+  // last did, whether it has drawn since, whether it's waiting for the page to be seen again,
+  // and that the `load` a start sends isn't news.
+  #tries = 0;
+  #restarted = 0;
+  #healthy = false;
+  #awaiting = false;
+  #quiet = false;
+  #retry = 0; // the timer for the next try
+  #reported = false; // whether it said `error` since it last drew
+  #playerId = -1; // the player's number and backend, which a trapped player can't say
+  #backend = null;
+  // A WebGL2 canvas whose context is being brought back, for the next player, and a start that
+  // waits for it.
+  #restoring = false;
+  #restoreTimer = 0;
+  #startPending = false;
+  #lose = null; // the canvas's `WEBGL_lose_context`, which a lost context doesn't give
 
   constructor() {
     super();
@@ -156,6 +198,19 @@ export class PencilFigure extends HTMLElement {
     this.#said.className = 'said';
     this.#said.setAttribute('aria-live', 'polite');
     this.#stage.append(this.#handleLayer, this.#said);
+    // A press on the canvas or on a handle's reach comes here, and a grab captures the pointer.
+    const stage = this.#stage;
+    stage.addEventListener('pointerdown', this.#pointerDown);
+    stage.addEventListener('pointermove', this.#pointerMove);
+    stage.addEventListener('pointerup', this.#pointerEnd);
+    stage.addEventListener('pointercancel', this.#pointerEnd);
+    // A grab focuses its handle, and the press mustn't take the focus away again, or start a
+    // selection that follows the pointer out over the page. Nor does a long press open a menu.
+    const grabbing = (e) => {
+      if (this.#player?.grabbed() >= 0) e.preventDefault();
+    };
+    stage.addEventListener('mousedown', grabbing);
+    stage.addEventListener('contextmenu', grabbing);
     this.addEventListener('keydown', this.#key);
     try {
       this.#internals = this.attachInternals();
@@ -239,6 +294,8 @@ export class PencilFigure extends HTMLElement {
     });
     this.#children.observe(this, { childList: true, attributes: true, subtree: true, attributeFilter: ['media', 'src', 'sheets', 'compiled'] });
     document.fonts?.addEventListener('loadingdone', this.#fontsChanged);
+    document.addEventListener('visibilitychange', this.#shown);
+    window.addEventListener('pageshow', this.#shown);
     follow(this);
     this.#wait();
     this.#listen();
@@ -255,6 +312,8 @@ export class PencilFigure extends HTMLElement {
 
   disconnectedCallback() {
     document.fonts?.removeEventListener('loadingdone', this.#fontsChanged);
+    document.removeEventListener('visibilitychange', this.#shown);
+    window.removeEventListener('pageshow', this.#shown);
     this.#seen?.disconnect();
     this.#resized?.disconnect();
     this.#children?.disconnect();
@@ -270,7 +329,7 @@ export class PencilFigure extends HTMLElement {
 
   attributeChangedCallback(name) {
     if (name === 'params') {
-      for (const [param, value] of parseParams(this.getAttribute('params'))) this.hold(param, value);
+      this.#hold(parseParams(this.getAttribute('params')));
     } else {
       this.#refetch();
     }
@@ -280,13 +339,20 @@ export class PencilFigure extends HTMLElement {
     const canvas = document.createElement('canvas');
     canvas.setAttribute('part', 'canvas');
     if (this.#size) canvas.style.setProperty('--pencil-aspect', `${this.#size[0]} / ${this.#size[1]}`);
-    canvas.addEventListener('pointerdown', this.#pointerDown);
-    canvas.addEventListener('pointermove', this.#pointerMove);
-    canvas.addEventListener('pointerup', this.#pointerEnd);
-    canvas.addEventListener('pointercancel', this.#pointerEnd);
-    // A grab focuses its handle, and the press mustn't take the focus away again.
-    canvas.addEventListener('mousedown', (e) => {
-      if (this.#player?.grabbed() >= 0) e.preventDefault();
+    // WebGL says so when it loses its context, and drawing on carries on drawing nothing. The
+    // context is kept, to be brought back, since a browser counts a canvas's against its cap
+    // until the canvas is collected, which WebKit can leave for a long while.
+    canvas.addEventListener('webglcontextlost', (e) => {
+      e.preventDefault();
+      if (canvas !== this.#canvas) return;
+      if (this.#player) this.#recover(new Error('GPU context lost'));
+      else if (this.#restoring) this.#restoreLater(canvas);
+    });
+    canvas.addEventListener('webglcontextrestored', () => {
+      if (canvas !== this.#canvas || !this.#restoring) return;
+      this.#restoring = false;
+      clearTimeout(this.#restoreTimer);
+      this.#startIfPending();
     });
     return canvas;
   }
@@ -294,6 +360,11 @@ export class PencilFigure extends HTMLElement {
   /** Starts the GPU, once, when the element is near the viewport. */
   async #start() {
     if (this.#player || this.#starting) return;
+    // Its WebGL context is on its way back.
+    if (this.#restoring) {
+      this.#startPending = true;
+      return;
+    }
     this.#starting = true;
     const generation = this.#generation;
     try {
@@ -307,6 +378,14 @@ export class PencilFigure extends HTMLElement {
         return;
       }
       this.#player = player;
+      this.#playerId = player.id;
+      this.#backend = player.backend;
+      this.#lose = player.backend === 'Gl' ? (this.#canvas.getContext('webgl2')?.getExtension('WEBGL_lose_context') ?? null) : null;
+      this.#stage.classList.add('live');
+      // A browser loses a GPU device after sleep or when its GPU process restarts, and says so.
+      player.on_lost(() => {
+        if (this.#player === player) this.#recover(new Error('GPU device lost'));
+      });
       player.set_measure(this.#layer.measure);
       this.#setEm();
       if (this.#sources) {
@@ -316,11 +395,167 @@ export class PencilFigure extends HTMLElement {
           this.#fail(error);
         }
       }
+      // Started, so nothing is waiting to try again, and the next `load` is news.
+      this.#awaiting = false;
+      this.#quiet = false;
+      clearTimeout(this.#retry);
+      this.#retry = 0;
     } catch (error) {
-      this.#fail(error);
+      // Starting again can fail while the browser's GPU is still coming back.
+      if (this.#tries && generation === this.#generation) {
+        this.#starting = false;
+        this.#recover(error);
+      } else this.#fail(error);
     } finally {
       if (generation === this.#generation) this.#starting = false;
     }
+  }
+
+  // ---- A lost GPU ----
+
+  /** Whether a draw failed on the GPU's side, which a new player gets past: a trap inside the
+   * WASM (`unreachable`), after which that player can't be used again ("recursive use of an
+   * object"), a lost device or context, or no texture to draw into, as when a draw comes before
+   * the word that the device is lost. A GPU error on a device that isn't lost is the figure's,
+   * and is said at once, as any other. A trap can be the core's too: that one fails each time it's
+   * tried, and is said once the tries are done. */
+  #recoverable(error) {
+    if (error instanceof WebAssembly.RuntimeError) return true;
+    const message = String(error?.message ?? '');
+    if (/recursive use of an object|^GPU (device lost|context lost|surface)/.test(message)) return true;
+    if (!message.startsWith('GPU error:')) return false;
+    try {
+      return this.#player?.lost ?? false;
+    } catch {
+      return true;
+    }
+  }
+
+  /**
+   * The GPU went away under the figure, or a draw failed on its side: start the GPU again, keeping
+   * the figure's sources, time, held params and whether it's paused, with its poster meanwhile.
+   * It's tried at once, then after a second and after five, for a GPU process that's coming back,
+   * and then it's an `error` (with `detail.gpu`), tried once more each time the page is shown. A
+   * figure that draws again after that says `recover`. One that has drawn for a while since, or
+   * that the reader has come back to, has its tries back.
+   */
+  #recover(error) {
+    clearTimeout(this.#retry);
+    this.#retry = 0;
+    if (this.#healthy && performance.now() - this.#restarted > SETTLED) this.#tries = 0;
+    this.#tries += 1;
+    this.#dropGpu();
+    const wait = RETRIES[this.#tries - 1];
+    if (wait === undefined) {
+      this.#awaiting = true;
+      this.#reported = true;
+      this.dispatchEvent(new CustomEvent('error', { detail: { error, time: this.#time, fresh: false, gpu: true } }));
+    } else if (wait === 0) {
+      this.#restart();
+    } else {
+      this.#retry = setTimeout(() => {
+        this.#retry = 0;
+        this.#restart();
+      }, wait);
+    }
+  }
+
+  #restart() {
+    this.#restarted = performance.now();
+    this.#quiet = true;
+    if (this.#visible) this.#start();
+  }
+
+  /** The page was seen again, or brought back from the back/forward cache. */
+  #shown = () => {
+    if (document.visibilityState !== 'visible') return;
+    if (this.#awaiting && !this.#player) {
+      // One more try, which says `error` again if it fails.
+      this.#awaiting = false;
+      this.#tries = RETRIES.length;
+      this.#restart();
+    } else if (this.#healthy) {
+      this.#tries = 0;
+    }
+  };
+
+  /** Lets go of a player, even one that trapped, which can't be borrowed again: its device is
+   * let go of by its number. */
+  #letGo(player) {
+    try {
+      player.destroy();
+    } catch {
+      let_go(this.#playerId);
+    }
+  }
+
+  /** Lets go of the player, and nothing else, as `#teardown` does with the rest. The poster shows
+   * again until the figure draws. A WebGL2 canvas keeps its context, lost and brought back for
+   * the next player, and a WebGPU one gets a new canvas. */
+  #dropGpu() {
+    cancelAnimationFrame(this.#raf);
+    this.#raf = 0;
+    this.#idle = true;
+    this.#generation += 1;
+    this.#starting = false;
+    this.#healthy = false;
+    this.#stage.classList.remove('live');
+    const player = this.#player;
+    this.#player = null;
+    // The clock stops where it is, and runs again once there's a figure to draw.
+    this.#sync();
+    if (player) {
+      this.#letGo(player);
+      if (this.#backend === 'Gl') this.#restore(this.#canvas);
+      else this.#freshCanvas();
+    }
+    this.#drawn = false;
+    this.#wait();
+  }
+
+  /** Loses a WebGL2 context, if it isn't already, and brings it back, for the next player. One the
+   * browser lost and doesn't bring back within two seconds is given up on, for a new canvas. */
+  #restore(canvas) {
+    const gl = canvas.getContext('webgl2');
+    if (!gl || !this.#lose) {
+      this.#freshCanvas();
+      return;
+    }
+    this.#restoring = true;
+    // Its `webglcontextlost` brings it back; one already lost is brought back now.
+    if (gl.isContextLost()) this.#restoreLater(canvas);
+    else this.#lose.loseContext();
+    clearTimeout(this.#restoreTimer);
+    this.#restoreTimer = setTimeout(() => {
+      if (!this.#restoring || canvas !== this.#canvas) return;
+      this.#restoring = false;
+      this.#freshCanvas();
+      this.#startIfPending();
+    }, 2000);
+  }
+
+  /** Asks for a lost context back, once the event that says it's lost is done: only a loss whose
+   * event was cancelled can be restored. One the browser lost comes back by itself, if it can. */
+  #restoreLater(canvas) {
+    setTimeout(() => {
+      if (this.#restoring && canvas === this.#canvas) this.#lose?.restoreContext();
+    }, 0);
+  }
+
+  #startIfPending() {
+    if (!this.#startPending) return;
+    this.#startPending = false;
+    if (this.#visible) this.#start();
+  }
+
+  /** A new canvas in place of the old one, which keeps its context for life. */
+  #freshCanvas() {
+    this.#lose = null;
+    const canvas = this.#makeCanvas();
+    this.#resized?.unobserve(this.#canvas);
+    this.#canvas.replaceWith(canvas);
+    this.#canvas = canvas;
+    this.#resized?.observe(canvas);
   }
 
   /** Lets go of the clock and the GPU. The figure's sources, time and held params are kept, so
@@ -332,15 +567,27 @@ export class PencilFigure extends HTMLElement {
     cancelAnimationFrame(this.#raf);
     this.#raf = 0;
     this.#idle = true;
-    const started = this.#player || this.#starting;
+    const started = this.#player || this.#starting || this.#restoring;
     this.#generation += 1;
     this.#starting = false;
+    // Nothing waits to try again: a figure put back starts afresh.
+    clearTimeout(this.#retry);
+    this.#retry = 0;
+    this.#awaiting = false;
+    this.#quiet = false;
+    this.#tries = 0;
+    this.#reported = false;
+    this.#restoring = false;
+    this.#startPending = false;
+    clearTimeout(this.#restoreTimer);
+    this.#stage.classList.remove('live');
     if (this.#player) {
-      const gl = this.#player.backend === 'Gl';
-      this.#player.destroy();
+      this.#letGo(this.#player);
       this.#player = null;
-      if (gl) this.#canvas.getContext('webgl2')?.getExtension('WEBGL_lose_context')?.loseContext();
+      // A browser has only so many contexts live, and loses the oldest past that.
+      if (this.#backend === 'Gl') this.#lose?.loseContext();
       else this.#canvas.getContext('webgpu')?.unconfigure();
+      this.#lose = null;
     }
     // A canvas keeps its context for life, so a figure put back gets a new one.
     if (started) {
@@ -474,7 +721,9 @@ export class PencilFigure extends HTMLElement {
     this.#fresh = true;
     this.#invalidate();
     this.#sync();
-    this.dispatchEvent(new Event('load'));
+    // A figure started again after losing its GPU is the same figure.
+    if (this.#quiet) this.#quiet = false;
+    else this.dispatchEvent(new Event('load'));
   }
 
   /** Shapes the figure to its design size, so nothing moves as it loads. */
@@ -500,15 +749,15 @@ export class PencilFigure extends HTMLElement {
     return this.#info?.duration ?? LOOP;
   }
 
-  /** The time last drawn, in seconds. Setting it seeks, and a `beat` that follows time follows
-   * it again. */
+  /** The time last drawn, in seconds. Setting it seeks, and hands every param time drives back
+   * to time, as a reader setting any param hands back the params whose bindings read it. */
   get time() {
     return this.#time;
   }
 
   set time(seconds) {
     this.#seek(seconds);
-    if (this.#driven.has('beat')) this.#release('beat');
+    for (const name of [...this.#held.keys()]) if (this.#driven.has(name)) this.#release(name);
     this.#invalidate();
   }
 
@@ -659,12 +908,38 @@ export class PencilFigure extends HTMLElement {
     }
   }
 
-  /** Takes a param over from time, at this value, until it's released or the figure plays. */
+  /** Takes a param over from its binding, at this value, as a reader setting it does, until it's
+   * released, the figure plays, or a param its binding reads is set. */
   hold(name, value) {
-    this.#held.delete(name);
-    this.#held.set(name, value);
-    this.#player?.set_param(name, value);
+    this.#hold([[name, value]]);
+  }
+
+  /** Holds params together: none of them hands another back. */
+  #hold(pairs) {
+    this.#reclaim(pairs.map(([name]) => name));
+    for (const [name, value] of pairs) {
+      this.#held.delete(name);
+      this.#held.set(name, value);
+      this.#player?.set_param(name, value);
+    }
     this.#invalidate();
+  }
+
+  /**
+   * A param with a binding has two drivers, its binding and the reader, and the reader's last
+   * action picks. So when a reader sets params, every other held param whose binding reads one
+   * of them (`reads`, in `info.params`, which the core works out) goes back to its binding, as
+   * θ in Bounds goes back to closing the flower when q or the case is set. Before a figure is
+   * loaded nothing is known of its bindings, so holds made then are all kept.
+   */
+  #reclaim(names) {
+    const params = this.#info?.params;
+    if (!params) return;
+    for (const name of [...this.#held.keys()]) {
+      if (names.includes(name)) continue;
+      const reads = params.find((p) => p.id === name)?.reads ?? [];
+      if (reads.some((read) => names.includes(read))) this.#release(name);
+    }
   }
 
   /** Hands a param back to its binding, or every param with no name. */
@@ -683,13 +958,13 @@ export class PencilFigure extends HTMLElement {
     return new Map(this.#held);
   }
 
-  /** Every param's value this frame, by name. Setting holds each one given. */
+  /** Every param's value this frame, by name. Setting holds each one given, together. */
   get params() {
     return Object.fromEntries((this.#info?.params ?? []).map((p) => [p.id, this.value(p.id)]));
   }
 
   set params(values) {
-    for (const [name, value] of Object.entries(values)) this.hold(name, value);
+    this.#hold(Object.entries(values));
   }
 
   /** The figure's design size, `[width, height]` in design pixels, from its sheets. */
@@ -726,13 +1001,14 @@ export class PencilFigure extends HTMLElement {
   }
 
   #pointerDown = (e) => {
-    if (!this.#player) return;
+    // One pointer drags at a time, and only with the main button.
+    if (!this.#player || !e.isPrimary || e.button !== 0) return;
     const [x, y] = this.#device(e);
     try {
       if (!this.#player.grab(this.#time, x, y, REACH * (window.devicePixelRatio || 1))) return;
       this.pause();
-      this.#canvas.setPointerCapture(e.pointerId);
-      this.#canvas.style.cursor = 'grabbing';
+      this.#stage.setPointerCapture(e.pointerId);
+      this.#stage.style.cursor = 'grabbing';
       // The keys carry on from where the pointer leaves it.
       this.#handles[this.#player.grabbed()]?.focus({ preventScroll: true });
       this.#drag(x, y);
@@ -743,8 +1019,8 @@ export class PencilFigure extends HTMLElement {
     if (!this.#player) return;
     const [x, y] = this.#device(e);
     try {
-      if (!this.#canvas.hasPointerCapture(e.pointerId)) {
-        this.#canvas.style.cursor = this.#player.grab(this.#time, x, y, REACH * (window.devicePixelRatio || 1)) ? 'grab' : '';
+      if (!this.#stage.hasPointerCapture(e.pointerId)) {
+        this.#stage.style.cursor = this.#player.grab(this.#time, x, y, REACH * (window.devicePixelRatio || 1)) ? 'grab' : '';
         this.#player.release();
         return;
       }
@@ -753,9 +1029,10 @@ export class PencilFigure extends HTMLElement {
   };
 
   #pointerEnd = (e) => {
-    if (this.#canvas.hasPointerCapture(e.pointerId)) this.#canvas.releasePointerCapture(e.pointerId);
+    if (!this.#stage.hasPointerCapture(e.pointerId)) return;
+    this.#stage.releasePointerCapture(e.pointerId);
     this.#player?.release();
-    this.#canvas.style.cursor = '';
+    this.#stage.style.cursor = '';
   };
 
   #drag(x, y) {
@@ -766,6 +1043,7 @@ export class PencilFigure extends HTMLElement {
   #moved(name) {
     if (!name) return;
     const value = this.#player.value(name, this.#time);
+    this.#reclaim([name]);
     this.#held.delete(name);
     this.#held.set(name, value);
     this.#invalidate();
@@ -828,6 +1106,8 @@ export class PencilFigure extends HTMLElement {
       return;
     }
     const scale = this.#canvas.clientWidth / this.#canvas.width;
+    const [width, height] = [this.#canvas.clientWidth, this.#canvas.clientHeight];
+    const panels = this.#info.panels ?? [];
     this.#handles.forEach((el, i) => {
       const [x, y] = [places[2 * i] * scale, places[2 * i + 1] * scale];
       const there = Number.isFinite(x) && Number.isFinite(y);
@@ -835,6 +1115,14 @@ export class PencilFigure extends HTMLElement {
       if (!there) return;
       const moved = `translate(${x.toFixed(2)}px, ${y.toFixed(2)}px)`;
       if (el.style.transform !== moved) el.style.transform = moved;
+      // A handle can't be grabbed outside its panel, so its reach stops there, and a touch past
+      // it scrolls the page. The figure's own edge already stops it.
+      if (panels.length > 1) {
+        const [px, py, pw, ph] = panels[this.#info.handles[i].panel]?.rect ?? [0, 0, 1, 1];
+        const cut = [py * height - (y - REACH), x + REACH - (px + pw) * width, y + REACH - (py + ph) * height, px * width - (x - REACH)];
+        const reach = cut.some((c) => c > 0) ? `inset(${cut.map((c) => `${Math.max(0, c).toFixed(1)}px`).join(' ')})` : 'none';
+        if (el.style.getPropertyValue('--reach') !== reach) el.style.setProperty('--reach', reach);
+      }
       const param = this.#info.handles[i].param;
       const value = this.#valueAt(param, this.#time);
       const [min, max] = this.range(param);
@@ -950,6 +1238,10 @@ export class PencilFigure extends HTMLElement {
     try {
       this.#layer.update(JSON.parse(this.#player.draw(this.#time, dpr)));
     } catch (error) {
+      if (this.#recoverable(error)) {
+        this.#recover(error);
+        return;
+      }
       this.pause();
       this.dispatchEvent(new CustomEvent('error', { detail: { error, time: this.#time, fresh } }));
       return;
@@ -958,7 +1250,12 @@ export class PencilFigure extends HTMLElement {
       this.#drawn = true;
       this.#wait();
     }
+    this.#healthy = true;
     this.#placeHandles();
+    if (this.#reported) {
+      this.#reported = false;
+      this.dispatchEvent(new Event('recover'));
+    }
     this.dispatchEvent(new CustomEvent('draw', { detail: { time: this.#time, fresh } }));
   }
 
@@ -980,8 +1277,15 @@ export class PencilFigure extends HTMLElement {
       return;
     }
     const [width, height] = [this.#canvas.width, this.#canvas.height];
-    this.#player.resize(...match(this.#canvas));
-    const em = this.#setEm();
+    let em;
+    try {
+      this.#player.resize(...match(this.#canvas));
+      em = this.#setEm();
+    } catch (error) {
+      if (!this.#recoverable(error)) throw error;
+      this.#recover(error);
+      return;
+    }
     if (em || this.#canvas.width !== width || this.#canvas.height !== height) {
       this.#paint();
       this.dispatchEvent(new CustomEvent('resize', { detail: { em: this.#emPx } }));

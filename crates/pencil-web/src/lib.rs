@@ -4,6 +4,8 @@
 
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::{Arc, Mutex};
 
 use pencil_core::formula;
 use pencil_core::frame::{self, Inputs};
@@ -14,8 +16,38 @@ use pencil_render::{FigurePipeline, FrameInputs};
 use wasm_bindgen::prelude::*;
 use web_sys::HtmlCanvasElement;
 
+// What each player tells its page when its GPU device is lost, by player. wgpu's device-lost
+// callback has to be `Send`, so it can't hold a page's function, and finds it here by the player's
+// number instead. A page has one thread.
+// Each player's device too, so a page can let go of one whose player trapped: such a player
+// can't be borrowed again, so its own `destroy` can't run.
+thread_local! {
+    static ON_LOST: RefCell<HashMap<u32, js_sys::Function>> = RefCell::new(HashMap::new());
+    static DEVICES: RefCell<HashMap<u32, wgpu::Device>> = RefCell::new(HashMap::new());
+}
+
+/// Lets go of a player's GPU device by its number (`Player.id`), and forgets what it was to say
+/// when that's lost. For a player that can't be used any more, after a trap: its device would
+/// otherwise live on, and the page's callback with it.
+#[wasm_bindgen]
+pub fn let_go(id: u32) {
+    ON_LOST.with(|all| all.borrow_mut().remove(&id));
+    if let Some(device) = DEVICES.with(|all| all.borrow_mut().remove(&id)) {
+        device.destroy();
+    }
+}
+static PLAYERS: AtomicU32 = AtomicU32::new(0);
+
 #[wasm_bindgen]
 pub struct Player {
+    /// This player's number, for `ON_LOST`.
+    id: u32,
+    /// Whether the browser has lost the GPU device, as it does after sleep or when its GPU
+    /// process restarts. Nothing drawn on it shows again, and it can't be got back: a page makes
+    /// a new player.
+    lost: Arc<AtomicBool>,
+    /// A GPU error nothing asked about, which wgpu would otherwise panic on, for `draw` to return.
+    gpu_error: Arc<Mutex<Option<String>>>,
     device: wgpu::Device,
     queue: wgpu::Queue,
     surface: wgpu::Surface<'static>,
@@ -33,6 +65,13 @@ pub struct Player {
     measured: RefCell<HashMap<(String, u64, bool), f64>>,
     /// The page's text size where the figure is, in CSS pixels: an `em`.
     em: Option<f64>,
+}
+
+impl Drop for Player {
+    fn drop(&mut self) {
+        ON_LOST.with(|all| all.borrow_mut().remove(&self.id));
+        DEVICES.with(|all| all.borrow_mut().remove(&self.id));
+    }
 }
 
 /// A page's own text widths, asking it once for each.
@@ -177,6 +216,28 @@ impl Player {
             .await
             .map_err(js_error)?;
 
+        let id = PLAYERS.fetch_add(1, Ordering::Relaxed);
+        let lost = Arc::new(AtomicBool::new(false));
+        let gpu_error = Arc::new(Mutex::new(None));
+        {
+            let lost = lost.clone();
+            device.set_device_lost_callback(move |_reason, message| {
+                lost.store(true, Ordering::Relaxed);
+                // Taken out first, since the page may make another player as it hears.
+                let tell = ON_LOST.with(|all| all.borrow().get(&id).cloned());
+                if let Some(tell) = tell {
+                    let _ = tell.call1(&JsValue::NULL, &JsValue::from_str(&message));
+                }
+            });
+            let gpu_error = gpu_error.clone();
+            // wgpu's own handler panics, which traps the whole call in WASM.
+            device.on_uncaptured_error(Arc::new(move |error| {
+                if let Ok(mut slot) = gpu_error.lock() {
+                    slot.get_or_insert_with(|| error.to_string());
+                }
+            }));
+        }
+
         let caps = surface.get_capabilities(&adapter);
         // The shader encodes sRGB itself, so the surface must not encode it again.
         let format = caps
@@ -197,7 +258,11 @@ impl Player {
             view_formats: vec![],
         };
         surface.configure(&device, &config);
+        DEVICES.with(|all| all.borrow_mut().insert(id, device.clone()));
         Ok(Player {
+            id,
+            lost,
+            gpu_error,
             device,
             queue,
             surface,
@@ -212,11 +277,43 @@ impl Player {
         })
     }
 
+    /// Destroys the GPU device, as a browser does when it loses it (after sleep, or when its GPU
+    /// process restarts), for testing what a figure does then. On WebGL2 a page loses the
+    /// context instead, through `WEBGL_lose_context`.
+    pub fn lose_device(&self) {
+        self.device.destroy();
+    }
+
+    /// Panics, which traps in WASM as a panic inside wgpu would, leaving this player unusable,
+    /// for testing that a page gets past one.
+    pub fn trap(&mut self) {
+        panic!("a trap, for a test");
+    }
+
+    /// Calls `callback(message)` once the GPU device is lost, so a page can start the figure again
+    /// on a new one at once, without waiting for a frame to fail.
+    pub fn on_lost(&self, callback: js_sys::Function) {
+        ON_LOST.with(|all| all.borrow_mut().insert(self.id, callback));
+    }
+
+    /// Whether the GPU device is lost.
+    #[wasm_bindgen(getter)]
+    pub fn lost(&self) -> bool {
+        self.lost.load(Ordering::Relaxed)
+    }
+
     /// Lets go of the GPU now, rather than whenever the page's garbage collector gets to it:
     /// browsers cap how many contexts can be live at once. The player can't be used after.
-    pub fn destroy(self) {
-        drop(self.figure);
-        self.device.destroy();
+    pub fn destroy(mut self) {
+        self.figure = None;
+        // Letting go isn't losing it, so the page isn't told.
+        let_go(self.id);
+    }
+
+    /// This player's number, for `let_go`.
+    #[wasm_bindgen(getter)]
+    pub fn id(&self) -> u32 {
+        self.id
     }
 
     /// The wgpu backend in use: `BrowserWebGpu` or `Gl`.
@@ -529,12 +626,19 @@ impl Player {
         if (width, height) != (self.config.width, self.config.height) {
             self.config.width = width;
             self.config.height = height;
-            self.surface.configure(&self.device, &self.config);
+            if !self.lost() {
+                self.surface.configure(&self.device, &self.config);
+            }
         }
     }
 
     /// Draws a frame, and returns its labels as JSON, for the page's text overlay.
     pub fn draw(&mut self, time: f32, dpr: f32) -> Result<String, JsError> {
+        // Nothing made on a lost device is drawn, and a browser can throw on it, so it's not tried.
+        // A page's error starting "GPU" is one a new player can get past.
+        if self.lost() {
+            return Err(js_error("GPU device lost"));
+        }
         let inputs = self.inputs(time);
         let Some((composition, pipelines)) = &mut self.figure else {
             return Ok("[]".to_string());
@@ -558,7 +662,10 @@ impl Player {
             | wgpu::CurrentSurfaceTexture::Suboptimal(frame) => frame,
             other => {
                 self.surface.configure(&self.device, &self.config);
-                return Err(js_error(format!("no surface texture: {other:?}")));
+                // As when the device is lost before the page hears so: a page starts it again.
+                return Err(js_error(format!(
+                    "GPU surface texture unavailable: {other:?}"
+                )));
             }
         };
         let view = frame.texture.create_view(&Default::default());
@@ -584,6 +691,9 @@ impl Player {
         }
         self.queue.submit([encoder.finish()]);
         self.queue.present(frame);
+        if let Some(error) = self.gpu_error.lock().ok().and_then(|mut slot| slot.take()) {
+            return Err(js_error(format!("GPU error: {error}")));
+        }
         let paper = frames[0].prepared.paper;
         let labels = composition
             .labels(&frames, &inputs, &widths)
