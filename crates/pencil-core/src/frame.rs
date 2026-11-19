@@ -493,8 +493,11 @@ pub fn handle_places(
 /// doesn't exist this frame.
 ///
 /// A param with steps might not reach its next value in one move, and a key that did nothing
-/// would leave a reader stuck. So the move is doubled until a param changes, or until it has
-/// gone as far as the canvas is wide, where the direction has no next value.
+/// would leave a reader stuck. So the move is doubled until the mark has moved the way the key
+/// asks or a param with steps has reached another, or until it has gone as far as the canvas is
+/// wide, where the direction has no next value. A handle that sets a stepped param and one
+/// without steps would otherwise stop at once, when the one without moved, and slide the mark
+/// sideways.
 pub fn nudge_value(
     figure: &Figure,
     inputs: &Inputs,
@@ -514,11 +517,17 @@ pub fn nudge_value(
     let env = eval::frame_env(figure, inputs)?;
     let params: Vec<&str> = figure.scene.handles[handle].params().collect();
     let now: Vec<Option<f64>> = params.iter().map(|param| env.get(param)).collect();
-    let stepped = figure
-        .scene
-        .params
+    let steps: Vec<bool> = params
         .iter()
-        .any(|p| params.contains(&p.id.as_str()) && p.step.is_some());
+        .map(|name| {
+            figure
+                .scene
+                .params
+                .iter()
+                .any(|p| p.id == *name && p.step.is_some())
+        })
+        .collect();
+    let stepped = steps.iter().any(|s| *s);
     let far = width.max(height) as f64;
     let mut reach = 1.0;
     loop {
@@ -531,12 +540,30 @@ pub fn nudge_value(
             place.0 + dx * reach,
             place.1 + dy * reach,
         )?;
-        let moved = values
+        let stepped_changed = values
             .iter()
             .zip(&now)
-            .any(|((_, value), now)| now.is_none_or(|now| (value - now).abs() > 1e-9));
+            .zip(&steps)
+            .filter(|(_, stepped)| **stepped)
+            .any(|(((_, value), now), _)| now.is_none_or(|now| (value - now).abs() > 1e-9));
+        // Where the mark would be, and whether that's on the way the key points.
+        let toward = || -> Result<bool, Error> {
+            let mut moved = inputs.clone();
+            moved
+                .params
+                .retain(|(id, _)| !params.contains(&id.as_str()));
+            moved.params.extend(values.iter().cloned());
+            Ok(
+                match handle_places(figure, &moved, width, height)?[handle] {
+                    Some((x, y)) => (x - place.0) * dx + (y - place.1) * dy > 1e-6,
+                    None => false,
+                },
+            )
+        };
         reach *= 2.0;
-        if moved || !stepped || dx.hypot(dy) * reach > far {
+        // With no steps, the first move is the move.
+        let done = !stepped || stepped_changed || toward()?;
+        if done || dx.hypot(dy) * reach > far {
             return Ok(Some(values));
         }
     }
@@ -545,7 +572,9 @@ pub fn nudge_value(
 /// What a drag sets a handle's params to: each one's explicit inverse at the pointer, kept
 /// within that param's range, which is what constrains the drag. Every inverse reads the
 /// pointer and the params as they were before the drag, so a handle that sets two sets them
-/// together, and each stops at its own range while the other goes on.
+/// together, and each stops at its own range while the other goes on. The values are then
+/// settled as a frame settles them, in dependency order, so a range that follows the other
+/// param is the one it has after the drag, and what's held is what's drawn.
 pub fn drag_value(
     figure: &Figure,
     inputs: &Inputs,
@@ -566,7 +595,7 @@ pub fn drag_value(
         "pointer.y",
         view.y[1] - py / height as f64 * (view.y[1] - view.y[0]),
     );
-    handle
+    let raw = handle
         .sets
         .iter()
         .map(|(name, inverse)| {
@@ -579,13 +608,22 @@ pub fn drag_value(
                 },
                 Err(e) => return Err(e),
             };
-            let value = match figure.scene.params.iter().find(|p| p.id == *name) {
-                Some(param) => param.settle(value, eval::param_range(param, &env)?),
-                None => value,
-            };
             Ok((name.clone(), value))
         })
-        .collect()
+        .collect::<Result<Vec<_>, Error>>()?;
+    // Held at those values, the frame keeps each in its range as it stands, in order.
+    let mut held = inputs.clone();
+    held.params
+        .retain(|(id, _)| !raw.iter().any(|(name, _)| name == id));
+    held.params.extend(raw.iter().cloned());
+    let settled = eval::frame_env(figure, &held)?;
+    Ok(raw
+        .into_iter()
+        .map(|(name, value)| {
+            let value = settled.get(&name).unwrap_or(value);
+            (name, value)
+        })
+        .collect())
 }
 
 /// What a label says: its caption, or what its style's `text` makes of the value it's about,
@@ -1890,6 +1928,85 @@ mod tests {
         let pairs = |a: f64, b: f64| [("a".to_string(), a), ("b".to_string(), b)];
         assert_eq!(key(4.0, 0.0), pairs(1.0, 0.0));
         assert_eq!(key(0.0, -4.0), pairs(0.0, 1.0));
+    }
+
+    #[test]
+    fn a_range_that_follows_the_other_param_is_the_one_it_has_after_the_drag() {
+        // p can't pass q, and one drag sets both. At (0.3, 0.9) q is 0.3, so p is too, as the
+        // frame draws it, whichever is declared first.
+        let follows = [
+            "param q = 1 in 0..2\nparam p = 0.5 in 0..q",
+            "param p = 0.5 in 0..q\nparam q = 1 in 0..2",
+        ];
+        for params in follows {
+            let doc = format!(
+                "viewport {{ x: -2..2, y: -2..2 }}\n{params}\nlet z = q + p·i\ndot z\n\
+                 handle z sets q = pointer.x, p = pointer.y"
+            );
+            let f = build(&doc, &[]).unwrap();
+            let (px, py) = pixel(2.0, 0.3, 0.9);
+            let values = drag_value(&f, &Inputs::at(0.0), 0, 400, 400, px, py).unwrap();
+            assert!(
+                (values[0].1 - 0.3).abs() < 1e-12 && (values[1].1 - 0.3).abs() < 1e-12,
+                "{params}: {values:?}"
+            );
+            // Held at what the drag gave, the frame draws the same values.
+            let env =
+                eval::frame_env(&f, &held(&[("q", values[0].1), ("p", values[1].1)])).unwrap();
+            assert_eq!(
+                (env.get("q"), env.get("p")),
+                (Some(values[0].1), Some(values[1].1))
+            );
+            // Below q, p is where the pointer is.
+            let (px, py) = pixel(2.0, 1.5, 0.9);
+            let values = drag_value(&f, &Inputs::at(0.0), 0, 400, 400, px, py).unwrap();
+            assert!(
+                (values[0].1 - 1.5).abs() < 1e-12 && (values[1].1 - 0.9).abs() < 1e-12,
+                "{params}: {values:?}"
+            );
+        }
+        // Neither following the other, each stops at its own end.
+        let f = build(
+            "viewport { x: -2..2, y: -2..2 }\nparam q = 1 in 0..2\nparam p = 0.5 in 0..1\n\
+             let z = q + p·i\ndot z\nhandle z sets q = pointer.x, p = pointer.y",
+            &[],
+        )
+        .unwrap();
+        let (px, py) = pixel(2.0, 0.3, 1.5);
+        let values = drag_value(&f, &Inputs::at(0.0), 0, 400, 400, px, py).unwrap();
+        assert!(
+            (values[0].1 - 0.3).abs() < 1e-12 && values[1].1 == 1.0,
+            "{values:?}"
+        );
+    }
+
+    #[test]
+    fn a_key_moves_a_lattice_point_the_way_it_points_with_any_params_stepped() {
+        for (a, b) in [(" step 1", ""), ("", " step 1"), (" step 1", " step 1")] {
+            let doc = lattice("").replacen("in -3..3", &format!("in -3..3{a}"), 1);
+            let doc = doc.replacen("b = 0 in -3..3", &format!("b = 0 in -3..3{b}"), 1);
+            let f = build(&doc, &[]).unwrap();
+            let start = mark_at(&f, 0, &[]);
+            for (key, dx, dy) in [
+                ("right", 4.0, 0.0),
+                ("left", -4.0, 0.0),
+                ("up", 0.0, -4.0),
+                ("down", 0.0, 4.0),
+            ] {
+                let values = nudge_value(&f, &Inputs::at(0.0), 0, 400, 400, dx, dy)
+                    .unwrap()
+                    .unwrap();
+                let (x, y) = mark_at(&f, 0, &values);
+                // In the figure's own coordinates, where up is +y.
+                let (mx, my) = (x - start.0, y - start.1);
+                let (wx, wy) = (dx, -dy);
+                let along = (mx * wx + my * wy) / wx.hypot(wy);
+                assert!(
+                    along > 0.5 * mx.hypot(my) && along > 1e-6,
+                    "a{a}, b{b}: {key} moved the mark by ({mx}, {my})"
+                );
+            }
+        }
     }
 
     #[test]
