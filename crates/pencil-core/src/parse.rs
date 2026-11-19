@@ -227,12 +227,11 @@ pub enum Item {
     Pause(Expr),
     /// Tags the marks the statement before it made.
     Tag(Vec<String>),
-    /// Dragging a mark sets a param. The expression is the explicit inverse from the
-    /// pointer to the param, and the param's range is the constraint.
+    /// Dragging a mark sets one param, or two. Each expression is the explicit inverse from
+    /// the pointer to its param, and each param's range is its constraint.
     Handle {
         mark: String,
-        param: String,
-        inverse: Expr,
+        sets: Vec<HandleSet>,
         line: usize,
     },
     Viewport {
@@ -244,6 +243,15 @@ pub enum Item {
         yaw: Option<Expr>,
     },
     Style(StyleRule),
+}
+
+/// One `param = expr` of a handle, with where the param's name is written.
+#[derive(Clone, Debug, PartialEq)]
+pub struct HandleSet {
+    pub param: String,
+    pub inverse: Expr,
+    pub line: usize,
+    pub col: usize,
 }
 
 /// How a curve was written. Each form keeps its own representation downstream.
@@ -1015,15 +1023,37 @@ impl Parser {
             "handle" => {
                 let mark = self.ident("a mark")?;
                 self.keyword("sets")?;
-                let param = self.ident("a param")?;
-                self.expect("=")?;
-                let inverse = self.expr()?;
-                items.push(Item::Handle {
-                    mark,
-                    param,
-                    inverse,
-                    line,
-                });
+                // One param, or two for a point dragged in two dimensions, each from the pointer.
+                let mut sets: Vec<HandleSet> = Vec::new();
+                loop {
+                    let (at, col) = (self.line(), self.toks[self.pos].col);
+                    let param = self.ident("a param")?;
+                    if sets.iter().any(|s| s.param == param) {
+                        return Err(Error::at(
+                            at,
+                            col,
+                            format!("`handle {mark}` sets `{param}` twice"),
+                        ));
+                    }
+                    self.expect("=")?;
+                    let inverse = self.expr()?;
+                    sets.push(HandleSet {
+                        param,
+                        inverse,
+                        line: at,
+                        col,
+                    });
+                    if !matches!(self.peek(), Tok::Punct(p) if *p == ",") {
+                        break;
+                    }
+                    if sets.len() == 2 {
+                        return Err(self.error(format!(
+                            "`handle {mark}` sets one param or two, not more: a point has two coordinates"
+                        )));
+                    }
+                    self.bump();
+                }
+                items.push(Item::Handle { mark, sets, line });
             }
             "beat" if self.is_move() => {
                 let beat_name = match self.peek() {
@@ -1926,6 +1956,35 @@ mod tests {
         );
         let err = parse("let v = x_{1 + 2}").unwrap_err();
         assert!(err.message.contains("subscript in braces"), "{err}");
+    }
+
+    #[test]
+    fn a_handle_sets_one_param_or_two() {
+        let doc = parse("handle z sets a = pointer.x,\n  b = pointer.y").unwrap();
+        let Item::Handle { mark, sets, line } = &doc.items[0] else {
+            panic!("{:?}", doc.items[0])
+        };
+        assert_eq!((mark.as_str(), *line), ("z", 1));
+        let names: Vec<_> = sets
+            .iter()
+            .map(|s| (s.param.as_str(), s.line, s.col))
+            .collect();
+        assert_eq!(names, [("a", 1, 15), ("b", 2, 3)]);
+        assert_eq!(sets[1].inverse, Expr::sym("pointer.y"));
+        let doc = parse("handle P sets a = pointer.x").unwrap();
+        assert!(matches!(&doc.items[0], Item::Handle { sets, .. } if sets.len() == 1));
+    }
+
+    #[test]
+    fn a_handle_says_each_param_once_and_at_most_two() {
+        let err = parse("handle z sets a = pointer.x, a = pointer.y").unwrap_err();
+        assert_eq!((err.line, err.col), (1, 30));
+        assert_eq!(err.message, "`handle z` sets `a` twice");
+        let err = parse("handle z sets a = pointer.x, b = pointer.y, c = 0").unwrap_err();
+        assert_eq!((err.line, err.col), (1, 43));
+        assert!(err.message.contains("one param or two, not more"), "{err}");
+        let err = parse("handle z sets a = pointer.x, = 1").unwrap_err();
+        assert!(err.message.contains("expected a param"), "{err}");
     }
 
     #[test]

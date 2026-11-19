@@ -331,14 +331,26 @@ pub struct Expression {
     pub states: Vec<Vec<Piece>>,
 }
 
-/// A mark a reader can drag. `inverse` maps `pointer.x`, `pointer.y` to the param, and
-/// the param's range is the constraint: an explicit inverse, in SPEC/16's terms.
+/// A mark a reader can drag. It sets one param, or two for a point dragged in two dimensions.
+/// Each of `sets` is a param and the expression in `pointer.x`, `pointer.y` that it takes, and
+/// each param's range is its constraint: an explicit inverse, in SPEC/16's terms.
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Handle {
     pub mark: String,
-    pub param: String,
     pub at: [Expr; 2],
-    pub inverse: Expr,
+    pub sets: Vec<(String, Expr)>,
+}
+
+impl Handle {
+    /// The params a drag of it sets, in the order it says them.
+    pub fn params(&self) -> impl Iterator<Item = &str> {
+        self.sets.iter().map(|(param, _)| param.as_str())
+    }
+
+    /// Whether dragging it sets this param.
+    pub fn sets(&self, param: &str) -> bool {
+        self.params().any(|p| p == param)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -569,8 +581,10 @@ impl Scene {
             })).collect::<Vec<_>>(),
             "handles": self.handles.iter().map(|h| json!({
                 "mark": h.mark,
-                "param": h.param,
-                "inverse": h.inverse.to_mathjson(),
+                "sets": h.sets.iter().map(|(param, inverse)| json!({
+                    "param": param,
+                    "inverse": inverse.to_mathjson(),
+                })).collect::<Vec<_>>(),
             })).collect::<Vec<_>>(),
             "params": self.params.iter().map(|p| {
                 let mut param = json!({ "id": p.id, "range": p.range });

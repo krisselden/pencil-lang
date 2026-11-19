@@ -383,7 +383,10 @@ mod tests {
             let reach = intersect(c, line((-2, 3), (2, 3)))
             handle P sets a = reach.x";
         let f = build(doc, &[]).unwrap();
-        let (_, value) = drag_value(&f, &Inputs::at(0.0), 0, 100, 100, 75.0, 50.0).unwrap();
+        let [(_, value)] = drag_value(&f, &Inputs::at(0.0), 0, 100, 100, 75.0, 50.0)
+            .unwrap()
+            .try_into()
+            .unwrap();
         assert_eq!(value, 0.25);
     }
 

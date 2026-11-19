@@ -314,7 +314,7 @@ pub fn view_for(
         params: inputs
             .params
             .iter()
-            .filter(|(id, _)| !handles.iter().any(|h| h.param == *id))
+            .filter(|(id, _)| !handles.iter().any(|h| h.sets(id)))
             .cloned()
             .collect(),
     };
@@ -488,12 +488,12 @@ pub fn handle_places(
         .collect()
 }
 
-/// What a key sets a handle's param to: its inverse at where the mark is, moved by this many
+/// What a key sets a handle's params to: its inverses at where the mark is, moved by this many
 /// device pixels, as a drag from the mark's own place would. `None` for a handle whose mark
 /// doesn't exist this frame.
 ///
 /// A param with steps might not reach its next value in one move, and a key that did nothing
-/// would leave a reader stuck. So the move is doubled until the param changes, or until it has
+/// would leave a reader stuck. So the move is doubled until a param changes, or until it has
 /// gone as far as the canvas is wide, where the direction has no next value.
 pub fn nudge_value(
     figure: &Figure,
@@ -503,7 +503,7 @@ pub fn nudge_value(
     height: u32,
     dx: f64,
     dy: f64,
-) -> Result<Option<(String, f64)>, Error> {
+) -> Result<Option<Vec<(String, f64)>>, Error> {
     let Some(place) = handle_places(figure, inputs, width, height)?
         .get(handle)
         .copied()
@@ -511,17 +511,18 @@ pub fn nudge_value(
     else {
         return Ok(None);
     };
-    let param = &figure.scene.handles[handle].param;
-    let now = eval::frame_env(figure, inputs)?.get(param);
+    let env = eval::frame_env(figure, inputs)?;
+    let params: Vec<&str> = figure.scene.handles[handle].params().collect();
+    let now: Vec<Option<f64>> = params.iter().map(|param| env.get(param)).collect();
     let stepped = figure
         .scene
         .params
         .iter()
-        .any(|p| p.id == *param && p.step.is_some());
+        .any(|p| params.contains(&p.id.as_str()) && p.step.is_some());
     let far = width.max(height) as f64;
     let mut reach = 1.0;
     loop {
-        let (name, value) = drag_value(
+        let values = drag_value(
             figure,
             inputs,
             handle,
@@ -530,16 +531,21 @@ pub fn nudge_value(
             place.0 + dx * reach,
             place.1 + dy * reach,
         )?;
-        let moved = now.is_none_or(|now| (value - now).abs() > 1e-9);
+        let moved = values
+            .iter()
+            .zip(&now)
+            .any(|((_, value), now)| now.is_none_or(|now| (value - now).abs() > 1e-9));
         reach *= 2.0;
         if moved || !stepped || dx.hypot(dy) * reach > far {
-            return Ok(Some((name, value)));
+            return Ok(Some(values));
         }
     }
 }
 
-/// What a drag sets a handle's param to: its explicit inverse at the pointer, kept within
-/// the param's range, which is what constrains the drag.
+/// What a drag sets a handle's params to: each one's explicit inverse at the pointer, kept
+/// within that param's range, which is what constrains the drag. Every inverse reads the
+/// pointer and the params as they were before the drag, so a handle that sets two sets them
+/// together, and each stops at its own range while the other goes on.
 pub fn drag_value(
     figure: &Figure,
     inputs: &Inputs,
@@ -548,7 +554,7 @@ pub fn drag_value(
     height: u32,
     px: f64,
     py: f64,
-) -> Result<(String, f64), Error> {
+) -> Result<Vec<(String, f64)>, Error> {
     let handle = &figure.scene.handles[handle];
     let mut env = eval::frame_env(figure, inputs)?;
     let view = view_for(figure, inputs, width, height)?;
@@ -560,20 +566,26 @@ pub fn drag_value(
         "pointer.y",
         view.y[1] - py / height as f64 * (view.y[1] - view.y[0]),
     );
-    let value = match eval::real(&handle.inverse, &env) {
-        Ok(value) => value,
-        // The pointer is somewhere the inverse has no answer, so the param stays put.
-        Err(e) if e.absent => match env.get(&handle.param) {
-            Some(value) => value,
-            None => return Err(e),
-        },
-        Err(e) => return Err(e),
-    };
-    let value = match figure.scene.params.iter().find(|p| p.id == handle.param) {
-        Some(param) => param.settle(value, eval::param_range(param, &env)?),
-        None => value,
-    };
-    Ok((handle.param.clone(), value))
+    handle
+        .sets
+        .iter()
+        .map(|(name, inverse)| {
+            let value = match eval::real(inverse, &env) {
+                Ok(value) => value,
+                // The pointer is somewhere this inverse has no answer, so its param stays put.
+                Err(e) if e.absent => match env.get(name) {
+                    Some(value) => value,
+                    None => return Err(e),
+                },
+                Err(e) => return Err(e),
+            };
+            let value = match figure.scene.params.iter().find(|p| p.id == *name) {
+                Some(param) => param.settle(value, eval::param_range(param, &env)?),
+                None => value,
+            };
+            Ok((name.clone(), value))
+        })
+        .collect()
 }
 
 /// What a label says: its caption, or what its style's `text` makes of the value it's about,
@@ -1501,9 +1513,7 @@ mod tests {
         };
         assert_eq!(eval::frame_env(&f, &read).unwrap().get("a"), Some(1.2));
         let drag = |px: f64, py: f64| {
-            drag_value(&f, &Inputs::at(0.0), 0, 400, 400, px, py)
-                .unwrap()
-                .1
+            only(drag_value(&f, &Inputs::at(0.0), 0, 400, 400, px, py).unwrap()).1
         };
         // At 45°, π/4 is nearest 0.7.
         assert!((drag(300.0, 100.0) - 0.7).abs() < 1e-12);
@@ -1525,7 +1535,7 @@ mod tests {
     fn a_drag_follows_the_inverse_within_the_range() {
         let f = build(DRAG, &[]).unwrap();
         let drag =
-            |px: f64, py: f64| drag_value(&f, &Inputs::at(0.0), 0, 400, 400, px, py).unwrap();
+            |px: f64, py: f64| only(drag_value(&f, &Inputs::at(0.0), 0, 400, 400, px, py).unwrap());
         // At 45°: world (1, 1) is pixel (300, 100).
         assert_eq!(drag(300.0, 100.0).0, "a");
         assert!((drag(300.0, 100.0).1 - std::f64::consts::FRAC_PI_4).abs() < 1e-9);
@@ -1584,6 +1594,12 @@ mod tests {
         handle N sets n = pointer.x
         handle Q sets shown = pointer.x";
 
+    /// The one param a one-param handle set.
+    fn only(mut values: Vec<(String, f64)>) -> (String, f64) {
+        assert_eq!(values.len(), 1, "{values:?}");
+        values.remove(0)
+    }
+
     fn held(params: &[(&str, f64)]) -> Inputs {
         Inputs {
             time: 0.0,
@@ -1626,24 +1642,30 @@ mod tests {
         let at = held(&[("theta", std::f64::consts::FRAC_PI_2)]);
         // At the top of the circle, left is counterclockwise: the mark is at (200, 100), and 10
         // pixels left of it is the angle atan2(1, −0.1).
-        let (name, value) = nudge_value(&f, &at, 0, 400, 400, -10.0, 0.0)
-            .unwrap()
-            .unwrap();
+        let (name, value) = only(
+            nudge_value(&f, &at, 0, 400, 400, -10.0, 0.0)
+                .unwrap()
+                .unwrap(),
+        );
         assert_eq!(name, "theta");
         assert!((value - 1.0f64.atan2(-0.1)).abs() < 1e-12, "{value}");
         // Up is straight out from the circle, so the angle stays.
-        let (_, value) = nudge_value(&f, &at, 0, 400, 400, 0.0, -10.0)
-            .unwrap()
-            .unwrap();
+        let (_, value) = only(
+            nudge_value(&f, &at, 0, 400, 400, 0.0, -10.0)
+                .unwrap()
+                .unwrap(),
+        );
         assert!(
             (value - std::f64::consts::FRAC_PI_2).abs() < 1e-12,
             "{value}"
         );
         // The param's range stops it: past the end of the half circle, it stays at π.
         let end = held(&[("theta", std::f64::consts::PI)]);
-        let (_, value) = nudge_value(&f, &end, 0, 400, 400, 0.0, 10.0)
-            .unwrap()
-            .unwrap();
+        let (_, value) = only(
+            nudge_value(&f, &end, 0, 400, 400, 0.0, 10.0)
+                .unwrap()
+                .unwrap(),
+        );
         assert_eq!(value, std::f64::consts::PI);
     }
 
@@ -1652,24 +1674,256 @@ mod tests {
         let f = build(KEYED, &[]).unwrap();
         // N's steps are 100 pixels apart, and 4 pixels doesn't round to the next one. The move
         // grows until it does.
-        let (name, value) = nudge_value(&f, &Inputs::at(0.0), 1, 400, 400, 4.0, 0.0)
-            .unwrap()
-            .unwrap();
+        let (name, value) = only(
+            nudge_value(&f, &Inputs::at(0.0), 1, 400, 400, 4.0, 0.0)
+                .unwrap()
+                .unwrap(),
+        );
         assert_eq!((name.as_str(), value), ("n", 1.0));
-        let (_, value) = nudge_value(&f, &Inputs::at(0.0), 1, 400, 400, -4.0, 0.0)
-            .unwrap()
-            .unwrap();
+        let (_, value) = only(
+            nudge_value(&f, &Inputs::at(0.0), 1, 400, 400, -4.0, 0.0)
+                .unwrap()
+                .unwrap(),
+        );
         assert_eq!(value, -1.0);
         // At the end of its range there's no next step, and it stays.
-        let (_, value) = nudge_value(&f, &held(&[("n", 1.0)]), 1, 400, 400, 4.0, 0.0)
-            .unwrap()
-            .unwrap();
+        let (_, value) = only(
+            nudge_value(&f, &held(&[("n", 1.0)]), 1, 400, 400, 4.0, 0.0)
+                .unwrap()
+                .unwrap(),
+        );
         assert_eq!(value, 1.0);
         // Up and down don't move it at all.
-        let (_, value) = nudge_value(&f, &Inputs::at(0.0), 1, 400, 400, 0.0, 4.0)
+        let (_, value) = only(
+            nudge_value(&f, &Inputs::at(0.0), 1, 400, 400, 0.0, 4.0)
+                .unwrap()
+                .unwrap(),
+        );
+        assert_eq!(value, 0.0);
+    }
+
+    /// A point written from two params, dragged by setting both, each in its own range.
+    const PLANE: &str = "viewport { x: -2..2, y: -2..2 }
+        param a = 0 in -1.5..1.5
+        param b = 0 in -1..1 step 0.25
+        let z = a + b·i
+        dot z
+        handle z sets a = pointer.x, b = pointer.y";
+
+    /// Where a handle's mark is in the figure's own coordinates, with these params.
+    fn mark_at(f: &Figure, handle: usize, params: &[(String, f64)]) -> (f64, f64) {
+        let inputs = Inputs {
+            time: 0.0,
+            params: params.to_vec(),
+        };
+        pair(
+            &f.scene.handles[handle].at,
+            &eval::frame_env(f, &inputs).unwrap(),
+        )
+        .unwrap()
+    }
+
+    /// The device pixel of a point in a view 400 pixels square.
+    fn pixel(view: f64, x: f64, y: f64) -> (f64, f64) {
+        (
+            (x + view) / (2.0 * view) * 400.0,
+            (view - y) / (2.0 * view) * 400.0,
+        )
+    }
+
+    #[test]
+    fn a_two_param_drag_sets_both_and_each_stops_at_its_own_range() {
+        let f = build(PLANE, &[]).unwrap();
+        let drag = |x: f64, y: f64| {
+            let (px, py) = pixel(2.0, x, y);
+            drag_value(&f, &Inputs::at(0.0), 0, 400, 400, px, py).unwrap()
+        };
+        let named = |values: Vec<(String, f64)>| {
+            let names: Vec<String> = values.iter().map(|(n, _)| n.clone()).collect();
+            assert_eq!(names, ["a", "b"]);
+            (values[0].1, values[1].1)
+        };
+        // Inside both ranges the point is where the pointer is, with b on its steps.
+        let (a, b) = named(drag(0.3, 0.5));
+        assert!((a - 0.3).abs() < 1e-12 && b == 0.5, "{a} {b}");
+        assert_eq!(named(drag(-0.7, 0.3)).1, 0.25, "b takes its nearest step");
+        // Past a's range only a stops, and b goes on following the pointer.
+        let (a, b) = named(drag(1.9, -0.5));
+        assert_eq!((a, b), (1.5, -0.5));
+        let (a, b) = named(drag(1.9, 0.75));
+        assert_eq!((a, b), (1.5, 0.75));
+        // Past b's range only b stops.
+        let (a, b) = named(drag(-0.4, 1.8));
+        assert!((a + 0.4).abs() < 1e-12 && b == 1.0, "{a} {b}");
+        // Past both, it's the corner.
+        assert_eq!(named(drag(-1.9, -1.9)), (-1.5, -1.0));
+    }
+
+    #[test]
+    fn both_inverses_read_the_params_as_they_were_before_the_drag() {
+        // b's inverse reads a. It sees a before this drag sets it, not after.
+        let f = build(
+            "viewport { x: -2..2, y: -2..2 }
+             param a = 0.5 in -2..2
+             param b = 0 in -2..2
+             let P = (a, b - a)
+             dot P
+             handle P sets a = pointer.x, b = pointer.y + a",
+            &[],
+        )
+        .unwrap();
+        let (px, py) = pixel(2.0, 1.0, 0.0);
+        let values = drag_value(&f, &Inputs::at(0.0), 0, 400, 400, px, py).unwrap();
+        assert_eq!(values, [("a".to_string(), 1.0), ("b".to_string(), 0.5)]);
+    }
+
+    /// Kris's lattice: z = a + bω, and the handle turns the pointer into the two coefficients.
+    fn lattice(step: &str) -> String {
+        format!(
+            "viewport {{ x: -4..4, y: -4..4 }}
+             param a = 0 in -3..3{step}
+             param b = 0 in -3..3{step}
+             let ω = e^(i·π/3)
+             let z = a + b·ω
+             dot z
+             handle z sets a = pointer.x - pointer.y·real(ω)/imag(ω), b = pointer.y/imag(ω)"
+        )
+    }
+
+    /// Points whose coefficients are inside both ranges.
+    const INSIDE: [(f64, f64); 6] = [
+        (0.0, 0.0),
+        (0.3, 0.2),
+        (-1.7, 1.1),
+        (1.0, -2.5),
+        (-2.9, -0.4),
+        (2.5, 2.0),
+    ];
+
+    #[test]
+    fn a_lattice_point_follows_the_pointer_through_its_inverse() {
+        let f = build(&lattice(""), &[]).unwrap();
+        for (x, y) in INSIDE {
+            let (px, py) = pixel(4.0, x, y);
+            let values = drag_value(&f, &Inputs::at(0.0), 0, 400, 400, px, py).unwrap();
+            let (zx, zy) = mark_at(&f, 0, &values);
+            assert!(
+                (zx - x).abs() < 1e-12 && (zy - y).abs() < 1e-12,
+                "at ({x}, {y}) z is ({zx}, {zy})"
+            );
+        }
+    }
+
+    #[test]
+    fn a_stepped_lattice_point_lands_on_the_nearest_lattice_point_by_its_coefficients() {
+        let f = build(&lattice(" step 1"), &[]).unwrap();
+        let (h, w) = (3f64.sqrt() / 2.0, 0.5);
+        for (x, y) in INSIDE {
+            let (px, py) = pixel(4.0, x, y);
+            let values = drag_value(&f, &Inputs::at(0.0), 0, 400, 400, px, py).unwrap();
+            // The coefficients worked out here, apart from the figure, and rounded.
+            let (b, a) = ((y / h).round(), (x - y * w / h).round());
+            assert_eq!(values, [("a".to_string(), a), ("b".to_string(), b)]);
+            let (zx, zy) = mark_at(&f, 0, &values);
+            assert!(
+                (zx - (a + b * w)).abs() < 1e-12 && (zy - b * h).abs() < 1e-12,
+                "at ({x}, {y}) z is ({zx}, {zy})"
+            );
+        }
+    }
+
+    #[test]
+    fn a_key_moves_a_two_param_handle_on_the_screen() {
+        // On the plane, right is a and up is b.
+        let f = build(&PLANE.replace(" step 0.25", ""), &[]).unwrap();
+        let key = |dx, dy| nudge_value(&f, &Inputs::at(0.0), 0, 400, 400, dx, dy).unwrap();
+        let near = |got: Option<Vec<(String, f64)>>, a: f64, b: f64| {
+            let got = got.unwrap();
+            assert!(
+                (got[0].1 - a).abs() < 1e-12 && (got[1].1 - b).abs() < 1e-12,
+                "{got:?}"
+            );
+        };
+        near(key(10.0, 0.0), 0.1, 0.0);
+        near(key(-10.0, 0.0), -0.1, 0.0);
+        near(key(0.0, -10.0), 0.0, 0.1);
+        near(key(0.0, 10.0), 0.0, -0.1);
+        // On the lattice, up moves z straight up, which changes both coefficients.
+        let f = build(&lattice(""), &[]).unwrap();
+        let values = nudge_value(&f, &Inputs::at(0.0), 0, 400, 400, 0.0, -10.0)
             .unwrap()
             .unwrap();
-        assert_eq!(value, 0.0);
+        let (zx, zy) = mark_at(&f, 0, &values);
+        assert!(zx.abs() < 1e-12 && (zy - 0.2).abs() < 1e-12, "{zx} {zy}");
+        assert!(values.iter().all(|(_, v)| v.abs() > 0.01), "{values:?}");
+        // With steps, a key goes on until a coefficient reaches its next one: right is 1, and
+        // up is ω.
+        let f = build(&lattice(" step 1"), &[]).unwrap();
+        let key = |dx, dy| {
+            nudge_value(&f, &Inputs::at(0.0), 0, 400, 400, dx, dy)
+                .unwrap()
+                .unwrap()
+        };
+        let pairs = |a: f64, b: f64| [("a".to_string(), a), ("b".to_string(), b)];
+        assert_eq!(key(4.0, 0.0), pairs(1.0, 0.0));
+        assert_eq!(key(0.0, -4.0), pairs(0.0, 1.0));
+    }
+
+    #[test]
+    fn a_handle_can_read_the_pointer_as_a_point() {
+        // The log of the pointer, as a complex number: its real part is the log of its
+        // distance, and its imaginary part its angle.
+        let f = build(
+            "viewport { x: -4..4, y: -4..4 }
+             param s = 0 in -1..1
+             param t = 0 in -3..3
+             let z = exp(s + t·i)
+             dot z
+             handle z sets s = real(ln(pointer)), t = imag(ln(pointer))",
+            &[],
+        )
+        .unwrap();
+        let (x, y) = (0.5f64.exp() * 1f64.cos(), 0.5f64.exp() * 1f64.sin());
+        let (px, py) = pixel(4.0, x, y);
+        let values = drag_value(&f, &Inputs::at(0.0), 0, 400, 400, px, py).unwrap();
+        assert!((values[0].1 - 0.5).abs() < 1e-12, "{values:?}");
+        assert!((values[1].1 - 1.0).abs() < 1e-12, "{values:?}");
+        // The one-param form reads it the same way.
+        let f = build(
+            "viewport { x: -4..4, y: -4..4 }
+             param r = 1 in 0..3
+             let P = (r, 0)
+             dot P
+             handle P sets r = abs(pointer)",
+            &[],
+        )
+        .unwrap();
+        let (px, py) = pixel(4.0, 1.2, 1.6);
+        let [(_, r)] = drag_value(&f, &Inputs::at(0.0), 0, 400, 400, px, py)
+            .unwrap()
+            .try_into()
+            .unwrap();
+        assert!((r - 2.0).abs() < 1e-12, "{r}");
+    }
+
+    #[test]
+    fn a_fit_view_ignores_both_params_a_handle_sets() {
+        let f = build(
+            "viewport { fit: c, pad: 0 }
+             param a = 1 in 0..3
+             param b = 0 in 0..3
+             param k = 1 in 1..3
+             let P = (a, b)
+             curve c = circle((0, 0), k·P)
+             dot P
+             handle P sets a = pointer.x, b = pointer.y",
+            &[],
+        )
+        .unwrap();
+        let x = |params: &[(&str, f64)]| view_for(&f, &held(params), 100, 100).unwrap().x;
+        assert_eq!(x(&[]), [-1.0, 1.0]);
+        assert_eq!(x(&[("a", 2.0), ("b", 2.0)]), [-1.0, 1.0]);
+        assert_eq!(x(&[("k", 2.0)]), [-2.0, 2.0]);
     }
 
     #[test]

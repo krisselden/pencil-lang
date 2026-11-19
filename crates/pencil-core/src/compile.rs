@@ -2488,9 +2488,11 @@ fn needs(item: &Item) -> Vec<String> {
                     .filter_map(|f| f.when.as_ref().map(|(c, _)| c.clone())),
             );
         }
-        Item::Handle { param, inverse, .. } => {
-            out.push(param.clone());
-            refers(inverse, &mut out);
+        Item::Handle { sets, .. } => {
+            for set in sets {
+                out.push(set.param.clone());
+                refers(&set.inverse, &mut out);
+            }
         }
         // What a view fits is found at the end, so it needs nothing defined early.
         Item::Viewport { x, y, pad, yaw, .. } => {
@@ -2951,6 +2953,8 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
     let mut last_marks = 0..0;
     // Fit names resolve at the end, since a viewport comes before what it fits.
     let mut fit_names: Vec<String> = Vec::new();
+    // Where each handle and each param it sets are written, checked once every param is known.
+    let mut handle_lines: Vec<(usize, Vec<(usize, usize)>)> = Vec::new();
 
     macro_rules! mark {
         ($id:expr, $form:expr, $kind:expr) => {{
@@ -3842,25 +3846,29 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
                 let to = lowerer.point(to, &none).map_err(&fail)?;
                 mark!(name.clone(), Form::Arrow { from, to }, "arrow");
             }
-            Item::Handle {
-                mark,
-                param,
-                inverse,
-                line,
-            } => {
+            Item::Handle { mark, sets, line } => {
                 let fail = at_line(*line);
                 let at = lowerer.point(&Expr::sym(mark), &none).map_err(&fail)?;
+                // `pointer` is the pointer's point, as `pointer.x` and `pointer.y` are its parts,
+                // so `real(ln(pointer))` reads it as a complex number.
                 let mut locals = Locals::new();
                 locals.insert(
                     "pointer".to_string(),
                     Val::Point(Expr::sym("pointer.x"), Expr::sym("pointer.y")),
                 );
-                let inverse = lowerer.scalar(inverse, &locals).map_err(&fail)?;
+                let lowered = sets
+                    .iter()
+                    .map(|set| {
+                        let fail = at_line(set.line);
+                        let inverse = lowerer.scalar(&set.inverse, &locals).map_err(&fail)?;
+                        Ok((set.param.clone(), inverse))
+                    })
+                    .collect::<Result<Vec<_>, Error>>()?;
+                handle_lines.push((*line, sets.iter().map(|s| (s.line, s.col)).collect()));
                 scene.handles.push(Handle {
                     mark: mark.clone(),
-                    param: param.clone(),
                     at,
-                    inverse,
+                    sets: lowered,
                 });
             }
             Item::Viewport {
@@ -4040,18 +4048,29 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
         }
         binding.expr = expr;
     }
-    for handle in &scene.handles {
-        if !scene.params.iter().any(|p| p.id == handle.param) {
-            return Err(Error::new(format!(
-                "`handle {}` sets `{}`, which isn't a param",
-                handle.mark, handle.param
-            )));
+    for (handle, (line, at)) in scene.handles.iter().zip(&handle_lines) {
+        for ((param, _), (line, col)) in handle.sets.iter().zip(at) {
+            if !scene.params.iter().any(|p| p.id == *param) {
+                // A name that's a `let` or a binding's is defined, but only a param can be set.
+                return Err(Error::at(
+                    *line,
+                    *col,
+                    format!(
+                        "`handle {}` sets `{param}`, which isn't a param: only a `param` can be set",
+                        handle.mark
+                    ),
+                ));
+            }
         }
         if !scene.marks.iter().any(|m| m.id == handle.mark) {
-            return Err(Error::new(format!(
-                "`handle {0}`: nothing draws `{0}`, so it can't be grabbed",
-                handle.mark
-            )));
+            return Err(Error::at(
+                *line,
+                1,
+                format!(
+                    "`handle {0}`: nothing draws `{0}`, so it can't be grabbed",
+                    handle.mark
+                ),
+            ));
         }
     }
     in_dependency_order(&mut scene)?;
@@ -6040,12 +6059,59 @@ mod tests {
              handle P sets a = pointer.x",
         )
         .unwrap();
-        assert_eq!(ok.handles[0].param, "a");
+        assert_eq!(ok.handles[0].params().collect::<Vec<_>>(), ["a"]);
         let err = scene("let P = (0, 0)\ndot P\nhandle P sets a = pointer.x").unwrap_err();
         assert!(err.message.contains("isn't a param"), "{err}");
         let err =
             scene("param a in 0..1\nlet P = (a, 0)\nhandle P sets a = pointer.x").unwrap_err();
         assert!(err.message.contains("nothing draws"), "{err}");
+    }
+
+    #[test]
+    fn a_two_param_handle_lowers_both_and_names_what_isnt_a_param() {
+        let ok = scene(
+            "param a in -1..1
+             param b in -1..1
+             let z = a + b·i
+             dot z
+             handle z sets a = pointer.x, b = real(conj(pointer)·i)",
+        )
+        .unwrap();
+        let handle = &ok.handles[0];
+        assert_eq!(handle.params().collect::<Vec<_>>(), ["a", "b"]);
+        assert!(handle.sets("b") && !handle.sets("z"));
+        assert_eq!(handle.sets[0].1, Expr::sym("pointer.x"));
+        // conj(x + yi)·i = y + xi, whose real part is y.
+        let b = handle.sets[1].1.to_mathjson().to_string();
+        assert!(b.contains("pointer.y") && !b.contains("pointer.x"), "{b}");
+
+        // Each name it sets has to be a param, and the error points at the one that isn't.
+        let err = scene(
+            "param a in -1..1
+             let b = 0.5
+             let z = a + b·i
+             dot z
+             handle z sets a = pointer.x, b = pointer.y",
+        )
+        .unwrap_err();
+        assert_eq!((err.line, err.col), (5, 43));
+        assert!(
+            err.message
+                .contains("`handle z` sets `b`, which isn't a param: only a `param` can be set"),
+            "{err}"
+        );
+        let err = scene(
+            "param a in -1..1
+             let z = a + i
+             dot z
+             handle z sets a = pointer.x, nothing = pointer.y",
+        )
+        .unwrap_err();
+        assert_eq!((err.line, err.col), (4, 43));
+        assert!(
+            err.message.contains("`nothing`, which isn't a param"),
+            "{err}"
+        );
     }
 
     #[test]

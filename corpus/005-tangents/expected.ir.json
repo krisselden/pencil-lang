@@ -179,9 +179,13 @@
   "expressions": [],
   "handles": [
     {
-      "inverse": ["Add",["Multiply","pointer.x",["Cos","heading"]],["Multiply","pointer.y",["Sin","heading"]]],
       "mark": "P",
-      "param": "d"
+      "sets": [
+        {
+          "inverse": ["Add",["Multiply","pointer.x",["Cos","heading"]],["Multiply","pointer.y",["Sin","heading"]]],
+          "param": "d"
+        }
+      ]
     }
   ],
   "marks": [

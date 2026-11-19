@@ -639,9 +639,13 @@
   "expressions": [],
   "handles": [
     {
-      "inverse": ["Arctan2",["Max","pointer.y",0.0],"pointer.x"],
       "mark": "P",
-      "param": "theta"
+      "sets": [
+        {
+          "inverse": ["Arctan2",["Max","pointer.y",0.0],"pointer.x"],
+          "param": "theta"
+        }
+      ]
     }
   ],
   "marks": [

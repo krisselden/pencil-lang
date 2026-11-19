@@ -460,10 +460,11 @@ impl Composition {
                 "choice": p.choice.as_ref().map(|c| serde_json::json!({ "of": c.of, "options": c.options })),
             })).collect::<Vec<_>>(),
             // Each mark a reader can move, in every panel, in the order a page asks about them:
-            // which panel it's in, its mark, and the param it sets.
+            // which panel it's in, its mark, and the params it sets: one, or two for a point
+            // dragged in two dimensions.
             "handles": self.panels.iter().enumerate().flat_map(|(panel, p)| {
                 p.figure.scene.handles.iter().map(move |h| serde_json::json!({
-                    "panel": panel, "mark": h.mark, "param": h.param,
+                    "panel": panel, "mark": h.mark, "params": h.params().collect::<Vec<_>>(),
                 }))
             }).collect::<Vec<_>>(),
             "poster": {
