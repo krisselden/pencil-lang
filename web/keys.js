@@ -72,7 +72,7 @@ const SPOKEN = {
   '=': 'equals', '_': 'underscore', '-': 'minus', '+': 'plus', '/': 'divide', '.': 'point', '..': 'range, two dots',
   'π': 'pi', 'ℯ': 'e, Euler’s number', 'ⅈ': 'i, the imaginary unit', '√': 'root',
   '→': 'arrow, in a label', '↦': 'maps to, in a label', '≤': 'at most, in a label', '≥': 'at least, in a label',
-  '≠': 'not equal, in a label', '±': 'plus or minus, in a label', '∞': 'infinity, in a label', '°': 'degree, in a label',
+  '≠': 'not equal, in a label', '±': 'plus or minus', '∞': 'infinity, in a label', '°': 'degree, in a label',
   '∈': 'in, in a label', '∉': 'not in, in a label', '⊂': 'subset, in a label', '∪': 'union, in a label', '∩': 'intersection, in a label',
   '×': 'times sign, in a label', '÷': 'divided by, in a label', '≈': 'about equal, in a label', '∂': 'partial', '∇': 'nabla',
   '∑': 'sum', '∫': 'integral', 'ℝ': 'the reals', 'ℂ': 'the complex numbers', 'ℤ': 'the integers', 'ℕ': 'the naturals', 'ℚ': 'the rationals',
