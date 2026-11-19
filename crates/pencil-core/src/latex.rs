@@ -449,7 +449,9 @@ impl<'a> Reader<'a> {
                 T::Ch('-') => "-",
                 T::Cmd(c) if c == "pm" || c == "mp" => {
                     return Err(
-                        self.error("`±` has no Pencil form: write each sign as its own formula")
+                        self.error(
+                            "`±` draws two marks, which only a collection can: write each sign as its own formula, or put the `±` in a `curves`, `dots` or `circles`",
+                        )
                     );
                 }
                 _ => return Ok(left),

@@ -152,7 +152,7 @@ pub enum Item {
         value: Expr,
         /// A curve's own parameter and its range, for `curves`.
         param: Option<(String, [Expr; 2])>,
-        vars: Vec<(String, [Expr; 2])>,
+        vars: Vec<(String, Over)>,
         lets: Vec<(String, Expr)>,
         line: usize,
     },
@@ -243,6 +243,30 @@ pub enum Item {
         yaw: Option<Expr>,
     },
     Style(StyleRule),
+}
+
+/// What a collection's variable counts over: the whole numbers of a range, or a list of values in
+/// the order written.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Over {
+    Range([Expr; 2]),
+    List(Vec<Expr>),
+}
+
+impl Over {
+    pub fn exprs(&self) -> &[Expr] {
+        match self {
+            Over::Range(range) => range,
+            Over::List(values) => values,
+        }
+    }
+
+    pub fn map(&self, f: impl Fn(&Expr) -> Expr) -> Over {
+        match self {
+            Over::Range([lo, hi]) => Over::Range([f(lo), f(hi)]),
+            Over::List(values) => Over::List(values.iter().map(f).collect()),
+        }
+    }
 }
 
 /// One `param = expr` of a handle, with where the param's name is written.
@@ -529,6 +553,14 @@ fn lex(src: &str) -> Result<Vec<Lexed>, Error> {
                 line: start_line,
                 col: start_col,
             });
+        } else if c == '±' || c == '∓' {
+            advance(1, &mut i, &mut col);
+            out.push(Lexed {
+                spaced: false,
+                tok: Tok::Punct(if c == '±' { "±" } else { "∓" }),
+                line: start_line,
+                col: start_col,
+            });
         } else {
             let rest: String = chars[i..(i + 2).min(chars.len())].iter().collect();
             let Some(p) = PUNCT.iter().find(|p| rest.starts_with(**p)) else {
@@ -567,6 +599,8 @@ struct Parser {
     line_starts: Vec<usize>,
     /// How far this text's lines are numbered on from 1, when it's one file of several.
     base: usize,
+    /// Where the statement being read first says `±` or `∓`, which only a collection may.
+    branches: Option<(usize, usize)>,
 }
 
 /// Builtin names in source, and their MathJSON heads. Anything else is left under
@@ -648,6 +682,11 @@ const AFTER_EXPRESSIONS: [&str; 19] = [
     "as", "at", "away", "by", "drop", "focus", "for", "from", "hang", "if", "in", "offset", "sets",
     "show", "size", "step", "tag", "through", "with",
 ];
+
+/// `a ± b`, and `±a` with one argument: both signs, one for each of a collection's two branches.
+pub const PLUS_MINUS: &str = "PlusMinus";
+/// `a ∓ b` and `∓a`: the opposite sign to `±` in each branch.
+pub const MINUS_PLUS: &str = "MinusPlus";
 
 /// Words that can follow `beat` in a beat with a length, so none of them can be its name.
 const MOVE_WORDS: [&str; 5] = ["for", "show", "drop", "focus", "tag"];
@@ -737,7 +776,37 @@ impl Parser {
         Ok(Document { name, items })
     }
 
+    /// One statement. `±` and `∓` draw two of a mark, so only a collection can say them, and
+    /// one that's anywhere else is an error at the sign, naming the collection to use.
     fn statement(&mut self, name: &mut Option<String>, items: &mut Vec<Item>) -> Result<(), Error> {
+        let outer = self.branches.take();
+        let word = match self.peek() {
+            Tok::Ident(word) => word.clone(),
+            _ => String::new(),
+        };
+        self.statement_itself(name, items)?;
+        if let Some((line, col)) = self.branches
+            && !matches!(word.as_str(), "dots" | "circles" | "curves")
+        {
+            let plural = match word.as_str() {
+                "curve" => "a `curves` collection, or `circles` for a circle",
+                _ => "a collection: `dots` for points, `circles` for circles, `curves` for curves",
+            };
+            return Err(Error::at(
+                line,
+                col,
+                format!("`±` draws two marks, one for each sign, so it belongs in {plural}"),
+            ));
+        }
+        self.branches = outer;
+        Ok(())
+    }
+
+    fn statement_itself(
+        &mut self,
+        name: &mut Option<String>,
+        items: &mut Vec<Item>,
+    ) -> Result<(), Error> {
         let line = self.line();
         let word = self.ident("a statement")?;
         match word.as_str() {
@@ -1226,14 +1295,49 @@ impl Parser {
         } else {
             self.expr()?
         };
-        self.keyword("for")?;
+        // A collection counts over its variables, and one that says `±` draws both signs, so
+        // with one its `for` can be left out: it's a collection of two.
         let mut vars = Vec::new();
-        loop {
-            let var = self.ident("a variable")?;
-            self.keyword("in")?;
-            vars.push((var, self.range()?));
-            if !self.eat(",") {
-                break;
+        let missing_for = self.error(format!("expected `for`, found {}", self.peek()));
+        let counted = self.at_word("for");
+        if counted {
+            self.bump();
+            loop {
+                let var = self.ident("a variable")?;
+                self.keyword("in")?;
+                let from = self.pos;
+                let over = if self.eat("{") {
+                    if *self.peek() == Tok::Punct("}") {
+                        return Err(self
+                            .error(format!("`{var}` counts over nothing: a list needs a value")));
+                    }
+                    let mut values = vec![self.expr()?];
+                    while self.eat(",") {
+                        values.push(self.expr()?);
+                    }
+                    self.expect("}")?;
+                    Over::List(values)
+                } else {
+                    Over::Range(self.range()?)
+                };
+                // The signs are the innermost of a collection's variables, so what another
+                // counts over can't depend on them.
+                if let Some(sign) = self.toks[from..self.pos]
+                    .iter()
+                    .find(|t| matches!(t.tok, Tok::Punct("±" | "∓")))
+                {
+                    return Err(Error::at(
+                        sign.line,
+                        sign.col,
+                        format!(
+                            "`{var}` can't count over `±`: the two signs are a collection's last variable, so write `±` in what it draws"
+                        ),
+                    ));
+                }
+                vars.push((var, over));
+                if !self.eat(",") {
+                    break;
+                }
             }
         }
         let mut lets = Vec::new();
@@ -1247,6 +1351,9 @@ impl Parser {
                     break;
                 }
             }
+        }
+        if !counted && self.branches.is_none() {
+            return Err(missing_for);
         }
         Ok(Item::Many {
             name,
@@ -1619,10 +1726,15 @@ impl Parser {
     fn expr(&mut self) -> Result<Expr, Error> {
         let mut left = self.term()?;
         loop {
+            self.note_branches();
             let head = if self.eat("+") {
                 "Add"
             } else if self.eat("-") {
                 "Subtract"
+            } else if self.eat("±") {
+                PLUS_MINUS
+            } else if self.eat("∓") {
+                MINUS_PLUS
             } else {
                 return Ok(left);
             };
@@ -1672,7 +1784,21 @@ impl Parser {
             }
     }
 
+    /// Notes where a statement first says `±` or `∓`, if the next token is one.
+    fn note_branches(&mut self) {
+        if self.branches.is_none() && matches!(self.peek(), Tok::Punct("±" | "∓")) {
+            let t = &self.toks[self.pos];
+            self.branches = Some((t.line, t.col));
+        }
+    }
+
     fn unary(&mut self) -> Result<Expr, Error> {
+        self.note_branches();
+        for (sign, head) in [("±", PLUS_MINUS), ("∓", MINUS_PLUS)] {
+            if self.eat(sign) {
+                return Ok(Expr::app(head, vec![self.unary()?]));
+            }
+        }
         if self.eat("-") {
             // A negated literal stays one number, so `-2..2` reads as data.
             return Ok(match self.unary()? {
@@ -1783,6 +1909,7 @@ impl Parser {
             src,
             line_starts,
             base,
+            branches: None,
         })
     }
 }
@@ -1985,6 +2112,32 @@ mod tests {
         assert!(err.message.contains("one param or two, not more"), "{err}");
         let err = parse("handle z sets a = pointer.x, = 1").unwrap_err();
         assert!(err.message.contains("expected a param"), "{err}");
+    }
+
+    #[test]
+    fn signs_parse_as_one_and_two_argument_heads() {
+        assert_eq!(
+            parse_whole_expression("±cosh(t)")
+                .unwrap()
+                .to_mathjson()
+                .to_string(),
+            r#"["PlusMinus",["Cosh","t"]]"#
+        );
+        assert_eq!(
+            parse_whole_expression("a ∓ b·c")
+                .unwrap()
+                .to_mathjson()
+                .to_string(),
+            r#"["MinusPlus","a",["Multiply","b","c"]]"#
+        );
+        // As `+` and `-`: left to right, below products.
+        assert_eq!(
+            parse_whole_expression("1 ± 2 - 3")
+                .unwrap()
+                .to_mathjson()
+                .to_string(),
+            r#"["Subtract",["PlusMinus",1.0,2.0],3.0]"#
+        );
     }
 
     #[test]

@@ -67,6 +67,8 @@ that names them. `lab/explainer/limacon.pen` is the example: a file to each part
 | `dots d = P(i) for i in 1..n with z = f(i)` | One mark drawn many times (see below). |
 | `circles c = circle(C(i), T(i)) for i in 1..n` | The same, as circles. |
 | `curves c = parametric (t): P(t, i) for t in a..b for i in 1..n` | The same, as curves. |
+| `curves h = parametric (t): (±cosh(t), sinh(t)) for t in -2..2` | Both signs: a collection with `±` draws each instance twice, the + branch first (see Collections). |
+| `dots d = (i, s) for i in 0..n, s in {-1, 1}` | A variable over a list, in the order written (see Collections). |
 | `group g(k) { … }` | Things to draw in more than one place, declared once in their own coordinates. |
 | `use g(2)`, `use g(2) through f as up` | Draws a group here, optionally through a function and under a prefix (see Panels). |
 | `use "parts/mirror.pen"` | Another file's statements, here (see Documents). |
@@ -198,6 +200,27 @@ It runs Newton's method each frame, using exact symbolic derivatives, on as many
 counts in whole numbers and includes both ends of its range, and a later range can use an earlier variable:
 
 `dots grid_points = grid(a, b) for a in -q..q, b in -2..q + 2`
+
+A variable can count over a list instead, its values in the order written: `for s in {-1, 1}`, beside ranges as any
+variable is, `for i in 0..n, s in {-1, 1}`, with every combination. Its values are numbers or points, with numbers among
+points as points on the real axis, as a choice param's options are, and can read an earlier variable: `s in {i, -i}`. A
+list needs a value. `for s in -1..1` counts -1, 0 and 1, so a list is the way to say the two signs.
+
+**`±` and `∓` draw both branches.** Anywhere in a collection's expressions, its `with` included, `±` makes each instance
+two, the + branch first, as a last variable that varies fastest: `for i in 0..n` with a `±` is 2(n + 1) instances.
+Every `±` in a statement takes the same sign and every `∓` the opposite, so `(±a, ±b)` is two points and `(±a, ∓b)` the
+other two. Both forms work, `±cosh(t)` and `a ± b`. One with only `∓` is the same two branches in the other order. A
+collection with a `±` and no `for` is a collection of two:
+
+`curves hyp = parametric (t): (±cosh(t), sinh(t)) for t in -2..2`
+
+A style reads which branch an instance is as `self.sign`, 1 for the first and −1 for the second, wherever it reads the
+collection's variables: `style hyp { width: 2px + self.sign·1px }`. Lists in one expression zip, as Desmos's do, and a
+`for` is for every combination; `±` is the only list an expression can hold for now, so there's no question of lengths.
+Anywhere but a collection, `±` is an error that names the collection to use, since it would draw two marks: a `let`, a
+`curve`, a `param`, a `bind`, a `handle`, a function and a style. A collection's variable can't count over it either, since
+the sign is the last variable. In a label's text it's the character. Underneath, a list is a whole-number variable,
+`s.index`, and `s` is the value it picks, as a choice param's is, and the sign is a list `self.sign in {1, -1}`.
 
 A curve has its own parameter too, which runs smoothly, and comes first. So what Desmos writes as `s = [-3...3] / 3` is:
 
@@ -345,7 +368,7 @@ become `→`, `↦`, `≤`, `≥`, `≠`, `≈` and `±`. Undo gives back what w
 
 ## Expressions
 
-Numbers, names, `+ - * / ^`, `·` for multiply, `²` and `³`, unary `-`, and calls. Factors side by side multiply, as `2π`, `2(x + 1)`, `(a + b)(a - b)` and `a b`. Right against
+Numbers, names, `+ - * / ^`, `±` and `∓` in a collection (see Collections), `·` for multiply, `²` and `³`, unary `-`, and calls. Factors side by side multiply, as `2π`, `2(x + 1)`, `(a + b)(a - b)` and `a b`. Right against
 each other they bind tighter than `/`, so `1/2π` is 1/(2π). A space ends that: `1/2 π` is π/2, and `(k - 1)/N π` is the quotient times π, as it
 reads in Desmos, where the fraction's bar stops. A product doesn't reach past the end of its line or a word that follows an expression,
 such as `for`, `in`, `step` or `tag`. A function's name before `(` is a call. Any other name there multiplies the parentheses, so `π(t - 1)` and
@@ -413,8 +436,8 @@ Undo takes it back. Text with a backslash, a `^{`, or a leading `$` is LaTeX, an
   `arctan`, and `\log` is base 10 while `\log_{2}x` is `ln(x)/ln(2)`.
 - **A function LaTeX has and Pencil doesn't yet keeps its name,** as `\gcd`, `\lcm`, `\det` and `\lg` do, so the figure's error names
   it. `pencil latex` writes such a line as a comment that says which.
-- **What has no Pencil form is an error,** and the LaTeX pastes as written: Desmos's piecewise braces, `with` and `for`, comparisons, lists, derivatives, `±`, an
-  n-th root (`x^(1/n)` differs from it for negative x), 3D points, and infinity.
+- **What has no Pencil form is an error,** and the LaTeX pastes as written: Desmos's piecewise braces, `with` and `for`, comparisons, lists, derivatives, `±` (which only a collection
+  can hold, so the paste can't tell where it goes), an n-th root (`x^(1/n)` differs from it for negative x), 3D points, and infinity.
 
 ### Numbers
 
@@ -583,6 +606,7 @@ the color stays with the disk. A style can tell which it is from `self.curvature
 | `self.curvature` | A circle's signed curvature: above 0 counterclockwise, below 0 clockwise, and 0 on a line. |
 | `self.t` | Position along a stroke, 0 to 1, in `width`, and in a curve's `opacity`. |
 | `self.z` | A point's third coordinate as the figure wrote it: along a curve of points in space, in `width` and `opacity`, and for each dot of a collection of them, in `radius`. See Points in space. |
+| `self.sign` | Which branch of a collection with `±` an instance is: 1 for the first, where `±` is +, and −1 for the second. Wherever the collection's variables can be read. See Collections. |
 | `self.age` | See Beats. |
 | `self.life` | How present the mark is, from 0 before a beat shows it to 1, and back to 0 as one drops it, moving with those beats. 1 for a mark no beat names. |
 | `self.focus` | How much the beats are about the mark, from 0 to 1, changing as a beat that names something moves. 1 until a beat names anything. |

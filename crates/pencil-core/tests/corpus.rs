@@ -2956,9 +2956,12 @@ fn drawn_pairs(
     let Form::Many { vars, .. } = mark_form(figure, id) else {
         panic!("`{id}` isn't a collection");
     };
-    assert_eq!(
-        vars.iter().map(|v| v.0.as_str()).collect::<Vec<_>>(),
-        ["a", "b"]
+    // A collection with a `±` has its two signs as a last variable, and each pair is drawn
+    // once for each.
+    let names: Vec<&str> = vars.iter().map(|v| v.0.as_str()).collect();
+    assert!(
+        names == ["a", "b"] || names == ["a", "b", "self.sign.index"],
+        "{names:?}"
     );
     let mut env = env.clone();
     let mut out = Vec::new();
@@ -3063,9 +3066,8 @@ fn the_strip_holds_exactly_one_circle_per_period() {
             "{seen} points, {} circles",
             drawn.len()
         );
-        // The copies a turn away are the same circles.
-        assert_eq!(drawn_pairs(&figure, &env, "circles_above"), drawn);
-        assert_eq!(drawn_pairs(&figure, &env, "circles_below"), drawn);
+        // The copies a turn away are the same circles, one for each sign.
+        assert_eq!(drawn_pairs(&figure, &env, "copies"), drawn);
     }
 }
 
@@ -3086,17 +3088,24 @@ fn the_morph_runs_from_the_flat_strip_to_the_spiral() {
         )
         .unwrap()
     };
-    let circle = |env: &pencil_core::eval::Env, id: &str, a: i64, b: i64| match instance_of(
-        &figure,
-        env,
-        id,
-        &[("a", a as f64), ("b", b as f64)],
-    )
-    .1
-    {
-        Some(Instance::Circle(c, r)) => (c, r),
-        other => panic!("({a}, {b}) is {other:?}"),
-    };
+    let signed =
+        |env: &pencil_core::eval::Env, id: &str, a: i64, b: i64, branch: f64| match instance_of(
+            &figure,
+            env,
+            id,
+            &[
+                ("a", a as f64),
+                ("b", b as f64),
+                ("self.sign.index", branch),
+            ],
+        )
+        .1
+        {
+            Some(Instance::Circle(c, r)) => (c, r),
+            other => panic!("({a}, {b}) is {other:?}"),
+        };
+    let circle =
+        |env: &pencil_core::eval::Env, id: &str, a: i64, b: i64| signed(env, id, a, b, 0.0);
     let cexp = |u: [f64; 2]| [u[0].exp() * u[1].cos(), u[0].exp() * u[1].sin()];
     for t in [0.0, 0.3, 0.55, 1.0] {
         let env = at(t);
@@ -3146,13 +3155,14 @@ fn the_morph_runs_from_the_flat_strip_to_the_spiral() {
             // A turn above and below: the same u, a whole turn up or down.
             if t == 0.0 {
                 let tau = std::f64::consts::TAU;
-                for (id, shift) in [("circles_above", tau), ("circles_below", -tau)] {
-                    let (copy, _) = circle(&env, id, a, b);
+                // The + branch first, a turn above.
+                for (branch, shift) in [(0.0, tau), (1.0, -tau)] {
+                    let (copy, _) = signed(&env, "copies", a, b, branch);
                     let v = [u[0], u[1] + shift];
                     let off = 1e-4 * (v[0] * v[0] + v[1] * v[1]);
                     assert!(
                         near(copy, [v[0] + 1.0, v[1]], off),
-                        "{id} ({a}, {b}) at {copy:?}"
+                        "copy {branch} ({a}, {b}) at {copy:?}"
                     );
                 }
             }

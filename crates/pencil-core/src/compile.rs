@@ -11,7 +11,9 @@ use crate::ir::{
     Arc, Binding, Choice, Expr, Expression, Form, Handle, Hang, Mark, Param, Part, Piece, Scene,
     Shown, Spot, Subject, System, Viewport,
 };
-use crate::parse::{CurveSyntax, Document, Item, ManyKind, PartSyntax};
+use crate::parse::{
+    CurveSyntax, Document, Item, MINUS_PLUS, ManyKind, Over, PLUS_MINUS, PartSyntax,
+};
 
 /// Names every expression can use without declaring them.
 /// Beyond this, `z^n` goes through exp and ln rather than multiplying out.
@@ -596,6 +598,13 @@ impl Lowerer {
             return self.lower(&product, locals, depth + 1);
         }
         Ok(match e {
+            // A collection rewrites its signs before it lowers anything, so one here is outside
+            // any collection, as in a label's `{…}`.
+            Expr::App(head, _) if head == PLUS_MINUS || head == MINUS_PLUS => {
+                return Err(Error::new(
+                    "`±` draws two marks, one for each sign, so it belongs in a collection: `dots` for points, `circles` for circles, `curves` for curves",
+                ));
+            }
             Expr::Num(_) => Val::Scalar(e.clone()),
             Expr::Sym(s) => {
                 if let Some(v) = locals.get(s) {
@@ -2052,9 +2061,7 @@ fn renamed_items(
                         param,
                         vars: vars
                             .iter()
-                            .map(|(v, r)| {
-                                (v.clone(), [rename(&r[0], &local), rename(&r[1], &local)])
-                            })
+                            .map(|(v, over)| (v.clone(), over.map(|e| rename(e, &local))))
                             .collect(),
                         lets: lets
                             .iter()
@@ -2372,6 +2379,96 @@ fn refers_in_text(text: &str, out: &mut Vec<String>) {
     }
 }
 
+/// The name a collection's sign has: 1 for its first branch, where `±` is + and `∓` is −, and
+/// −1 for its second. A style reads it as it reads the collection's variables.
+pub const SIGN: &str = "self.sign";
+
+/// Whether an expression says `±` or `∓`.
+fn says_sign(e: &Expr) -> bool {
+    match e {
+        Expr::App(head, args) => {
+            head == PLUS_MINUS || head == MINUS_PLUS || args.iter().any(says_sign)
+        }
+        _ => false,
+    }
+}
+
+/// An expression with its signs written as `self.sign`: `a ± b` is `a + self.sign·b`, and
+/// `a ∓ b` is `a - self.sign·b`.
+fn unsigned(e: &Expr) -> Expr {
+    let Expr::App(head, args) = e else {
+        return e.clone();
+    };
+    let args: Vec<Expr> = args.iter().map(unsigned).collect();
+    let signed = |x: Expr| Expr::app("Multiply", vec![Expr::sym(SIGN), x]);
+    match (head.as_str(), args.as_slice()) {
+        (PLUS_MINUS, [x]) => signed(x.clone()),
+        (MINUS_PLUS, [x]) => Expr::app("Negate", vec![signed(x.clone())]),
+        (PLUS_MINUS, [a, b]) => Expr::app("Add", vec![a.clone(), signed(b.clone())]),
+        (MINUS_PLUS, [a, b]) => Expr::app("Subtract", vec![a.clone(), signed(b.clone())]),
+        _ => Expr::App(head.clone(), args),
+    }
+}
+
+/// A collection's variable over a list of values: a whole-number variable, `{var}.index`, counts
+/// through them, and `var` is the value it's at, picked as a choice param picks its option.
+/// Numbers go with points as points on the real axis.
+fn listed(
+    var: &str,
+    mut values: Vec<Val>,
+    vars: &mut Vec<(String, [Expr; 2])>,
+    named: &mut Vec<(String, Expr)>,
+    locals: &mut Locals,
+) -> Result<(), Error> {
+    if values.iter().any(|v| matches!(v, Val::Point(..))) {
+        for v in &mut values {
+            if let Val::Scalar(x) = v {
+                *v = Val::Point(x.clone(), num(0.0));
+            }
+        }
+    }
+    if let Some(other) = values.iter().find(|v| !v.same_kind(&values[0])) {
+        return Err(Error::new(format!(
+            "`{var}` counts over {} and {}, and a list's values have to be of one kind",
+            values[0].kind(),
+            other.kind()
+        )));
+    }
+    if !matches!(values[0], Val::Scalar(_) | Val::Point(..)) {
+        return Err(Error::new(format!(
+            "`{var}` counts over {}, and a list holds numbers or points",
+            values[0].kind()
+        )));
+    }
+    let index = format!("{var}.index");
+    vars.push((index.clone(), [num(0.0), num((values.len() - 1) as f64)]));
+    let which = Expr::sym(&index);
+    let mut fields = values[0].fields();
+    for (k, value) in values.iter().enumerate().skip(1) {
+        // From value k on, it's that one.
+        let reached = sub(which.clone(), num(k as f64 - 0.5));
+        fields = fields
+            .into_iter()
+            .zip(value.fields())
+            .map(|(before, here)| Expr::app("IfNonnegative", vec![reached.clone(), here, before]))
+            .collect();
+    }
+    match values[0].with_fields(fields) {
+        Val::Scalar(e) => {
+            named.push((var.to_string(), e));
+            locals.insert(var.to_string(), Val::Scalar(Expr::sym(var)));
+        }
+        Val::Point(x, y) => {
+            let (fx, fy) = (format!("{var}.x"), format!("{var}.y"));
+            named.push((fx.clone(), x));
+            named.push((fy.clone(), y));
+            locals.insert(var.to_string(), Val::Point(Expr::sym(fx), Expr::sym(fy)));
+        }
+        _ => unreachable!("a list holds numbers or points"),
+    }
+    Ok(())
+}
+
 /// What a statement needs defined first: every name it refers to, less the ones it binds
 /// itself, such as a function's parameters. It can name more than it needs, as a loop's own
 /// variable, which only ever moves a definition earlier.
@@ -2465,7 +2562,7 @@ fn needs(item: &Item) -> Vec<String> {
                 &mut [value]
                     .into_iter()
                     .chain(param.iter().flat_map(|(_, r)| r))
-                    .chain(vars.iter().flat_map(|(_, r)| r))
+                    .chain(vars.iter().flat_map(|(_, over)| over.exprs()))
                     .chain(lets.iter().map(|(_, e)| e)),
                 &mut out,
             );
@@ -3580,20 +3677,58 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
             } => {
                 claim(name, *line)?;
                 let fail = at_line(*line);
+                // `±` anywhere in what it draws makes two of each instance, one for each sign:
+                // a last variable over `{1, -1}`, which `self.sign` names.
+                let signed = [value]
+                    .into_iter()
+                    .chain(param.iter().flat_map(|(_, r)| r))
+                    .chain(lets.iter().map(|(_, e)| e))
+                    .any(says_sign);
+                let (value, param, lets) = if signed {
+                    (
+                        &unsigned(value),
+                        &param
+                            .as_ref()
+                            .map(|(v, [lo, hi])| (v.clone(), [unsigned(lo), unsigned(hi)])),
+                        &lets
+                            .iter()
+                            .map(|(n, e)| (n.clone(), unsigned(e)))
+                            .collect::<Vec<_>>(),
+                    )
+                } else {
+                    (value, param, lets)
+                };
                 // A later variable's range can use an earlier one.
                 let mut locals = Locals::new();
-                let mut lowered = Vec::with_capacity(vars.len());
-                for (var, range) in vars {
-                    lowered.push((
-                        var.clone(),
-                        [
-                            lowerer.scalar(&range[0], &locals).map_err(&fail)?,
-                            lowerer.scalar(&range[1], &locals).map_err(&fail)?,
-                        ],
-                    ));
-                    locals.insert(var.clone(), Val::Scalar(Expr::sym(var)));
-                }
+                let mut lowered = Vec::with_capacity(vars.len() + usize::from(signed));
                 let mut named = Vec::with_capacity(lets.len());
+                for (var, over) in vars {
+                    match over {
+                        Over::Range(range) => {
+                            lowered.push((
+                                var.clone(),
+                                [
+                                    lowerer.scalar(&range[0], &locals).map_err(&fail)?,
+                                    lowerer.scalar(&range[1], &locals).map_err(&fail)?,
+                                ],
+                            ));
+                            locals.insert(var.clone(), Val::Scalar(Expr::sym(var)));
+                        }
+                        Over::List(values) => {
+                            let values = values
+                                .iter()
+                                .map(|v| lowerer.lower(v, &locals, 0))
+                                .collect::<Result<Vec<_>, Error>>()
+                                .map_err(&fail)?;
+                            listed(var, values, &mut lowered, &mut named, &mut locals)
+                                .map_err(&fail)?;
+                        }
+                    }
+                }
+                if signed {
+                    let signs = vec![Val::Scalar(num(1.0)), Val::Scalar(num(-1.0))];
+                    listed(SIGN, signs, &mut lowered, &mut named, &mut locals).map_err(&fail)?;
+                }
                 for (local, e) in lets {
                     match lowerer.lower(e, &locals, 0).map_err(&fail)? {
                         Val::Scalar(e) => {
