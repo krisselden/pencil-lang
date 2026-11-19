@@ -66,10 +66,9 @@ export class LabelLayer {
     this.stage = stage;
     this.dpr = dpr;
     // Leaders under everything, then every halo under every glyph, so one term's can't eat
-    // into its neighbor.
+    // into its neighbor. The leaders' layer is in the page only while a label draws one.
     this.leaders = document.createElementNS(SVG, 'svg');
     this.leaders.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;pointer-events:none;overflow:visible';
-    this.stage.append(this.leaders);
     this.halos = this.makeLayer();
     this.glyphs = this.makeLayer();
     this.ruler = document.createElement('canvas').getContext('2d');
@@ -125,9 +124,7 @@ export class LabelLayer {
         span.dataset.label = label.id;
         this.halos.append(halo);
         this.glyphs.append(span);
-        const line = document.createElementNS(SVG, 'line');
-        this.leaders.append(line);
-        item = { span, halo, line, offset: target.slice(), velocity: [0, 0], shown: false };
+        item = { span, halo, line: null, offset: target.slice(), velocity: [0, 0], shown: false };
         this.items.set(label.id, item);
       }
       const { span, halo } = item;
@@ -144,8 +141,8 @@ export class LabelLayer {
       item.text = label.text;
       item.size = label.size;
       item.math = label.math;
-      item.line.style.stroke = label.color;
-      item.line.style.opacity = label.opacity;
+      item.color = label.color;
+      item.opacity = label.opacity;
       // What's laid out is rebuilt only when it changes, which a label that only moves doesn't.
       const laid = label.laid ? JSON.stringify(label.laid) : '';
       item.half = label.laid ? [label.laid.halfWidth, label.laid.halfHeight] : null;
@@ -175,7 +172,7 @@ export class LabelLayer {
       if (!present.has(id)) {
         item.span.hidden = true;
         item.halo.hidden = true;
-        item.line.style.display = 'none';
+        this.dropLeader(item);
         item.shown = false;
       }
     }
@@ -214,28 +211,42 @@ export class LabelLayer {
     }
   }
 
-  /** As `frame::leader_ends`: from its gap off the point to a little short of the text's box. */
+  /** As `frame::leader_ends`: from its gap off the point to a little short of the text's box.
+   * A label has a line only while it draws one: most labels have no leader, and one that has can
+   * sit too near its point to need it. */
   placeLeader(item, x, y) {
-    const { line, leader, anchor } = item;
+    const { leader, anchor } = item;
     const [dx, dy] = [x - anchor[0], y - anchor[1]];
     const apart = Math.hypot(dx, dy);
-    let end = -Infinity;
-    if (leader && apart > 0) {
-      const [ux, uy] = [dx / apart, dy / apart];
-      const half = item.half ?? [this.measure(item.text, item.size, item.math) / 2, item.size * TEXT_HALF_HEIGHT];
-      const toEdge = Math.min(half[0] / Math.max(Math.abs(ux), 1e-9), half[1] / Math.max(Math.abs(uy), 1e-9));
-      end = apart - toEdge - LEADER_MARGIN * item.size;
-      if (end > leader.gap) {
-        const at = (d) => [(anchor[0] + ux * d) / this.dpr, (anchor[1] + uy * d) / this.dpr];
-        const [a, b] = [at(leader.gap), at(end)];
-        line.setAttribute('x1', a[0]);
-        line.setAttribute('y1', a[1]);
-        line.setAttribute('x2', b[0]);
-        line.setAttribute('y2', b[1]);
-        line.style.strokeWidth = `${leader.width / this.dpr}px`;
-      }
+    if (!leader || !(apart > 0)) return this.dropLeader(item);
+    const [ux, uy] = [dx / apart, dy / apart];
+    const half = item.half ?? [this.measure(item.text, item.size, item.math) / 2, item.size * TEXT_HALF_HEIGHT];
+    const toEdge = Math.min(half[0] / Math.max(Math.abs(ux), 1e-9), half[1] / Math.max(Math.abs(uy), 1e-9));
+    const end = apart - toEdge - LEADER_MARGIN * item.size;
+    if (!(end > leader.gap)) return this.dropLeader(item);
+    if (!item.line) {
+      item.line = document.createElementNS(SVG, 'line');
+      if (this.leaders.parentNode !== this.stage) this.stage.insertBefore(this.leaders, this.halos);
+      this.leaders.append(item.line);
     }
-    line.style.display = leader && end > (leader?.gap ?? 0) ? '' : 'none';
+    const { line } = item;
+    const at = (d) => [(anchor[0] + ux * d) / this.dpr, (anchor[1] + uy * d) / this.dpr];
+    const [a, b] = [at(leader.gap), at(end)];
+    line.setAttribute('x1', a[0]);
+    line.setAttribute('y1', a[1]);
+    line.setAttribute('x2', b[0]);
+    line.setAttribute('y2', b[1]);
+    line.style.strokeWidth = `${leader.width / this.dpr}px`;
+    line.style.stroke = item.color;
+    line.style.opacity = item.opacity;
+  }
+
+  /** Takes a label's line out, and the layer with the last one. */
+  dropLeader(item) {
+    if (!item.line) return;
+    item.line.remove();
+    item.line = null;
+    if (!this.leaders.firstChild) this.leaders.remove();
   }
 
   /** Moves labels along by the clock. Needs no redraw of the figure. */

@@ -1,0 +1,8 @@
+// Two labels on one point: `led` has a leader in its sheet and `plain` has none. `near` grows the
+// leader's gap past the label, which is how a label that has a leader comes to draw none.
+viewport { x: -2..2, y: -2..2 }
+param near = 0 in 0..1 step 1
+let P = (0, 0)
+dot P
+label led = "led" at P offset (60, -60)
+label plain = "plain" at P offset (-60, 60)
