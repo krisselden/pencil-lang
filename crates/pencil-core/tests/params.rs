@@ -82,7 +82,7 @@ fn a_range_reads_numbers_and_params() {
     let message = |doc: &str| build(doc, &[]).unwrap_err().to_string();
     let named = message("let n = 3\nparam p = 0 in 0..n\nlet P = (p, 0)\ndot P");
     assert!(
-        named.contains("numbers and the params before it, and `n` isn't either"),
+        named.contains("numbers, constants such as π, and params, declared before or after it, and `n` isn't one: not a `let`, and not `time`"),
         "{named}"
     );
     let timed = message("param p = 0 in 0..time\nlet P = (p, 0)\ndot P");

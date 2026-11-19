@@ -1578,7 +1578,7 @@ fn focus_over(
 }
 
 impl Lowerer {
-    /// An end of a param's range: a number, or an expression of the params before it, as the `q`
+    /// An end of a param's range: a number, or an expression of params, declared anywhere, as the `q`
     /// of `0..q`. With it comes the furthest that end gets, the least for a start and the most
     /// for an end, found at the ends of the ranges of the params it reads.
     fn limit(&self, e: &Expr, end: bool, params: &[Param]) -> Result<(f64, Option<Expr>), Error> {
@@ -1600,7 +1600,7 @@ impl Lowerer {
         });
         if let Some(name) = other {
             return Err(Error::new(format!(
-                "{what} is numbers and the params before it, and `{name}` isn't either"
+                "{what} is numbers, constants such as π, and params, declared before or after it, and `{name}` isn't one: not a `let`, and not `time`"
             )));
         }
         if read.is_empty() {
