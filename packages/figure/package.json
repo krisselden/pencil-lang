@@ -1,6 +1,6 @@
 {
   "name": "@pencil-lang/figure",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "description": "Pencil figures on a page: the <pencil-figure> element, the WASM host it runs on, and an Astro component that builds a figure and its poster.",
   "license": "MIT",
   "repository": {
