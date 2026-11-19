@@ -22,7 +22,10 @@
     ".": "./src/element.js",
     "./host": "./src/host.js",
     "./pack": "./src/pack.js",
-    "./astro": "./astro/index.js",
+    "./astro": {
+      "types": "./astro/index.d.ts",
+      "default": "./astro/index.js"
+    },
     "./Figure.astro": "./astro/Figure.astro",
     "./pencil_web_bg.wasm": "./pkg/pencil_web_bg.wasm"
   },

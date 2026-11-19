@@ -8,7 +8,7 @@
 // committed, for as long as the sources still hold what they did.
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { cp, mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { cp, mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { pack } from '../src/pack.js';
@@ -148,6 +148,39 @@ async function playgroundLink(cfg, name, doc, sheets, sources) {
 }
 
 const making = new Map();
+let serial = 0;
+
+const mismatch = (cfg, manifest) =>
+  new Error(
+    `@pencil-lang/figure: \`${cfg.bin}\` is build ${manifest.build} of Pencil and the package's WASM is ${cfg.wasm}, so a page couldn't load what it compiles. Build both from the same source: \`cargo build --release -p pencil-cli\` and \`scripts/build-web.sh\`.`,
+  );
+
+/** Puts a folder that has just been built where an older one may be. The older one is moved
+ * aside first and removed only once the new one is in place, and put back if that fails, so a
+ * kept figure is never lost to a failed build. Exported for its test. */
+export async function replace(dir, built) {
+  await mkdir(path.dirname(dir), { recursive: true });
+  // Beside it, so it's on the same disk, and named with a dot, so a build's list of folders
+  // nothing asked for leaves it out.
+  const aside = path.join(path.dirname(dir), `.${path.basename(dir)}.old-${process.pid}-${(serial += 1)}`);
+  const had = existsSync(dir);
+  if (had) await rename(dir, aside);
+  try {
+    try {
+      await rename(built, dir);
+    } catch (error) {
+      // The cache and a kept folder can be on different disks.
+      if (error.code !== 'EXDEV') throw error;
+      await cp(built, dir, { recursive: true });
+      await rm(built, { recursive: true, force: true });
+    }
+  } catch (error) {
+    await rm(dir, { recursive: true, force: true });
+    if (had) await rename(aside, dir);
+    throw error;
+  }
+  if (had) await rm(aside, { recursive: true, force: true });
+}
 
 /**
  * Builds one figure under one set of sheets.
@@ -187,7 +220,6 @@ async function make(cfg, key, { src, sheets, time, params, size, card }) {
   const stem = path.basename(src).replace(/\.[^.]+$/, '');
   const folder = `${stem}-${key.slice(0, 12)}`;
   const dir = path.join(cfg.kept ?? path.join(cfg.cache, 'made'), folder);
-  const manifestFile = path.join(dir, `${stem}.json`);
   // So a build can say afterwards which kept folders nothing asked for.
   if (cfg.kept && !cfg.dev) {
     await mkdir(path.join(cfg.cache, 'used'), { recursive: true });
@@ -201,12 +233,16 @@ async function make(cfg, key, { src, sheets, time, params, size, card }) {
     for (const [name, value] of Object.entries(params)) args.push('--param', `${name}=${value}`);
     if (size != null) args.push('--size', String(size));
     if (card) args.push('--card');
-    args.push('--out', dir);
-    // Whatever an older `pencil` left there under another name would be shipped, and named in.
-    await rm(dir, { recursive: true, force: true });
+    // It's built somewhere else and put in place once it has built, so a build that fails, or a
+    // `pencil` that isn't there, leaves what was there, and what a site keeps is never lost. A
+    // new folder, so whatever an older `pencil` left under another name isn't shipped.
+    const building = path.join(cfg.cache, 'building', `${folder}-${process.pid}-${(serial += 1)}`);
+    await rm(building, { recursive: true, force: true });
+    args.push('--out', building);
     try {
       await turn(() => run(cfg.bin, args, cfg.root));
     } catch (error) {
+      await rm(building, { recursive: true, force: true });
       // While a figure is being written it's often broken for a moment.
       if (cfg.dev) {
         console.warn(`[pencil] ${error.message}`);
@@ -222,15 +258,17 @@ async function make(cfg, key, { src, sheets, time, params, size, card }) {
       }
       throw error;
     }
-    manifest = JSON.parse(await readFile(manifestFile, 'utf8'));
-    if (cfg.kept) await writeFile(path.join(dir, STAMP), `${await sourcesHash(manifest.sources, cfg)}\n`);
+    manifest = JSON.parse(await readFile(path.join(building, `${stem}.json`), 'utf8'));
+    // One a page couldn't load is no better than none, and doesn't take the place of what's there.
+    if (manifest.build !== cfg.wasm) {
+      await rm(building, { recursive: true, force: true });
+      throw mismatch(cfg, manifest);
+    }
+    if (cfg.kept) await writeFile(path.join(building, STAMP), `${await sourcesHash(manifest.sources, cfg)}\n`);
+    await replace(dir, building);
   }
 
-  if (manifest.build !== cfg.wasm) {
-    throw new Error(
-      `@pencil-lang/figure: \`${cfg.bin}\` is build ${manifest.build} of Pencil and the package's WASM is ${cfg.wasm}, so a page couldn't load what it compiles. Build both from the same source: \`cargo build --release -p pencil-cli\` and \`scripts/build-web.sh\`.`,
-    );
-  }
+  if (manifest.build !== cfg.wasm) throw mismatch(cfg, manifest);
 
   // What a reader fetches is named for what's in it, so a copy they kept is never a stale one. That's
   // the files' own bytes: a change to the renderer draws the same figure's poster differently, and

@@ -71,6 +71,21 @@ async function wasmBuild() {
   return wasm.fingerprint();
 }
 
+/** Lets `astro dev` serve the package's files (the element, its WASM and fonts) wherever the
+ * package is installed. A `server.fs.allow` in the config would replace Vite's own list, the
+ * workspace the site is in, and then the site's own files would be refused. So the folder is
+ * added to the list Vite worked out, whatever that is, which it reads on each request. */
+function allowPackage() {
+  const dir = path.resolve(PACKAGE).split(path.sep).join('/');
+  return {
+    name: '@pencil-lang/figure:allow',
+    configResolved(config) {
+      const allow = config.server.fs.allow;
+      if (!allow.some((each) => dir === each || dir.startsWith(`${each.replace(/\/$/, '')}/`))) allow.push(dir);
+    },
+  };
+}
+
 export default function pencil({ root, bin, playground, kept } = {}) {
   let cfg;
   return {
@@ -93,7 +108,7 @@ export default function pencil({ root, bin, playground, kept } = {}) {
           vite: {
             // The WASM is found beside the script that loads it, which bundling ahead would move.
             optimizeDeps: { exclude: ['@pencil-lang/figure'] },
-            server: { fs: { allow: [PACKAGE] } },
+            plugins: [allowPackage()],
           },
         });
       },

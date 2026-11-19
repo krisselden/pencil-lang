@@ -49,7 +49,7 @@ const [main, ...others] = await Promise.all(
 );
 // A build ships the compiled figure. `astro dev` hands over the sources.
 const from = (built: Awaited<ReturnType<typeof build>>) =>
-  built.src ? { src: built.src, sheets: built.sheets.join(' ') } : { compiled: built.compiled };
+  built.src ? { src: built.src, sheets: (built.sheets ?? []).join(' ') } : { compiled: built.compiled };
 
 // The poster takes the figure's exact shape, which its own pixels only round to, so nothing
 // moves by even a pixel when the figure takes over. A choice with another shape, as a narrow
@@ -64,6 +64,14 @@ const reshaped = others
 // one. And for a figure in view it starts on what the element will fetch, the WASM and the
 // compiled figure for the first choice whose media matches, and leaves them for it (`ahead`, in
 // host.js). `astro dev` loads the sources, so there that would fetch what's never used.
+//
+// The poster a browser fetches first can be the other theme's, for a reader whose page pins one
+// against their system: while the page's stylesheet loads, which the script waits for, the browser
+// reads ahead and fetches the image the system picks. The poster painted is still the pinned one.
+// A `priority` poster stays eager anyway, since it's likely the page's largest first paint, and
+// that one extra fetch is only for the few who pin. (A script between the `<source>`s and the
+// `<img>` was measured, and is worse: then a browser reading ahead ignores the sources and fetches
+// the fallback, for every reader.)
 const themed = choices.some((choice) => choice.media.includes('prefers-color-scheme'));
 const early = priority && main.compiled && !main.src;
 const fetchAhead = `const s=self.__pencilAhead??={},get=(u)=>fetch(u,{priority:'low'}).catch(()=>null);s.wasm??=get(${JSON.stringify(wasm).replace(/</g, '\\u003c')});const c=([...f.children].find((e)=>e.localName==='source'&&(!e.media||matchMedia(e.media).matches))??f).getAttribute('compiled');if(c){const u=new URL(c,document.baseURI).href;s[u]??=get(u)}`;
