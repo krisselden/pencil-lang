@@ -197,18 +197,19 @@ Proposed by Claude on 2026-11-09, not yet agreed:
   - Still open: zipping a range used as a value, Desmos's `([1...5], [1...5]²)`. The only lists an expression zips are
     `±` and `∓`.
 
-  What `a..b` means today, read from the parser and the compiler:
+  What `a..b` means today, each cell checked by compiling or drawing a probe on 2026-11-18:
 
   | Place | Meaning | `step` | Ends can be |
   |---|---|---|---|
-  | `param a = 1 in 0..2·π` | every real value; with `step`, the start plus whole steps | yes | numbers and earlier params only |
-  | a curve's parameter, `for t in a..b` | every real value, sampled smoothly | no | anything, including `time` |
-  | a collection's variable, `for i in a..b` | whole numbers only, from the start rounded up to the end rounded down, both included | no | anything, including `time` |
-  | `viewport { x: -2..2 }` | every real value | no | constants only |
+  | `param a = 1 in 0..2·π` | every real value; with `step`, the start plus whole steps, up to the last at or below the end | yes | numbers, constants such as π, and params, declared before or after it since statements are put in dependency order, in any expression: `0..2·q - 1`. Not a `let`, and not `time` |
+  | a curve's or a region's parameter, `for t in a..b` | every real value, sampled smoothly; it runs from `a`, so down when `b` is below `a` | no | anything: params, `let`s, `time` |
+  | a collection's variable, `for i in a..b` | whole numbers only, from the start rounded up to the end rounded down, both included (`0.5..2.7` is 1 and 2); none when `b` is below `a` | no | anything: params, `let`s, `time`, and earlier variables |
+  | `viewport { x: -2..2 }` | every real value | no | constants only: numbers and constants such as π, not a `let`, a param or `time` |
 
   Other differences: only `param` takes `step`; `for` means "over a range" in a collection and "for this long" in a beat;
   and `0..q` on a param means it can't pass q, while on a collection it means count up to q rounded down, which the
-  reference doesn't say.
+  reference doesn't say. The compiler's error for a param's end that isn't one says "numbers and the params before it",
+  though a param after it works too.
 - **The specs' own open questions** (SPEC/16 §8, SPEC/50 §7) are about relations, rigs and extensions, none of which a figure has
   needed yet.
 
