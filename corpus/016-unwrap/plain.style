@@ -7,9 +7,9 @@ style .edge { stroke: muted; width: 1.25px; dash: 5px; gap: 4px }
 style strip { stroke: muted; width: 1px }
 style strip::inside { fill: muted }
 style strip { fill_opacity: 0.08 }
-style circles_above, circles_below { stroke: muted; width: 0.75px; opacity: 0.7·flatness; show: flatness }
-style circles_above::inside, circles_below::inside { fill: muted }
-style circles_above, circles_below { fill_opacity: 0.04 }
+style copies { stroke: muted; width: 0.75px; opacity: 0.7·flatness; show: flatness }
+style copies::inside { fill: muted }
+style copies { fill_opacity: 0.04 }
 
 style .one { stroke: blue; width: 2.5px }
 style .along_omega { stroke: red; width: 2.5px }

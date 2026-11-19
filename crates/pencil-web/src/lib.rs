@@ -406,16 +406,16 @@ impl Player {
         Ok(self.grabbed.is_some())
     }
 
-    /// Moves the grabbed handle to this device pixel, through its inverse. Returns the param it
-    /// set, if a handle is grabbed.
-    pub fn drag(&mut self, time: f32, x: f64, y: f64) -> Result<Option<String>, JsError> {
+    /// Moves the grabbed handle to this device pixel, through its inverses. Returns the params
+    /// it set, one or two, together, or none if no handle is grabbed.
+    pub fn drag(&mut self, time: f32, x: f64, y: f64) -> Result<Vec<String>, JsError> {
         let (Some((panel, handle)), Some((composition, _))) = (self.grabbed, &self.figure) else {
-            return Ok(None);
+            return Ok(Vec::new());
         };
         let inputs = self.inputs(time);
         // A drag can leave its panel, and the inverse still answers.
         let [px, py, w, h] = composition.rect_px(panel, self.config.width, self.config.height);
-        let (param, value) = frame::drag_value(
+        let values = frame::drag_value(
             &composition.panels[panel].figure,
             &inputs,
             handle,
@@ -425,8 +425,18 @@ impl Player {
             y - py as f64,
         )
         .map_err(js_error)?;
-        self.set_param(&param, value);
-        Ok(Some(param))
+        Ok(self.set_params(values))
+    }
+
+    /// Sets the params a handle moved, and says which they were.
+    fn set_params(&mut self, values: Vec<(String, f64)>) -> Vec<String> {
+        values
+            .into_iter()
+            .map(|(param, value)| {
+                self.set_param(&param, value);
+                param
+            })
+            .collect()
     }
 
     pub fn release(&mut self) {
@@ -479,18 +489,19 @@ impl Player {
         Ok(out)
     }
 
-    /// Moves a handle by this many device pixels from where it is, through its inverse, as an
-    /// arrow key does. Returns the param it set, if the handle's mark exists this frame.
+    /// Moves a handle by this many device pixels from where it is, through its inverses, as an
+    /// arrow key does. Returns the params it set, none if the handle's mark doesn't exist this
+    /// frame.
     pub fn nudge(
         &mut self,
         time: f32,
         index: usize,
         dx: f64,
         dy: f64,
-    ) -> Result<Option<String>, JsError> {
+    ) -> Result<Vec<String>, JsError> {
         let (Some((panel, handle)), Some((composition, _))) = (self.handle(index), &self.figure)
         else {
-            return Ok(None);
+            return Ok(Vec::new());
         };
         let [_, _, w, h] = composition.rect_px(panel, self.config.width, self.config.height);
         let moved = frame::nudge_value(
@@ -503,10 +514,9 @@ impl Player {
             dy,
         )
         .map_err(js_error)?;
-        Ok(moved.map(|(param, value)| {
-            self.set_param(&param, value);
-            param
-        }))
+        Ok(moved
+            .map(|values| self.set_params(values))
+            .unwrap_or_default())
     }
 
     /// The figure's params and duration, as JSON. `timeDriven` names the bindings whose values

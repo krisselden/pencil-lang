@@ -136,8 +136,8 @@ GLSL shaders draw through one SVG system (`src/lib/plot.ts`), and nothing is mad
    post's `ScaledCopy`, `LogNearest` and `UnwrapMorph` on 2026-11-15, drawn on the site's demos page at 1633×919 and
    375×812, light and dark), 6
    are ports with what exists, 9 need one or two features, 5 need design and 3 stay. What most figures lack is around the figure
-   and not in it: arrow keys (12 figures), dragging a point in two dimensions (5), Newton's steps as values (4) and panels of
-   different sizes (4).
+   and not in it: arrow keys (12 figures), dragging a point in two dimensions (5, built 2026-11-18: a handle that sets two
+   params), Newton's steps as values (4) and panels of different sizes (4).
 
 ### Proposed order after that
 
@@ -190,6 +190,46 @@ Proposed by Claude on 2026-11-09, not yet agreed:
   static assets take the file: the site sets how long a browser keeps each kind of file in one (`site/public/_headers`,
   2026-11-17). The header an embed from another origin needs hasn't been tried (`design-notes.md`, "Hosting").
 - **Where is `SPEC/18`?** The July 9 chat mentions it, and the plan's list stops at 17.
+- **A consistency pass on ranges (Kris, 2026-11-18).** He wants it done once more of the language is filled in, and
+  raised these as questions while two-dimensional dragging was decided. Nothing here is answered yet:
+  - A range sometimes means every value between its ends and sometimes only whole numbers, even with no `step`: a family
+    seems to need whole numbers. Should they read the same?
+  - Is a collection tied to `for … in` over whole numbers, or can it run over something else? A collection's variable can
+    now count over a list, `for s in {-1, 1}` (`language.md`, Collections, 2026-11-18).
+  - Can a parametric curve take a ±? Desmos needs a list for it, `[-1, 1]`, and does support it. Built on 2026-11-18 for
+    collections: `±` draws both branches there, and is an error anywhere else. And as a whole range, `med ± dev` is the
+    interval `(med - abs(dev))..(med + abs(dev))`, never reversed, in every place a range is written (Kris, 2026-11-18).
+  - He found it confusing which space a range is in. How should a range say it?
+  - Still open: zipping a range used as a value, Desmos's `([1...5], [1...5]²)`. The only lists an expression zips are
+    `±` and `∓`.
+  - **A candidate, discussed by Kris and the project session on 2026-11-18, not decided, and none of it built.** Kris's
+    observation: `a..b` is programming notation. Mathematics writes an interval with brackets that say whether each end
+    is included, `[a, b]`, `(a, b)`, `[a, b)`, and a count as `k = a, …, b` or `{a, …, b}`. Pencil's bare `a..b` is
+    always inclusive and says neither which kind it is nor whether an end is included. The candidate: brackets say
+    whether an end is included, `[a..b]`, `[a..b)`, `(a..b]`, `(a..b)`, for a continuum; braces say it's discrete,
+    `{a..b}` for the whole numbers from a to b, beside the list `{-1, 1}` that exists; and `..` stays the separator
+    inside, because `(a, b)` is already a point in Pencil. Questions with it:
+    - What would a bare `a..b` mean then, or would it go?
+    - Would `param n in {1..12}` replace `step 1`?
+    - What is `med ± dev` in each bracket?
+    - Where does an open end matter in practice: a curve's parameter approaching an asymptote, a param that must not
+      reach 0?
+    - Today's error for `{1..3}`, that a range goes outside the braces, is the opposite of this candidate, and would be
+      reversed.
+
+  What `a..b` means today, each cell checked by compiling or drawing a probe on 2026-11-18:
+
+  | Place | Meaning | `step` | Ends can be |
+  |---|---|---|---|
+  | `param a = 1 in 0..2·π` | every real value; with `step`, the start plus whole steps, up to the last at or below the end | yes | numbers, constants such as π, and params, declared before or after it since statements are put in dependency order, in any expression: `0..2·q - 1`. Not a `let`, and not `time` |
+  | a curve's or a region's parameter, `for t in a..b` | every real value, sampled smoothly; it runs from `a`, so down when `b` is below `a` | no | anything: params, `let`s, `time` |
+  | a collection's variable, `for i in a..b` | whole numbers only, from the start rounded up to the end rounded down, both included (`0.5..2.7` is 1 and 2); none when `b` is below `a` | no | anything: params, `let`s, `time`, and earlier variables |
+  | `viewport { x: -2..2 }` | every real value | no | constants only: numbers and constants such as π, not a `let`, a param or `time` |
+
+  Every one of these can be written `med ± dev` instead, which is `(med - abs(dev))..(med + abs(dev))` with that place's rules for
+  its ends. Other differences: only `param` takes `step`; `for` means "over a range" in a collection and "for this long" in a beat;
+  and `0..q` on a param means it can't pass q, while on a collection it means count up to q rounded down, which the
+  reference doesn't say.
 - **The specs' own open questions** (SPEC/16 §8, SPEC/50 §7) are about relations, rigs and extensions, none of which a figure has
   needed yet.
 

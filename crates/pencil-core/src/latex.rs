@@ -259,7 +259,7 @@ fn delimiter_char(written: &str) -> Option<char> {
 enum Node {
     Num(String),
     Name(String),
-    /// `+`, `-`, `·`, `/`, `^`, or `neg` with one operand.
+    /// `+`, `-`, `±`, `∓`, `·`, `/`, `^`, or `neg`, `pm` or `mp` with one operand.
     Op(&'static str, Vec<Node>),
     Call(String, Vec<Node>),
     Tuple(Vec<Node>),
@@ -447,11 +447,10 @@ impl<'a> Reader<'a> {
             let name = match self.peek() {
                 T::Ch('+') => "+",
                 T::Ch('-') => "-",
-                T::Cmd(c) if c == "pm" || c == "mp" => {
-                    return Err(
-                        self.error("`±` has no Pencil form: write each sign as its own formula")
-                    );
-                }
+                // Both signs. Where the formula goes decides whether Pencil takes it: in what
+                // a collection draws it's two branches, and as a whole range an interval.
+                T::Cmd(c) if c == "pm" => "±",
+                T::Cmd(c) if c == "mp" => "∓",
                 _ => return Ok(left),
             };
             self.bump();
@@ -480,6 +479,12 @@ impl<'a> Reader<'a> {
         }
         if self.eat(&T::Ch('+')) {
             return self.signed();
+        }
+        if self.eat(&T::Cmd("pm".into())) {
+            return Ok(op("pm", vec![self.signed()?]));
+        }
+        if self.eat(&T::Cmd("mp".into())) {
+            return Ok(op("mp", vec![self.signed()?]));
         }
         self.run(false)
     }
@@ -983,7 +988,7 @@ fn print(node: &Node) -> (String, u8) {
             (format!("({})", items.join(", ")), ATOM)
         }
         Node::Op(name, args) => match (*name, args.as_slice()) {
-            ("+" | "-", [a, b]) => (
+            ("+" | "-" | "±" | "∓", [a, b]) => (
                 format!("{} {name} {}", at_least(a, SUM), at_least(b, TERM)),
                 SUM,
             ),
@@ -1015,6 +1020,12 @@ fn print(node: &Node) -> (String, u8) {
                     p if p >= UNARY => (format!("-{text}"), UNARY),
                     _ => (format!("-({text})"), UNARY),
                 }
+            }
+            // A sign is Pencil's own unary, which binds as tightly as `-`, so a product or a
+            // quotient after it is bracketed: `±(2x)`, not `±2·x`.
+            ("pm" | "mp", [a]) => {
+                let sign = if *name == "pm" { "±" } else { "∓" };
+                (format!("{sign}{}", at_least(a, UNARY)), UNARY)
             }
             _ => unreachable!("{name} with {} operands", args.len()),
         },
@@ -1229,10 +1240,14 @@ mod tests {
                 serde_json::Value::Array(parts)
             }
             Node::Op("neg", args) => negate(expected(&args[0])),
+            Node::Op("pm", args) => json!(["PlusMinus", expected(&args[0])]),
+            Node::Op("mp", args) => json!(["MinusPlus", expected(&args[0])]),
             Node::Op(name, args) => {
                 let head = match *name {
                     "+" => "Add",
                     "-" => "Subtract",
+                    "±" => "PlusMinus",
+                    "∓" => "MinusPlus",
                     "·" => "Multiply",
                     "/" => "Divide",
                     _ => "Power",
@@ -1284,6 +1299,14 @@ mod tests {
             r"\pi_{1}r",
             r"\frac{x}{y}z",
             r"e^{-\frac{x^{2}}{2}}",
+            r"\frac{-b\pm\sqrt{b^{2}-4ac}}{2a}",
+            r"\pm\sqrt{x}",
+            r"\left(\pm\cosh t,\sinh t\right)",
+            r"\left(\pm a,\mp b\right)",
+            r"\pm2x",
+            r"\mp\frac{1}{2}",
+            r"x^{2}\pm1",
+            r"5\pm2",
         ];
         for latex in formulas {
             let mut reader = Reader::new(latex, 1, &[]).unwrap();
@@ -1297,6 +1320,34 @@ mod tests {
                 "{latex} printed {text}"
             );
         }
+    }
+
+    /// `\pm` and `\mp` come through as Pencil's `±` and `∓`, for wherever the formula goes: in
+    /// what a collection draws they're two branches, and as a whole range an interval.
+    #[test]
+    fn both_signs_come_through() {
+        for (latex, text) in [
+            (
+                r"\frac{-b\pm\sqrt{b^{2}-4ac}}{2a}",
+                "(-b ± sqrt(b^2 - 4a·c))/(2a)",
+            ),
+            (r"y=\pm\sqrt{1-x^{2}}", "y = ±sqrt(1 - x^2)"),
+            (r"\left(\pm\cosh t,\sinh t\right)", "(±cosh(t), sinh(t))"),
+            (r"\left(\pm a,\mp b\right)", "(±a, ∓b)"),
+            (r"\pm2x", "±(2x)"),
+            (r"\mp\frac{1}{2}", "∓(1/2)"),
+            (r"5\pm2", "5 ± 2"),
+        ] {
+            assert_eq!(pencil(latex), text, "{latex}");
+        }
+        // Pasted where Pencil takes it, it's a figure.
+        let doc = format!(
+            "param a = 1 in {}\ncurves h = parametric (t): {} for t in -2..2\ndots d = ({}, 0)",
+            pencil(r"1\pm0.5"),
+            pencil(r"\left(\pm\cosh t,\sinh t\right)"),
+            pencil(r"a\pm\frac{1}{2}"),
+        );
+        crate::build(&doc, &[]).unwrap_or_else(|e| panic!("{doc}: {e}"));
     }
 
     #[test]

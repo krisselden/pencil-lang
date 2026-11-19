@@ -80,12 +80,49 @@ fn a_page_is_told_what_a_reader_can_move() {
     assert_eq!(
         info["handles"],
         serde_json::json!([
-            { "panel": 0, "mark": "P", "param": "a" },
-            { "panel": 0, "mark": "Q", "param": "b" },
+            { "panel": 0, "mark": "P", "params": ["a"] },
+            { "panel": 0, "mark": "Q", "params": ["b"] },
         ])
+    );
+    // A point dragged in two dimensions sets two.
+    let doc = "param a = 0 in -1..1\nparam b = 0 in -1..1\nlet z = a + b·i\ndot z\n\
+               handle z sets a = pointer.x, b = pointer.y";
+    assert_eq!(
+        compose(doc, &[]).unwrap().info()["handles"],
+        serde_json::json!([{ "panel": 0, "mark": "z", "params": ["a", "b"] }])
     );
     assert_eq!(
         compose("let P = (0, 0)\ndot P", &[]).unwrap().info()["handles"],
         serde_json::json!([])
     );
+}
+
+#[test]
+fn a_two_param_handle_leaves_what_each_binding_reads_alone() {
+    // `reads` comes from the bindings, so a handle that sets two params adds nothing to it: a
+    // drag that sets a hands back c, whose binding reads it, and leaves d alone.
+    let doc = "param a = 0 in -1..1\nparam b = 0 in -1..1\nparam c = 0 in -2..2\nparam d = 0 in -2..2\n\
+               bind c = 2·a\nbind d = time\nlet z = a + b·i\ndot z\n\
+               handle z sets a = pointer.x, b = pointer.y";
+    let reads = |doc: &str| -> Vec<(String, serde_json::Value)> {
+        compose(doc, &[]).unwrap().info()["params"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|p| (p["id"].as_str().unwrap().to_string(), p["reads"].clone()))
+            .collect()
+    };
+    let with = reads(doc);
+    assert_eq!(
+        with,
+        [
+            ("a".to_string(), serde_json::json!([])),
+            ("b".to_string(), serde_json::json!([])),
+            ("c".to_string(), serde_json::json!(["a"])),
+            ("d".to_string(), serde_json::json!([])),
+        ]
+    );
+    // The same as with no handle at all.
+    let without = doc.replace("handle z sets a = pointer.x, b = pointer.y", "");
+    assert_eq!(with, reads(&without));
 }

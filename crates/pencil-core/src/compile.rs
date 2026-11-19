@@ -11,7 +11,9 @@ use crate::ir::{
     Arc, Binding, Choice, Expr, Expression, Form, Handle, Hang, Mark, Param, Part, Piece, Scene,
     Shown, Spot, Subject, System, Viewport,
 };
-use crate::parse::{CurveSyntax, Document, Item, ManyKind, PartSyntax};
+use crate::parse::{
+    CurveSyntax, Document, Item, MINUS_PLUS, ManyKind, Over, PLUS_MINUS, PartSyntax,
+};
 
 /// Names every expression can use without declaring them.
 /// Beyond this, `z^n` goes through exp and ln rather than multiplying out.
@@ -596,6 +598,13 @@ impl Lowerer {
             return self.lower(&product, locals, depth + 1);
         }
         Ok(match e {
+            // A collection rewrites its signs before it lowers anything, so one here is outside
+            // any collection, as in a label's `{…}`.
+            Expr::App(head, _) if head == PLUS_MINUS || head == MINUS_PLUS => {
+                return Err(Error::new(
+                    "`±` draws two marks, one for each sign, so it belongs in a collection: `dots` for points, `circles` for circles, `curves` for curves",
+                ));
+            }
             Expr::Num(_) => Val::Scalar(e.clone()),
             Expr::Sym(s) => {
                 if let Some(v) = locals.get(s) {
@@ -1569,11 +1578,23 @@ fn focus_over(
 }
 
 impl Lowerer {
-    /// An end of a param's range: a number, or an expression of the params before it, as the `q`
+    /// An end of a param's range: a number, or an expression of params, declared anywhere, as the `q`
     /// of `0..q`. With it comes the furthest that end gets, the least for a start and the most
     /// for an end, found at the ends of the ranges of the params it reads.
     fn limit(&self, e: &Expr, end: bool, params: &[Param]) -> Result<(f64, Option<Expr>), Error> {
         let what = "a param's range";
+        let ends = "a param's range is numbers, constants such as π, and params, declared before or after it";
+        let mut signal = None;
+        e.visit_syms(&mut |s| {
+            if SIGNALS.contains(&s) {
+                signal = Some(s.to_string());
+            }
+        });
+        if let Some(s) = signal {
+            return Err(Error::new(format!(
+                "a range's end can't read `{s}`: {ends}, so it's the same each frame unless a param moves it"
+            )));
+        }
         let mut reads_names = false;
         // A signal is left for `constant` to refuse, which says why.
         e.visit_syms(&mut |s| reads_names |= constant_value(s).is_none() && !SIGNALS.contains(&s));
@@ -1590,9 +1611,15 @@ impl Lowerer {
             None => {}
         });
         if let Some(name) = other {
-            return Err(Error::new(format!(
-                "{what} is numbers and the params before it, and `{name}` isn't either"
-            )));
+            // A choice's value is a binding, read through the param that picks it.
+            let index = format!("{name}.index");
+            return Err(Error::new(if params.iter().any(|p| p.id == index) {
+                format!(
+                    "`{name}` is a choice, and a range's end can't read its value: {ends}, and the param that picks it is `{index}`"
+                )
+            } else {
+                format!("`{name}` is a `let`, and a range's end can't read one: {ends}")
+            }));
         }
         if read.is_empty() {
             return Ok((constant(&limit, what)?, None));
@@ -2052,9 +2079,7 @@ fn renamed_items(
                         param,
                         vars: vars
                             .iter()
-                            .map(|(v, r)| {
-                                (v.clone(), [rename(&r[0], &local), rename(&r[1], &local)])
-                            })
+                            .map(|(v, over)| (v.clone(), over.map(|e| rename(e, &local))))
                             .collect(),
                         lets: lets
                             .iter()
@@ -2372,6 +2397,97 @@ fn refers_in_text(text: &str, out: &mut Vec<String>) {
     }
 }
 
+/// The name a collection's sign has: 1 for its first branch, where `±` is + and `∓` is −, and
+/// −1 for its second. A style reads it as it reads the collection's variables.
+pub const SIGN: &str = "self.sign";
+
+/// Whether an expression says `±` or `∓`.
+fn says_sign(e: &Expr) -> bool {
+    match e {
+        Expr::App(head, args) => {
+            head == PLUS_MINUS || head == MINUS_PLUS || args.iter().any(says_sign)
+        }
+        _ => false,
+    }
+}
+
+/// An expression with its signs written as `self.sign`: `a ± b` is `a + self.sign·b`, and
+/// `a ∓ b` is `a - self.sign·b`.
+fn unsigned(e: &Expr) -> Expr {
+    let Expr::App(head, args) = e else {
+        return e.clone();
+    };
+    let args: Vec<Expr> = args.iter().map(unsigned).collect();
+    let signed = |x: Expr| Expr::app("Multiply", vec![Expr::sym(SIGN), x]);
+    match (head.as_str(), args.as_slice()) {
+        (PLUS_MINUS, [x]) => signed(x.clone()),
+        (MINUS_PLUS, [x]) => Expr::app("Negate", vec![signed(x.clone())]),
+        (PLUS_MINUS, [a, b]) => Expr::app("Add", vec![a.clone(), signed(b.clone())]),
+        (MINUS_PLUS, [a, b]) => Expr::app("Subtract", vec![a.clone(), signed(b.clone())]),
+        _ => Expr::App(head.clone(), args),
+    }
+}
+
+/// A collection's variable over a list of values: a whole-number variable, `{var}.index`, counts
+/// through them, and `var` is the value it's at, picked as a choice param picks its option.
+/// Numbers go with points as points on the real axis. Returns the value picked, written out.
+fn listed(
+    var: &str,
+    mut values: Vec<Val>,
+    vars: &mut Vec<(String, [Expr; 2])>,
+    named: &mut Vec<(String, Expr)>,
+    locals: &mut Locals,
+) -> Result<Val, Error> {
+    if values.iter().any(|v| matches!(v, Val::Point(..))) {
+        for v in &mut values {
+            if let Val::Scalar(x) = v {
+                *v = Val::Point(x.clone(), num(0.0));
+            }
+        }
+    }
+    if let Some(other) = values.iter().find(|v| !v.same_kind(&values[0])) {
+        return Err(Error::new(format!(
+            "`{var}` counts over {} and {}, and a list's values have to be of one kind",
+            values[0].kind(),
+            other.kind()
+        )));
+    }
+    if !matches!(values[0], Val::Scalar(_) | Val::Point(..)) {
+        return Err(Error::new(format!(
+            "`{var}` counts over {}, and a list holds numbers or points",
+            values[0].kind()
+        )));
+    }
+    let index = format!("{var}.index");
+    vars.push((index.clone(), [num(0.0), num((values.len() - 1) as f64)]));
+    let which = Expr::sym(&index);
+    let mut fields = values[0].fields();
+    for (k, value) in values.iter().enumerate().skip(1) {
+        // From value k on, it's that one.
+        let reached = sub(which.clone(), num(k as f64 - 0.5));
+        fields = fields
+            .into_iter()
+            .zip(value.fields())
+            .map(|(before, here)| Expr::app("IfNonnegative", vec![reached.clone(), here, before]))
+            .collect();
+    }
+    let picked = values[0].with_fields(fields);
+    match &picked {
+        Val::Scalar(e) => {
+            named.push((var.to_string(), e.clone()));
+            locals.insert(var.to_string(), Val::Scalar(Expr::sym(var)));
+        }
+        Val::Point(x, y) => {
+            let (fx, fy) = (format!("{var}.x"), format!("{var}.y"));
+            named.push((fx.clone(), x.clone()));
+            named.push((fy.clone(), y.clone()));
+            locals.insert(var.to_string(), Val::Point(Expr::sym(fx), Expr::sym(fy)));
+        }
+        _ => unreachable!("a list holds numbers or points"),
+    }
+    Ok(picked)
+}
+
 /// What a statement needs defined first: every name it refers to, less the ones it binds
 /// itself, such as a function's parameters. It can name more than it needs, as a loop's own
 /// variable, which only ever moves a definition earlier.
@@ -2465,7 +2581,7 @@ fn needs(item: &Item) -> Vec<String> {
                 &mut [value]
                     .into_iter()
                     .chain(param.iter().flat_map(|(_, r)| r))
-                    .chain(vars.iter().flat_map(|(_, r)| r))
+                    .chain(vars.iter().flat_map(|(_, over)| over.exprs()))
                     .chain(lets.iter().map(|(_, e)| e)),
                 &mut out,
             );
@@ -2488,9 +2604,11 @@ fn needs(item: &Item) -> Vec<String> {
                     .filter_map(|f| f.when.as_ref().map(|(c, _)| c.clone())),
             );
         }
-        Item::Handle { param, inverse, .. } => {
-            out.push(param.clone());
-            refers(inverse, &mut out);
+        Item::Handle { sets, .. } => {
+            for set in sets {
+                out.push(set.param.clone());
+                refers(&set.inverse, &mut out);
+            }
         }
         // What a view fits is found at the end, so it needs nothing defined early.
         Item::Viewport { x, y, pad, yaw, .. } => {
@@ -2951,6 +3069,8 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
     let mut last_marks = 0..0;
     // Fit names resolve at the end, since a viewport comes before what it fits.
     let mut fit_names: Vec<String> = Vec::new();
+    // Where each handle and each param it sets are written, checked once every param is known.
+    let mut handle_lines: Vec<(usize, Vec<(usize, usize)>)> = Vec::new();
 
     macro_rules! mark {
         ($id:expr, $form:expr, $kind:expr) => {{
@@ -3576,20 +3696,80 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
             } => {
                 claim(name, *line)?;
                 let fail = at_line(*line);
-                // A later variable's range can use an earlier one.
-                let mut locals = Locals::new();
-                let mut lowered = Vec::with_capacity(vars.len());
-                for (var, range) in vars {
-                    lowered.push((
-                        var.clone(),
-                        [
-                            lowerer.scalar(&range[0], &locals).map_err(&fail)?,
-                            lowerer.scalar(&range[1], &locals).map_err(&fail)?,
-                        ],
+                // `±` anywhere in what it draws makes two of each instance, one for each sign:
+                // a last variable over `{1, -1}`, which `self.sign` names.
+                let signed = [value]
+                    .into_iter()
+                    .chain(param.iter().flat_map(|(_, r)| r))
+                    .chain(lets.iter().map(|(_, e)| e))
+                    .any(says_sign);
+                // A style reads the branch as `self.sign`, and an instance's own names as they
+                // are, so a name `sign` beside a `±` would read as the same thing.
+                if signed
+                    && let Some(kind) = vars
+                        .iter()
+                        .find(|(v, _)| v == "sign")
+                        .map(|_| "a variable")
+                        .or_else(|| lets.iter().find(|(n, _)| n == "sign").map(|_| "a `with`"))
+                {
+                    return Err(Error::at(
+                        *line,
+                        1,
+                        format!(
+                            "`{name}` has a `±`, whose branch a style reads as `self.sign`, and {kind} named `sign`, which `self.sign` could be taken for: rename `sign`"
+                        ),
                     ));
-                    locals.insert(var.clone(), Val::Scalar(Expr::sym(var)));
                 }
+                let (value, param, lets) = if signed {
+                    (
+                        &unsigned(value),
+                        &param
+                            .as_ref()
+                            .map(|(v, [lo, hi])| (v.clone(), [unsigned(lo), unsigned(hi)])),
+                        &lets
+                            .iter()
+                            .map(|(n, e)| (n.clone(), unsigned(e)))
+                            .collect::<Vec<_>>(),
+                    )
+                } else {
+                    (value, param, lets)
+                };
+                // A later variable's range can use an earlier one. What counts the instances sets
+                // only the variables, so a list's value is written out there, from its index,
+                // where everything after reads it by name.
+                let mut locals = Locals::new();
+                let mut counting = Locals::new();
+                let mut lowered = Vec::with_capacity(vars.len() + usize::from(signed));
                 let mut named = Vec::with_capacity(lets.len());
+                for (var, over) in vars {
+                    match over {
+                        Over::Range(range) => {
+                            lowered.push((
+                                var.clone(),
+                                [
+                                    lowerer.scalar(&range[0], &counting).map_err(&fail)?,
+                                    lowerer.scalar(&range[1], &counting).map_err(&fail)?,
+                                ],
+                            ));
+                            locals.insert(var.clone(), Val::Scalar(Expr::sym(var)));
+                            counting.insert(var.clone(), Val::Scalar(Expr::sym(var)));
+                        }
+                        Over::List(values) => {
+                            let values = values
+                                .iter()
+                                .map(|v| lowerer.lower(v, &counting, 0))
+                                .collect::<Result<Vec<_>, Error>>()
+                                .map_err(&fail)?;
+                            let picked = listed(var, values, &mut lowered, &mut named, &mut locals)
+                                .map_err(&fail)?;
+                            counting.insert(var.clone(), picked);
+                        }
+                    }
+                }
+                if signed {
+                    let signs = vec![Val::Scalar(num(1.0)), Val::Scalar(num(-1.0))];
+                    listed(SIGN, signs, &mut lowered, &mut named, &mut locals).map_err(&fail)?;
+                }
                 for (local, e) in lets {
                     match lowerer.lower(e, &locals, 0).map_err(&fail)? {
                         Val::Scalar(e) => {
@@ -3842,25 +4022,29 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
                 let to = lowerer.point(to, &none).map_err(&fail)?;
                 mark!(name.clone(), Form::Arrow { from, to }, "arrow");
             }
-            Item::Handle {
-                mark,
-                param,
-                inverse,
-                line,
-            } => {
+            Item::Handle { mark, sets, line } => {
                 let fail = at_line(*line);
                 let at = lowerer.point(&Expr::sym(mark), &none).map_err(&fail)?;
+                // `pointer` is the pointer's point, as `pointer.x` and `pointer.y` are its parts,
+                // so `real(ln(pointer))` reads it as a complex number.
                 let mut locals = Locals::new();
                 locals.insert(
                     "pointer".to_string(),
                     Val::Point(Expr::sym("pointer.x"), Expr::sym("pointer.y")),
                 );
-                let inverse = lowerer.scalar(inverse, &locals).map_err(&fail)?;
+                let lowered = sets
+                    .iter()
+                    .map(|set| {
+                        let fail = at_line(set.line);
+                        let inverse = lowerer.scalar(&set.inverse, &locals).map_err(&fail)?;
+                        Ok((set.param.clone(), inverse))
+                    })
+                    .collect::<Result<Vec<_>, Error>>()?;
+                handle_lines.push((*line, sets.iter().map(|s| (s.line, s.col)).collect()));
                 scene.handles.push(Handle {
                     mark: mark.clone(),
-                    param: param.clone(),
                     at,
-                    inverse,
+                    sets: lowered,
                 });
             }
             Item::Viewport {
@@ -4040,18 +4224,46 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
         }
         binding.expr = expr;
     }
-    for handle in &scene.handles {
-        if !scene.params.iter().any(|p| p.id == handle.param) {
-            return Err(Error::new(format!(
-                "`handle {}` sets `{}`, which isn't a param",
-                handle.mark, handle.param
-            )));
+    for (k, (handle, (line, _))) in scene.handles.iter().zip(&handle_lines).enumerate() {
+        // A grab takes one handle, so a second on the same mark could only be reached by keys.
+        if let Some((_, (first, _))) = scene.handles[..k]
+            .iter()
+            .zip(&handle_lines)
+            .find(|(other, _)| other.mark == handle.mark)
+        {
+            return Err(Error::at(
+                *line,
+                1,
+                format!(
+                    "`{0}` has a handle on line {first} already, and this is a second, on line {line}: a drag takes one. To drag `{0}` in two dimensions, one handle sets both: `handle {0} sets a = …, b = …`",
+                    handle.mark
+                ),
+            ));
+        }
+    }
+    for (handle, (line, at)) in scene.handles.iter().zip(&handle_lines) {
+        for ((param, _), (line, col)) in handle.sets.iter().zip(at) {
+            if !scene.params.iter().any(|p| p.id == *param) {
+                // A name that's a `let` or a binding's is defined, but only a param can be set.
+                return Err(Error::at(
+                    *line,
+                    *col,
+                    format!(
+                        "`handle {}` sets `{param}`, which isn't a param: only a `param` can be set",
+                        handle.mark
+                    ),
+                ));
+            }
         }
         if !scene.marks.iter().any(|m| m.id == handle.mark) {
-            return Err(Error::new(format!(
-                "`handle {0}`: nothing draws `{0}`, so it can't be grabbed",
-                handle.mark
-            )));
+            return Err(Error::at(
+                *line,
+                1,
+                format!(
+                    "`handle {0}`: nothing draws `{0}`, so it can't be grabbed",
+                    handle.mark
+                ),
+            ));
         }
     }
     in_dependency_order(&mut scene)?;
@@ -4134,7 +4346,7 @@ mod tests {
         let err = scene("duration time").unwrap_err();
         assert!(err.message.contains("uses `time`"), "{err}");
         let err = scene("param a in 0..time").unwrap_err();
-        assert!(err.message.contains("uses `time`"), "{err}");
+        assert!(err.message.contains("can't read `time`"), "{err}");
         assert!(
             scene("viewport { x: -2·pi..2·pi, y: -2..2 } style figure { width: 640px }").is_ok()
         );
@@ -6040,12 +6252,93 @@ mod tests {
              handle P sets a = pointer.x",
         )
         .unwrap();
-        assert_eq!(ok.handles[0].param, "a");
+        assert_eq!(ok.handles[0].params().collect::<Vec<_>>(), ["a"]);
         let err = scene("let P = (0, 0)\ndot P\nhandle P sets a = pointer.x").unwrap_err();
         assert!(err.message.contains("isn't a param"), "{err}");
         let err =
             scene("param a in 0..1\nlet P = (a, 0)\nhandle P sets a = pointer.x").unwrap_err();
         assert!(err.message.contains("nothing draws"), "{err}");
+    }
+
+    #[test]
+    fn a_mark_has_one_handle() {
+        let err = scene(
+            "param a in -1..1
+             param b in -1..1
+             let z = a + b·i
+             dot z
+             handle z sets a = pointer.x
+             handle z sets b = pointer.y",
+        )
+        .unwrap_err();
+        assert_eq!((err.line, err.col), (6, 1));
+        assert!(
+            err.message.starts_with(
+                "`z` has a handle on line 5 already, and this is a second, on line 6: a drag takes one."
+            ),
+            "{err}"
+        );
+        assert!(
+            err.message.contains("`handle z sets a = …, b = …`"),
+            "{err}"
+        );
+        // Handles on different marks are fine, even setting the same param.
+        scene(
+            "param a in -1..1
+             let P = (a, 0)
+             let Q = (0, a)
+             dot P, Q
+             handle P sets a = pointer.x
+             handle Q sets a = pointer.y",
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn a_two_param_handle_lowers_both_and_names_what_isnt_a_param() {
+        let ok = scene(
+            "param a in -1..1
+             param b in -1..1
+             let z = a + b·i
+             dot z
+             handle z sets a = pointer.x, b = real(conj(pointer)·i)",
+        )
+        .unwrap();
+        let handle = &ok.handles[0];
+        assert_eq!(handle.params().collect::<Vec<_>>(), ["a", "b"]);
+        assert!(handle.sets("b") && !handle.sets("z"));
+        assert_eq!(handle.sets[0].1, Expr::sym("pointer.x"));
+        // conj(x + yi)·i = y + xi, whose real part is y.
+        let b = handle.sets[1].1.to_mathjson().to_string();
+        assert!(b.contains("pointer.y") && !b.contains("pointer.x"), "{b}");
+
+        // Each name it sets has to be a param, and the error points at the one that isn't.
+        let err = scene(
+            "param a in -1..1
+             let b = 0.5
+             let z = a + b·i
+             dot z
+             handle z sets a = pointer.x, b = pointer.y",
+        )
+        .unwrap_err();
+        assert_eq!((err.line, err.col), (5, 43));
+        assert!(
+            err.message
+                .contains("`handle z` sets `b`, which isn't a param: only a `param` can be set"),
+            "{err}"
+        );
+        let err = scene(
+            "param a in -1..1
+             let z = a + i
+             dot z
+             handle z sets a = pointer.x, nothing = pointer.y",
+        )
+        .unwrap_err();
+        assert_eq!((err.line, err.col), (4, 43));
+        assert!(
+            err.message.contains("`nothing`, which isn't a param"),
+            "{err}"
+        );
     }
 
     #[test]

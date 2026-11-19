@@ -81,8 +81,7 @@ curve edge_top = parametric (s): wrap(s + π·i) for s in inner - 0.3..outer + 0
 curve edge_bottom = parametric (s): wrap(s - π·i) for s in inner - 0.3..outer + 0.3 tag edge
 
 // The strip a turn above and below.
-circles circles_above = circle(c, c + size(u)) for a in -16..16, b in first_b(a)..last_b(a) with u = to_log(grid(a, b)) + 2·π·i, c = wrap(u) tag copy
-circles circles_below = circle(c, c + size(u)) for a in -16..16, b in first_b(a)..last_b(a) with u = to_log(grid(a, b)) - 2·π·i, c = wrap(u) tag copy
+circles copies = circle(c, c + size(u)) for a in -16..16, b in first_b(a)..last_b(a) with u = to_log(grid(a, b)) ± 2·π·i, c = wrap(u) tag copy
 
 circles strip = circle(c, c + size(u)) for a in -16..16, b in first_b(a)..last_b(a) with u = to_log(grid(a, b)), c = wrap(u)
 

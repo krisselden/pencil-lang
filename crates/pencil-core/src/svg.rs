@@ -1321,6 +1321,45 @@ mod tests {
     }
 
     #[test]
+    fn a_later_range_can_read_a_list() {
+        // k counts up to s, which is 1 and then 2: three dots. And up to a point's y, 1 and
+        // then 3: six.
+        let drawn = draw(
+            "dots d = (k, s) for s in {1, 2}, k in 0..s",
+            "style d { stroke: black; radius: 2px }",
+        );
+        let found: Vec<(f64, f64)> = drawn
+            .svg
+            .split("<circle")
+            .skip(1)
+            .map(|c| {
+                let at = |k: &str| -> f64 {
+                    let v = c.split(&format!(" {k}=\"")).nth(1).unwrap();
+                    v.split('"').next().unwrap().parse().unwrap()
+                };
+                (at("cx"), at("cy"))
+            })
+            .collect();
+        // A unit is 50 pixels, and y is down from 4.
+        let px = |x: f64, y: f64| (x * 50.0, (4.0 - y) * 50.0);
+        assert_eq!(
+            found,
+            [
+                px(0.0, 1.0),
+                px(1.0, 1.0),
+                px(0.0, 2.0),
+                px(1.0, 2.0),
+                px(2.0, 2.0)
+            ]
+        );
+        let drawn = draw(
+            "dots d = (k, p.y) for p in {(0, 1), (0, 3)}, k in 0..p.y",
+            "style d { stroke: black; radius: 2px }",
+        );
+        assert_eq!(drawn.svg.matches("<circle").count(), 2 + 4, "{}", drawn.svg);
+    }
+
+    #[test]
     fn marks_are_shapes_under_their_names_and_labels_are_text() {
         let drawn = draw(
             "let P = (1, 1)

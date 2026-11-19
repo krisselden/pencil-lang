@@ -17,10 +17,11 @@
 //
 // A server for the repo root starts on 8743 (tests/serve.js, which does what scripts/serve.py does
 // but with a deep listen backlog: serve.py's is 5, and the first burst from several browsers at
-// once was refused, as "Failed to fetch"). One already running on that port is reused.
+// once was refused, as "Failed to fetch"). One already running on that port is reused, which may be
+// another checkout's: PENCIL_PORT picks another port, to test this tree's files.
 import { defineConfig, devices } from '@playwright/test';
 
-const PORT = 8743;
+const PORT = Number(process.env.PENCIL_PORT || 8743);
 
 const chromiumGpu = [
   '--enable-unsafe-swiftshader',

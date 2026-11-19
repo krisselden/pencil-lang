@@ -52,7 +52,10 @@ below can ship when it's done.
    1. Ports with what exists, done on 2026-11-15: `ScaledCopy` (`014-scaled-copy`), `LogNearest` (`015-log-nearest`) and
       `UnwrapMorph` (`016-unwrap`), whose one circle per period turned out to be a range.
    2. A color per instance in `curves` and `dots`: `ArmColors`, which the period post places too.
-   3. Dragging a point in two dimensions (see below for its shape): `FloorCell`, as two figures.
+   3. Dragging a point in two dimensions (see below for its shape): `FloorCell`, as two figures. **Built 2026-11-18:**
+      `handle z sets a = pointer.x, b = pointer.y`, one handle setting two params (`language.md`, `decisions.md`). It
+      unblocks `FloorCell`'s free point, and `CircumcircleDemo`'s and `CircumNormals`' corners, which are ports now; none
+      is ported yet.
    4. Panels of different sizes, which with the drag ports `FollowPixel` and `PowerViews`.
    5. `ZoomLoop`, which needs design: a clock that doesn't loop, and a chart whose axis rescales. Its spiral half is a port.
 3. **`doyle-spiral-period`.** `LatticeMapping` and `RollTube` are done, and `ArmColors` comes from step 2. That leaves one port,
@@ -82,13 +85,56 @@ with either. The logo can stay the site's own.
 - **A point written from two params is dragged by setting them.** Desmos allows this only for a point that is `(a, b)` or
   `a + b·i`, and that's the rule to take: the point's coordinates are the params, so there's nothing to invert, and each param
   stops at its own range. `FloorCell`'s free point, `CircumcircleDemo`'s and `CircumNormals`' corners, and `FollowPixel`'s w are
-  all this.
+  all this. **Built 2026-11-18,** written out rather than inferred, as Kris prefers: `handle z sets a = pointer.x,
+  b = pointer.y` for `z = a + b·i`. A point `(a, b)` gives the same two lines.
 - **Anything else keeps an explicit inverse,** as `handle P sets a = …` has now, extended to give a point for two params:
-  `FollowPixel`'s z in the spiral sets w through the inverse map, and `PowerViews`' z is dragged in two panels.
+  `FollowPixel`'s z in the spiral sets w through the inverse map, and `PowerViews`' z is dragged in two panels. **Built
+  2026-11-18** in the same form: each of the two params gets its own expression in the pointer, which can read it as a point
+  (`real(ln(pointer))`), as Kris's lattice does with `z = a + b·ω`. `FollowPixel`'s z by its inverse map can be written now;
+  that figure and `PowerViews` still wait on panels of different sizes (step 4).
 - **No inverse is solved for.** Desmos also drags a point that's a function of one param by solving for it, which is convenient,
   and has two faults Kris has met: the param can jump out of its range, and when several handles share a param, some one-to-one
   and some many-to-one, dragging a many-to-one handle makes the others jump between its solutions. The explicit conversion is
   easier to understand. So "automatic inverses" (`decisions.md`, Not built from the specs) stays not built.
+
+**The blog's constrained points, as handles** (checked 2026-11-18). A blog handle takes `constrain`, a function from the
+pointer to the nearest allowed point (`src/lib/plot.ts`). Every use in the posts is below, with its region and the handle
+that gives it. A curve is one param and its expression; a region of the plane is two params, whose ranges give a box in
+their own coordinates (a parallelogram on a lattice, with `z = a + b·ω`), and anything else is in the two expressions,
+which are the constrain function written out. None needed anything the language lacks: `min`, `max`, `clamp`, `atan2`,
+`ln` of a point and a `fn` were enough. `crates/pencil-core/tests/constrain.rs` drags every one of them but the
+`LimaconConstruction` drivers and compares where it lands with the blog's function, ported to Rust: `BoundsConstruction`
+and `LogNearest` in the corpus figures themselves, the rest as the handle in the table in a small figure. The drivers are
+argued from the form only: each is z₁'s handle about another point the construction finds (x₂, the hub), and the
+construction isn't ported.
+
+| Figure, point | Region | Handle |
+|---|---|---|
+| `FloorCell`, the free point | A rectangle in the plane (not a box in the lattice's coefficients) | `handle P sets px = pointer.x, py = pointer.y`, the rectangle as the two ranges |
+| `FollowPixel`, w | A rectangle on the grid | The same |
+| `FollowPixel`, z | The rectangle's image in the spiral | `handle z sets wx = real(to_grid(pointer)), wy = imag(to_grid(pointer))`, with `fn to_grid` the log and the linear map back; the ranges keep w in the rectangle |
+| `PowerViews`, z (in two panels) | A rectangle with two disks taken out, about 0 (radius 0.25) and 1 (radius 0.1), pushed out along the radius | `fn out(p, c, r) = c + (p - c)·max(1, r/max(abs(p - c), 1e-12))`, and `zx = real(out(out(pointer, 0, 0.25), 1, 0.1))`, `zy` its `imag`; the rectangle as the ranges |
+| `CircumCot`, B | A segment of y = 1 | `handle B sets m = pointer.x`, with `m in 0.12..2.1` |
+| `CircumCot`, C | The circle about 0 through B, whose radius follows m | `handle C sets phi = atan2(pointer.y, pointer.x)` |
+| `LimaconTangency`, z | The limaçon, by the pointer's angle about 1 | `handle z sets angle = atan2(pointer.y, pointer.x - 1)` |
+| `MedianConstruction`, C; `LimaconConstruction`, C | An arc of the unit circle, 15° to 40° (45° in the second) | `handle C sets phi = atan2(pointer.y, pointer.x)`, the arc as the range |
+| `MedianConstruction`, z | An arc whose ends follow C: \|β\| ≤ 2φ − 1.5° | `handle z sets beta = atan2(pointer.y, pointer.x)`, with `param beta in -(2·phi - 1.5·π/180)..2·phi - 1.5·π/180` |
+| `LimaconConstruction`, z₁ and each panel's driver | A circle about a point the construction finds (x₁, x₂, the hub) | `handle z1 sets t = atan2(pointer.y - x1.y, pointer.x - x1.x)`; several handles set t |
+| `BoundsConstruction`, P; `LogNearest`, x | An arc; a segment | Done, in `004-bounds` and `015-log-nearest`. `LogNearest`'s lower end differs (below) |
+| `TriangleLayers`, eˢ; `FloorCell`, x | A segment of a line | `handle E sets es = pointer.x` |
+
+What doesn't carry over, none of it a region:
+
+- **`LimaconConstruction` nudges t off one angle,** where two of its lines coincide and the construction has no answer. In
+  Pencil the construction's values are absent there instead (`language.md`, Values that may not exist), so nothing is
+  needed. Writing the nudge would take `sign` or `floor` as a conditional.
+- **`PowerViews` clamps to the rectangle first, then pushes out of the disks;** a handle's expressions come first and its
+  ranges after. They agree wherever the disks are clear of the rectangle's edges, as they are.
+- **`FollowPixel`'s z reads the log's angle,** which jumps by a turn on the negative real axis, so w jumps by the period
+  there, in the blog as here.
+- **`PowerViews` drags z in two panels** of different sizes, which waits on step 4.
+- **`LogNearest`'s x stops at 0.72 in `015-log-nearest`,** and at e^−0.35 + 0.02 ≈ 0.7247 in the blog, so below 0.7247 the
+  corpus lets x go 0.0047 further. Left as it is.
 
 **A field, and what a style can read of it.** The inventory asked for "a field that names its nearest circle" so that
 `DoyleSpiral`'s arms could be colored. Kris's point: that shader isn't a list of circles drawn fast. It samples a pixel and asks
@@ -133,9 +179,9 @@ The home page's hero canvas and the header's logo are listed apart, at the end. 
 
 | Component | Post | Tier | Pencil today | Lacks | Size |
 |---|---|---|---|---|---|
-| `CircumcircleDemo` | circumcenter | supporting | Related: `011-circumcircle` | Dragging a point in two dimensions | Feature |
+| `CircumcircleDemo` | circumcenter | supporting | Related: `011-circumcircle` | Dragging a point in two dimensions (built 2026-11-18) | Port |
 | `circumcircle.glsl` | circumcenter | supporting | Part: `011-circumcircle` | Nothing, without its hue drift | Port |
-| `CircumNormals` | circumcenter | supporting | None | Dragging a point in two dimensions | Feature |
+| `CircumNormals` | circumcenter | supporting | None | Dragging a point in two dimensions (built 2026-11-18) | Port |
 | `CircumCot` | circumcenter | supporting | None | Nothing | Port |
 | `Unroll` | involute | primary | Same: `003-unroll` | Nothing | Done |
 | `LimaconConstruction` | limacon | primary | Related: `lab/explainer` | Separate beats per panel | Design |
@@ -143,14 +189,14 @@ The home page's hero canvas and the header's logo are listed apart, at the end. 
 | `MedianConstruction` | limacon | primary | Related: `lab/explainer/limacon/pedal.pen` | Nothing | Port |
 | `DoyleSpiral` (`doyle.glsl`) | doyle-spiral-shader | hero | Related: `007-lattice`'s spiral | Not being ported. It would lack coloring a field by which circle is nearest | Stays |
 | `ScaledCopy` | doyle-spiral-shader, doyle-spiral-touch | aside | Same: `014-scaled-copy` | Nothing | Done |
-| `FollowPixel` | doyle-spiral-shader | primary | Related: `007-lattice` | Two-dimensional drag, panels of different sizes | Feature (two) |
+| `FollowPixel` | doyle-spiral-shader | primary | Related: `007-lattice` | Panels of different sizes (two-dimensional drag built 2026-11-18) | Feature |
 | `gradient.glsl` | doyle-spiral-shader | aside | None | Not being ported. It would lack a fill that reads the pixel's position | Stays |
 | `circle-distance.glsl` | doyle-spiral-shader | supporting | Related: `001-circle` with `bands.style` | Not being ported. It would lack a fill that reads the pixel's position | Stays |
 | `SquareZ` | doyle-spiral-shader | aside | Same: `006-square` | Nothing | Done |
-| `PowerViews` | doyle-spiral-shader | primary | Related: `010-mobius` | Two-dimensional drag, panels of different sizes | Feature (two) |
+| `PowerViews` | doyle-spiral-shader | primary | Related: `010-mobius` | Panels of different sizes (two-dimensional drag built 2026-11-18) | Feature |
 | `UnwrapMorph` | doyle-spiral-shader | primary | Same: `016-unwrap` | Nothing | Done |
 | `LogNearest` | doyle-spiral-shader | supporting | Same: `015-log-nearest` | Nothing | Done |
-| `FloorCell` | doyle-spiral-shader | supporting | None | Dragging a point in two dimensions | Feature |
+| `FloorCell` | doyle-spiral-shader | supporting | None | Dragging a point in two dimensions (built 2026-11-18) | Port |
 | `ArmColors` | doyle-spiral-shader, doyle-spiral-period | primary | Related: `007-lattice` | A color per instance in `curves` and `dots` | Feature |
 | `ZoomLoop` | doyle-spiral-shader | primary | None | A clock that doesn't loop, and a chart | Design |
 | `LatticeMapping` | doyle-spiral-period | primary | Same: `007-lattice` | Nothing | Done |
@@ -383,15 +429,15 @@ What the summary table compresses. "Reader" is everything a reader can do beside
 - **Reader:** drags A, B and C freely, with keys. Readout D and R = |w|.
 - **Pencil:** `circle(A, B, C)`, `perpendicular`, `midpoint` and `arrow` exist. `circle(A, B, C)` becomes a line at D = 0 rather than
   vanishing, which is truer than the site.
-- **Lacks:** dragging in two dimensions. A handle sets one param; a second `handle A sets …` on the same mark compiles, but a drag
-  grabs one handle (`pencil-web`'s `grab`). The grid can be a `curves` collection, and its numbers written out.
+- **Lacks:** nothing to drag in two dimensions since 2026-11-18: `handle A sets ax = pointer.x, ay = pointer.y`. The grid
+  can be a `curves` collection, and its numbers written out.
 
 **`CircumNormals`** (supporting)
 
 - **Draws:** the triangle, the lines at B and C perpendicular to BA and CA, meeting at A′ opposite A, right-angle marks at B and C,
   and the circle on diameter AA′.
 - **Reader:** drags A, B and C, with keys.
-- **Lacks:** two-dimensional drag only.
+- **Lacks:** nothing, since two-dimensional drag was built on 2026-11-18. It's a port.
 
 **`CircumCot`** (supporting)
 
@@ -485,7 +531,8 @@ element's play hands back at the matching time, as `goals.md` describes.
   - A region can't go through a map ("a group drawn through `f` can hold lets, functions, parametric curves, segments, dots, labels…"
     *(tried)*), but a region can be bounded by arcs written in the spiral's coordinates directly.
   - Which candidate wins is `min` in a style's `show` and `opacity`.
-- **Lacks:** two-dimensional drag, and panels of different sizes (`goals.md`, Known limits).
+- **Lacks:** panels of different sizes (`goals.md`, Known limits). Two-dimensional drag was built on 2026-11-18: w by
+  setting its two params, and z by the inverse map, each param by its own expression.
 
 **`gradient.glsl`** and **`circle-distance.glsl`**: stay GLSL. See "The five shaders".
 
@@ -506,7 +553,8 @@ replaced that.
   - The first step's stronger color is a second collection.
   - Log space refits to n with `fit`.
   - The turn labels vary in number and would be written for the most there can be.
-- **Lacks:** two-dimensional drag, and panels of different sizes.
+- **Lacks:** panels of different sizes. Two-dimensional drag was built on 2026-11-18, and z by an inverse in each panel is
+  a handle in each.
 
 **`UnwrapMorph`** (primary): done as `016-unwrap`.
 
@@ -556,7 +604,7 @@ replaced that.
 - **Draws:** a number line with ⌊x⌋ highlighted, and the Eisenstein lattice with a point's cell, its triangle half, the steps +1, +ω
   and +1 + ω, and the nearest corner.
 - **Reader:** drags x on the line, and drags a free point on the lattice, with keys. Readout of the floors.
-- **Lacks:** two-dimensional drag. The two sizes can be two figures.
+- **Lacks:** nothing since two-dimensional drag was built on 2026-11-18. The two sizes can be two figures.
 
 **`ArmColors`** (primary, in two posts): two panels.
 
@@ -720,6 +768,9 @@ replaced that.
   `TriangleLayers`, `MedianConstruction`, `CameraLog` and `LimaconTangency`.
 - **One feature: 6.** `CircumcircleDemo`, `CircumNormals`, `FloorCell`, `ArmColors`, `NewtonLine` and `DoyleFlower`.
 - **Two features: 3.** `FollowPixel`, `PowerViews` and `DigitsChart`.
+- **Since 2026-11-18,** when dragging a point in two dimensions was built, `CircumcircleDemo`, `CircumNormals` and
+  `FloorCell` are ports, and `FollowPixel` and `PowerViews` need one feature, panels of different sizes. The counts above
+  are as of the inventory.
 - **Design: 5.** `LimaconConstruction`, `ZoomLoop`, `LevelCurve`, `NewtonDoyle` and `SkewSliders`. The hero and the logo
   are design too.
 - **Stays GLSL: 3.** `DoyleSpiral`, `gradient.glsl` and `circle-distance.glsl`.
@@ -735,7 +786,7 @@ is ported once this exists and nothing else does.
 | Feature | Needed by | Alone | Kind |
 |---|---|---|---|
 | Keys: handles a reader can tab to, arrows that move them and step beats | 12 (listed under Keyboard) | 0 to draw, and all 12 to ship: no figure is ported without them (see Order) | Element, plus a nudge through the handle's inverse |
-| Dragging a point in two dimensions | 5: `CircumcircleDemo`, `CircumNormals`, `FloorCell`, `FollowPixel`, `PowerViews` | 3 | Language: a point that's `(a, b)` or `a + b·i` of two params is dragged by setting them, and an explicit inverse can give a point (see Order) |
+| Dragging a point in two dimensions | 5: `CircumcircleDemo`, `CircumNormals`, `FloorCell`, `FollowPixel`, `PowerViews` | 3 | Language: **built 2026-11-18**, a handle that sets two params, each by its own expression in the pointer (see Order) |
 | Newton's steps as values (or derivatives a figure can name) | 4: `DoyleFlower`, `DigitsChart`, `NewtonDoyle`, `SkewSliders` | 1 | Language |
 | Panels of different sizes and layouts (a wide strip over two) | 4: `FollowPixel`, `PowerViews`, `NewtonDoyle`, `FloorCell` (or two figures) | 0 | Sheet: a known limit |
 | 3D: a view that pitches and that the reader turns | 2: `LevelCurve`, `NewtonDoyle` | 1 | Design |

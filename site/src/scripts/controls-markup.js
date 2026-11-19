@@ -29,7 +29,7 @@ export const timeText = (seconds) => `${seconds.toFixed(1)} s`;
 
 /** Whether a handle sets this param. Its handle is its control: it takes focus and the arrow
  * keys, and says its value to a screen reader, so the param gets no slider. */
-export const handled = (info, param) => (info.handles ?? []).some((handle) => handle.param === param.id);
+export const handled = (info, param) => (info.handles ?? []).some((handle) => handle.params.includes(param.id));
 
 /** Whether the figure has beats to step through. */
 export const steps = (info) => info.beats.length > 0 && info.params.some((p) => p.id === 'beat');

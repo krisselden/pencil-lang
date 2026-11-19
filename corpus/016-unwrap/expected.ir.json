@@ -225,15 +225,23 @@
           {
             "range": [["Max",["Negate",["Floor",["Divide",["Add","period",["Multiply","rise_a","a"]],"rise_b"]]],["Negate",["Floor",["Divide",["Subtract",["Multiply","across_a","a"],"inner"],"across_b"]]]],["Min",["Subtract",["Negate",["Floor",["Divide",["Subtract",["Multiply","rise_a","a"],"period"],"rise_b"]]],1.0],["Floor",["Divide",["Subtract","outer",["Multiply","across_a","a"]],"across_b"]]]],
             "var": "b"
+          },
+          {
+            "range": [0.0,1.0],
+            "var": "self.sign.index"
           }
         ],
         "with": [
+          {
+            "expr": ["IfNonnegative",["Subtract","self.sign.index",0.5],-1.0,1.0],
+            "id": "self.sign"
+          },
           {
             "expr": ["Divide",["Multiply","nu",["Divide",["Add",["Multiply",["Negate",["Multiply",["Multiply",2.0,"Pi"],["Multiply","b","omega.y"]]],"A.x"],["Multiply",["Multiply",["Multiply",2.0,"Pi"],["Add",["Multiply","b","omega.x"],"a"]],"A.y"]],["Add",["Power","A.x",2.0],["Power","A.y",2.0]]]],["Add",["Power",1.0,2.0],["Power",["Negate","mu"],2.0]]],
             "id": "u.x"
           },
           {
-            "expr": ["Add",["Add",["Divide",["Negate",["Multiply",["Multiply","nu",["Divide",["Add",["Multiply",["Negate",["Multiply",["Multiply",2.0,"Pi"],["Multiply","b","omega.y"]]],"A.x"],["Multiply",["Multiply",["Multiply",2.0,"Pi"],["Add",["Multiply","b","omega.x"],"a"]],"A.y"]],["Add",["Power","A.x",2.0],["Power","A.y",2.0]]]],["Negate","mu"]]],["Add",["Power",1.0,2.0],["Power",["Negate","mu"],2.0]]],["Divide",["Subtract",["Multiply",["Multiply",["Multiply",2.0,"Pi"],["Add",["Multiply","b","omega.x"],"a"]],"A.x"],["Multiply",["Negate",["Multiply",["Multiply",2.0,"Pi"],["Multiply","b","omega.y"]]],"A.y"]],["Add",["Power","A.x",2.0],["Power","A.y",2.0]]]],["Multiply",2.0,"Pi"]],
+            "expr": ["Add",["Add",["Divide",["Negate",["Multiply",["Multiply","nu",["Divide",["Add",["Multiply",["Negate",["Multiply",["Multiply",2.0,"Pi"],["Multiply","b","omega.y"]]],"A.x"],["Multiply",["Multiply",["Multiply",2.0,"Pi"],["Add",["Multiply","b","omega.x"],"a"]],"A.y"]],["Add",["Power","A.x",2.0],["Power","A.y",2.0]]]],["Negate","mu"]]],["Add",["Power",1.0,2.0],["Power",["Negate","mu"],2.0]]],["Divide",["Subtract",["Multiply",["Multiply",["Multiply",2.0,"Pi"],["Add",["Multiply","b","omega.x"],"a"]],"A.x"],["Multiply",["Negate",["Multiply",["Multiply",2.0,"Pi"],["Multiply","b","omega.y"]]],"A.y"]],["Add",["Power","A.x",2.0],["Power","A.y",2.0]]]],["Multiply","self.sign",["Multiply",2.0,"Pi"]]],
             "id": "u.y"
           },
           {
@@ -246,47 +254,7 @@
           }
         ]
       },
-      "id": "circles_above",
-      "tags": ["circles","copy"]
-    },
-    {
-      "beat": null,
-      "form": {
-        "kind": "many",
-        "shape": {
-          "circles": ["c.x","c.y"],
-          "r": ["Sqrt",["Add",["Power",["Subtract",["Add","c.x",["Multiply","k",["Exp",["Multiply","bend","u.x"]]]],"c.x"],2.0],["Power",["Subtract","c.y","c.y"],2.0]]]
-        },
-        "vars": [
-          {
-            "range": [-16.0,16.0],
-            "var": "a"
-          },
-          {
-            "range": [["Max",["Negate",["Floor",["Divide",["Add","period",["Multiply","rise_a","a"]],"rise_b"]]],["Negate",["Floor",["Divide",["Subtract",["Multiply","across_a","a"],"inner"],"across_b"]]]],["Min",["Subtract",["Negate",["Floor",["Divide",["Subtract",["Multiply","rise_a","a"],"period"],"rise_b"]]],1.0],["Floor",["Divide",["Subtract","outer",["Multiply","across_a","a"]],"across_b"]]]],
-            "var": "b"
-          }
-        ],
-        "with": [
-          {
-            "expr": ["Divide",["Multiply","nu",["Divide",["Add",["Multiply",["Negate",["Multiply",["Multiply",2.0,"Pi"],["Multiply","b","omega.y"]]],"A.x"],["Multiply",["Multiply",["Multiply",2.0,"Pi"],["Add",["Multiply","b","omega.x"],"a"]],"A.y"]],["Add",["Power","A.x",2.0],["Power","A.y",2.0]]]],["Add",["Power",1.0,2.0],["Power",["Negate","mu"],2.0]]],
-            "id": "u.x"
-          },
-          {
-            "expr": ["Subtract",["Add",["Divide",["Negate",["Multiply",["Multiply","nu",["Divide",["Add",["Multiply",["Negate",["Multiply",["Multiply",2.0,"Pi"],["Multiply","b","omega.y"]]],"A.x"],["Multiply",["Multiply",["Multiply",2.0,"Pi"],["Add",["Multiply","b","omega.x"],"a"]],"A.y"]],["Add",["Power","A.x",2.0],["Power","A.y",2.0]]]],["Negate","mu"]]],["Add",["Power",1.0,2.0],["Power",["Negate","mu"],2.0]]],["Divide",["Subtract",["Multiply",["Multiply",["Multiply",2.0,"Pi"],["Add",["Multiply","b","omega.x"],"a"]],"A.x"],["Multiply",["Negate",["Multiply",["Multiply",2.0,"Pi"],["Multiply","b","omega.y"]]],"A.y"]],["Add",["Power","A.x",2.0],["Power","A.y",2.0]]]],["Multiply",2.0,"Pi"]],
-            "id": "u.y"
-          },
-          {
-            "expr": ["Add",["Divide",["Subtract",["Multiply",["Exp",["Multiply","bend","u.x"]],["Cos",["Multiply","bend","u.y"]]],1.0],"bend"],1.0],
-            "id": "c.x"
-          },
-          {
-            "expr": ["Divide",["Multiply",["Exp",["Multiply","bend","u.x"]],["Sin",["Multiply","bend","u.y"]]],"bend"],
-            "id": "c.y"
-          }
-        ]
-      },
-      "id": "circles_below",
+      "id": "copies",
       "tags": ["circles","copy"]
     },
     {

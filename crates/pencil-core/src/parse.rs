@@ -152,7 +152,7 @@ pub enum Item {
         value: Expr,
         /// A curve's own parameter and its range, for `curves`.
         param: Option<(String, [Expr; 2])>,
-        vars: Vec<(String, [Expr; 2])>,
+        vars: Vec<(String, Over)>,
         lets: Vec<(String, Expr)>,
         line: usize,
     },
@@ -227,12 +227,11 @@ pub enum Item {
     Pause(Expr),
     /// Tags the marks the statement before it made.
     Tag(Vec<String>),
-    /// Dragging a mark sets a param. The expression is the explicit inverse from the
-    /// pointer to the param, and the param's range is the constraint.
+    /// Dragging a mark sets one param, or two. Each expression is the explicit inverse from
+    /// the pointer to its param, and each param's range is its constraint.
     Handle {
         mark: String,
-        param: String,
-        inverse: Expr,
+        sets: Vec<HandleSet>,
         line: usize,
     },
     Viewport {
@@ -244,6 +243,39 @@ pub enum Item {
         yaw: Option<Expr>,
     },
     Style(StyleRule),
+}
+
+/// What a collection's variable counts over: the whole numbers of a range, or a list of values in
+/// the order written.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Over {
+    Range([Expr; 2]),
+    List(Vec<Expr>),
+}
+
+impl Over {
+    pub fn exprs(&self) -> &[Expr] {
+        match self {
+            Over::Range(range) => range,
+            Over::List(values) => values,
+        }
+    }
+
+    pub fn map(&self, f: impl Fn(&Expr) -> Expr) -> Over {
+        match self {
+            Over::Range([lo, hi]) => Over::Range([f(lo), f(hi)]),
+            Over::List(values) => Over::List(values.iter().map(f).collect()),
+        }
+    }
+}
+
+/// One `param = expr` of a handle, with where the param's name is written.
+#[derive(Clone, Debug, PartialEq)]
+pub struct HandleSet {
+    pub param: String,
+    pub inverse: Expr,
+    pub line: usize,
+    pub col: usize,
 }
 
 /// How a curve was written. Each form keeps its own representation downstream.
@@ -521,6 +553,14 @@ fn lex(src: &str) -> Result<Vec<Lexed>, Error> {
                 line: start_line,
                 col: start_col,
             });
+        } else if c == '±' || c == '∓' {
+            advance(1, &mut i, &mut col);
+            out.push(Lexed {
+                spaced: false,
+                tok: Tok::Punct(if c == '±' { "±" } else { "∓" }),
+                line: start_line,
+                col: start_col,
+            });
         } else {
             let rest: String = chars[i..(i + 2).min(chars.len())].iter().collect();
             let Some(p) = PUNCT.iter().find(|p| rest.starts_with(**p)) else {
@@ -559,6 +599,8 @@ struct Parser {
     line_starts: Vec<usize>,
     /// How far this text's lines are numbered on from 1, when it's one file of several.
     base: usize,
+    /// Where the statement being read first says `±` or `∓`, which only a collection may.
+    branches: Option<(usize, usize)>,
 }
 
 /// Builtin names in source, and their MathJSON heads. Anything else is left under
@@ -640,6 +682,11 @@ const AFTER_EXPRESSIONS: [&str; 19] = [
     "as", "at", "away", "by", "drop", "focus", "for", "from", "hang", "if", "in", "offset", "sets",
     "show", "size", "step", "tag", "through", "with",
 ];
+
+/// `a ± b`, and `±a` with one argument: both signs, one for each of a collection's two branches.
+pub const PLUS_MINUS: &str = "PlusMinus";
+/// `a ∓ b` and `∓a`: the opposite sign to `±` in each branch.
+pub const MINUS_PLUS: &str = "MinusPlus";
 
 /// Words that can follow `beat` in a beat with a length, so none of them can be its name.
 const MOVE_WORDS: [&str; 5] = ["for", "show", "drop", "focus", "tag"];
@@ -729,7 +776,37 @@ impl Parser {
         Ok(Document { name, items })
     }
 
+    /// One statement. `±` and `∓` draw two of a mark, so only a collection can say them, and
+    /// one that's anywhere else is an error at the sign, naming the collection to use.
     fn statement(&mut self, name: &mut Option<String>, items: &mut Vec<Item>) -> Result<(), Error> {
+        let outer = self.branches.take();
+        let word = match self.peek() {
+            Tok::Ident(word) => word.clone(),
+            _ => String::new(),
+        };
+        self.statement_itself(name, items)?;
+        if let Some((line, col)) = self.branches
+            && !matches!(word.as_str(), "dots" | "circles" | "curves")
+        {
+            let plural = match word.as_str() {
+                "curve" => "a `curves` collection, or `circles` for a circle",
+                _ => "a collection: `dots` for points, `circles` for circles, `curves` for curves",
+            };
+            return Err(Error::at(
+                line,
+                col,
+                format!("`±` draws two marks, one for each sign, so it belongs in {plural}"),
+            ));
+        }
+        self.branches = outer;
+        Ok(())
+    }
+
+    fn statement_itself(
+        &mut self,
+        name: &mut Option<String>,
+        items: &mut Vec<Item>,
+    ) -> Result<(), Error> {
         let line = self.line();
         let word = self.ident("a statement")?;
         match word.as_str() {
@@ -1015,15 +1092,37 @@ impl Parser {
             "handle" => {
                 let mark = self.ident("a mark")?;
                 self.keyword("sets")?;
-                let param = self.ident("a param")?;
-                self.expect("=")?;
-                let inverse = self.expr()?;
-                items.push(Item::Handle {
-                    mark,
-                    param,
-                    inverse,
-                    line,
-                });
+                // One param, or two for a point dragged in two dimensions, each from the pointer.
+                let mut sets: Vec<HandleSet> = Vec::new();
+                loop {
+                    let (at, col) = (self.line(), self.toks[self.pos].col);
+                    let param = self.ident("a param")?;
+                    if sets.iter().any(|s| s.param == param) {
+                        return Err(Error::at(
+                            at,
+                            col,
+                            format!("`handle {mark}` sets `{param}` twice"),
+                        ));
+                    }
+                    self.expect("=")?;
+                    let inverse = self.expr()?;
+                    sets.push(HandleSet {
+                        param,
+                        inverse,
+                        line: at,
+                        col,
+                    });
+                    if !matches!(self.peek(), Tok::Punct(p) if *p == ",") {
+                        break;
+                    }
+                    if sets.len() == 2 {
+                        return Err(self.error(format!(
+                            "`handle {mark}` sets one param or two, not more: a point has two coordinates"
+                        )));
+                    }
+                    self.bump();
+                }
+                items.push(Item::Handle { mark, sets, line });
             }
             "beat" if self.is_move() => {
                 let beat_name = match self.peek() {
@@ -1196,14 +1295,59 @@ impl Parser {
         } else {
             self.expr()?
         };
-        self.keyword("for")?;
+        // A collection counts over its variables, and one that says `±` draws both signs, so
+        // with one its `for` can be left out: it's a collection of two.
         let mut vars = Vec::new();
-        loop {
-            let var = self.ident("a variable")?;
-            self.keyword("in")?;
-            vars.push((var, self.range()?));
-            if !self.eat(",") {
-                break;
+        let missing_for = self.error(format!("expected `for`, found {}", self.peek()));
+        let counted = self.at_word("for");
+        if counted {
+            self.bump();
+            loop {
+                let var = self.ident("a variable")?;
+                self.keyword("in")?;
+                let from = self.pos;
+                let over = if self.eat("{") {
+                    if *self.peek() == Tok::Punct("}") {
+                        return Err(self
+                            .error(format!("`{var}` counts over nothing: a list needs a value")));
+                    }
+                    let mut values = Vec::new();
+                    loop {
+                        values.push(self.expr()?);
+                        if *self.peek() == Tok::Punct("..") {
+                            return Err(self.error(format!(
+                                "a list's elements are values, written one by one: `{var} in {{1, 2, 3}}`, and a range goes outside the braces: `{var} in 1..3`"
+                            )));
+                        }
+                        if !self.eat(",") {
+                            break;
+                        }
+                    }
+                    self.expect("}")?;
+                    Over::List(values)
+                } else {
+                    Over::Range(self.range()?)
+                };
+                // The signs are the innermost of a collection's variables, so a list another
+                // counts over can't depend on them. A range checks its own.
+                if let (Over::List(_), Some(sign)) = (
+                    &over,
+                    self.toks[from..self.pos]
+                        .iter()
+                        .find(|t| matches!(t.tok, Tok::Punct("±" | "∓"))),
+                ) {
+                    return Err(Error::at(
+                        sign.line,
+                        sign.col,
+                        format!(
+                            "`{var}` can't count over `±`: the two signs are a collection's last variable, so write them as values, `{var} in {{1, -1}}`, or `±` in what it draws"
+                        ),
+                    ));
+                }
+                vars.push((var, over));
+                if !self.eat(",") {
+                    break;
+                }
             }
         }
         let mut lets = Vec::new();
@@ -1218,6 +1362,9 @@ impl Parser {
                 }
             }
         }
+        if !counted && self.branches.is_none() {
+            return Err(missing_for);
+        }
         Ok(Item::Many {
             name,
             kind,
@@ -1229,10 +1376,75 @@ impl Parser {
         })
     }
 
+    /// `a..b`, or `med ± dev` as the whole range, `(med - abs(dev))..(med + abs(dev))`: the
+    /// tolerance reading of `±`, as in x = 5 ± 2. It's sugar, so each place allows what it
+    /// allows of a range's ends. A `±` anywhere else in a range would make two ranges, which a
+    /// list says instead.
     fn range(&mut self) -> Result<[Expr; 2], Error> {
+        let outer = self.branches.take();
+        let from = self.pos;
         let lo = self.expr()?;
+        let signs = |p: &Parser, from: usize| {
+            p.toks[from..p.pos]
+                .iter()
+                .filter(|t| matches!(t.tok, Tok::Punct("±" | "∓")))
+                .map(|t| (t.line, t.col, t.tok == Tok::Punct("±")))
+                .collect::<Vec<_>>()
+        };
+        if *self.peek() != Tok::Punct("..") {
+            let found = signs(self, from);
+            match (&lo, found.as_slice()) {
+                (Expr::App(head, parts), [_]) if head == PLUS_MINUS && parts.len() == 2 => {
+                    self.branches = outer;
+                    // The interval between the two values, whichever is larger, so a
+                    // negative `dev` doesn't reverse it.
+                    let med = parts[0].clone();
+                    let dev = match &parts[1] {
+                        Expr::Num(n) => Expr::Num(n.abs()),
+                        dev => Expr::app("Abs", vec![dev.clone()]),
+                    };
+                    return Ok([
+                        Expr::app("Subtract", vec![med.clone(), dev.clone()]),
+                        Expr::app("Add", vec![med, dev]),
+                    ]);
+                }
+                (Expr::App(head, parts), [(line, col, true)])
+                    if head == PLUS_MINUS && parts.len() == 1 =>
+                {
+                    return Err(Error::at(
+                        *line,
+                        *col,
+                        "`±x` alone is two values, +x and -x, not a range: for the two values write `{x, -x}`, and for the interval `-x..x` or `0 ± x`",
+                    ));
+                }
+                (_, [(line, col, false), ..]) => {
+                    return Err(Error::at(
+                        *line,
+                        *col,
+                        "`∓` isn't a range: an interval about a middle is `med ± dev`, as `2 ± 1`, or `a..b`",
+                    ));
+                }
+                (_, [(line, col, _), ..]) => {
+                    return Err(Error::at(
+                        *line,
+                        *col,
+                        "a range is `a..b`, or one `med ± dev` as the whole of it, as `2 ± 1`",
+                    ));
+                }
+                _ => {}
+            }
+        }
         self.expect("..")?;
-        Ok([lo, self.expr()?])
+        let hi = self.expr()?;
+        if let Some((line, col, _)) = signs(self, from).first() {
+            return Err(Error::at(
+                *line,
+                *col,
+                "`±` in an end of a range would make two ranges. For an interval about a middle, the whole range is `med ± dev`, as `2 ± 1`; for both signs, count over them first: `for s in {1, -1}, k in 0..(2 + s)`",
+            ));
+        }
+        self.branches = outer;
+        Ok([lo, hi])
     }
 
     fn function(&mut self, line: usize) -> Result<Item, Error> {
@@ -1335,6 +1547,11 @@ impl Parser {
                 };
                 let from = self.pos;
                 let option = self.expr()?;
+                if *self.peek() == Tok::Punct("..") {
+                    return Err(self.error(format!(
+                        "a choice's options are values, written one by one: `{name} in {{1, 2, 3}}`, and a range goes outside the braces: `{name} in 1..3`"
+                    )));
+                }
                 let text = named.unwrap_or_else(|| self.text(from, self.pos));
                 options.push((option, text));
                 if self.eat("}") {
@@ -1589,10 +1806,15 @@ impl Parser {
     fn expr(&mut self) -> Result<Expr, Error> {
         let mut left = self.term()?;
         loop {
+            self.note_branches();
             let head = if self.eat("+") {
                 "Add"
             } else if self.eat("-") {
                 "Subtract"
+            } else if self.eat("±") {
+                PLUS_MINUS
+            } else if self.eat("∓") {
+                MINUS_PLUS
             } else {
                 return Ok(left);
             };
@@ -1642,7 +1864,21 @@ impl Parser {
             }
     }
 
+    /// Notes where a statement first says `±` or `∓`, if the next token is one.
+    fn note_branches(&mut self) {
+        if self.branches.is_none() && matches!(self.peek(), Tok::Punct("±" | "∓")) {
+            let t = &self.toks[self.pos];
+            self.branches = Some((t.line, t.col));
+        }
+    }
+
     fn unary(&mut self) -> Result<Expr, Error> {
+        self.note_branches();
+        for (sign, head) in [("±", PLUS_MINUS), ("∓", MINUS_PLUS)] {
+            if self.eat(sign) {
+                return Ok(Expr::app(head, vec![self.unary()?]));
+            }
+        }
         if self.eat("-") {
             // A negated literal stays one number, so `-2..2` reads as data.
             return Ok(match self.unary()? {
@@ -1753,6 +1989,7 @@ impl Parser {
             src,
             line_starts,
             base,
+            branches: None,
         })
     }
 }
@@ -1926,6 +2163,61 @@ mod tests {
         );
         let err = parse("let v = x_{1 + 2}").unwrap_err();
         assert!(err.message.contains("subscript in braces"), "{err}");
+    }
+
+    #[test]
+    fn a_handle_sets_one_param_or_two() {
+        let doc = parse("handle z sets a = pointer.x,\n  b = pointer.y").unwrap();
+        let Item::Handle { mark, sets, line } = &doc.items[0] else {
+            panic!("{:?}", doc.items[0])
+        };
+        assert_eq!((mark.as_str(), *line), ("z", 1));
+        let names: Vec<_> = sets
+            .iter()
+            .map(|s| (s.param.as_str(), s.line, s.col))
+            .collect();
+        assert_eq!(names, [("a", 1, 15), ("b", 2, 3)]);
+        assert_eq!(sets[1].inverse, Expr::sym("pointer.y"));
+        let doc = parse("handle P sets a = pointer.x").unwrap();
+        assert!(matches!(&doc.items[0], Item::Handle { sets, .. } if sets.len() == 1));
+    }
+
+    #[test]
+    fn a_handle_says_each_param_once_and_at_most_two() {
+        let err = parse("handle z sets a = pointer.x, a = pointer.y").unwrap_err();
+        assert_eq!((err.line, err.col), (1, 30));
+        assert_eq!(err.message, "`handle z` sets `a` twice");
+        let err = parse("handle z sets a = pointer.x, b = pointer.y, c = 0").unwrap_err();
+        assert_eq!((err.line, err.col), (1, 43));
+        assert!(err.message.contains("one param or two, not more"), "{err}");
+        let err = parse("handle z sets a = pointer.x, = 1").unwrap_err();
+        assert!(err.message.contains("expected a param"), "{err}");
+    }
+
+    #[test]
+    fn signs_parse_as_one_and_two_argument_heads() {
+        assert_eq!(
+            parse_whole_expression("±cosh(t)")
+                .unwrap()
+                .to_mathjson()
+                .to_string(),
+            r#"["PlusMinus",["Cosh","t"]]"#
+        );
+        assert_eq!(
+            parse_whole_expression("a ∓ b·c")
+                .unwrap()
+                .to_mathjson()
+                .to_string(),
+            r#"["MinusPlus","a",["Multiply","b","c"]]"#
+        );
+        // As `+` and `-`: left to right, below products.
+        assert_eq!(
+            parse_whole_expression("1 ± 2 - 3")
+                .unwrap()
+                .to_mathjson()
+                .to_string(),
+            r#"["Subtract",["PlusMinus",1.0,2.0],3.0]"#
+        );
     }
 
     #[test]
