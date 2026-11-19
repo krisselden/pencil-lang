@@ -125,6 +125,18 @@ fn a_list_needs_values_of_one_kind_that_a_collection_can_count() {
     let err = build("dots d = (s, 0) for s in {}", &[]).unwrap_err();
     assert_eq!((err.line, err.col), (1, 27));
     assert!(err.message.contains("`s` counts over nothing"), "{err}");
+    // A range is outside the braces.
+    let err = build("dots d = (s, 0) for s in {1..3}", &[]).unwrap_err();
+    assert_eq!((err.line, err.col), (1, 28));
+    assert_eq!(
+        err.message,
+        "a list's elements are values, written one by one: `s in {1, 2, 3}`, and a range goes outside the braces: `s in 1..3`"
+    );
+    let err = build("dots d = (s, 0) for s in {0, 2..3}", &[]).unwrap_err();
+    assert!(
+        err.message.contains("a range goes outside the braces"),
+        "{err}"
+    );
     let err = build("dots d = (0, 0) for s in {1, circle(0, 1)}", &[]).unwrap_err();
     assert!(err.message.contains("of one kind"), "{err}");
 }

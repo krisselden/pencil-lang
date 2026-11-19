@@ -1311,9 +1311,17 @@ impl Parser {
                         return Err(self
                             .error(format!("`{var}` counts over nothing: a list needs a value")));
                     }
-                    let mut values = vec![self.expr()?];
-                    while self.eat(",") {
+                    let mut values = Vec::new();
+                    loop {
                         values.push(self.expr()?);
+                        if *self.peek() == Tok::Punct("..") {
+                            return Err(self.error(format!(
+                                "a list's elements are values, written one by one: `{var} in {{1, 2, 3}}`, and a range goes outside the braces: `{var} in 1..3`"
+                            )));
+                        }
+                        if !self.eat(",") {
+                            break;
+                        }
                     }
                     self.expect("}")?;
                     Over::List(values)
