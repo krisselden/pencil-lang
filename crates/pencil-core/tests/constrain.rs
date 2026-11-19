@@ -267,8 +267,7 @@ fn limacon_tangency_a_curve_by_its_angle_about_a_point() {
 }
 
 /// `MedianConstruction`: C on an arc of the unit circle, 15° to 40°, and z on a circle by its
-/// angle β, whose range follows C's: |β| ≤ 2φ − 1.5°. `LimaconConstruction`'s C is the first of
-/// these with 45°, and its z₁ and drivers are the second about a point the figure computes.
+/// angle β, whose range follows C's: |β| ≤ 2φ − 1.5°.
 #[test]
 fn median_construction_an_arc_and_one_whose_range_follows_it() {
     let f = build(
@@ -328,19 +327,84 @@ fn limacon_construction_a_circle_about_a_computed_point() {
     }
 }
 
-/// `TriangleLayers`' eˢ, `FloorCell`'s x and `LogNearest`'s x: a segment of a line, one param.
+/// `LimaconConstruction`'s C: an arc of the unit circle, 15° to 45°.
 #[test]
-fn a_segment_of_a_line() {
+fn limacon_construction_an_arc() {
     let f = build(
-        "viewport { x: -1.3..2.7, y: -1.45..2.45 }
-         param es = 2 in 1.4..2.3
-         let E = (es, 0)
-         dot E
-         handle E sets es = pointer.x",
+        "viewport { x: -1.5..1.5, y: -1.5..1.5 }
+         param phi = 0.5 in 15·π/180..45·π/180
+         let C = (cos(phi), sin(phi))
+         dot C
+         handle C sets phi = atan2(pointer.y, pointer.x)",
         &[],
     )
     .unwrap();
-    for (x, y) in sweep([-1.2, 2.6], [-1.4, 2.4], 8) {
-        close(dragged(&f, 0, &[], x, y), (x.clamp(1.4, 2.3), 0.0), "eˢ");
+    let deg = std::f64::consts::PI / 180.0;
+    for (x, y) in sweep([-1.4, 1.4], [-1.4, 1.4], 9) {
+        let phi = y.atan2(x).clamp(15.0 * deg, 45.0 * deg);
+        close(dragged(&f, 0, &[], x, y), (phi.cos(), phi.sin()), "C");
+    }
+}
+
+/// `TriangleLayers`' eˢ, on y = 0 in 1.4..2.3, and `FloorCell`'s x, on y = 0 in 0.05..5.95: a
+/// segment of a line, one param.
+#[test]
+fn a_segment_of_a_line() {
+    for (lo, hi, view) in [(1.4, 2.3, [-1.3, 2.7]), (0.05, 5.95, [-0.3, 6.3])] {
+        let f = build(
+            &format!(
+                "viewport {{ x: {}..{}, y: -1..1 }}
+                 param s = {lo} in {lo}..{hi}
+                 let E = (s, 0)
+                 dot E
+                 handle E sets s = pointer.x",
+                view[0], view[1]
+            ),
+            &[],
+        )
+        .unwrap();
+        for (x, y) in sweep([view[0] + 0.1, view[1] - 0.1], [-0.9, 0.9], 8) {
+            close(
+                dragged(&f, 0, &[], x, y),
+                (x.clamp(lo, hi), 0.0),
+                "the point",
+            );
+        }
+    }
+}
+
+/// `BoundsConstruction`'s P, dragged in the corpus figure itself, `004-bounds`: the upper unit
+/// circle by angle, 0.2 to 1.85, with a pointer below the axis read as on it.
+#[test]
+fn bounds_construction_the_corpus_figure() {
+    let f = build(include_str!("../../../corpus/004-bounds/bounds.pen"), &[]).unwrap();
+    for (x, y) in sweep([-1.6, 3.4], [-1.4, 1.4], 10) {
+        let a = y.max(0.0).atan2(x).clamp(0.2, 1.85);
+        close(dragged(&f, 0, &[], x, y), (a.cos(), a.sin()), "P");
+    }
+}
+
+/// `LogNearest`'s x, dragged in the corpus figure itself, `015-log-nearest`: a segment of the
+/// line y = 1.3. The blog's lower end is e^−0.35 + 0.02, about 0.7247, and the corpus's is 0.72,
+/// so below 0.7247 they differ by that much and nowhere else (`docs/migration.md`).
+#[test]
+fn log_nearest_the_corpus_figure() {
+    let f = build(
+        include_str!("../../../corpus/015-log-nearest/log-nearest.pen"),
+        &[],
+    )
+    .unwrap();
+    let blog_low = (-0.35f64).exp() + 0.02;
+    assert!((blog_low - 0.7247).abs() < 1e-4, "{blog_low}");
+    for (x, y) in sweep([-0.3, 8.1], [-0.9, 2.1], 12) {
+        let (px, py) = dragged(&f, 0, &[], x, y);
+        assert!((py - 1.3).abs() < 1e-9, "x on its line: {py}");
+        let blog = x.clamp(blog_low, 7.9);
+        if x >= blog_low {
+            assert!((px - blog).abs() < 1e-9, "at {x}: {px}, the blog's {blog}");
+        } else {
+            assert!((px - x.max(0.72)).abs() < 1e-9, "at {x}: {px}");
+            assert!(blog - px <= blog_low - 0.72 + 1e-12);
+        }
     }
 }

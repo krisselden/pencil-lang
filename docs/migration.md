@@ -101,9 +101,12 @@ with either. The logo can stay the site's own.
 pointer to the nearest allowed point (`src/lib/plot.ts`). Every use in the posts is below, with its region and the handle
 that gives it. A curve is one param and its expression; a region of the plane is two params, whose ranges give a box in
 their own coordinates (a parallelogram on a lattice, with `z = a + b·ω`), and anything else is in the two expressions,
-which are the constrain function written out. `crates/pencil-core/tests/constrain.rs` drags each one and compares where
-it lands with the blog's function, ported. None needed anything the language lacks: `min`, `max`, `clamp`, `atan2`, `ln`
-of a point and a `fn` were enough.
+which are the constrain function written out. None needed anything the language lacks: `min`, `max`, `clamp`, `atan2`,
+`ln` of a point and a `fn` were enough. `crates/pencil-core/tests/constrain.rs` drags every one of them but the
+`LimaconConstruction` drivers and compares where it lands with the blog's function, ported to Rust: `BoundsConstruction`
+and `LogNearest` in the corpus figures themselves, the rest as the handle in the table in a small figure. The drivers are
+argued from the form only: each is z₁'s handle about another point the construction finds (x₂, the hub), and the
+construction isn't ported.
 
 | Figure, point | Region | Handle |
 |---|---|---|
@@ -117,7 +120,7 @@ of a point and a `fn` were enough.
 | `MedianConstruction`, C; `LimaconConstruction`, C | An arc of the unit circle, 15° to 40° (45° in the second) | `handle C sets phi = atan2(pointer.y, pointer.x)`, the arc as the range |
 | `MedianConstruction`, z | An arc whose ends follow C: \|β\| ≤ 2φ − 1.5° | `handle z sets beta = atan2(pointer.y, pointer.x)`, with `param beta in -(2·phi - 1.5·π/180)..2·phi - 1.5·π/180` |
 | `LimaconConstruction`, z₁ and each panel's driver | A circle about a point the construction finds (x₁, x₂, the hub) | `handle z1 sets t = atan2(pointer.y - x1.y, pointer.x - x1.x)`; several handles set t |
-| `BoundsConstruction`, P; `LogNearest`, x | An arc; a segment | Done, in `004-bounds` and `015-log-nearest` |
+| `BoundsConstruction`, P; `LogNearest`, x | An arc; a segment | Done, in `004-bounds` and `015-log-nearest`. `LogNearest`'s lower end differs (below) |
 | `TriangleLayers`, eˢ; `FloorCell`, x | A segment of a line | `handle E sets es = pointer.x` |
 
 What doesn't carry over, none of it a region:
@@ -130,6 +133,8 @@ What doesn't carry over, none of it a region:
 - **`FollowPixel`'s z reads the log's angle,** which jumps by a turn on the negative real axis, so w jumps by the period
   there, in the blog as here.
 - **`PowerViews` drags z in two panels** of different sizes, which waits on step 4.
+- **`LogNearest`'s x stops at 0.72 in `015-log-nearest`,** and at e^−0.35 + 0.02 ≈ 0.7247 in the blog, so below 0.7247 the
+  corpus lets x go 0.0047 further. Left as it is.
 
 **A field, and what a style can read of it.** The inventory asked for "a field that names its nearest circle" so that
 `DoyleSpiral`'s arms could be colored. Kris's point: that shader isn't a list of circles drawn fast. It samples a pixel and asks
