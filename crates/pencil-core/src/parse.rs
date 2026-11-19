@@ -1328,17 +1328,19 @@ impl Parser {
                 } else {
                     Over::Range(self.range()?)
                 };
-                // The signs are the innermost of a collection's variables, so what another
-                // counts over can't depend on them.
-                if let Some(sign) = self.toks[from..self.pos]
-                    .iter()
-                    .find(|t| matches!(t.tok, Tok::Punct("±" | "∓")))
-                {
+                // The signs are the innermost of a collection's variables, so a list another
+                // counts over can't depend on them. A range checks its own.
+                if let (Over::List(_), Some(sign)) = (
+                    &over,
+                    self.toks[from..self.pos]
+                        .iter()
+                        .find(|t| matches!(t.tok, Tok::Punct("±" | "∓"))),
+                ) {
                     return Err(Error::at(
                         sign.line,
                         sign.col,
                         format!(
-                            "`{var}` can't count over `±`: the two signs are a collection's last variable, so write `±` in what it draws"
+                            "`{var}` can't count over `±`: the two signs are a collection's last variable, so write them as values, `{var} in {{1, -1}}`, or `±` in what it draws"
                         ),
                     ));
                 }
@@ -1374,10 +1376,69 @@ impl Parser {
         })
     }
 
+    /// `a..b`, or `med ± dev` as the whole range, which is `(med - dev)..(med + dev)`: the
+    /// tolerance reading of `±`, as in x = 5 ± 2. It's sugar, so each place allows what it
+    /// allows of a range's ends. A `±` anywhere else in a range would make two ranges, which a
+    /// list says instead.
     fn range(&mut self) -> Result<[Expr; 2], Error> {
+        let outer = self.branches.take();
+        let from = self.pos;
         let lo = self.expr()?;
+        let signs = |p: &Parser, from: usize| {
+            p.toks[from..p.pos]
+                .iter()
+                .filter(|t| matches!(t.tok, Tok::Punct("±" | "∓")))
+                .map(|t| (t.line, t.col, t.tok == Tok::Punct("±")))
+                .collect::<Vec<_>>()
+        };
+        if *self.peek() != Tok::Punct("..") {
+            let found = signs(self, from);
+            match (&lo, found.as_slice()) {
+                (Expr::App(head, parts), [_]) if head == PLUS_MINUS && parts.len() == 2 => {
+                    self.branches = outer;
+                    let [med, dev] = [parts[0].clone(), parts[1].clone()];
+                    return Ok([
+                        Expr::app("Subtract", vec![med.clone(), dev.clone()]),
+                        Expr::app("Add", vec![med, dev]),
+                    ]);
+                }
+                (Expr::App(head, parts), [(line, col, true)])
+                    if head == PLUS_MINUS && parts.len() == 1 =>
+                {
+                    return Err(Error::at(
+                        *line,
+                        *col,
+                        "`±x` alone is two values, +x and -x, not a range: for the two values write `{x, -x}`, and for the interval `-x..x` or `0 ± x`",
+                    ));
+                }
+                (_, [(line, col, false), ..]) => {
+                    return Err(Error::at(
+                        *line,
+                        *col,
+                        "`∓` isn't a range: an interval about a middle is `med ± dev`, as `2 ± 1`, or `a..b`",
+                    ));
+                }
+                (_, [(line, col, _), ..]) => {
+                    return Err(Error::at(
+                        *line,
+                        *col,
+                        "a range is `a..b`, or one `med ± dev` as the whole of it, as `2 ± 1`",
+                    ));
+                }
+                _ => {}
+            }
+        }
         self.expect("..")?;
-        Ok([lo, self.expr()?])
+        let hi = self.expr()?;
+        if let Some((line, col, _)) = signs(self, from).first() {
+            return Err(Error::at(
+                *line,
+                *col,
+                "`±` in an end of a range would make two ranges. For an interval about a middle, the whole range is `med ± dev`, as `2 ± 1`; for both signs, count over them first: `for s in {1, -1}, k in 0..(2 + s)`",
+            ));
+        }
+        self.branches = outer;
+        Ok([lo, hi])
     }
 
     fn function(&mut self, line: usize) -> Result<Item, Error> {

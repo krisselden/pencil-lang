@@ -97,11 +97,19 @@ A parametric range can run down as well as up, and the curve is drawn from its f
 `for u in 0..t` sweeps an angle from 0 to `t` whichever sign `t` has. `trim` and a `head` follow that
 direction. A collection's `for i in a..b` counts up, and is empty when `b` is below `a`.
 
+**A range can be written `med ± dev`,** the tolerance reading of `±`, as in x = 5 ± 2: it's `(med - dev)..(med + dev)`,
+anywhere a range is written. `for k in 2 ± 1` counts 1, 2 and 3, `for t in 0 ± π` runs from −π to π, `param a = 1 in 1 ± 0.5
+step 0.25` steps through 0.5 to 1.5, and `viewport { x: 0 ± 2 }` is `-2..2`. It's only a spelling: each place takes what
+it takes of a range's ends, and it doesn't make a collection two branches, so `for k in 2 ± 1` has no `self.sign`. It's
+the whole range or nothing. `±x` alone would be the two values +x and −x, so it's an error that offers `{x, -x}` for those
+and `-x..x` or `0 ± x` for the interval. `∓` isn't a range, and a `±` in one end of a range, `0..(2 ± 1)`, would make two
+ranges: with both signs, count over them first, `for s in {1, -1}, k in 0..(2 + s)`.
+
 ### Viewport
 
 `viewport { x: -2..2, y: -2..2 }`
 
-- `x`, `y`: a fixed world window. It always has one scale for both axes, so at a different shape it shows more, rather than stretching.
+- `x`, `y`: a fixed world window, as `-2..2` or `0 ± 2`. It always has one scale for both axes, so at a different shape it shows more, rather than stretching.
   Its bounds are constant, so they can't read `time` or a param. To follow something that moves, `fit` it.
 - `fit: a b c`: bounds these points and circles each frame instead of a fixed window, ignoring
   any param a handle has taken over, so a drag doesn't rescale the figure under the pointer.
@@ -214,13 +222,17 @@ collection with a `±` and no `for` is a collection of two:
 
 `curves hyp = parametric (t): (±cosh(t), sinh(t)) for t in -2..2`
 
+That `±` is in what the collection draws. As a whole range, `med ± dev` is an interval instead (see Curve forms), and a
+statement can have both: `dots d = (k, ±1) for k in 2 ± 1` is k from 1 to 3, two dots for each, the sign fastest.
+
 A style reads which branch an instance is as `self.sign`, 1 for the first and −1 for the second, wherever it reads the
 collection's variables: `style hyp { width: 2px + self.sign·1px }`. Lists in one expression zip, as Desmos's do, and a
 `for` is for every combination; `±` is the only list an expression can hold for now, so there's no question of lengths.
 Anywhere but a collection, `±` is an error that names the collection to use, since it would draw two marks: a `let`, a
 `curve`, a `param`, a `bind`, a `handle`, a function and a style. A collection's variable can't count over it either, since
 the sign is the last variable. In a label's text it's the character. Underneath, a list is a whole-number variable,
-`s.index`, and `s` is the value it picks, as a choice param's is, and the sign is a list `self.sign in {1, -1}`.
+`s.index`, and `s` is the value it picks, as a choice param's is, and the sign is a list `self.sign in {1, -1}`. A
+statement with a `±` can't also name a variable or a `with` `sign`, which `self.sign` could be taken for.
 
 A curve has its own parameter too, which runs smoothly, and comes first. So what Desmos writes as `s = [-3...3] / 3` is:
 
@@ -368,7 +380,8 @@ become `→`, `↦`, `≤`, `≥`, `≠`, `≈` and `±`. Undo gives back what w
 
 ## Expressions
 
-Numbers, names, `+ - * / ^`, `±` and `∓` in a collection (see Collections), `·` for multiply, `²` and `³`, unary `-`, and calls. Factors side by side multiply, as `2π`, `2(x + 1)`, `(a + b)(a - b)` and `a b`. Right against
+Numbers, names, `+ - * / ^`, `±` and `∓` (in a collection's expressions, two branches, see Collections; as a whole
+range, `med ± dev`, an interval, see Curve forms), `·` for multiply, `²` and `³`, unary `-`, and calls. Factors side by side multiply, as `2π`, `2(x + 1)`, `(a + b)(a - b)` and `a b`. Right against
 each other they bind tighter than `/`, so `1/2π` is 1/(2π). A space ends that: `1/2 π` is π/2, and `(k - 1)/N π` is the quotient times π, as it
 reads in Desmos, where the fraction's bar stops. A product doesn't reach past the end of its line or a word that follows an expression,
 such as `for`, `in`, `step` or `tag`. A function's name before `(` is a call. Any other name there multiplies the parentheses, so `π(t - 1)` and

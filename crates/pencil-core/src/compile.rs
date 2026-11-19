@@ -3685,6 +3685,23 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
                     .chain(param.iter().flat_map(|(_, r)| r))
                     .chain(lets.iter().map(|(_, e)| e))
                     .any(says_sign);
+                // A style reads the branch as `self.sign`, and an instance's own names as they
+                // are, so a name `sign` beside a `±` would read as the same thing.
+                if signed
+                    && let Some(kind) = vars
+                        .iter()
+                        .find(|(v, _)| v == "sign")
+                        .map(|_| "a variable")
+                        .or_else(|| lets.iter().find(|(n, _)| n == "sign").map(|_| "a `with`"))
+                {
+                    return Err(Error::at(
+                        *line,
+                        1,
+                        format!(
+                            "`{name}` has a `±`, whose branch a style reads as `self.sign`, and {kind} named `sign`, which `self.sign` could be taken for: rename `sign`"
+                        ),
+                    ));
+                }
                 let (value, param, lets) = if signed {
                     (
                         &unsigned(value),
