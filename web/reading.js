@@ -37,6 +37,12 @@ export function infix(v, outer = 0) {
     case 'Divide': text = `${infix(a, 2)}/${infix(b, 3)}`; break;
     case 'Negate': text = `-${infix(a, 4)}`; break;
     case 'Power': text = `${infix(a, 5)}^${infix(b, 4)}`; break;
+    case 'PlusMinus': case 'MinusPlus': {
+      const sign = head === 'PlusMinus' ? '±' : '∓';
+      if (b === undefined) return 3 < outer ? `(${sign}${infix(a, 4)})` : `${sign}${infix(a, 4)}`;
+      text = `${infix(a, 1)} ${sign} ${infix(b, 2)}`;
+      return 1 < outer ? `(${text})` : text;
+    }
     case 'Tuple': return `(${args.map((x) => infix(x)).join(', ')})`;
     default: return `${WRITTEN.get(head) ?? head}(${args.map((x) => infix(x)).join(', ')})`;
   }
