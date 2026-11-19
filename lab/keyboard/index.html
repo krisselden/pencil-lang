@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+<script src="../../web/imports.js"></script>
+<meta charset="utf-8">
+<!-- `interactive-widget=resizes-content` asks Chrome on Android to shrink the page, not only the
+     visual viewport, when its keyboard is up. Safari doesn't read it (README). `?widget=` tries
+     another value. -->
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+<script>
+  (() => {
+    const widget = new URLSearchParams(location.search).get('widget');
+    if (/^(resizes-visual|resizes-content|overlays-content)$/.test(widget ?? '')) {
+      const meta = document.querySelector('meta[name=viewport]');
+      meta.content = meta.content.replace(/interactive-widget=[a-z-]+/, `interactive-widget=${widget}`);
+    }
+  })();
+</script>
+<title>Keyboard lab</title>
+<link rel="stylesheet" href="../../web/keyboard.css">
+<link rel="stylesheet" href="lab.css">
+</head>
+<body>
+<div class="app" id="app">
+  <header class="bar">
+    <h1 class="sr">Keyboard lab</h1>
+    <label class="pick"><span class="word">Keys</span>
+      <select id="variant" aria-label="Way of typing">
+        <option value="a">A · system keys</option>
+        <option value="b">B · Pencil keys</option>
+        <option value="c">C · Pencil keys, words</option>
+      </select>
+    </label>
+    <label class="pick"><span class="word">File</span>
+      <select id="file" aria-label="File to edit"></select>
+    </label>
+    <button class="more" id="keys-open" type="button" hidden aria-label="Show the Pencil keys" title="Show the Pencil keys">keys</button>
+    <button class="more" id="more" type="button" popovertarget="menu" aria-label="Figure, viewport numbers and revert" title="Figure, viewport numbers and revert">☰</button>
+    <div class="menu" id="menu" popover>
+      <label>Figure <select id="figure-pick"></select></label>
+      <label><input type="checkbox" id="show-numbers"> Show viewport numbers</label>
+      <button type="button" id="revert">Revert this figure’s edits</button>
+      <p class="hint">Edits stay in this browser. The address keeps the keys and the figure, so a link opens the same.</p>
+    </div>
+  </header>
+  <section class="stage" aria-label="Figure">
+    <pencil-figure id="figure" tabindex="0"></pencil-figure>
+    <p class="numbers" id="numbers" aria-hidden="true" hidden></p>
+    <p class="error" id="error" role="alert"></p>
+  </section>
+  <section class="editor" aria-label="Source">
+    <textarea id="source" class="scrolls" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off" aria-label="Source"></textarea>
+  </section>
+  <div id="keyboard" hidden></div>
+</div>
+<!-- How tall 100dvh is now, for the numbers. -->
+<div class="probe" id="probe-dvh" aria-hidden="true"></div>
+<script type="module" src="lab.js"></script>
+</body>
+</html>

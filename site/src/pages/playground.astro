@@ -16,6 +16,20 @@ const page = import.meta.env.DEV ? '/web/playground.html' : '/web/playground';
 </Base>
 
 <script>
+  import { touch, holdToViewport } from '../../../web/viewport.js';
+
+  // On a touch screen the playground's keyboard shrinks what's visible of this page, not the
+  // frame. So this page holds itself, and the frame in it, to what's visible, as the playground
+  // does inside it, and the frame is resized as a keyboard comes and goes.
+  let hold: ((on: boolean) => void) | null = null;
+  const follow = () => {
+    document.documentElement.classList.toggle('held', touch.matches);
+    if (touch.matches) hold ??= holdToViewport(document.body);
+    hold?.(touch.matches);
+  };
+  follow();
+  touch.addEventListener('change', follow);
+
   const frame = document.getElementById('playground') as HTMLIFrameElement;
   // The frame's own address, as the page was written with it.
   const PAGE = new URL(frame.src).pathname;

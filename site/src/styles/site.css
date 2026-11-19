@@ -326,6 +326,11 @@ body.full { display: flex; flex-direction: column; height: 100vh; height: 100dvh
 body.full header.site { width: 100%; max-width: none; padding-top: 0.75rem; padding-bottom: 0.75rem; border-bottom: 1px solid var(--rule); }
 body.full main { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 iframe.playground { flex: 1; width: 100%; border: 0; display: block; }
+/* On a touch screen the page holds the frame to what's visible, which a keyboard in the frame
+   makes smaller, and never scrolls, as the playground in it doesn't (web/viewport.js). Inside the
+   frame, what's visible is the frame. */
+html.held, html.held body.full { overflow: hidden; overscroll-behavior: none; }
+html.held body.full { position: fixed; left: 0; top: 0; width: 100%; height: var(--app-h, 100dvh); transform: translateY(var(--app-top, 0px)); }
 
 /* ---- Narrow screens ---- */
 

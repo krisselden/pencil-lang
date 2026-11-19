@@ -9,6 +9,8 @@ import { PencilFigure } from '@pencil-lang/figure';
 import { ready as readingReady, readingAt, pasteLatex } from './reading.js';
 import { typeSymbols, finishSymbol } from './symbols.js';
 import { viewing } from './controls.js';
+import { keyboard } from './keyboard.js';
+import { touch, holdToViewport } from './viewport.js';
 import { uses } from '@pencil-lang/figure/host';
 import { pack, unpack } from '@pencil-lang/figure/pack';
 
@@ -71,6 +73,30 @@ const figure = $('figure');
 // Before anything waits, so the element starts the right GPU.
 if (query.has('gl')) figure.setAttribute('gl', '');
 const textarea = $('source');
+
+// On a touch screen the page holds still at what's visible, and the editor has the Pencil keys,
+// which come up when it's touched, with the system keyboard a key away. A mouse or a trackpad has
+// neither, and the page is as it always was.
+// A tablet can gain a mouse or lose one, and the page follows. Below 500 px of what's visible, as
+// on a phone held sideways or with its system keyboard up, the styles squeeze for the keys.
+const keys = keyboard({
+  textarea,
+  root: $('keyboard'),
+  opener: $('keys-open'),
+  files: () => files,
+  path: () => files[active]?.path ?? '',
+  on: touch.matches,
+  leave: () => figure.focus(),
+});
+let hold = null;
+function followTouch() {
+  document.documentElement.classList.toggle('touch', touch.matches);
+  if (touch.matches) hold ??= holdToViewport(document.querySelector('.app'), { short: 500 });
+  hold?.(touch.matches);
+  keys.set({ on: touch.matches });
+}
+followTouch();
+touch.addEventListener('change', followTouch);
 
 const fetchText = async (path) => {
   const response = await fetch(`../${path}`, { cache: 'no-store' });
@@ -339,6 +365,7 @@ function show(i, caret) {
   }
   paintTabs();
   paintEditor();
+  keys.refresh();
 }
 
 /** Where a line and column are in a text, as an offset, for the caret. */
@@ -401,6 +428,8 @@ textarea.addEventListener('keydown', (e) => {
     e.preventDefault();
     if (!finishSymbol(textarea, said)) document.execCommand('insertText', false, '  ');
   } else if (e.key === 'Escape') {
+    // With the Pencil keys up, it goes to them first, so a keyboard reaches what a finger does.
+    if (keys.escape()) return e.preventDefault();
     textarea.blur();
     figure.focus();
   }
@@ -1168,11 +1197,18 @@ function arrange() {
   focused?.focus({ preventScroll: true });
 }
 arrange();
-narrow.addEventListener('change', () => {
-  // A window that's widened shows the menus' buttons in place, so nothing is left open over it.
+// The bars are compact in a narrow window and on a short touch screen (the page's styles).
+const compact = matchMedia('(max-width: 800px), (pointer: coarse) and (max-height: 500px)');
+const closeMenus = () => {
+  // A window whose bars stop being compact shows the menus' buttons in place, so nothing is left
+  // open over it.
   for (const menu of document.querySelectorAll('.menu')) if (isOpen(menu)) menu.hidePopover();
+};
+narrow.addEventListener('change', () => {
+  closeMenus();
   arrange();
 });
+compact.addEventListener('change', closeMenus);
 
 // Framed by another page, such as the site's, it offers itself alone, at the address it has now.
 if (window.top !== window) {
@@ -1219,4 +1255,4 @@ if (!(link && (await openLink(link)))) {
   if (asked === YOURS && yours) await openYours();
   else await open(showing);
 }
-window.pencil = { figure, compile, files: () => files, yours: () => yours };
+window.pencil = { figure, compile, files: () => files, yours: () => yours, keys };

@@ -74,6 +74,11 @@ belongs: `language.md` for the language, the section below for a figure.
      arguments R passes it. The IR keeps expressions symbolic, so the text is there. A style's `text: expr = value` (2026-11-13) writes the
      expression as typed and its value as a number; what's left is writing it as math (`σ(2)` set as notation, not code) and
      an exact value, `−½ − (√3/2)i`, where one exists.
+- **The playground's keys on real phones** ("The playground", Its keys on a touch screen). Kris has used the lab on his
+  iPhone, unframed. Not yet tried: Android at all, and the site's framed page on a real phone, where the frame is held to
+  what's visible. Not yet reported: the selection handles, Copy and Paste from a long press, and the **system** key, on
+  either. Only a device can settle: a phone held sideways, the system keyboard over a small phone, a key pressed while
+  Gboard composes, an iPad's hardware keyboard closing the keys, and a pinch while they're up.
 - **A figure after its GPU is lost, on Kris's devices** ("The element", A lost GPU). Built and tested headless on
   2026-11-18. Still to see: Chrome on the Mac after sleep or a GPU switch, which is how Kris met it, and Safari on the
   iPhone after the phone has locked, which no test can lose a GPU in.
@@ -531,7 +536,8 @@ from one file. `docs/language.md` has the rules.
 
 Pencil's purpose is a document that can be styled separately, and none of the last four figures had a second sheet. So
 `corpus/dark.style` and `corpus/007-lattice/narrow.style` restyle `LatticeMapping`: the site's dark palette, and one column
-for a phone. Run against the file as it stood:
+for a phone. (Since 2026-11-18 the narrow sheet keeps the panels two by two, smaller, as the blog keeps its facets on a
+phone: one column was 1269 px tall on the demos page at 375×812, and the grid is 367.) Run against the file as it stood:
 
 - **The dark sheet did nothing, with no error.** A sheet's `let` didn't reach the rules before it. Now the last definition
   holds everywhere, as a CSS variable does, and the dark theme is only its colors.
@@ -645,10 +651,70 @@ take 75 px, and the figure and the editor have the rest, both on screen.
   moved, so it doesn't start again. Measured for all 18 examples at 375×812, 375×667 and 412×839: the page never scrolls,
   the editor's text has 172 to 530 px, and the figure's part scrolls within itself only for `bounds` and `mobius`, which
   have the most controls. The line of what a figure was drawn with keeps to one line there, which scrolls.
-- **Not handled:** a phone's keyboard. It covers the editor's half, and what the page does then is the browser's choice.
-  Not tried on a phone. **Seen:** `007-lattice` is 304 px wide at 375×812 where it was 359, and its panel titles are cut
+- **Not handled then:** a phone's keyboard, which covered the editor's half. Handled since by the Pencil keys (below).
+  **Seen:** `007-lattice` is 304 px wide at 375×812 where it was 359, and its panel titles are cut
   at the top there. Its labels are an em of page text whatever the figure's size. Whether they were cut at 359 wasn't
-  checked.
+  checked. Found since: the band above a panel for its title is in design pixels and shrinks with the figure, while the
+  title is an em, so a figure drawn at less than half its size cuts its titles. The narrow sheet now draws the lattice
+  at about its own size on a phone, with smaller titles, and the demos page uses it; the playground loads the lattice
+  without it.
+
+**Its keys on a touch screen, 2026-11-18.** Kris tried three ways of typing on his iPhone in `lab/keyboard`, through a
+tunnel: the system keyboard with a row of symbols over it, keys of Pencil's own, and those keys with a row of words that
+finish what's typed. His verdict: the lab fixed what made editing on the phone hard, the Pencil keys are much better than
+the system keyboard (he doesn't see why he'd use that one), and the words are good. He found one defect, that the row of
+words changed height when it emptied and moved the editor's text, which was fixed in the lab first. The playground now has
+the third way:
+
+- **On a touch screen the Pencil keys come up when the editor is touched,** as Desmos's do, and the system keyboard
+  stays down (`inputmode="none"`). They go when focus goes elsewhere, and not while a finger is still down, so a drag
+  on a handle doesn't move the figure under it. ▾ closes them for the visit, and so does the first key typed on a
+  hardware keyboard, which an iPad or a phone may have; **keys**, by the tabs, brings them back. Their pages are numbers and operators,
+  letters, Pencil's words and functions, and Greek with a label's symbols. A held ⌫ or caret key repeats. The row of
+  words finishes what's at the caret by where it is: statements and the figure's names in a `.pen`, and in a `.style`
+  the statements a sheet has, then selectors, properties and values in its rules. **system** hands the editor to the
+  system keyboard, with a row of symbols over it and a key back. The choice is kept for the visit.
+- **One copy of the code.** `web/keys.js` is what the keys type, `web/keyboard.js` the keys themselves, `web/keyboard.css`
+  their look, and `web/viewport.js` the hold described next. The lab loads the same files, so it stays a bench for what
+  the playground has. The site copies all four with the playground.
+- **The page holds still.** On a touch screen the playground is what's visible of the page, which a keyboard makes
+  smaller (Safari shrinks only the visual viewport, and scrolls the page to the caret even when nothing can scroll), and
+  only the editor, the tabs and the keys' rows scroll. The site's page holds itself and the frame the same way, since
+  inside a frame what's visible is the frame. The figure is as big as the room left for it, centred in it. While the keys
+  are up on a phone, the editor shows five lines at least and the figure has its part to itself, with any error under it:
+  the time, beats and params come back when the keys go. Without that the explainer's figure was 40 px tall at 393×659.
+  The words row, the four pages and the line under the editor each keep one height, so nothing above them moves. A
+  pinch zoom lets go of the hold until the page is back to its size, so a finger can pan it. A tablet that gains a
+  mouse turns the keys and the hold off, and on again when it loses it.
+- **A short screen,** under 500 px of what's visible: a phone held sideways, or one with the system keyboard up, which
+  no media query can see, since Safari's keyboard leaves the layout viewport as it was. With the keys up, the editor
+  gives up its own room first: no line under it, no row of the file's tools, and no lines it must show. The keys are
+  30 px tall, and the bars are the phone's one small bar with the two columns kept. Measured in Playwright: held
+  sideways, every key is in view, and the editor shows 3 lines at 852×393 and 4 at 839×412. With 260 px visible over
+  the system keyboard, the row with the way back to the Pencil keys is in view, and the editor has one line and the
+  figure 33 px.
+- **The editor's text is 16px on a touch screen,** below which Safari zooms the page when a field takes focus, and so is
+  the name in Add a file. It was 13px.
+- **The keyboard reaches what a finger does.** Keys are buttons with names. In the editor, Esc goes to the keys while
+  they're up, the arrows move among them, Enter presses one and focus stays on it, and Esc again leaves for the figure. A
+  hardware keyboard types into the editor as before, and pressing a key never takes focus from it.
+- **Found while moving it:** showing the keys as the editor was pressed moved it before the press placed the caret, so in
+  Chrome the editor never got focus; they come up on focus now. Chrome on Android focuses a tapped button even when its
+  press was cancelled, so focus that a tap brings to a key goes back to the editor. A tap that takes focus away has still
+  to click, so the keys go after its click, and a tap on an error still reaches it.
+- **Found in review:** a held key now stops when the finger slides off it as well as when it lifts, and the click a
+  long hold ends with doesn't type once more. A key ends a word the system keyboard is composing before it types, as
+  Gboard composes every word. ‹, › and ⌫ go a character at a time as a reader sees one: an emoji, a flag, or a letter
+  with its accent. The menu's hint says what Esc does on a touch screen.
+- **With a mouse or a trackpad, nothing changed.** Every box of the page matches what it was, in Chromium and WebKit, at
+  1633×919 and 700 px wide.
+- **Checked** in Playwright on the iPhone 15 and Pixel 7 projects, and in the desktop app's pane at 375×812 and 1633×919,
+  alone and framed by the built site: the keys type and the figure follows, a suggestion inserts, the rows keep their
+  heights and the editor its box and scroll, the page and the frame don't scroll with the keys up or down, the system key
+  switches and back, an error stays in view above the keys, Share and the menus work with the keys up, and with a mouse
+  there are no keys. Then each item of the review: keys in view sideways, the way back in a 260 px view, a real touch
+  drag on a handle (Chromium only, through CDP), a hardware key and ▾ remembered, a mouse paired and unpaired, a pinch,
+  a held key, a composition, characters of more than one code unit, and the keyboard path into the keys and out.
 
 - **Errors now say which file they're in.** A sheet's error came back with the sheet's line and no file, and `pencil` printed it
   after the `.pen`'s path. `Error` has a `sheet` now, so the page marks the right tab, line and column, and the CLI names the
@@ -859,6 +925,18 @@ playground's case, which matters as much and is a different one. The site's page
   compiled figure for another, and the script that picked sheets by theme and width is gone, since `<source media>` does
   it. The playground still loads the package's files as they are, and a build points it at the WASM the pages already
   ship, so there is one copy.
+- **The demos are drawn at the size the blog would give them (2026-11-18).** Kris: the side figures were drawn big, so
+  the squaring figure's labels were small for it and the scaled copy took too much height, and the lattice ran past a
+  phone's height. Each demo has a tier, named as the blog's `docs/figures.md` names them (`hero`, `primary`,
+  `supporting`, `aside`), recorded once in `site/src/lib/figures.ts` and taken from the blog's use of the figure it was
+  ported from. A figure is as wide as the smallest of three: its tier's width (60rem, 42rem, or 17rem for an aside), a
+  share of the screen's height for its tier turned into a width by its shape (more for two rows of panels), and the
+  width its sheets were designed at, since its labels are the page's text size at any width. The shape and design width
+  are those of the sheets in use, under the same media queries as the figure's sources, and a look picked from the
+  controls brings its own. Not matched to the blog: one aside width for two figures (the blog gives `SquareZ` 17rem
+  and `ScaledCopy` 13rem, and at 13rem the squaring figure's labels would crowd it); primary figures stop at their
+  design width where the blog's go up to 60rem; and the lattice's panel titles are drawn in the figure, so they can't
+  wrap under their formulas on a phone as the blog's do, and the narrow sheet makes them smaller instead.
 - **A figure in view when the page opens is marked `priority` (2026-11-15).** Its poster is the page's largest first
   paint, so it's fetched eagerly with `fetchpriority="high"`, where every other poster is lazy. A build knows what the
   figure will fetch, so it also writes a line of script that starts on the WASM and on the compiled figure its media

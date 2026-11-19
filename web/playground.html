@@ -3,8 +3,12 @@
 <head>
 <script src="./imports.js"></script>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- On Android, Chrome shrinks the page for its keyboard, not only what's visible of it. Safari
+     doesn't read `interactive-widget`, and a touch screen's page holds itself to what's visible
+     instead (viewport.js). -->
+<meta name="viewport" content="width=device-width, initial-scale=1, interactive-widget=resizes-content">
 <title>Pencil playground</title>
+<link rel="stylesheet" href="keyboard.css">
 <style>
   :root {
     color-scheme: light dark;
@@ -126,7 +130,9 @@
   dialog input[type=text] { width: 100%; font-family: ui-monospace, monospace; padding: 4px 6px; border: 1px solid var(--rule); border-radius: 4px; background: var(--field); color: var(--ink); }
   dialog .bad { color: var(--bad); font-size: 0.75rem; min-height: 1.1rem; margin: 4px 0 6px; }
   dialog .buttons { display: flex; gap: 8px; justify-content: flex-end; }
-  @media (min-width: 801px) {
+  /* The bars are compact, with their buttons in two menus, in a narrow window and on a short
+     touch screen, such as a phone held sideways, which keeps its two columns. */
+  @media (min-width: 801px) and (pointer: fine), (min-width: 801px) and (pointer: none), (min-width: 801px) and (min-height: 501px) {
     #figure-menu { display: contents; }
     #file-menu { display: flex; position: static; inset: auto; width: auto; height: auto; margin: 0; border: 0; background: none; overflow: visible; color: var(--muted); }
   }
@@ -142,6 +148,8 @@
     /* What it was drawn with stays to one line, which scrolls. */
     #status { margin: 0; white-space: nowrap; overflow-x: auto; scrollbar-width: none; }
     #status::-webkit-scrollbar { display: none; }
+  }
+  @media (max-width: 800px), (pointer: coarse) and (max-height: 500px) {
     header { flex-wrap: nowrap; gap: 6px; padding: 6px 8px; }
     header h1 { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
     header label { display: flex; align-items: center; gap: 4px; flex: 1 1 0; min-width: 0; }
@@ -152,6 +160,50 @@
     .menu a { padding: 3px 2px; }
     .menu .hint, .menu .path { flex: none; margin: 0; white-space: normal; overflow-wrap: anywhere; text-align: left; color: var(--muted); }
     .menu .spacer { display: none; }
+  }
+  /* A touch screen, which the script marks with `touch` on the root. The page never scrolls: the
+     app is what's visible of it, which a keyboard makes smaller (viewport.js), and only the
+     editor, the tabs and the keys' rows scroll. The figure is as big as the room left for it,
+     in the middle of it. The editor's text is 16px, below which Safari zooms the page when the
+     editor takes focus, and the Pencil keys come up under it (keyboard.js). */
+  .stage { display: contents; }
+  .touch, .touch body { overflow: hidden; overscroll-behavior: none; }
+  .touch .app { position: fixed; left: 0; top: 0; width: 100%; height: var(--app-h, 100dvh); transform: translateY(var(--app-top, 0px)); }
+  .touch .code { font-size: 16px; line-height: 1.5rem; min-height: 4.5rem; }
+  .touch dialog input[type=text] { font-size: 16px; }
+  .touch .view { display: grid; grid-template-rows: minmax(0, 1fr); grid-auto-rows: auto; align-content: stretch; }
+  .touch .stage { display: grid; place-items: center; min-height: 0; container-type: size; }
+  .touch pencil-figure { width: min(100cqw, 100cqh * var(--shape, 1.778)); max-width: none; margin: 0; }
+  /* Narrow, the figure has two parts of the height and the editor three, or what it needs to show
+     its keys and a few lines. */
+  /* The line under the editor is as tall empty as when it says how the caret's expression reads,
+     so nothing above it moves. */
+  .touch .reading:not(.pasted) { min-height: 27px; }
+  /* What the hint says about Esc, which on a touch screen goes to the keys first. */
+  .if-touch { display: none; }
+  .touch .if-touch { display: inline; }
+  .touch .if-mouse { display: none; }
+  /* The button that brings the keys back once they were put away, at every width. */
+  .touch #keys-open:not([hidden]) { display: block; }
+  .files #keys-open + #file-more { margin-left: 4px; }
+  /* What's visible is short, under 500 px: a phone held sideways, or one with its system keyboard
+     up (viewport.js marks it). With the keys up, the editor gives up its own room first, down to
+     none: no line under it, no row of the file's tools, and no lines of text it must show. The
+     keys are a little shorter, and they and the row with the way back to them stay in view. */
+  .touch.keys-up .app[data-short] .code { min-height: 0; }
+  .touch.keys-up .app[data-short] .reading { display: none; }
+  .touch.keys-up .app[data-short] #file-menu:not(:popover-open) { display: none !important; }
+  .touch.keys-up .app[data-short] .keyboard { --key-h: 30px; }
+  @media (max-width: 800px) {
+    .touch .app { grid-template-rows: auto minmax(0, 2fr) minmax(min-content, 3fr); }
+    /* While the keys are up the editor shows five lines at least, and the figure has the rest of
+       the view to itself, with any error under it. Its time, beats and params come back when the
+       keys go: they can't be used while typing, and on a small phone they'd leave the figure a
+       strip. */
+    .touch.keys-up .code { min-height: calc(5 * 1.5rem + 16px); }
+    .touch.keys-up .view .controls, .touch.keys-up #status { display: none; }
+    /* Short, the editor has three parts to the figure's one. */
+    .touch.keys-up .app[data-short] { grid-template-rows: auto minmax(0, 1fr) minmax(min-content, 3fr); }
   }
   /* On a phone the menus say what they are, and the words would leave them no room. */
   @media (max-width: 480px) { header label .word { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); } }
@@ -174,13 +226,14 @@
       <input id="open-files" type="file" multiple accept=".pen,.style" hidden>
       <button id="share" type="button" title="Put every open file in a link, and copy it">Share</button>
       <a id="alone" target="_top" title="Open the playground without the page around it" hidden>Open on its own</a>
-      <p class="hint">Edits recompile as you type and stay in this browser; Share puts the whole figure in a link. <kbd>Esc</kbd> leaves the editor; then <kbd>Space</kbd> plays, <kbd>←</kbd> <kbd>→</kbd> step beats.</p>
+      <p class="hint">Edits recompile as you type and stay in this browser; Share puts the whole figure in a link. <span class="if-mouse"><kbd>Esc</kbd> leaves the editor;</span><span class="if-touch">▾ puts the Pencil keys away for the visit, and so does typing on a keyboard; <b>keys</b> by the tabs brings them back. <kbd>Esc</kbd> in the editor goes to the keys while they’re up, and again leaves for the figure;</span> then <kbd>Space</kbd> plays, <kbd>←</kbd> <kbd>→</kbd> step beats.</p>
     </div>
   </header>
   <section class="editor" aria-label="Sources">
     <div class="files">
       <ul class="tabs" id="tabs" aria-label="Files"></ul>
       <button class="add" id="add" type="button" aria-label="Add a file" title="Add a .style or .pen file">+</button>
+      <button class="more" id="keys-open" type="button" hidden aria-label="Show the Pencil keys" title="Show the Pencil keys">keys</button>
       <button class="more" id="file-more" type="button" popovertarget="file-menu" aria-label="This file: copy, save and revert" title="This file: copy, save and revert">⋯</button>
     </div>
     <span id="said" role="status"></span>
@@ -199,9 +252,10 @@
     </div>
     <p class="reading" id="reading" aria-live="polite"></p>
     <p class="reading pasted" id="pasted" aria-live="polite"></p>
+    <div id="keyboard" hidden></div>
   </section>
   <section class="view" aria-label="Figure">
-    <pencil-figure id="figure" tabindex="0"></pencil-figure>
+    <div class="stage"><pencil-figure id="figure" tabindex="0"></pencil-figure></div>
     <div class="controls">
       <div id="clock" style="display: contents">
         <button id="play" type="button">Pause</button>

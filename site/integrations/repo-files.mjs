@@ -15,7 +15,7 @@ const WASM = 'packages/figure/pkg/pencil_web_bg.wasm';
 // second while Kris edits, which a published site shouldn't do, so only the playground and the
 // page that shows how text parses go out, with what they import.
 const DIRS = ['corpus', 'lab/explainer', 'packages/figure/pkg', 'packages/figure/fonts'];
-const FILES = /^(?:web\/(?:[a-z-]+\.js|playground\.html|ast\.html)|packages\/figure\/src\/[a-z-]+\.js)$/;
+const FILES = /^(?:web\/(?:[a-z-]+\.js|keyboard\.css|playground\.html|ast\.html)|packages\/figure\/src\/[a-z-]+\.js)$/;
 // Folders with nothing of their own to serve, on the way to something that is.
 const WAY = ['web', 'lab', 'packages', 'packages/figure', 'packages/figure/src'];
 // Each corpus figure's golden IR is the test suite's contract, and no page reads it.
@@ -23,6 +23,7 @@ const SKIP = /(?:^|\/)(?:expected\.ir\.json|\.gitignore|\.DS_Store)$/;
 
 const TYPES = {
   '.html': 'text/html; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
   '.wasm': 'application/wasm',
   '.otf': 'font/otf',

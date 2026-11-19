@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import { pack } from '../src/pack.js';
+import { handleOf } from './helpers.js';
 
 // The playground, web/playground.html, served from the repo root: its two menus, a figure in a
 // link, a figure of the reader's own from files, adding and removing files, and Save. Then its
@@ -587,5 +588,561 @@ test.describe('the playground\'s bars', () => {
     await expect.poll(() => tabNames(page)).toContain('limacon.pen');
     expect(await boxes()).toEqual(first);
     expect(await overflow()).toBeLessThanOrEqual(0);
+  });
+});
+
+// On a touch screen: the Pencil keys under the editor (web/keyboard.js), and a page that holds
+// still at what's visible (web/viewport.js). With a mouse, neither, and the page as it was.
+test.describe('the playground\'s Pencil keys', () => {
+  const keyboard = (page) => page.locator('#keyboard');
+  /** Presses a key by what it types (`=x`), does (`@back`) or finishes (`~curve`), as a finger does. */
+  const tapKey = async (page, id) => {
+    await page.locator(`#keyboard button[data-id="${id}"]`).filter({ visible: true }).tap();
+  };
+  const typeKeys = async (page, ...ids) => {
+    for (const id of ids) await tapKey(page, id);
+  };
+  /** Touches the editor and puts the caret at the end of the file. */
+  const touchEditor = async (page) => {
+    await page.locator('#source').tap();
+    await page.locator('#source').evaluate((t) => t.setSelectionRange(t.value.length, t.value.length));
+    await expect(keyboard(page)).toBeVisible();
+  };
+  const box = (page, selector) => page.locator(selector).evaluate((el) => {
+    const r = el.getBoundingClientRect();
+    return { top: r.top, height: r.height, scrollTop: el.scrollTop };
+  });
+  const stays = (page) => page.evaluate(() => ({
+    scroll: document.documentElement.scrollHeight - innerHeight,
+    app: Math.round(document.querySelector('.app').getBoundingClientRect().height) - innerHeight,
+    scrolled: scrollY,
+  }));
+
+  test.describe('on a touch screen', () => {
+    test.beforeEach(({ isMobile }) => {
+      test.skip(!isMobile, 'touch projects only');
+    });
+
+    test('touching the editor brings the keys up, the system keyboard stays down, and keys type into the figure', async ({ page }) => {
+      await openPlayground(page, 'figure=tangents');
+      await drawnHere(page);
+      await expect(keyboard(page)).toBeHidden();
+      const source = page.locator('#source');
+      await expect(source).toHaveAttribute('inputmode', 'none');
+      await expect(source).toHaveCSS('font-size', '16px');
+      await touchEditor(page);
+      await expect(source).toBeFocused();
+      await expect(source).toHaveAttribute('inputmode', 'none');
+      const before = await source.inputValue();
+      const compiled = await page.locator('#status').textContent();
+      // `let k = 2` on a line of its own, from three pages.
+      await typeKeys(page, '@enter', '@page:letters', '=l', '=e', '=t', '@space', '=k', '@space', '@page:numbers', '==', '@space', '=2');
+      await expect(source).toHaveValue(`${before}\nlet k = 2`);
+      await expect(source).toBeFocused();
+      // It compiled again, and drew.
+      await expect(page.locator('#status')).not.toHaveText(compiled);
+      await expect(page.locator('#status')).toContainText('compiled');
+      await expect(page.locator('#errors')).toHaveText('');
+      // ⌫ takes back one, and the caret keys move.
+      await typeKeys(page, '@back', '@left', '@left');
+      await expect(source).toHaveValue(`${before}\nlet k = `);
+      expect(await source.evaluate((t) => t.selectionStart)).toBe(before.length + 7);
+      // A hardware keyboard still types into it.
+      await page.keyboard.type('x');
+      await expect(source).toHaveValue(`${before}\nlet k x= `);
+    });
+
+    test('a suggestion finishes the word, by what a .pen and a .style have where the caret is', async ({ page }) => {
+      await openPlayground(page, 'figure=tangents');
+      await touchEditor(page);
+      const source = page.locator('#source');
+      const before = await source.inputValue();
+      await typeKeys(page, '@enter', '@page:letters', '=c', '=u');
+      await expect(page.locator('#keyboard .words-row button').first()).toHaveText('curve');
+      await tapKey(page, '~curve');
+      await expect(source).toHaveValue(`${before}\ncurve `);
+
+      // In a sheet, a rule's properties, then its values, the sheet's own names first.
+      await page.locator('#tabs .pick', { hasText: 'plain.style' }).click();
+      await touchEditor(page);
+      const sheet = await source.inputValue();
+      await typeKeys(page, '@enter', '@page:letters', '=s');
+      await expect(page.locator('#keyboard .words-row button').first()).toHaveText('style');
+      await tapKey(page, '~style');
+      await typeKeys(page, '=c', '@space', '={', '@space', '=w');
+      await tapKey(page, '~width');
+      await expect(source).toHaveValue(`${sheet}\nstyle c { width: `);
+    });
+
+    test('the words row and the four pages keep one height, so the editor doesn\'t move', async ({ page }) => {
+      await openPlayground(page, 'figure=tangents');
+      await touchEditor(page);
+      await typeKeys(page, '@enter', '@page:letters');
+      const code = () => box(page, '#source');
+      const rows = () => page.evaluate(() => [...document.querySelectorAll('#keyboard > :not([hidden])')].map((el) => el.getBoundingClientRect().height));
+      const first = await code();
+      expect(first.scrollTop).toBeGreaterThan(0);
+      const heights = await rows();
+      const seen = [];
+      // Empty, full, a few, empty again: `z` has no words, ⌫ brings them all, `s` a few, `sq` none.
+      for (let i = 0; i < 3; i++) {
+        for (const [ids, words] of [[['=z'], 0], [['@back'], 1], [['=s'], 1], [['=q'], 0], [['@back', '@back'], 1]]) {
+          await typeKeys(page, ...ids);
+          const empty = await page.locator('#keyboard .words-row .none').count();
+          expect(empty === 0).toBe(words === 1);
+          seen.push(await code());
+          expect(await rows()).toEqual(heights);
+        }
+      }
+      for (const id of ['@page:numbers', '@page:words', '@page:greek', '@shift', '@page:letters', '@shift']) {
+        await tapKey(page, id);
+        seen.push(await code());
+        expect(await rows()).toEqual(heights);
+      }
+      for (const s of seen) expect(s).toEqual(first);
+    });
+
+    test('the page never scrolls, with the keys up or down', async ({ page }) => {
+      await openPlayground(page, 'figure=explainer');
+      await expect(page.locator('html')).toHaveClass(/touch/);
+      expect(await stays(page)).toEqual({ scroll: 0, app: 0, scrolled: 0 });
+      await touchEditor(page);
+      expect(await stays(page)).toEqual({ scroll: 0, app: 0, scrolled: 0 });
+      // The figure, the editor and the keys are all on screen, in that order.
+      const laid = await page.evaluate(() => {
+        const r = (s) => document.querySelector(s).getBoundingClientRect();
+        return { figure: r('#figure'), code: r('.code'), keys: r('#keyboard') };
+      });
+      expect(laid.figure.height).toBeGreaterThan(40);
+      expect(laid.code.top).toBeGreaterThanOrEqual(laid.figure.bottom);
+      expect(laid.keys.top).toBeGreaterThanOrEqual(laid.code.bottom);
+      expect(laid.keys.bottom).toBeLessThanOrEqual(page.viewportSize().height + 0.5);
+      await tapKey(page, '@hide');
+      await expect(keyboard(page)).toBeHidden();
+      expect(await stays(page)).toEqual({ scroll: 0, app: 0, scrolled: 0 });
+    });
+
+    test('the system key hands over to the system keyboard and back, and is remembered for the visit', async ({ page }) => {
+      await openPlayground(page, 'figure=circle-bands');
+      await touchEditor(page);
+      const source = page.locator('#source');
+      await source.evaluate((t) => t.setSelectionRange(5, 5));
+      await tapKey(page, '@system');
+      await expect(source).not.toHaveAttribute('inputmode');
+      await expect(source).toBeFocused();
+      expect(await source.evaluate((t) => t.selectionStart)).toBe(5);
+      await expect(page.locator('#keyboard .keys')).toBeHidden();
+      await expect(page.locator('#keyboard .symbols')).toBeVisible();
+      await expect(page.locator('#keyboard .words-row')).toBeVisible();
+      // The symbols type as the keys do.
+      await tapKey(page, '=·');
+      await expect(source).toHaveValue(/^.{5}·/s);
+
+      await page.reload();
+      await settled(page);
+      await touchEditor(page);
+      await expect(source).not.toHaveAttribute('inputmode');
+      await tapKey(page, '@pencil');
+      await expect(source).toHaveAttribute('inputmode', 'none');
+      await expect(page.locator('#keyboard .keys')).toBeVisible();
+      await expect(page.locator('#keyboard .symbols')).toBeHidden();
+    });
+
+    test('a compile error stays in view above the keys', async ({ page }) => {
+      await openPlayground(page, 'figure=explainer');
+      await drawnHere(page);
+      await touchEditor(page);
+      await typeKeys(page, '@enter', '=)');
+      const error = page.locator('#errors li').first();
+      await expect(error).toContainText('limacon.pen');
+      const where = await page.evaluate(() => {
+        const e = document.querySelector('#errors li').getBoundingClientRect();
+        const view = document.querySelector('.view').getBoundingClientRect();
+        return { top: e.top, bottom: e.bottom, viewBottom: view.bottom, keys: document.getElementById('keyboard').getBoundingClientRect().top };
+      });
+      expect(where.top).toBeGreaterThanOrEqual(0);
+      expect(where.bottom).toBeLessThanOrEqual(where.viewBottom + 0.5);
+      expect(where.bottom).toBeLessThanOrEqual(where.keys);
+      // Going to it keeps the keys up.
+      await error.click();
+      await expect(page.locator('#source')).toBeFocused();
+      await expect(keyboard(page)).toBeVisible();
+    });
+
+    test('Share, the menus and a link work with the keys up', async ({ page }) => {
+      await openPlayground(page, 'figure=circle');
+      await touchEditor(page);
+      await typeKeys(page, '@enter', '@page:letters', '=l', '=e', '=t', '@space', '=q', '@space', '@page:numbers', '==', '@space', '=3');
+      await page.locator('#figure-more').click();
+      await page.locator('#share').click();
+      await expect.poll(() => new URL(page.url()).hash).toMatch(/^#pen=/);
+      await expect(page.locator('#said')).toHaveText(/Link copied|address bar/);
+      const link = page.url();
+      const shared = await openFiles(page);
+      await page.goto('about:blank');
+      await page.goto(link);
+      await settled(page);
+      await expect(page.locator('#figure-pick')).toHaveValue('yours');
+      expect(await openFiles(page)).toEqual(shared);
+      await touchEditor(page);
+      await page.locator('#file-more').click();
+      await expect(page.locator('#path')).toContainText('circle.pen');
+      await page.keyboard.press('Escape');
+    });
+
+    test('framed, the frame fills what\'s visible, and neither page scrolls', async ({ page }) => {
+      const query = addressOf('figure=circle').split('?')[1];
+      await page.goto(`/packages/figure/tests/pages/framed.html?${query}`);
+      const frame = page.frameLocator('#playground');
+      const inner = () => page.frame({ url: /playground\.html/ });
+      await expect.poll(() => inner()?.evaluate(() => !!window.pencil).catch(() => false), { timeout: 30_000 }).toBe(true);
+      await frame.locator('#source').tap();
+      await expect(frame.locator('#keyboard')).toBeVisible();
+      await frame.locator('#keyboard button[data-id="=7"]').tap();
+      await expect(frame.locator('#source')).toBeFocused();
+      const outer = await page.evaluate(() => ({
+        scroll: document.documentElement.scrollHeight - innerHeight,
+        frameBottom: Math.round(document.getElementById('playground').getBoundingClientRect().bottom) - innerHeight,
+      }));
+      expect(outer).toEqual({ scroll: 0, frameBottom: 0 });
+      const within = await inner().evaluate(() => ({
+        scroll: document.documentElement.scrollHeight - innerHeight,
+        keysBottom: Math.round(document.getElementById('keyboard').getBoundingClientRect().bottom) - innerHeight,
+      }));
+      expect(within).toEqual({ scroll: 0, keysBottom: 0 });
+    });
+  });
+
+  test.describe('on a touch screen, at the edges', () => {
+    test.beforeEach(({ isMobile }) => {
+      test.skip(!isMobile, 'touch projects only');
+    });
+
+    /** Every key on the page that's up is inside the window. */
+    const keysInView = (page) => page.evaluate(() => {
+      const out = [];
+      // A row that scrolls sideways is in view as a row, and so is the words page's list.
+      for (const b of document.querySelectorAll('#keyboard button, #keyboard .run, #keyboard .list')) {
+        if (!b.offsetParent || (b.matches('button') && b.closest('.run, .list'))) continue;
+        const r = b.getBoundingClientRect();
+        if (r.top < -0.5 || r.left < -0.5 || r.bottom > innerHeight + 0.5 || r.right > innerWidth + 0.5) out.push(`${b.dataset.id ?? b.className} ${Math.round(r.top)}..${Math.round(r.bottom)}`);
+      }
+      return out;
+    });
+
+    for (const size of [{ width: 852, height: 393 }, { width: 839, height: 412 }]) {
+      test(`held sideways at ${size.width}×${size.height}, every key is in view on every page`, async ({ page }) => {
+        await page.setViewportSize(size);
+        await openPlayground(page, 'figure=explainer');
+        await touchEditor(page);
+        expect(await page.evaluate(() => document.querySelector('.app').hasAttribute('data-short'))).toBe(true);
+        for (const id of ['@page:numbers', '@page:letters', '@page:words', '@page:greek']) {
+          await tapKey(page, id);
+          expect(await keysInView(page)).toEqual([]);
+        }
+        expect(await stays(page)).toEqual({ scroll: 0, app: 0, scrolled: 0 });
+      });
+    }
+
+    test('with the system keyboard up and 260 px visible, the way back to the keys is in view', async ({ page }) => {
+      await openPlayground(page, 'figure=explainer');
+      await touchEditor(page);
+      await tapKey(page, '@system');
+      await expect(page.locator('#source')).not.toHaveAttribute('inputmode');
+      // As Safari does when its keyboard is up: the visual viewport is smaller, the layout one isn't.
+      await page.evaluate(() => {
+        Object.defineProperty(visualViewport, 'height', { configurable: true, get: () => 260 });
+        visualViewport.dispatchEvent(new Event('resize'));
+      });
+      await expect.poll(() => page.evaluate(() => Math.round(document.querySelector('.app').getBoundingClientRect().height))).toBe(260);
+      const back = await page.locator('#keyboard button[data-id="@pencil"]').boundingBox();
+      expect(back.y).toBeGreaterThanOrEqual(0);
+      expect(back.y + back.height).toBeLessThanOrEqual(260);
+      const words = await page.locator('#keyboard .words-row').boundingBox();
+      expect(words.y + words.height).toBeLessThanOrEqual(260);
+      // The editor gave up its room first, and still shows a line or more.
+      const code = await page.locator('.code').boundingBox();
+      expect(code.height).toBeGreaterThanOrEqual(24);
+      await tapKey(page, '@pencil');
+      await expect(page.locator('#source')).toHaveAttribute('inputmode', 'none');
+    });
+
+    test('a drag on a handle doesn\'t move the figure under the finger until it lifts', async ({ page, browserName }) => {
+      test.skip(browserName !== 'chromium', 'real touches come through CDP, which only Chromium has');
+      await openPlayground(page, 'figure=tangents');
+      await drawnHere(page);
+      // Held still, so the handle is where it's found.
+      await page.evaluate(() => window.pencil.figure.pause());
+      await touchEditor(page);
+      const stage = () => page.locator('.view > .stage').boundingBox();
+      const before = await stage();
+      // The keys coming up made the figure smaller, which moves the handle: wait until it's still.
+      let handle = null;
+      await expect.poll(async () => {
+        const was = handle;
+        handle = await handleOf(page, 'P').boundingBox();
+        await page.waitForTimeout(150);
+        return JSON.stringify(was) === JSON.stringify(handle);
+      }, { timeout: 15_000 }).toBe(true);
+      const [x, y] = [handle.x + handle.width / 2, handle.y + handle.height / 2];
+      const cdp = await page.context().newCDPSession(page);
+      const touch = (type, points) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: points });
+      await touch('touchStart', [{ x, y }]);
+      for (let i = 1; i <= 8; i++) {
+        await touch('touchMove', [{ x: x + i * 3, y }]);
+        await page.waitForTimeout(100);
+      }
+      // 800 ms into the drag: the handle has focus, and the keys and the figure's room are as they were.
+      expect(await page.evaluate(() => document.activeElement?.id)).toBe('figure');
+      await expect(keyboard(page)).toBeVisible();
+      expect(await stage()).toEqual(before);
+      await touch('touchEnd', []);
+      await expect(keyboard(page)).toBeHidden();
+      // Lifted, the keys go and the controls come back, which changes the figure's room.
+      await expect.poll(stage).not.toEqual(before);
+    });
+
+    test('a hardware keyboard closes the keys for the visit, and so does ▾, until keys brings them back', async ({ page }) => {
+      await openPlayground(page, 'figure=circle');
+      await touchEditor(page);
+      const source = page.locator('#source');
+      const opener = page.locator('#keys-open');
+      await expect(opener).toBeHidden();
+      await page.keyboard.type('q');
+      await expect(keyboard(page)).toBeHidden();
+      await expect(source).toBeFocused();
+      await expect(source).not.toHaveAttribute('inputmode');
+      await expect(source).toHaveValue(/q$/);
+      await expect(opener).toBeVisible();
+      await page.reload();
+      await settled(page);
+      await page.locator('#source').tap();
+      await expect(source).toBeFocused();
+      await expect(keyboard(page)).toBeHidden();
+      await opener.tap();
+      await expect(keyboard(page)).toBeVisible();
+      await expect(source).toBeFocused();
+      await expect(source).toHaveAttribute('inputmode', 'none');
+      await expect(opener).toBeHidden();
+      // ▾ is remembered the same way.
+      await tapKey(page, '@hide');
+      await expect(keyboard(page)).toBeHidden();
+      await expect(opener).toBeVisible();
+      await page.reload();
+      await settled(page);
+      await page.locator('#source').tap();
+      await expect(keyboard(page)).toBeHidden();
+      await expect(opener).toBeVisible();
+    });
+
+    test('a mouse paired with the tablet turns the keys and the hold off, and unpairing turns them on', async ({ page }) => {
+      await openPlayground(page, 'figure=circle');
+      const pointer = (coarse) => page.evaluate(async (coarse) => {
+        const { touch } = await import('/web/viewport.js');
+        Object.defineProperty(touch, 'matches', { configurable: true, get: () => coarse });
+        touch.dispatchEvent(new Event('change'));
+      }, coarse);
+      await pointer(false);
+      await expect(page.locator('html')).not.toHaveClass(/touch/);
+      await expect(page.locator('#source')).not.toHaveAttribute('inputmode');
+      await page.locator('#source').tap();
+      await expect(keyboard(page)).toBeHidden();
+      expect(await page.evaluate(() => document.querySelector('.app').style.getPropertyValue('--app-h'))).toBe('');
+      await page.locator('#figure').tap();
+      await pointer(true);
+      await expect(page.locator('html')).toHaveClass(/touch/);
+      await touchEditor(page);
+      await expect(page.locator('#source')).toHaveAttribute('inputmode', 'none');
+    });
+
+    test('a page zoomed in by a pinch keeps its size, and a finger pans it', async ({ page }) => {
+      await openPlayground(page, 'figure=circle');
+      const result = await page.evaluate(() => {
+        const app = document.querySelector('.app');
+        const before = app.style.getPropertyValue('--app-h');
+        // WebKit can't make a Touch, and leaves that half to Chromium.
+        const moved = () => {
+          if (typeof Touch !== 'function') return null;
+          try {
+            new Touch({ identifier: 1, target: document.body });
+          } catch {
+            return null;
+          }
+          const e = new TouchEvent('touchmove', { cancelable: true, bubbles: true, touches: [new Touch({ identifier: 1, target: document.querySelector('header') })] });
+          document.querySelector('header').dispatchEvent(e);
+          return e.defaultPrevented;
+        };
+        const heldBefore = moved();
+        Object.defineProperty(visualViewport, 'scale', { configurable: true, get: () => 2 });
+        Object.defineProperty(visualViewport, 'height', { configurable: true, get: () => innerHeight / 2 });
+        visualViewport.dispatchEvent(new Event('resize'));
+        return { before, after: app.style.getPropertyValue('--app-h'), heldBefore, heldZoomed: moved() };
+      });
+      expect(result.after).toBe(result.before);
+      if (result.heldBefore !== null) expect(result).toMatchObject({ heldBefore: true, heldZoomed: false });
+    });
+
+    test('a held key repeats, and stops when the finger lifts or slides off; its click doesn\'t act again', async ({ page }) => {
+      await openPlayground(page, 'figure=circle');
+      await touchEditor(page);
+      const source = page.locator('#source');
+      const length = () => source.evaluate((t) => t.value.length);
+      const space = page.locator('#keyboard button[data-id="@space"]');
+      const press = (type, init = {}) => space.evaluate((b, [type, init]) => {
+        const Kind = type === 'click' ? MouseEvent : PointerEvent;
+        b.dispatchEvent(new Kind(type, { bubbles: true, cancelable: true, button: 0, pointerId: 9, isPrimary: true, pointerType: 'touch', ...init }));
+      }, [type, init]);
+      // Held for a second: one at once, then more after 420 ms.
+      let start = await length();
+      await press('pointerdown');
+      await page.waitForTimeout(1000);
+      await press('pointerup');
+      const held = (await length()) - start;
+      expect(held).toBeGreaterThan(3);
+      // Its click, late as it is, doesn't type another.
+      await press('click', { detail: 1 });
+      await page.waitForTimeout(200);
+      expect((await length()) - start).toBe(held);
+      // Slid off the key: it stops there, though the finger is still down.
+      start = await length();
+      await press('pointerdown');
+      await page.waitForTimeout(600);
+      const box = await space.boundingBox();
+      await press('pointermove', { clientX: box.x + box.width / 2, clientY: box.y - 40 });
+      const slid = (await length()) - start;
+      await page.waitForTimeout(500);
+      expect((await length()) - start).toBe(slid);
+      await press('pointerup');
+    });
+
+    test('a key ends a word the system keyboard is composing before it types', async ({ page }) => {
+      await openPlayground(page, 'figure=circle');
+      await touchEditor(page);
+      await tapKey(page, '@system');
+      const source = page.locator('#source');
+      await source.evaluate((t) => {
+        window.blurs = 0;
+        t.addEventListener('blur', () => (window.blurs += 1));
+        t.dispatchEvent(new CompositionEvent('compositionstart', { data: '' }));
+      });
+      const before = await source.inputValue();
+      await tapKey(page, '=·');
+      await expect(source).toHaveValue(`${before}·`);
+      await expect(source).toBeFocused();
+      // The composition was ended, by focus leaving the field and coming back, once.
+      expect(await page.evaluate(() => window.blurs)).toBe(1);
+      await tapKey(page, '=π');
+      expect(await page.evaluate(() => window.blurs)).toBe(1);
+      await expect(source).toHaveValue(`${before}·π`);
+      await tapKey(page, '@pencil');
+    });
+
+    test('the caret keys and ⌫ go a character at a time as a reader sees one', async ({ page }) => {
+      await openPlayground(page, 'figure=circle');
+      // The steps themselves: an emoji is two code units, a flag four, and é here is e and an accent.
+      const text = 'a😀b🇫🇷céd';
+      const steps = await page.evaluate(async (text) => {
+        const { step } = await import('/web/keyboard.js');
+        const on = [0];
+        while (on.at(-1) < text.length) on.push(step(text, on.at(-1), 1));
+        const back = [text.length];
+        while (back.at(-1) > 0) back.push(step(text, back.at(-1), -1));
+        return { on, back };
+      }, text);
+      expect(steps.on).toEqual([0, 1, 3, 4, 8, 9, 11, 12]);
+      expect(steps.back).toEqual([12, 11, 9, 8, 4, 3, 1, 0]);
+      // And through the keys, in the editor.
+      await touchEditor(page);
+      const source = page.locator('#source');
+      await source.evaluate((t, text) => {
+        t.value = text;
+        t.setSelectionRange(text.length, text.length);
+      }, text);
+      const caret = () => source.evaluate((t) => t.selectionStart);
+      await tapKey(page, '@left');
+      expect(await caret()).toBe(11);
+      await tapKey(page, '@left');
+      expect(await caret()).toBe(9);
+      await tapKey(page, '@back');
+      await expect(source).toHaveValue('a😀b🇫🇷éd');
+      await tapKey(page, '@back');
+      await expect(source).toHaveValue('a😀béd');
+      await tapKey(page, '@back');
+      await tapKey(page, '@back');
+      await expect(source).toHaveValue('aéd');
+      await tapKey(page, '@right');
+      expect(await caret()).toBe(3);
+    });
+
+    test('a hardware keyboard reaches the keys: Esc into them, arrows among them, Enter presses, Esc out', async ({ page }) => {
+      await openPlayground(page, 'figure=circle');
+      await touchEditor(page);
+      const source = page.locator('#source');
+      const focused = () => page.evaluate(() => document.activeElement?.dataset?.id ?? document.activeElement?.id);
+      const before = await source.inputValue();
+      await page.keyboard.press('Escape');
+      await expect(keyboard(page)).toBeVisible();
+      const first = await focused();
+      expect(first).toMatch(/^[=@~]/);
+      await page.keyboard.press('ArrowDown');
+      const second = await focused();
+      expect(second).not.toBe(first);
+      expect(second).toMatch(/^[=@~]/);
+      // The keys' own page: from the words row down into the keys, and along them to 7.
+      await page.locator('#keyboard button[data-id="=7"]').focus();
+      await page.keyboard.press('Enter');
+      await expect(source).toHaveValue(`${before}7`);
+      expect(await focused()).toBe('=7');
+      await page.keyboard.press('ArrowRight');
+      expect(await focused()).toBe('=8');
+      await page.keyboard.press('Enter');
+      await expect(source).toHaveValue(`${before}78`);
+      // The keys stayed up through all of it, and Esc leaves them for the figure.
+      await expect(keyboard(page)).toBeVisible();
+      await page.keyboard.press('Escape');
+      await expect(page.locator('#figure')).toBeFocused();
+      await expect(keyboard(page)).toBeHidden();
+    });
+
+    test('the menu says what Esc does on a touch screen', async ({ page }) => {
+      await openPlayground(page, 'figure=circle');
+      await page.locator('#figure-more').click();
+      const hint = page.locator('#figure-menu .hint');
+      await expect(hint).toContainText('goes to the keys');
+      await expect(hint.locator('.if-mouse')).toBeHidden();
+    });
+  });
+
+  test.describe('with a mouse', () => {
+    test.beforeEach(({ isMobile }) => {
+      test.skip(isMobile, 'desktop projects only');
+    });
+
+    test('no keys, the editor as it was, and the figure laid out as it was', async ({ page }) => {
+      await openPlayground(page, 'figure=circle');
+      await drawnHere(page);
+      const source = page.locator('#source');
+      await source.click();
+      await page.keyboard.type('// typed');
+      await expect(source).toHaveValue(/\/\/ typed$/);
+      await expect(keyboard(page)).toBeHidden();
+      await expect(source).not.toHaveAttribute('inputmode');
+      await expect(source).toHaveCSS('font-size', '13px');
+      expect(await page.locator('html').getAttribute('class')).toBeFalsy();
+      // The figure's own rule, as before the keys: as wide as its column, to the window's height.
+      const laid = await page.evaluate(() => {
+        const view = document.querySelector('.view');
+        const css = getComputedStyle(view);
+        const room = view.clientWidth - parseFloat(css.paddingLeft) - parseFloat(css.paddingRight);
+        const shape = parseFloat(getComputedStyle(document.getElementById('figure')).getPropertyValue('--shape')) || 1.778;
+        const r = document.getElementById('figure').getBoundingClientRect();
+        return { width: r.width, expected: Math.min(room, (innerHeight - 220) * shape), app: getComputedStyle(document.querySelector('.app')).position, stage: getComputedStyle(document.querySelector('.stage')).display };
+      });
+      expect(Math.abs(laid.width - laid.expected)).toBeLessThan(1);
+      expect(laid).toMatchObject({ app: 'static', stage: 'contents' });
+      await expect(page.locator('#keys-open')).toBeHidden();
+      await expect(page.locator('#figure-menu .hint .if-touch')).toBeHidden();
+      await expect(page.locator('#figure-menu .hint')).toContainText('Esc leaves the editor');
+    });
   });
 });

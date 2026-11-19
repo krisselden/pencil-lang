@@ -1,0 +1,87 @@
+:root {
+  color-scheme: light dark;
+  --ink: rgb(18 17 15); --paper: rgb(242 240 235); --muted: rgb(110 106 99); --rule: rgb(214 210 202);
+  --bad: #b5443c; --field: rgb(250 249 246); --accent: rgb(0 104 181);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ink: rgb(243 240 234); --paper: rgb(23 22 20); --muted: rgb(148 143 134); --rule: rgb(60 58 54);
+    --bad: #f38d82; --field: rgb(30 29 27); --accent: rgb(118 179 241);
+  }
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* The page never scrolls: nothing in it is taller than it, and it can't be dragged or bounced. */
+html, body { height: 100%; margin: 0; overflow: hidden; overscroll-behavior: none; }
+body { background: var(--paper); color: var(--ink); font: 0.875rem/1.4 ui-sans-serif, system-ui, sans-serif; }
+button, select, input { font: inherit; }
+
+/* The app fills what's visible. The script sets --app-h to the visual viewport's height and
+   --app-top to where it sits in the layout viewport, which on iOS moves when Safari scrolls to show
+   the caret. Without the script, the dynamic viewport. */
+.app {
+  position: fixed; left: 0; top: 0; width: 100%;
+  height: var(--app-h, 100dvh);
+  transform: translateY(var(--app-top, 0px));
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(56px, 2fr) minmax(4.5rem, 3fr) auto;
+  grid-template-areas: 'bar' 'stage' 'editor' 'keyboard';
+  padding: 0 env(safe-area-inset-right) 0 env(safe-area-inset-left);
+}
+.bar { grid-area: bar; }
+.stage { grid-area: stage; }
+.editor { grid-area: editor; }
+/* The keys, from web/keyboard.css. */
+#keyboard { grid-area: keyboard; }
+
+/* One small bar. */
+.bar { display: flex; gap: 6px; align-items: center; padding: 5px 8px; border-bottom: 1px solid var(--rule); min-width: 0; }
+.pick { display: flex; align-items: center; gap: 4px; flex: 1 1 0; min-width: 0; }
+.pick select { flex: 1; min-width: 0; font-size: 0.8125rem; }
+.pick .word { color: var(--muted); font-size: 0.75rem; }
+@media (max-width: 480px) { .pick .word { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); } }
+.more { flex: none; border: 1px solid var(--rule); border-radius: 4px; background: none; color: var(--ink); padding: 2px 9px; line-height: 1.3; cursor: pointer; }
+.menu:popover-open {
+  position: fixed; inset: auto; margin: 0; display: flex; flex-direction: column; gap: 8px; width: max-content;
+  max-width: min(20rem, calc(100vw - 16px)); padding: 10px 12px; border: 1px solid var(--rule); border-radius: 6px;
+  background: var(--paper); color: var(--ink); box-shadow: 0 6px 24px rgb(0 0 0 / 0.25); font-size: 0.8125rem;
+}
+.menu label { display: flex; gap: 6px; align-items: center; }
+.menu button { text-align: left; padding: 4px 8px; }
+.menu .hint { margin: 0; color: var(--muted); font-size: 0.75rem; }
+
+/* The figure, as big as the room left for it allows, in the middle of it. */
+.stage { position: relative; min-height: 0; container-type: size; display: grid; place-items: center; padding: 6px; border-bottom: 1px solid var(--rule); overflow: hidden; touch-action: none; }
+pencil-figure { width: min(100cqw - 12px, (100cqh - 12px) * var(--shape, 1)); outline: none; }
+.numbers { position: absolute; left: 6px; top: 4px; margin: 0; padding: 2px 6px; border-radius: 4px; background: rgb(0 0 0 / 0.55); color: white; font: 0.6875rem/1.35 ui-monospace, monospace; white-space: pre; pointer-events: none; }
+.error { position: absolute; left: 6px; right: 6px; bottom: 4px; margin: 0; padding: 3px 6px; border-left: 3px solid var(--bad); background: color-mix(in srgb, var(--paper) 88%, var(--bad)); color: var(--bad); font: 0.75rem/1.35 ui-monospace, monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+.error:empty { display: none; }
+
+/* The editor, the one thing that scrolls. 16px on a touch screen, below which iOS zooms the page
+   when the field takes focus. */
+.editor { min-height: 0; display: flex; background: var(--field); }
+#source {
+  flex: 1; min-width: 0; margin: 0; padding: 8px 10px; border: 0; outline: none; resize: none;
+  background: transparent; color: var(--ink); caret-color: var(--accent);
+  font: 0.875rem/1.45 ui-monospace, 'SF Mono', Menlo, monospace; tab-size: 2;
+  overflow: auto; overscroll-behavior: contain;
+}
+@media (pointer: coarse) { #source { font-size: 16px; } }
+
+/* A wide window: the figure on the left, the editor and its keys on the right. */
+@media (min-width: 900px) {
+  .app {
+    grid-template-columns: minmax(0, 1fr) minmax(380px, 34rem);
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    grid-template-areas: 'bar bar' 'stage editor' 'stage keyboard';
+  }
+  .stage { border-bottom: 0; border-right: 1px solid var(--rule); }
+  .bar .pick { flex: 0 1 18rem; }
+  .bar .more { margin-left: auto; }
+}
+
+.probe { position: fixed; left: -10px; top: 0; width: 1px; height: 100dvh; visibility: hidden; pointer-events: none; }
