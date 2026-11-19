@@ -36,7 +36,7 @@ setter, keep each other.
 
 A handle that sets two params, a point dragged in two dimensions, sets both in one move and holds them together, and
 its `input` event names both in `detail.values`. It's a slider to a screen reader, described as a 2D slider, whose
-text says both values (`a = 0.3, b = 0.5`). Its arrows move it on the page, and Home, End, Page Up and Page Down are
+text says both values (`a = 0.3, b = 0.5`). Its arrows move it on the page, each within 45° of its own way or not at all, and Home, End, Page Up and Page Down are
 the long moves left, right, up and down, since it has no one range to go to the end of.
 
 When a browser loses the GPU under a figure, as Chrome does after sleep or when its GPU process restarts, the figure

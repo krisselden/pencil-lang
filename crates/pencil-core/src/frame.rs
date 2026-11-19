@@ -493,11 +493,15 @@ pub fn handle_places(
 /// doesn't exist this frame.
 ///
 /// A param with steps might not reach its next value in one move, and a key that did nothing
-/// would leave a reader stuck. So the move is doubled until the mark has moved the way the key
-/// asks or a param with steps has reached another, or until it has gone as far as the canvas is
-/// wide, where the direction has no next value. A handle that sets a stepped param and one
-/// without steps would otherwise stop at once, when the one without moved, and slide the mark
-/// sideways.
+/// would leave a reader stuck. So the move is doubled until it's one the key can make, or until
+/// it has gone as far as the canvas is wide, where the direction has no next value.
+///
+/// A handle that sets one param moves its mark along one path, so any move with some of the
+/// key's direction in it will do, or a stepped param reaching its next value. A handle that sets
+/// two can go any way on the screen, and its move has to be nearer the key's direction than any
+/// other arrow's, within 45° of it, whatever its steps: otherwise a lattice whose second vector
+/// leans far over would take Up for mostly Left. If no move that far is, the key does nothing,
+/// and the result is empty.
 pub fn nudge_value(
     figure: &Figure,
     inputs: &Inputs,
@@ -546,25 +550,38 @@ pub fn nudge_value(
             .zip(&steps)
             .filter(|(_, stepped)| **stepped)
             .any(|(((_, value), now), _)| now.is_none_or(|now| (value - now).abs() > 1e-9));
-        // Where the mark would be, and whether that's on the way the key points.
-        let toward = || -> Result<bool, Error> {
+        // How far the mark would move, and how far of that is the way the key points.
+        let moved = || -> Result<Option<(f64, f64)>, Error> {
             let mut moved = inputs.clone();
             moved
                 .params
                 .retain(|(id, _)| !params.contains(&id.as_str()));
             moved.params.extend(values.iter().cloned());
             Ok(
-                match handle_places(figure, &moved, width, height)?[handle] {
-                    Some((x, y)) => (x - place.0) * dx + (y - place.1) * dy > 1e-6,
-                    None => false,
-                },
+                handle_places(figure, &moved, width, height)?[handle].map(|(x, y)| {
+                    let (mx, my) = (x - place.0, y - place.1);
+                    (mx.hypot(my), (mx * dx + my * dy) / dx.hypot(dy))
+                }),
             )
         };
+        let toward = || Ok::<_, Error>(moved()?.is_some_and(|(_, along)| along > 1e-6));
+        let within = || {
+            Ok::<_, Error>(moved()?.is_some_and(|(length, along)| {
+                along > 1e-6 && along > length * std::f64::consts::FRAC_1_SQRT_2
+            }))
+        };
         reach *= 2.0;
-        // With no steps, the first move is the move.
-        let done = !stepped || stepped_changed || toward()?;
-        if done || dx.hypot(dy) * reach > far {
+        let done = if params.len() > 1 {
+            within()?
+        } else {
+            // With no steps, the first move is the move.
+            !stepped || stepped_changed || toward()?
+        };
+        if done {
             return Ok(Some(values));
+        }
+        if dx.hypot(dy) * reach > far {
+            return Ok(Some(if params.len() > 1 { Vec::new() } else { values }));
         }
     }
 }
@@ -1981,32 +1998,118 @@ mod tests {
     }
 
     #[test]
-    fn a_key_moves_a_lattice_point_the_way_it_points_with_any_params_stepped() {
-        for (a, b) in [(" step 1", ""), ("", " step 1"), (" step 1", " step 1")] {
-            let doc = lattice("").replacen("in -3..3", &format!("in -3..3{a}"), 1);
-            let doc = doc.replacen("b = 0 in -3..3", &format!("b = 0 in -3..3{b}"), 1);
-            let f = build(&doc, &[]).unwrap();
-            let start = mark_at(&f, 0, &[]);
-            for (key, dx, dy) in [
-                ("right", 4.0, 0.0),
-                ("left", -4.0, 0.0),
-                ("up", 0.0, -4.0),
-                ("down", 0.0, 4.0),
+    fn a_key_moves_a_lattice_point_nearer_its_own_way_than_any_other_keys() {
+        const KEYS: [(&str, f64, f64); 4] = [
+            ("right", 4.0, 0.0),
+            ("left", -4.0, 0.0),
+            ("up", 0.0, -4.0),
+            ("down", 0.0, 4.0),
+        ];
+        for angle in [20.0, 60.0, 170.0] {
+            for (a, b) in [
+                ("", ""),
+                (" step 1", ""),
+                ("", " step 1"),
+                (" step 1", " step 1"),
             ] {
-                let values = nudge_value(&f, &Inputs::at(0.0), 0, 400, 400, dx, dy)
-                    .unwrap()
-                    .unwrap();
-                let (x, y) = mark_at(&f, 0, &values);
-                // In the figure's own coordinates, where up is +y.
-                let (mx, my) = (x - start.0, y - start.1);
-                let (wx, wy) = (dx, -dy);
-                let along = (mx * wx + my * wy) / wx.hypot(wy);
-                assert!(
-                    along > 0.5 * mx.hypot(my) && along > 1e-6,
-                    "a{a}, b{b}: {key} moved the mark by ({mx}, {my})"
+                let doc = format!(
+                    "viewport {{ x: -4..4, y: -4..4 }}
+                     param a = 0 in -3..3{a}
+                     param b = 0 in -3..3{b}
+                     let ω = e^(i·{angle}·π/180)
+                     let z = a + b·ω
+                     dot z
+                     handle z sets a = pointer.x - pointer.y·real(ω)/imag(ω), b = pointer.y/imag(ω)"
                 );
+                let f = build(&doc, &[]).unwrap();
+                for from in [
+                    vec![],
+                    vec![("a".to_string(), 1.0), ("b".to_string(), -1.0)],
+                ] {
+                    let inputs = Inputs {
+                        time: 0.0,
+                        params: from.clone(),
+                    };
+                    let start = mark_at(&f, 0, &from);
+                    let mut moves = 0;
+                    for (key, dx, dy) in KEYS {
+                        let values = nudge_value(&f, &inputs, 0, 400, 400, dx, dy)
+                            .unwrap()
+                            .unwrap();
+                        if values.is_empty() {
+                            continue;
+                        }
+                        moves += 1;
+                        let (x, y) = mark_at(&f, 0, &values);
+                        // In the figure's own coordinates, where up is +y.
+                        let (mx, my) = (x - start.0, y - start.1);
+                        let along = |(_, kx, ky): (&str, f64, f64)| (mx * kx - my * ky) / 4.0;
+                        let own = along((key, dx, dy));
+                        assert!(
+                            own > 1e-6
+                                && KEYS
+                                    .iter()
+                                    .filter(|other| other.0 != key)
+                                    .all(|&other| own > along(other)),
+                            "ω at {angle}°, a{a}, b{b}, from {from:?}: {key} moved the mark by \
+                             ({mx}, {my})"
+                        );
+                    }
+                    // Unstepped, inside both ranges, every key moves it.
+                    if a.is_empty() && b.is_empty() {
+                        assert_eq!(moves, 4, "ω at {angle}°, from {from:?}");
+                    } else {
+                        assert!(moves >= 2, "ω at {angle}°, a{a}, b{b}, from {from:?}");
+                    }
+                }
             }
         }
+    }
+
+    #[test]
+    fn a_key_with_no_move_its_way_does_nothing() {
+        // At a's right end and b's top, with ω at 20°, a can only go down and b down, and either
+        // takes the mark mostly left: up, right and down would slide it along an edge, the
+        // wrong way.
+        let doc = "viewport { x: -4..4, y: -4..4 }
+             param a = 1 in -1..1
+             param b = 1 in -1..1
+             let ω = e^(i·20·π/180)
+             let z = a + b·ω
+             dot z
+             handle z sets a = pointer.x - pointer.y·real(ω)/imag(ω), b = pointer.y/imag(ω)";
+        let f = build(doc, &[]).unwrap();
+        let key = |dx, dy| {
+            nudge_value(&f, &Inputs::at(0.0), 0, 400, 400, dx, dy)
+                .unwrap()
+                .unwrap()
+        };
+        assert_eq!(key(0.0, -4.0), []);
+        assert_eq!(key(4.0, 0.0), []);
+        assert_eq!(key(0.0, 4.0), []);
+        assert!(!key(-4.0, 0.0).is_empty());
+    }
+
+    #[test]
+    fn two_names_for_one_point_can_each_have_a_handle_and_a_drag_takes_the_later() {
+        // The one-handle-per-mark check goes by name, and w is another name for z.
+        let f = build(
+            "viewport { x: -2..2, y: -2..2 }
+             param a = 0.5 in -1..1
+             param b = 0 in -1..1
+             let z = a + b·i
+             let w = z
+             dot z, w
+             handle z sets a = pointer.x
+             handle w sets b = pointer.y",
+            &[],
+        )
+        .unwrap();
+        let (px, py) = pixel(2.0, 0.5, 0.0);
+        assert_eq!(
+            handle_at(&f, &Inputs::at(0.0), 400, 400, px, py, 10.0).unwrap(),
+            Some(1)
+        );
     }
 
     #[test]
