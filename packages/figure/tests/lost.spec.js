@@ -1,5 +1,11 @@
-import { test, expect } from '@playwright/test';
+import { test, expect as base } from '@playwright/test';
 import { open, drawn, events, onFigure, figureOf, value } from './helpers.js';
+
+// A busy machine makes everything here slow: a frame can wait seconds, and with it the moment a
+// figure finds its player gone. So nothing here waits a set time for something to happen, and every
+// poll is patient. What the timing proves is measured in the page (`record`), as the time between
+// two things, which a busy machine can only make longer.
+const expect = base.configure({ timeout: 30_000 });
 
 // A browser loses a figure's GPU when the machine sleeps or its GPU process restarts, which takes
 // every tab's at once. The figure starts its GPU again where it was: the same time, the same held
@@ -41,14 +47,64 @@ const trap = (figure) =>
     f.style.width = f.style.width === '520px' ? '540px' : '520px';
   });
 
-/** Makes every start of a GPU fail, as while a browser's GPU process is still coming back, or
- * puts it right. It's the module the element starts from: the source, or the bundle. */
-const failStarts = (page, failing) =>
-  page.evaluate(async (failing) => {
+/** Wraps the start of a GPU, which the element looks up each time it starts one: it's noted, and
+ * fails while `failStarts` says so, as while a browser's GPU process is still coming back. It's the
+ * module the element starts from: the source, or the bundle. */
+const wrapStarts = (page) =>
+  page.evaluate(async () => {
     const host = await import(new URLSearchParams(location.search).has('min') ? '../../pkg/pencil-figure.min.js' : '../../src/host.js');
-    window.__create ??= host.Player.create;
-    host.Player.create = failing ? async () => { throw new Error('no GPU, for a test'); } : window.__create;
-  }, failing);
+    if (window.__create) return;
+    window.__create = host.Player.create;
+    window.__record ??= [];
+    host.Player.create = async (...args) => {
+      window.__record.push(['attempt', performance.now()]);
+      if (window.__failStarts) throw new Error('no GPU, for a test');
+      return window.__create.apply(host.Player, args);
+    };
+  });
+
+const failStarts = async (page, failing) => {
+  await wrapStarts(page);
+  await page.evaluate((failing) => (window.__failStarts = failing), failing);
+};
+
+/**
+ * Notes, as they happen, when a figure lets go of its GPU (`drop`), when it has a player again
+ * (`live`), each start of a GPU (`attempt`), and each `error` and `recover`. The stage's `live`
+ * class is watched, which the element changes in the same task as it drops or takes a player.
+ * Gives a function that reads the notes.
+ */
+async function record(page, figure) {
+  await wrapStarts(page);
+  await figure.evaluate((f) => {
+    window.__record ??= [];
+    const note = (what) => window.__record.push([what, performance.now()]);
+    new MutationObserver((changes) => {
+      for (const change of changes) {
+        const was = (change.oldValue ?? '').split(/\s+/).includes('live');
+        const is = change.target.classList.contains('live');
+        if (was && !is) note('drop');
+        if (!was && is) note('live');
+      }
+    }).observe(f.shadowRoot.querySelector('.stage'), { attributes: true, attributeFilter: ['class'], attributeOldValue: true });
+    f.addEventListener('error', () => note('error'));
+    f.addEventListener('recover', () => note('recover'));
+    // On WebGL2 a figure waits for its context to come back before it starts again.
+    f.shadowRoot.querySelector('.stage').addEventListener('webglcontextrestored', () => note('restored'), true);
+  });
+  return () => page.evaluate(() => window.__record);
+}
+
+// A drop is noted just after the task that made it, so a gap measured from one can come out
+// a little short of the timer behind it, which can't fire early.
+const SLACK = 50;
+
+/** The times of one kind of note. */
+const times = (notes, what) => notes.filter(([w]) => w === what).map(([, t]) => t);
+
+/** When a figure could start again after `t`: then, or once its WebGL2 context was back, if it
+ * came back before `until`. */
+const ready = (notes, t, until) => Math.max(t, ...times(notes, 'restored').filter((r) => r >= t && r <= until));
 
 /** Counts an event the figures send. */
 async function counter(page, type) {
@@ -95,6 +151,8 @@ async function countDraws(page) {
 }
 
 test.describe('a figure whose GPU is lost', () => {
+  // Seconds of tries, and frames a busy machine makes wait.
+  test.describe.configure({ timeout: 180_000 });
   test('starts again where it was, after its GPU is lost and it is resized', async ({ page, browserName }) => {
     const lines = panics(page);
     const figure = await open(page, 'bounds');
@@ -106,7 +164,7 @@ test.describe('a figure whose GPU is lost', () => {
     await figure.evaluate((f) => (f.style.width = '520px'));
 
     // A new player, drawing.
-    await expect.poll(() => fresh(figure), { timeout: 20_000 }).toBe(true);
+    await expect.poll(() => fresh(figure)).toBe(true);
     const now = await draws('figure');
     // A draw that changes nothing it was holding: a new size.
     await figure.evaluate((f) => (f.style.width = '540px'));
@@ -125,7 +183,7 @@ test.describe('a figure whose GPU is lost', () => {
     await mark(figure);
     await loseOne(figure);
     await figure.evaluate((f) => (f.style.width = '520px'));
-    await expect.poll(() => fresh(figure), { timeout: 20_000 }).toBe(true);
+    await expect.poll(() => fresh(figure)).toBe(true);
     const now = await draws('figure');
     // A draw that changes nothing it was holding: a new size.
     await figure.evaluate((f) => (f.style.width = '540px'));
@@ -141,7 +199,7 @@ test.describe('a figure whose GPU is lost', () => {
     await open(page, 'two');
     await drawn(page);
     const other = page.locator('#other');
-    await expect.poll(() => other.evaluate((f) => !!f.backend), { timeout: 20_000 }).toBe(true);
+    await expect.poll(() => other.evaluate((f) => !!f.backend)).toBe(true);
     const draws = await countDraws(page);
     const figure = figureOf(page);
     await setMoment(figure);
@@ -156,7 +214,7 @@ test.describe('a figure whose GPU is lost', () => {
     expect(await other.evaluate((f) => f.player.__before)).toBe(true);
     expect(await other.evaluate((f) => f.value('theta'))).toBeCloseTo(0.7, 9);
     // And the lost one is back, on a new one.
-    await expect.poll(() => fresh(figure), { timeout: 20_000 }).toBe(true);
+    await expect.poll(() => fresh(figure)).toBe(true);
     const now = await draws('figure');
     // A draw that changes nothing it was holding: a new size.
     await figure.evaluate((f) => (f.style.width = '540px'));
@@ -172,14 +230,14 @@ test.describe('a figure whose GPU is lost', () => {
     await open(page, 'two');
     await drawn(page);
     const other = page.locator('#other');
-    await expect.poll(() => other.evaluate((f) => !!f.backend), { timeout: 20_000 }).toBe(true);
+    await expect.poll(() => other.evaluate((f) => !!f.backend)).toBe(true);
     const draws = await countDraws(page);
     const figures = [figureOf(page), other];
     for (const f of figures) await mark(f);
     await loseGpu(page, browserName);
     await figures[0].evaluate((el) => (el.style.width = '520px'));
     for (const f of figures) {
-      await expect.poll(() => fresh(f), { timeout: 20_000 }).toBe(true);
+      await expect.poll(() => fresh(f)).toBe(true);
     }
     const now = [await draws('figure'), await draws('other')];
     for (const f of figures) await f.evaluate((el, theta) => el.hold('theta', theta), 1.1);
@@ -197,42 +255,58 @@ test.describe('a figure whose GPU is lost', () => {
     await drawn(page);
     const figure = figureOf(page);
     const other = page.locator('#other');
-    await expect.poll(() => other.evaluate((f) => !!f.backend), { timeout: 20_000 }).toBe(true);
+    await expect.poll(() => other.evaluate((f) => !!f.backend)).toBe(true);
     const draws = await countDraws(page);
     await setMoment(figure);
     await mark(other);
     const recovered = await counter(page, 'recover');
+    const notes = await record(page, figure);
 
-    // Once: it starts again at once, where it was, and the other figure is untouched.
+    // Once: it starts again, where it was, and the other figure is untouched.
     await trap(figure);
-    await expect.poll(() => fresh(figure), { timeout: 20_000 }).toBe(true);
+    await expect.poll(() => fresh(figure), { timeout: 60_000 }).toBe(true);
     await expectMoment(page, figure);
     const now = await draws('other');
     await other.evaluate((f) => f.hold('theta', 0.7));
     await expect.poll(() => draws('other')).toBeGreaterThan(now);
     expect(await other.evaluate((f) => f.player.__before)).toBe(true);
 
-    // Twice and three times: it waits a moment each time, and says nothing yet.
-    for (const wait of [1000, 5000]) {
+    // Twice and three times: it starts again each time, and says nothing.
+    for (let i = 0; i < 2; i++) {
       await trap(figure);
-      await expect.poll(() => figure.evaluate((f) => f.player === null)).toBe(true);
-      await page.waitForTimeout(wait / 2);
-      expect(await figure.evaluate((f) => f.player)).toBeNull();
-      await expect.poll(() => fresh(figure), { timeout: wait + 10_000 }).toBe(true);
+      await expect.poll(() => fresh(figure), { timeout: 60_000 }).toBe(true);
       await expectMoment(page, figure);
       expect((await events(page)).errors).toEqual([]);
     }
 
-    // A fourth: that's an error, said at once, with no tab switch.
+    // A fourth: that's an error, with no tab switch.
     await trap(figure);
-    await expect.poll(async () => (await events(page)).errors.length).toBe(1);
+    await expect.poll(async () => (await events(page)).errors.length, { timeout: 60_000 }).toBe(1);
     expect(await figure.evaluate((f) => f.player)).toBeNull();
     expect(await recovered()).toBe(0);
 
+    // What happened, in order. Each drop was followed by one start: the first at once, the next
+    // after at least a second, the third after at least five. The fourth drop was followed by no
+    // start, and then the error. A busy machine only makes these gaps longer.
+    const seen = await notes();
+    const [drops, attempts, errors] = ['drop', 'attempt', 'error'].map((w) => times(seen, w));
+    expect(drops).toHaveLength(4);
+    expect(attempts).toHaveLength(3);
+    expect(errors).toHaveLength(1);
+    const after = attempts.map((t, n) => t - drops[n]);
+    expect(after[0]).toBeGreaterThanOrEqual(0);
+    expect(attempts[0] - ready(seen, drops[0], attempts[0])).toBeLessThan(500);
+    expect(after[1]).toBeGreaterThanOrEqual(1000 - SLACK);
+    expect(after[2]).toBeGreaterThanOrEqual(5000 - SLACK);
+    for (let n = 0; n < 3; n++) expect(attempts[n]).toBeLessThan(drops[n + 1]);
+    // Said as it dropped the fourth time, in the same task.
+    expect(errors[0]).toBeGreaterThan(attempts[2]);
+    expect(Math.abs(errors[0] - drops[3])).toBeLessThan(SLACK);
+
     // Shown again, it tries once more, draws, and says it's back.
     await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
-    await expect.poll(() => fresh(figure), { timeout: 20_000 }).toBe(true);
-    await expect.poll(() => recovered()).toBe(1);
+    await expect.poll(() => fresh(figure), { timeout: 60_000 }).toBe(true);
+    await expect.poll(() => recovered(), { timeout: 60_000 }).toBe(1);
     await expectMoment(page, figure);
   });
 
@@ -241,22 +315,28 @@ test.describe('a figure whose GPU is lost', () => {
     await drawn(page);
     await setMoment(figure);
     const recovered = await counter(page, 'recover');
+    const notes = await record(page, figure);
     await failStarts(page, true);
-    const lost = Date.now();
     await trap(figure);
-    await page.waitForTimeout(500);
-    expect((await events(page)).errors).toEqual([]);
-    await expect.poll(async () => (await events(page)).errors.length, { timeout: 30_000 }).toBe(1);
-    // At once, then 1 s, then 5 s: a little over six seconds, and more on a busy machine, but
-    // never waiting for the page to be shown again.
-    expect(Date.now() - lost).toBeLessThan(20_000);
-    const detail = await page.evaluate(() => window.__pencil.errors[0]);
-    expect(detail).toBeTruthy();
+    // Nothing is said until the tries are done, and then it's said without waiting for the page
+    // to be shown again, which nothing here does.
+    await expect.poll(async () => (await events(page)).errors.length, { timeout: 60_000 }).toBe(1);
+    const seen = await notes();
+    const [drops, attempts, errors] = ['drop', 'attempt', 'error'].map((w) => times(seen, w));
+    // Tried at once when it was dropped, then a second after that try failed, then five after
+    // that one, and the error only after the last.
+    expect(drops).toHaveLength(1);
+    expect(attempts).toHaveLength(3);
+    expect(errors).toHaveLength(1);
+    expect(attempts[0] - ready(seen, drops[0], attempts[0])).toBeLessThan(500);
+    expect(attempts[1] - attempts[0]).toBeGreaterThanOrEqual(1000 - SLACK);
+    expect(attempts[2] - attempts[1]).toBeGreaterThanOrEqual(5000 - SLACK);
+    expect(errors[0]).toBeGreaterThanOrEqual(attempts[2]);
 
     // The GPU is back and the reader comes back to the page.
     await failStarts(page, false);
     await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
-    await expect.poll(() => fresh(figure), { timeout: 20_000 }).toBe(true);
+    await expect.poll(() => fresh(figure)).toBe(true);
     await expect.poll(() => recovered()).toBe(1);
     await expectMoment(page, figure);
   });
@@ -267,14 +347,14 @@ test.describe('a figure whose GPU is lost', () => {
     await setMoment(figure);
     await failStarts(page, true);
     await trap(figure);
-    await expect.poll(async () => (await events(page)).errors.length, { timeout: 15_000 }).toBe(1);
+    await expect.poll(async () => (await events(page)).errors.length, { timeout: 60_000 }).toBe(1);
     await failStarts(page, false);
 
     // Scrolled away and back: the figure starts as it comes near.
     await figure.evaluate((f) => (f.style.display = 'none'));
     await page.waitForTimeout(100);
     await figure.evaluate((f) => (f.style.display = ''));
-    await expect.poll(() => fresh(figure), { timeout: 20_000 }).toBe(true);
+    await expect.poll(() => fresh(figure)).toBe(true);
     await mark(figure);
     await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
     await page.waitForTimeout(500);
@@ -289,7 +369,7 @@ test.describe('a figure whose GPU is lost', () => {
       await new Promise((r) => setTimeout(r, 50));
       parent.prepend(f);
     });
-    await expect.poll(() => fresh(figure), { timeout: 20_000 }).toBe(true);
+    await expect.poll(() => fresh(figure)).toBe(true);
     await expect.poll(async () => (await events(page)).load).toBeGreaterThan(loads);
     await mark(figure);
     await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
@@ -305,7 +385,7 @@ test.describe('a figure whose GPU is lost', () => {
     // Its own GPU: crashing a browser's GPU process again and again can leave it with none.
     await loseOne(figure);
     await figure.evaluate((f) => (f.style.width = '520px'));
-    await expect.poll(() => fresh(figure), { timeout: 20_000 }).toBe(true);
+    await expect.poll(() => fresh(figure)).toBe(true);
     expect(await figure.evaluate((f) => f.paused)).toBe(false);
     const t = await figure.evaluate((f) => f.time);
     await expect.poll(() => figure.evaluate((f) => f.time)).toBeGreaterThan(t);
@@ -314,7 +394,7 @@ test.describe('a figure whose GPU is lost', () => {
 
   for (const how of ['lost', 'trapped']) {
     test(`a WebGL context ${how} again and again is let go of each time`, async ({ page }) => {
-      test.setTimeout(180_000);
+      test.setTimeout(600_000);
       const warnings = [];
       page.on('console', (m) => {
         if (/too many|oldest/i.test(m.text())) warnings.push(m.text());
@@ -323,7 +403,7 @@ test.describe('a figure whose GPU is lost', () => {
       await drawn(page);
       const figure = figureOf(page);
       const other = page.locator('#other');
-      await expect.poll(() => other.evaluate((f) => !!f.backend), { timeout: 20_000 }).toBe(true);
+      await expect.poll(() => other.evaluate((f) => !!f.backend)).toBe(true);
       await mark(other);
       const draws = await countDraws(page);
       // More than a browser keeps live on a page, which is 16 in Chromium.
