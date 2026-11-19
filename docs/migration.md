@@ -97,6 +97,40 @@ with either. The logo can stay the site's own.
   and some many-to-one, dragging a many-to-one handle makes the others jump between its solutions. The explicit conversion is
   easier to understand. So "automatic inverses" (`decisions.md`, Not built from the specs) stays not built.
 
+**The blog's constrained points, as handles** (checked 2026-11-18). A blog handle takes `constrain`, a function from the
+pointer to the nearest allowed point (`src/lib/plot.ts`). Every use in the posts is below, with its region and the handle
+that gives it. A curve is one param and its expression; a region of the plane is two params, whose ranges give a box in
+their own coordinates (a parallelogram on a lattice, with `z = a + b·ω`), and anything else is in the two expressions,
+which are the constrain function written out. `crates/pencil-core/tests/constrain.rs` drags each one and compares where
+it lands with the blog's function, ported. None needed anything the language lacks: `min`, `max`, `clamp`, `atan2`, `ln`
+of a point and a `fn` were enough.
+
+| Figure, point | Region | Handle |
+|---|---|---|
+| `FloorCell`, the free point | A rectangle in the plane (not a box in the lattice's coefficients) | `handle P sets px = pointer.x, py = pointer.y`, the rectangle as the two ranges |
+| `FollowPixel`, w | A rectangle on the grid | The same |
+| `FollowPixel`, z | The rectangle's image in the spiral | `handle z sets wx = real(to_grid(pointer)), wy = imag(to_grid(pointer))`, with `fn to_grid` the log and the linear map back; the ranges keep w in the rectangle |
+| `PowerViews`, z (in two panels) | A rectangle with two disks taken out, about 0 (radius 0.25) and 1 (radius 0.1), pushed out along the radius | `fn out(p, c, r) = c + (p - c)·max(1, r/max(abs(p - c), 1e-12))`, and `zx = real(out(out(pointer, 0, 0.25), 1, 0.1))`, `zy` its `imag`; the rectangle as the ranges |
+| `CircumCot`, B | A segment of y = 1 | `handle B sets m = pointer.x`, with `m in 0.12..2.1` |
+| `CircumCot`, C | The circle about 0 through B, whose radius follows m | `handle C sets phi = atan2(pointer.y, pointer.x)` |
+| `LimaconTangency`, z | The limaçon, by the pointer's angle about 1 | `handle z sets angle = atan2(pointer.y, pointer.x - 1)` |
+| `MedianConstruction`, C; `LimaconConstruction`, C | An arc of the unit circle, 15° to 40° (45° in the second) | `handle C sets phi = atan2(pointer.y, pointer.x)`, the arc as the range |
+| `MedianConstruction`, z | An arc whose ends follow C: \|β\| ≤ 2φ − 1.5° | `handle z sets beta = atan2(pointer.y, pointer.x)`, with `param beta in -(2·phi - 1.5·π/180)..2·phi - 1.5·π/180` |
+| `LimaconConstruction`, z₁ and each panel's driver | A circle about a point the construction finds (x₁, x₂, the hub) | `handle z1 sets t = atan2(pointer.y - x1.y, pointer.x - x1.x)`; several handles set t |
+| `BoundsConstruction`, P; `LogNearest`, x | An arc; a segment | Done, in `004-bounds` and `015-log-nearest` |
+| `TriangleLayers`, eˢ; `FloorCell`, x | A segment of a line | `handle E sets es = pointer.x` |
+
+What doesn't carry over, none of it a region:
+
+- **`LimaconConstruction` nudges t off one angle,** where two of its lines coincide and the construction has no answer. In
+  Pencil the construction's values are absent there instead (`language.md`, Values that may not exist), so nothing is
+  needed. Writing the nudge would take `sign` or `floor` as a conditional.
+- **`PowerViews` clamps to the rectangle first, then pushes out of the disks;** a handle's expressions come first and its
+  ranges after. They agree wherever the disks are clear of the rectangle's edges, as they are.
+- **`FollowPixel`'s z reads the log's angle,** which jumps by a turn on the negative real axis, so w jumps by the period
+  there, in the blog as here.
+- **`PowerViews` drags z in two panels** of different sizes, which waits on step 4.
+
 **A field, and what a style can read of it.** The inventory asked for "a field that names its nearest circle" so that
 `DoyleSpiral`'s arms could be colored. Kris's point: that shader isn't a list of circles drawn fast. It samples a pixel and asks
 which circle of infinitely many is nearest, and nothing in it could be traced, so it doesn't reconcile with styling a mark by its
