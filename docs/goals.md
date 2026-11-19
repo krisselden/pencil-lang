@@ -197,6 +197,20 @@ Proposed by Claude on 2026-11-09, not yet agreed:
   - He found it confusing which space a range is in. How should a range say it?
   - Still open: zipping a range used as a value, Desmos's `([1...5], [1...5]²)`. The only lists an expression zips are
     `±` and `∓`.
+  - **A candidate, discussed by Kris and the project session on 2026-11-18, not decided, and none of it built.** Kris's
+    observation: `a..b` is programming notation. Mathematics writes an interval with brackets that say whether each end
+    is included, `[a, b]`, `(a, b)`, `[a, b)`, and a count as `k = a, …, b` or `{a, …, b}`. Pencil's bare `a..b` is
+    always inclusive and says neither which kind it is nor whether an end is included. The candidate: brackets say
+    whether an end is included, `[a..b]`, `[a..b)`, `(a..b]`, `(a..b)`, for a continuum; braces say it's discrete,
+    `{a..b}` for the whole numbers from a to b, beside the list `{-1, 1}` that exists; and `..` stays the separator
+    inside, because `(a, b)` is already a point in Pencil. Questions with it:
+    - What would a bare `a..b` mean then, or would it go?
+    - Would `param n in {1..12}` replace `step 1`?
+    - What is `med ± dev` in each bracket?
+    - Where does an open end matter in practice: a curve's parameter approaching an asymptote, a param that must not
+      reach 0?
+    - Today's error for `{1..3}`, that a range goes outside the braces, is the opposite of this candidate, and would be
+      reversed.
 
   What `a..b` means today, each cell checked by compiling or drawing a probe on 2026-11-18:
 
