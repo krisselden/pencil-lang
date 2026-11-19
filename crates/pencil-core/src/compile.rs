@@ -4183,6 +4183,23 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
         }
         binding.expr = expr;
     }
+    for (k, (handle, (line, _))) in scene.handles.iter().zip(&handle_lines).enumerate() {
+        // A grab takes one handle, so a second on the same mark could only be reached by keys.
+        if let Some((_, (first, _))) = scene.handles[..k]
+            .iter()
+            .zip(&handle_lines)
+            .find(|(other, _)| other.mark == handle.mark)
+        {
+            return Err(Error::at(
+                *line,
+                1,
+                format!(
+                    "`{0}` has a handle on line {first} already, and this is a second, on line {line}: a drag takes one. To drag `{0}` in two dimensions, one handle sets both: `handle {0} sets a = …, b = …`",
+                    handle.mark
+                ),
+            ));
+        }
+    }
     for (handle, (line, at)) in scene.handles.iter().zip(&handle_lines) {
         for ((param, _), (line, col)) in handle.sets.iter().zip(at) {
             if !scene.params.iter().any(|p| p.id == *param) {
@@ -6200,6 +6217,40 @@ mod tests {
         let err =
             scene("param a in 0..1\nlet P = (a, 0)\nhandle P sets a = pointer.x").unwrap_err();
         assert!(err.message.contains("nothing draws"), "{err}");
+    }
+
+    #[test]
+    fn a_mark_has_one_handle() {
+        let err = scene(
+            "param a in -1..1
+             param b in -1..1
+             let z = a + b·i
+             dot z
+             handle z sets a = pointer.x
+             handle z sets b = pointer.y",
+        )
+        .unwrap_err();
+        assert_eq!((err.line, err.col), (6, 1));
+        assert!(
+            err.message.starts_with(
+                "`z` has a handle on line 5 already, and this is a second, on line 6: a drag takes one."
+            ),
+            "{err}"
+        );
+        assert!(
+            err.message.contains("`handle z sets a = …, b = …`"),
+            "{err}"
+        );
+        // Handles on different marks are fine, even setting the same param.
+        scene(
+            "param a in -1..1
+             let P = (a, 0)
+             let Q = (0, a)
+             dot P, Q
+             handle P sets a = pointer.x
+             handle Q sets a = pointer.y",
+        )
+        .unwrap();
     }
 
     #[test]
