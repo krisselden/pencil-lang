@@ -1,0 +1,154 @@
+{
+  "build": "28a03728493367c5",
+  "figure": "lattice.pfig",
+  "hash": "69259e642bcdc95f",
+  "info": {
+    "beatLengths": [],
+    "beats": [],
+    "colors": {
+      "accent": "rgb(96 66 166)",
+      "accent_soft": "rgb(157 144 200)",
+      "blue": "rgb(0 104 181)",
+      "blue_soft": "rgb(124 166 208)",
+      "green": "rgb(22 123 38)",
+      "green_soft": "rgb(130 176 127)",
+      "ink": "rgb(18 17 15)",
+      "muted": "rgb(110 106 99)",
+      "paper_color": "rgb(242 240 235)",
+      "red": "rgb(171 58 51)",
+      "red_soft": "rgb(209 142 131)"
+    },
+    "duration": null,
+    "handles": [],
+    "panels": [
+      {
+        "formula": "w = a + bω",
+        "id": "flat",
+        "rect": [
+          0.0,
+          0.05434782608695652,
+          0.4883720930232558,
+          0.43478260869565216
+        ],
+        "title": "Lattice"
+      },
+      {
+        "formula": "T(w) = 2πi·w / A",
+        "id": "log",
+        "rect": [
+          0.5116279069767442,
+          0.05434782608695652,
+          0.4883720930232558,
+          0.43478260869565216
+        ],
+        "title": "Log space"
+      },
+      {
+        "formula": "z = exp(S(T(w)))",
+        "id": "whole",
+        "rect": [
+          0.0,
+          0.5652173913043478,
+          0.4883720930232558,
+          0.43478260869565216
+        ],
+        "title": "Exp space"
+      },
+      {
+        "formula": "near 1",
+        "id": "detail",
+        "rect": [
+          0.5116279069767442,
+          0.5652173913043478,
+          0.4883720930232558,
+          0.43478260869565216
+        ],
+        "title": "Exp space, detail"
+      }
+    ],
+    "params": [
+      {
+        "choice": null,
+        "follows": [],
+        "id": "q",
+        "max": 12.0,
+        "min": 3.0,
+        "reads": [],
+        "step": 1.0
+      },
+      {
+        "choice": null,
+        "follows": [
+          "q"
+        ],
+        "id": "p",
+        "max": 12.0,
+        "min": 0.0,
+        "reads": [],
+        "step": 1.0
+      }
+    ],
+    "poster": {
+      "params": {},
+      "time": 0.0
+    },
+    "size": [
+      344.0,
+      368.0
+    ],
+    "timeDriven": [],
+    "usesTime": false,
+    "viewport": {
+      "height": 160.0,
+      "width": 168.0,
+      "x": [
+        -2.0,
+        2.0
+      ],
+      "y": [
+        -2.0,
+        2.0
+      ]
+    }
+  },
+  "poster": {
+    "images": [
+      {
+        "height": 368,
+        "scale": 1,
+        "src": "lattice.png",
+        "webp": "lattice.webp",
+        "width": 344
+      },
+      {
+        "height": 736,
+        "scale": 2,
+        "src": "lattice-2x.png",
+        "webp": "lattice-2x.webp",
+        "width": 688
+      }
+    ],
+    "params": {},
+    "ranges": {
+      "p": [
+        0.0,
+        7.0
+      ],
+      "q": [
+        3.0,
+        12.0
+      ]
+    },
+    "time": 0.0,
+    "values": {
+      "p": 2.0,
+      "q": 7.0
+    }
+  },
+  "sources": [
+    "corpus/007-lattice/lattice.pen",
+    "corpus/theme.style",
+    "corpus/007-lattice/plain.style",
+    "corpus/007-lattice/narrow.style"
+  ]
+}

@@ -1,0 +1,36 @@
+// The conchoid. From 1, the line at angle t meets Pascal's circle at L, which sits at 2t from
+// the circle's center, and E is sinh 2s farther along it. E′, as far back, is the curve too.
+beat clear_pedal for 0.35 drop pedal, pedal_tangent, at_foot, half_in, half_out, P, .mirror, foot
+beat meet "Pascal's circle." for 0.8 show pascal focus pascal, center, one, limacon
+pause 0.4
+beat seen "Seen from 1 its angle is t," for 0.8 show from_one, L, arc_t, name_t focus pascal, from_one, L, arc_t, name_t, one
+pause 0.5
+beat doubled "and from its center it's 2t." for 0.8 show pascal_radius, arc_2t, name_2t focus pascal, from_one, L, arc_t, name_t, pascal_radius, arc_2t, name_2t, center, one
+pause 1
+beat farther "Go sinh 2s farther, both ways." for 0.9 show reach_out, reach_back, E_back focus pascal, from_one, L, pascal_radius, center, one, reach_out, reach_back, E, E_back, limacon
+pause 0.8
+// The angles go before C moves, since t passes from -π to π on the way round.
+beat unmark for 0.3 drop arc_t, name_t, arc_2t, name_2t
+beat conchoid_round for 4.5
+pause 1
+
+// Pascal's circle: about A, through 1 and cosh 2s, so its radius is sinh² s. Drawn from 1.
+curve pascal = parametric (u): A + (one - A)·exp(i·u) for u in 0..2·π
+// t is C's angle, as seen from 1 along the line to E. The circle's center sees L at twice it.
+let t = atan2(n.y, n.x)
+let L = A + sinh(s)²·(cos(2·t), sin(2·t))
+dot L
+segment from_one = one, L
+segment pascal_radius = A, L
+curve arc_t = parametric (u): one + 0.9·(cos(u), sin(u)) for u in 0..t
+curve arc_2t = parametric (u): A + 0.55·(cos(u), sin(u)) for u in 0..2·t
+label name_t = "t" at one + 1.25·(cos(t / 2), sin(t / 2)) tag angle
+label name_2t = "2t" at A + 0.9·(cos(t), sin(t)) tag angle
+
+// sinh 2s either way along the line from 1. Out it's E, the same point the mirror made, and back
+// it's E′, the curve's point for t + π.
+let E_out = L + sinh(2·s)·n
+let E_back = L - sinh(2·s)·n
+segment reach_out = L, E_out
+segment reach_back = L, E_back
+dot E_back

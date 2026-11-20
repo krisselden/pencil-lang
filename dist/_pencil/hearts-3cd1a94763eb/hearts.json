@@ -1,0 +1,126 @@
+{
+  "build": "28a03728493367c5",
+  "figure": "hearts.pfig",
+  "hash": "80c20f21225bbd3f",
+  "info": {
+    "beatLengths": [],
+    "beats": [],
+    "colors": {
+      "accent": "rgb(96 66 166)",
+      "accent_soft": "rgb(157 144 200)",
+      "blue": "rgb(0 104 181)",
+      "blue_soft": "rgb(124 166 208)",
+      "green": "rgb(22 123 38)",
+      "green_soft": "rgb(130 176 127)",
+      "ink": "rgb(18 17 15)",
+      "muted": "rgb(110 106 99)",
+      "paper_color": "rgb(242 240 235)",
+      "red": "rgb(171 58 51)",
+      "red_soft": "rgb(209 142 131)",
+      "rose": "rgb(255 77 136)",
+      "sky": "rgb(77 196 255)"
+    },
+    "duration": 12.0,
+    "handles": [],
+    "panels": [
+      {
+        "formula": null,
+        "id": "",
+        "rect": [
+          0.0,
+          0.0,
+          1.0,
+          1.0
+        ],
+        "title": null
+      }
+    ],
+    "params": [
+      {
+        "choice": null,
+        "follows": [],
+        "id": "theta",
+        "max": 6.283185307179586,
+        "min": 0.0,
+        "reads": [],
+        "step": null
+      },
+      {
+        "choice": null,
+        "follows": [],
+        "id": "shift",
+        "max": 6.283185307179586,
+        "min": 0.0,
+        "reads": [],
+        "step": null
+      }
+    ],
+    "poster": {
+      "params": {},
+      "time": 2.4
+    },
+    "size": [
+      4.0,
+      4.0
+    ],
+    "timeDriven": [
+      "theta",
+      "z_a.x",
+      "z_a.y",
+      "z_b.x",
+      "z_b.y"
+    ],
+    "usesTime": true,
+    "viewport": {
+      "height": null,
+      "width": null,
+      "x": [
+        -2.0,
+        2.0
+      ],
+      "y": [
+        -2.0,
+        2.0
+      ]
+    }
+  },
+  "poster": {
+    "images": [
+      {
+        "height": 512,
+        "scale": 1,
+        "src": "hearts.png",
+        "webp": "hearts.webp",
+        "width": 512
+      },
+      {
+        "height": 1024,
+        "scale": 2,
+        "src": "hearts-2x.png",
+        "webp": "hearts-2x.webp",
+        "width": 1024
+      }
+    ],
+    "params": {},
+    "ranges": {
+      "shift": [
+        0.0,
+        6.283185307179586
+      ],
+      "theta": [
+        0.0,
+        6.283185307179586
+      ]
+    },
+    "time": 2.4,
+    "values": {
+      "shift": 0.0,
+      "theta": 1.2566370614359172
+    }
+  },
+  "sources": [
+    "corpus/008-hearts/hearts.pen",
+    "corpus/theme.style",
+    "corpus/008-hearts/plain.style"
+  ]
+}

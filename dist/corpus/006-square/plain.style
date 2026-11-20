@@ -1,0 +1,20 @@
+style figure { width: 340px; height: 235px }
+
+style axis_x, axis_y { stroke: muted; width: 1px; opacity: 0.6 }
+
+// What the beats show arrives and leaves by fading, and what they aren't about steps back.
+style leg_a { stroke: blue; width: 3px; opacity: self.life·mix(0.3, 1, smoothstep(0, 1, self.focus)) }
+style leg_b { stroke: green; width: 3px; opacity: self.life·mix(0.3, 1, smoothstep(0, 1, self.focus)) }
+style hypotenuse { stroke: ink; width: 2.5px; opacity: smoothstep(0, 1, self.life) }
+style fo { stroke: blue; width: 3px; opacity: smoothstep(0, 1, self.life) }
+style il { stroke: green; width: 3px; opacity: smoothstep(0, 1, self.life) }
+// The arc is the path of the tip as i turns the copy, so it is drawn as it is swept, and fades only as the copy slides away.
+style turning { stroke: green; width: 1.5px; dash: 3px; gap: 3px; opacity: 1 - smoothstep(0, 1, slide) }
+style square { stroke: ink; width: 3px; opacity: smoothstep(0, 1, self.life) }
+
+// Blue stays the a side and green the bi side: the color ties the big triangle to the small.
+style term.a { fill: blue }
+style term.b, term.i { fill: green }
+
+style first_angle, second_angle { stroke: ink; width: 1.5px; opacity: smoothstep(0, 1, self.life) }
+style arg_first, arg_second, length_z, length_z2 { opacity: smoothstep(0, 1, self.life); place: fixed }

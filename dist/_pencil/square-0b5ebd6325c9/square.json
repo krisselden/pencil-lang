@@ -1,0 +1,164 @@
+{
+  "build": "28a03728493367c5",
+  "figure": "square.pfig",
+  "hash": "5778881efadc8a94",
+  "info": {
+    "beatLengths": [
+      0.8,
+      0.7,
+      0.7,
+      0.6,
+      0.5,
+      0.5,
+      0.5,
+      1.1,
+      1.0,
+      1.0,
+      0.8,
+      0.7,
+      0.4,
+      0.4,
+      0.6,
+      0.6
+    ],
+    "beats": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+    ],
+    "colors": {
+      "accent": "rgb(96 66 166)",
+      "accent_soft": "rgb(157 144 200)",
+      "blue": "rgb(0 104 181)",
+      "blue_soft": "rgb(124 166 208)",
+      "green": "rgb(22 123 38)",
+      "green_soft": "rgb(130 176 127)",
+      "ink": "rgb(18 17 15)",
+      "muted": "rgb(110 106 99)",
+      "paper_color": "rgb(242 240 235)",
+      "red": "rgb(171 58 51)",
+      "red_soft": "rgb(209 142 131)"
+    },
+    "duration": 19.0,
+    "handles": [],
+    "panels": [
+      {
+        "formula": null,
+        "id": "",
+        "rect": [
+          0.0,
+          0.0,
+          1.0,
+          1.0
+        ],
+        "title": null
+      }
+    ],
+    "params": [
+      {
+        "choice": null,
+        "follows": [],
+        "id": "beat",
+        "max": 16.0,
+        "min": 0.0,
+        "reads": [],
+        "step": null
+      }
+    ],
+    "poster": {
+      "params": {},
+      "time": 17.5
+    },
+    "size": [
+      340.0,
+      235.0
+    ],
+    "timeDriven": [
+      "beat",
+      "build_a",
+      "build_b",
+      "join",
+      "name",
+      "shorten",
+      "measure",
+      "unmeasure",
+      "scale_a",
+      "scale_b",
+      "rotate",
+      "slide",
+      "add",
+      "factor",
+      "squared",
+      "result",
+      "clear",
+      "tip_a.x",
+      "tip_a.y",
+      "along.x",
+      "along.y",
+      "from.x",
+      "from.y",
+      "tip_b.x",
+      "tip_b.y"
+    ],
+    "usesTime": true,
+    "viewport": {
+      "height": 235.0,
+      "width": 340.0,
+      "x": [
+        -0.7,
+        2.7
+      ],
+      "y": [
+        -0.35,
+        2.0
+      ]
+    }
+  },
+  "poster": {
+    "images": [
+      {
+        "height": 236,
+        "scale": 1,
+        "src": "square.png",
+        "webp": "square.webp",
+        "width": 340
+      },
+      {
+        "height": 470,
+        "scale": 2,
+        "src": "square-2x.png",
+        "webp": "square-2x.webp",
+        "width": 680
+      }
+    ],
+    "params": {},
+    "ranges": {
+      "beat": [
+        0.0,
+        16.0
+      ]
+    },
+    "time": 17.5,
+    "values": {
+      "beat": 15.0
+    }
+  },
+  "sources": [
+    "corpus/006-square/square.pen",
+    "corpus/theme.style",
+    "corpus/006-square/plain.style"
+  ]
+}

@@ -1,0 +1,4 @@
+// An open curve with changing curvature, running past the viewport.
+doc wave
+viewport { x: -2..2, y: -2..2 }
+curve c = implicit (x, y): y = 0.5·sin(3·x)

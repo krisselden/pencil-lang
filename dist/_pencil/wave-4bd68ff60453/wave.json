@@ -1,0 +1,74 @@
+{
+  "build": "28a03728493367c5",
+  "figure": "wave.pfig",
+  "hash": "b1d13266ea0946a0",
+  "info": {
+    "beatLengths": [],
+    "beats": [],
+    "colors": {},
+    "duration": null,
+    "handles": [],
+    "panels": [
+      {
+        "formula": null,
+        "id": "",
+        "rect": [
+          0.0,
+          0.0,
+          1.0,
+          1.0
+        ],
+        "title": null
+      }
+    ],
+    "params": [],
+    "poster": {
+      "params": {},
+      "time": 0.0
+    },
+    "size": [
+      4.0,
+      4.0
+    ],
+    "timeDriven": [],
+    "usesTime": false,
+    "viewport": {
+      "height": null,
+      "width": null,
+      "x": [
+        -2.0,
+        2.0
+      ],
+      "y": [
+        -2.0,
+        2.0
+      ]
+    }
+  },
+  "poster": {
+    "images": [
+      {
+        "height": 512,
+        "scale": 1,
+        "src": "wave.png",
+        "webp": "wave.webp",
+        "width": 512
+      },
+      {
+        "height": 1024,
+        "scale": 2,
+        "src": "wave-2x.png",
+        "webp": "wave-2x.webp",
+        "width": 1024
+      }
+    ],
+    "params": {},
+    "ranges": {},
+    "time": 0.0,
+    "values": {}
+  },
+  "sources": [
+    "corpus/002-strokes/wave.pen",
+    "corpus/002-strokes/taper.style"
+  ]
+}

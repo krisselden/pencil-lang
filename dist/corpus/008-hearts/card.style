@@ -1,0 +1,3 @@
+// The hearts as a link preview's picture: the figure reshaped to a 1200 by 630 card, which the
+// poster is drawn at as it is, so the grid runs to every edge. Add it after glow.style.
+style figure { width: 1200px; height: 630px }

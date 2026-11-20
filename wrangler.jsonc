@@ -1,0 +1,11 @@
+// The site on Cloudflare Workers: the built files, and no worker code. CI publishes it from main once
+// the checks pass (.github/workflows/ci.yml), and `pnpm deploy` does from a machine with `wrangler login`,
+// after scripts/build-web.sh and cargo build --release -p pencil-cli.
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "pencil-lang",
+	"compatibility_date": "2026-11-01",
+	"assets": {
+		"directory": "./dist"
+	}
+}

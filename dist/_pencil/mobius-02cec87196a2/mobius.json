@@ -1,0 +1,166 @@
+{
+  "build": "28a03728493367c5",
+  "figure": "mobius.pfig",
+  "hash": "7620163dfb877b1b",
+  "info": {
+    "beatLengths": [],
+    "beats": [],
+    "colors": {
+      "accent": "rgb(96 66 166)",
+      "accent_soft": "rgb(157 144 200)",
+      "blue": "rgb(0 104 181)",
+      "blue_soft": "rgb(124 166 208)",
+      "green": "rgb(22 123 38)",
+      "green_soft": "rgb(130 176 127)",
+      "ink": "rgb(18 17 15)",
+      "muted": "rgb(110 106 99)",
+      "paper_color": "rgb(242 240 235)",
+      "red": "rgb(171 58 51)",
+      "red_soft": "rgb(209 142 131)"
+    },
+    "duration": 13.0,
+    "handles": [],
+    "panels": [
+      {
+        "formula": null,
+        "id": "",
+        "rect": [
+          0.0,
+          0.0,
+          1.0,
+          1.0
+        ],
+        "title": null
+      }
+    ],
+    "params": [
+      {
+        "choice": null,
+        "follows": [],
+        "id": "n",
+        "max": 10.0,
+        "min": 1.0,
+        "reads": [],
+        "step": 1.0
+      },
+      {
+        "choice": null,
+        "follows": [],
+        "id": "a",
+        "max": 10.0,
+        "min": -10.0,
+        "reads": [],
+        "step": null
+      },
+      {
+        "choice": null,
+        "follows": [],
+        "id": "b",
+        "max": 10.0,
+        "min": -10.0,
+        "reads": [],
+        "step": null
+      },
+      {
+        "choice": null,
+        "follows": [],
+        "id": "c",
+        "max": 10.0,
+        "min": -10.0,
+        "reads": [],
+        "step": null
+      },
+      {
+        "choice": null,
+        "follows": [],
+        "id": "d",
+        "max": 10.0,
+        "min": -10.0,
+        "reads": [],
+        "step": null
+      }
+    ],
+    "poster": {
+      "params": {},
+      "time": 3.5
+    },
+    "size": [
+      640.0,
+      896.0
+    ],
+    "timeDriven": [
+      "grown",
+      "dipped",
+      "b",
+      "c",
+      "d"
+    ],
+    "usesTime": true,
+    "viewport": {
+      "height": 896.0,
+      "width": 640.0,
+      "x": [
+        -10.0,
+        10.0
+      ],
+      "y": [
+        -14.0,
+        14.0
+      ]
+    }
+  },
+  "poster": {
+    "images": [
+      {
+        "height": 896,
+        "scale": 1,
+        "src": "mobius.png",
+        "webp": "mobius.webp",
+        "width": 640
+      },
+      {
+        "height": 1792,
+        "scale": 2,
+        "src": "mobius-2x.png",
+        "webp": "mobius-2x.webp",
+        "width": 1280
+      }
+    ],
+    "params": {},
+    "ranges": {
+      "a": [
+        -10.0,
+        10.0
+      ],
+      "b": [
+        -10.0,
+        10.0
+      ],
+      "c": [
+        -10.0,
+        10.0
+      ],
+      "d": [
+        -10.0,
+        10.0
+      ],
+      "n": [
+        1.0,
+        10.0
+      ]
+    },
+    "time": 3.5,
+    "values": {
+      "a": 1.0,
+      "b": 1.0,
+      "c": 0.5,
+      "d": 2.0,
+      "n": 8.0
+    }
+  },
+  "sources": [
+    "corpus/010-mobius/mobius.pen",
+    "corpus/theme.style",
+    "corpus/010-mobius/plain.style"
+  ]
+}

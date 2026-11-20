@@ -1,0 +1,74 @@
+{
+  "build": "28a03728493367c5",
+  "figure": "ring.pfig",
+  "hash": "790b180d3afe5c68",
+  "info": {
+    "beatLengths": [],
+    "beats": [],
+    "colors": {},
+    "duration": null,
+    "handles": [],
+    "panels": [
+      {
+        "formula": null,
+        "id": "",
+        "rect": [
+          0.0,
+          0.0,
+          1.0,
+          1.0
+        ],
+        "title": null
+      }
+    ],
+    "params": [],
+    "poster": {
+      "params": {},
+      "time": 0.0
+    },
+    "size": [
+      4.0,
+      4.0
+    ],
+    "timeDriven": [],
+    "usesTime": false,
+    "viewport": {
+      "height": null,
+      "width": null,
+      "x": [
+        -2.0,
+        2.0
+      ],
+      "y": [
+        -2.0,
+        2.0
+      ]
+    }
+  },
+  "poster": {
+    "images": [
+      {
+        "height": 512,
+        "scale": 1,
+        "src": "ring.png",
+        "webp": "ring.webp",
+        "width": 512
+      },
+      {
+        "height": 1024,
+        "scale": 2,
+        "src": "ring-2x.png",
+        "webp": "ring-2x.webp",
+        "width": 1024
+      }
+    ],
+    "params": {},
+    "ranges": {},
+    "time": 0.0,
+    "values": {}
+  },
+  "sources": [
+    "corpus/002-strokes/ring.pen",
+    "corpus/002-strokes/filled.style"
+  ]
+}

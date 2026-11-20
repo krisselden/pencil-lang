@@ -1,0 +1,3 @@
+style c::inside  { fill: oklch(0.72, 0.13, 50) }
+style c::outside { fill: oklch(0.42, 0.09, 250) }
+style c          { stroke: white; width: 3px }

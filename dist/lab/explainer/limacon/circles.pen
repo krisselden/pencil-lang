@@ -1,0 +1,21 @@
+// The circles through 1.
+// C is named as it arrives, so a reader sees which letter is meant when it's said.
+beat point_C "A circle about any point of it, through 1." for 0.4 show C, name_C drop at_B focus C, name_C, central
+beat circles for 0.8 show through_one focus C, name_C, through_one, central, .trail
+// The trail starts under the finished circle, so its first copy has nothing to show by arriving.
+beat sweep for 5 show trail
+pause 0.8
+
+// C goes once round the central circle, starting at B, and the circle about it through 1 leaves
+// a faint copy every 24th of the way. Then it moves on, and goes round once more as E traces.
+let start = atan2(B.y, B.x - A.x)
+let phi0 = 320·π / 180
+let phi = start + 2·π·smoothstep(0, 1, sweep) + (phi0 - start)·smoothstep(0, 1, place) + 2·π·smoothstep(0, 1, trace) + 2·π·smoothstep(0, 1, pedal_round) + 2·π·smoothstep(0, 1, conchoid_round) + 2·π·smoothstep(0, 1, roll)
+let n = (cos(phi), sin(phi))
+let C = A + R·n
+// Drawn from 1, as a compass would.
+curve through_one = parametric (u): C + (one - C)·exp(i·u) for u in 0..2·π
+dot C
+label name_C = "C" at C away C - A
+let passed = min(floor(24·smoothstep(0, 1, sweep)), 23)
+circles trail = circle(A + R·(cos(start + 2·π·k / 24), sin(start + 2·π·k / 24)), one) for k in 0..passed tag trail

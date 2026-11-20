@@ -1,0 +1,340 @@
+<!doctype html>
+<html lang="en">
+<head>
+<script src="./imports.js"></script>
+<meta charset="utf-8">
+<!-- On Android, Chrome shrinks the page for its keyboard, not only what's visible of it. Safari
+     doesn't read `interactive-widget`, and a touch screen's page holds itself to what's visible
+     instead (viewport.js). -->
+<meta name="viewport" content="width=device-width, initial-scale=1, interactive-widget=resizes-content">
+<title>Pencil playground</title>
+<link rel="stylesheet" href="keyboard.css">
+<style>
+  :root {
+    color-scheme: light dark;
+    --ink: rgb(18 17 15); --paper: rgb(242 240 235); --muted: rgb(110 106 99); --rule: rgb(214 210 202);
+    --bad: #b5443c; --field: rgb(250 249 246);
+    --comment: rgb(130 126 118); --string: rgb(22 123 38); --number: rgb(0 104 181); --word: rgb(96 66 166);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ink: rgb(243 240 234); --paper: rgb(23 22 20); --muted: rgb(148 143 134); --rule: rgb(60 58 54);
+      --bad: #f38d82; --field: rgb(30 29 27);
+      --comment: rgb(130 126 118); --string: rgb(121 195 124); --number: rgb(118 179 241); --word: rgb(169 139 255);
+    }
+  }
+  * { box-sizing: border-box; }
+  /* A rule that sets `display` would otherwise show what's hidden. */
+  [hidden] { display: none !important; }
+  html, body { height: 100%; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font: 0.875rem/1.45 ui-sans-serif, system-ui, sans-serif; }
+  .app { display: grid; grid-template-columns: minmax(320px, 1fr) minmax(320px, 1fr); grid-template-rows: auto 1fr; height: 100%; }
+  header { grid-column: 1 / -1; min-width: 0; display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--rule); }
+  header h1 { font-size: 0.875rem; font-weight: 600; margin: 0; }
+  header .hint { color: var(--muted); font-size: 0.75rem; margin: 0; flex: 1 1 20rem; min-width: 0; text-align: right; }
+  header label { white-space: nowrap; }
+  header a { color: var(--number); font-size: 0.8125rem; }
+  button, select, input { font: inherit; font-size: 0.8125rem; }
+  /* Fixed widths, so nothing moves when a menu's entries change. */
+  #figure-pick { width: 13rem; max-width: calc(100vw - 6rem); }
+  #style-pick { width: 11rem; max-width: calc(100vw - 6rem); }
+  :focus-visible { outline: 2px solid var(--number); outline-offset: 1px; }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+  /* What a wide window lays out in its bars, a narrow one keeps in two menus, so a phone has one
+     small bar over the editor and the figure: opening and sharing behind a button in that bar, and
+     what's done to the file in view behind one at the end of its tabs. Each is one element both
+     ways, a popover that a wide window shows in place. */
+  .menu { color: inherit; }
+  .more { display: none; flex: none; border: 1px solid var(--rule); border-radius: 4px; background: none; color: var(--ink); cursor: pointer; padding: 2px 8px; line-height: 1.3; }
+
+  /* The editor: a textarea over a highlighted copy of its text, so the caret, selection and undo are the browser's own. */
+  .editor { display: flex; flex-direction: column; min-width: 0; min-height: 0; border-right: 1px solid var(--rule); }
+  /* A tab per open file: the file's own button, and one to remove it when it can be. */
+  /* They stay on one line, which scrolls when there are more than fit, and fades at an end that
+     has more past it. The line under them is the row's, and the tab in view covers it. */
+  .files { display: flex; align-items: end; gap: 2px; padding: 6px 8px 0; box-shadow: inset 0 -1px 0 var(--rule); }
+  .tabs { position: relative; display: flex; flex: 0 1 auto; min-width: 0; align-items: end; gap: 2px; margin: 0; padding: 0; list-style: none; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tabs.cut-left { mask-image: linear-gradient(to right, transparent, #000 24px); }
+  .tabs.cut-right { mask-image: linear-gradient(to left, transparent, #000 24px); }
+  .tabs.cut-left.cut-right { mask-image: linear-gradient(to right, transparent, #000 24px, #000 calc(100% - 24px), transparent); }
+  .tabs button:focus-visible { outline-offset: -2px; }
+  .tab { flex: none; display: flex; align-items: center; border: 1px solid transparent; border-bottom: 0; border-radius: 4px 4px 0 0; }
+  .tab button { border: 0; background: none; color: var(--muted); cursor: pointer; font-family: ui-monospace, monospace; font-size: 0.75rem; }
+  .tab .pick { padding: 4px 10px; }
+  .tab .remove { padding: 4px 6px 4px 0; line-height: 1; }
+  .tab .remove:hover { color: var(--bad); }
+  .tab.active { border-color: var(--rule); background: var(--field); }
+  .tab.active .pick { color: var(--ink); }
+  .tab.edited .pick::after { content: ' •'; }
+  .tab.failed .pick { color: var(--bad); }
+  .tab.failed .pick::before { content: '✕ '; }
+  /* A file the one before it uses. */
+  .tab.used .pick { font-style: italic; }
+  /* A file of your own that nothing uses yet. */
+  .tab.unused { border-style: dashed; border-color: var(--rule); }
+  .tab.unused .pick { opacity: 0.7; }
+  .add { flex: none; border: 1px dashed var(--rule); border-bottom: 0; border-radius: 4px 4px 0 0; background: none; color: var(--muted); cursor: pointer; padding: 3px 9px; font-size: 0.75rem; }
+  .add:hover { color: var(--ink); }
+  .files .more { margin: 0 0 4px auto; font-size: 0.75rem; }
+  .editor.dropping { outline: 2px dashed var(--number); outline-offset: -4px; }
+  .tools { flex-wrap: wrap; gap: 6px; padding: 4px 8px; font-size: 0.75rem; color: var(--muted); align-items: center; }
+  .tools .path { font-family: ui-monospace, monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 0 1 auto; }
+  /* What a button did, said for a few seconds over the corner, wherever its button was. */
+  #said { position: fixed; left: 12px; bottom: 12px; z-index: 5; max-width: calc(100vw - 24px); padding: 6px 10px; border-radius: 6px; background: var(--ink); color: var(--paper); font-size: 0.8125rem; }
+  #said:empty { display: none; }
+  .tools button { font-size: 0.75rem; white-space: nowrap; }
+  .tools .spacer { flex: 1; }
+  /* How the expression at the caret reads, with every product and name written out. */
+  .reading { margin: 0; padding: 4px 10px; min-height: 26px; border-top: 1px solid var(--rule); font: 0.75rem/1.125rem ui-monospace, 'SF Mono', Menlo, monospace; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .reading b { color: var(--ink); font-weight: 600; }
+  .reading.pasted { border-top: 0; padding-top: 0; min-height: 0; }
+  .reading.pasted:empty { display: none; }
+  .code { position: relative; flex: 1; min-height: 0; background: var(--field); overflow: hidden; font: 0.8125rem/1.25rem ui-monospace, 'SF Mono', Menlo, monospace; tab-size: 2; }
+  .gutter, .code pre, .code textarea { position: absolute; top: 0; bottom: 0; margin: 0; padding: 8px 0; font: inherit; white-space: pre; }
+  .gutter { left: 0; width: 44px; padding-right: 8px; text-align: right; color: var(--muted); opacity: 0.6; overflow: hidden; user-select: none; }
+  .gutter div.bad { color: var(--bad); opacity: 1; font-weight: 600; }
+  .code pre { left: 44px; right: 0; padding-left: 10px; overflow: hidden; pointer-events: none; }
+  .code pre .inner { will-change: transform; }
+  .code textarea { left: 44px; right: 0; width: calc(100% - 44px); padding-left: 10px; border: 0; outline: none; resize: none; background: transparent; color: transparent; caret-color: var(--ink); overflow: auto; }
+  .code textarea::selection { background: rgb(96 66 166 / 0.25); color: transparent; }
+  .t-comment { color: var(--comment); font-style: italic; }
+  .t-string { color: var(--string); }
+  .t-number { color: var(--number); }
+  .t-word { color: var(--word); font-weight: 600; }
+  .line-bad { background: rgb(181 68 60 / 0.12); }
+  .at-bad { text-decoration: underline wavy var(--bad); text-decoration-skip-ink: none; text-underline-offset: 3px; }
+
+  /* The figure, with its controls and what went wrong under it. */
+  .view { display: flex; flex-direction: column; gap: 10px; padding: 12px; overflow: auto; min-width: 0; min-height: 0; }
+  /* A tall figure fits the window's height rather than running off it. `--shape` is its width over its height. */
+  pencil-figure { width: 100%; max-width: calc((100vh - 220px) * var(--shape, 1.778)); margin: 0 auto; outline: none; }
+  .controls { display: grid; grid-template-columns: auto 1fr auto; gap: 6px 10px; align-items: center; font-size: 0.8125rem; }
+  .controls input[type=range] { width: 100%; }
+  .controls label { font-family: ui-monospace, monospace; font-size: 0.75rem; }
+  .controls .row { grid-column: 1 / -1; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .controls .held { color: var(--word); }
+  output { font-variant-numeric: tabular-nums; font-family: ui-monospace, monospace; font-size: 0.75rem; min-width: 5ch; }
+  #caption { color: var(--muted); font-style: italic; }
+  #errors { margin: 0; padding: 0; list-style: none; font: 0.75rem/1.5 ui-monospace, monospace; }
+  #errors li { color: var(--bad); white-space: pre-wrap; padding: 6px 8px; border-left: 3px solid var(--bad); background: rgb(181 68 60 / 0.08); margin-bottom: 4px; cursor: pointer; }
+  #errors li.stale { cursor: default; }
+  #errors li .note { color: var(--muted); }
+  #status { color: var(--muted); font-size: 0.75rem; }
+  /* The dialogs: adding a file, and replacing your figure. */
+  dialog { border: 1px solid var(--rule); border-radius: 6px; background: var(--paper); color: var(--ink); padding: 14px 16px; max-width: min(26rem, calc(100vw - 2rem)); }
+  dialog::backdrop { background: rgb(0 0 0 / 0.3); }
+  dialog h2 { font-size: 0.875rem; margin: 0 0 8px; }
+  dialog p { margin: 0 0 10px; }
+  dialog input[type=text] { width: 100%; font-family: ui-monospace, monospace; padding: 4px 6px; border: 1px solid var(--rule); border-radius: 4px; background: var(--field); color: var(--ink); }
+  dialog .bad { color: var(--bad); font-size: 0.75rem; min-height: 1.1rem; margin: 4px 0 6px; }
+  dialog .buttons { display: flex; gap: 8px; justify-content: flex-end; }
+  /* The bars are compact, with their buttons in two menus, in a narrow window and on a short
+     touch screen, such as a phone held sideways, which keeps its two columns. */
+  @media (min-width: 801px) and (pointer: fine), (min-width: 801px) and (pointer: none), (min-width: 801px) and (min-height: 501px) {
+    #figure-menu { display: contents; }
+    #file-menu { display: flex; position: static; inset: auto; width: auto; height: auto; margin: 0; border: 0; background: none; overflow: visible; color: var(--muted); }
+  }
+  @media (max-width: 800px) {
+    /* A narrow window is the bar, the figure, and the editor under it, all on screen with nothing to
+       scroll but the editor's own text. The figure takes the height it needs, to a part of the
+       window, and the editor has the rest. The script puts the two in this order in the page as
+       well, so they're read and reached in the order they're seen. */
+    .app { grid-template-columns: 1fr; grid-template-rows: auto fit-content(60%) minmax(9rem, 1fr); }
+    .view { order: 1; gap: 6px; padding: 8px; border-bottom: 1px solid var(--rule); }
+    .editor { order: 2; border-right: 0; }
+    pencil-figure { max-width: min(100%, calc(38vh * var(--shape, 1.778))); max-width: min(100%, calc(38dvh * var(--shape, 1.778))); }
+    /* What it was drawn with stays to one line, which scrolls. */
+    #status { margin: 0; white-space: nowrap; overflow-x: auto; scrollbar-width: none; }
+    #status::-webkit-scrollbar { display: none; }
+  }
+  @media (max-width: 800px), (pointer: coarse) and (max-height: 500px) {
+    header { flex-wrap: nowrap; gap: 6px; padding: 6px 8px; }
+    header h1 { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+    header label { display: flex; align-items: center; gap: 4px; flex: 1 1 0; min-width: 0; }
+    #figure-pick, #style-pick { flex: 1; width: auto; min-width: 0; max-width: none; }
+    .more { display: block; }
+    .menu:popover-open { position: fixed; inset: auto; margin: 0; display: flex; flex-direction: column; flex-wrap: nowrap; align-items: stretch; gap: 6px; width: max-content; max-width: min(19rem, calc(100vw - 16px)); padding: 10px; border: 1px solid var(--rule); border-radius: 6px; background: var(--paper); color: var(--ink); box-shadow: 0 6px 24px rgb(0 0 0 / 0.25); font-size: 0.8125rem; }
+    .menu button { font-size: 0.8125rem; padding: 5px 10px; text-align: left; }
+    .menu a { padding: 3px 2px; }
+    .menu .hint, .menu .path { flex: none; margin: 0; white-space: normal; overflow-wrap: anywhere; text-align: left; color: var(--muted); }
+    .menu .spacer { display: none; }
+  }
+  /* A touch screen, which the script marks with `touch` on the root. The page never scrolls: the
+     app is what's visible of it, which a keyboard makes smaller (viewport.js), and only the
+     editor, the tabs and the keys' rows scroll. The figure is as big as the room left for it,
+     in the middle of it. The editor's text is 16px, below which Safari zooms the page when the
+     editor takes focus, and the Pencil keys come up under it (keyboard.js). */
+  .stage { display: contents; }
+  .touch, .touch body { overflow: hidden; overscroll-behavior: none; }
+  .touch .app { position: fixed; left: 0; top: 0; width: 100%; height: var(--app-h, 100dvh); transform: translateY(var(--app-top, 0px)); }
+  .touch .code { font-size: 16px; line-height: 1.5rem; min-height: 4.5rem; }
+  .touch dialog input[type=text] { font-size: 16px; }
+  .touch .view { display: grid; grid-template-rows: minmax(0, 1fr); grid-auto-rows: auto; align-content: stretch; }
+  .touch .stage { display: grid; place-items: center; min-height: 0; container-type: size; }
+  .touch pencil-figure { width: min(100cqw, 100cqh * var(--shape, 1.778)); max-width: none; margin: 0; }
+  /* Narrow, the figure has two parts of the height and the editor three, or what it needs to show
+     its keys and a few lines. */
+  /* The line under the editor is as tall empty as when it says how the caret's expression reads,
+     so nothing above it moves. */
+  .touch .reading:not(.pasted) { min-height: 27px; }
+  /* What the hint says about Esc, which on a touch screen goes to the keys first. */
+  .if-touch { display: none; }
+  .touch .if-touch { display: inline; }
+  .touch .if-mouse { display: none; }
+  /* The button that brings the keys back once they were put away, at every width, with a mouse as
+     on a touch screen. */
+  #keys-open:not([hidden]) { display: block; }
+  /* With a mouse the words and the symbols are under the editor, and its palette of keys is
+     shorter than a finger needs. They're in the editor's column, so its text gives up the room. */
+  html:not(.touch) .keyboard { --key-h: 30px; }
+  .files #keys-open + #file-more { margin-left: 4px; }
+  /* What's visible is short, under 500 px: a phone held sideways, or one with its system keyboard
+     up (viewport.js marks it). With the keys up, the editor gives up its own room first, down to
+     none: no line under it, no row of the file's tools, and no lines of text it must show. The
+     keys are a little shorter, and they and the row with the way back to them stay in view. */
+  .touch.keys-up .app[data-short] .code { min-height: 0; }
+  .touch.keys-up .app[data-short] .reading { display: none; }
+  .touch.keys-up .app[data-short] #file-menu:not(:popover-open) { display: none !important; }
+  .touch.keys-up .app[data-short] .keyboard { --key-h: 30px; }
+  @media (max-width: 800px) {
+    .touch .app { grid-template-rows: auto minmax(0, 2fr) minmax(min-content, 3fr); }
+    /* While the keys are up the editor shows five lines at least, and the figure has the rest of
+       the view to itself, with any error under it. (Its controls are in their own panel, which
+       the text takes the place of.) */
+    .touch.keys-up .code { min-height: calc(5 * 1.5rem + 16px); }
+    .touch.keys-up #status { display: none; }
+    /* Short, the editor has three parts to the figure's one. */
+    .touch.keys-up .app[data-short] { grid-template-rows: auto minmax(0, 1fr) minmax(min-content, 3fr); }
+  }
+  /* The switch between the text and the controls, in the bar, where the bars are compact. With a
+     mouse in a wide window, the controls are under the figure and there is no switch. */
+  .switch { display: none; flex: none; border: 1px solid var(--rule); border-radius: 4px; overflow: hidden; }
+  .switch button { border: 0; background: none; color: var(--muted); padding: 2px 8px; line-height: 1.3; cursor: pointer; }
+  .switch button + button { border-left: 1px solid var(--rule); }
+  .switch button[aria-selected=true] { background: var(--ink); color: var(--paper); }
+  .switch button:focus-visible { outline-offset: -2px; }
+  /* The controls' own panel scrolls when they don't fit, and nothing else does. */
+  .panel { min-width: 0; min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 10px 12px; }
+  .panel .controls { gap: 10px 12px; }
+  @media (max-width: 800px), (pointer: coarse) and (max-height: 500px) {
+    .switch { display: flex; }
+    /* With nothing to control, or before the figure says, it keeps its place in the bar and shows
+       nothing, so the menus beside it don't move as figures change. */
+    .switch[data-empty] { visibility: hidden; }
+  }
+  @media (max-width: 800px) {
+    .view { grid-row: 2; grid-column: 1; }
+    .editor, .panel { grid-row: 3; grid-column: 1; }
+    /* On a touch screen the controls scroll in their part of the window, which the row sized to
+       the text and its keys would undo. With a mouse the base rows already let them. */
+    .touch .app[data-panel=controls] { grid-template-rows: auto minmax(0, 2fr) minmax(0, 3fr); }
+  }
+  /* Held sideways, a phone keeps two columns: the figure on the right, and the text or the
+     controls on the left. */
+  @media (min-width: 801px) and (pointer: coarse) and (max-height: 500px) {
+    .editor, .panel { grid-row: 2; grid-column: 1; }
+    .view { grid-row: 2; grid-column: 2; }
+  }
+  /* On a phone the menus say what they are, and the words would leave them no room. */
+  @media (max-width: 480px) { header label .word { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); } }
+  /* A browser without popovers shows what's in them where it is, as rows that wrap. */
+  @supports not selector(:popover-open) {
+    .more { display: none !important; }
+    @media (max-width: 800px) { header { flex-wrap: wrap; } .menu { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; } }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1>Pencil playground</h1>
+    <label><span class="word">Figure</span> <select id="figure-pick"></select></label>
+    <label><span class="word">Style</span> <select id="style-pick"></select></label>
+    <div class="switch" id="panel-switch" role="tablist" aria-label="Under the figure" data-empty>
+      <button type="button" role="tab" id="tab-text" aria-controls="editor" aria-selected="true">Text</button>
+      <button type="button" role="tab" id="tab-controls" aria-controls="controls-panel" aria-selected="false" tabindex="-1">Controls</button>
+    </div>
+    <button class="more" id="figure-more" type="button" popovertarget="figure-menu" aria-label="Open, share and help" title="Open, share and help">☰</button>
+    <div class="menu" id="figure-menu" popover>
+      <button id="open" type="button" title="Open .pen and .style files from your computer">Open…</button>
+      <input id="open-files" type="file" multiple accept=".pen,.style" hidden>
+      <button id="share" type="button" title="Put every open file in a link, and copy it">Share</button>
+      <a id="alone" target="_top" title="Open the playground without the page around it" hidden>Open on its own</a>
+      <p class="hint">Edits recompile as you type and stay in this browser; Share puts the whole figure in a link. Undo and redo are the two keys at the end of the words, or <kbd>Cmd</kbd>/<kbd>Ctrl</kbd>+<kbd>Z</kbd> and <kbd>Shift</kbd> with it, each in the file you’re in. <span class="if-mouse">Under the editor are words that finish what you type, symbols, and <b>all keys</b> for the rest; ▾ puts them away, <b>keys</b> brings them back. <kbd>Esc</kbd> in the editor goes to them, and again leaves for the figure;</span><span class="if-touch">▾ puts the Pencil keys away for the visit; <b>keys</b> by the tabs brings them back. Typing on a keyboard leaves the words and the symbols. <kbd>Esc</kbd> in the editor goes to the keys while they’re up, and again leaves for the figure;</span> then <kbd>Space</kbd> plays, <kbd>←</kbd> <kbd>→</kbd> step beats.</p>
+    </div>
+  </header>
+  <section class="editor" id="editor" aria-label="Sources">
+    <div class="files">
+      <ul class="tabs" id="tabs" aria-label="Files"></ul>
+      <button class="add" id="add" type="button" aria-label="Add a file" title="Add a .style or .pen file">+</button>
+      <button class="more" id="keys-open" type="button" hidden aria-label="Show the Pencil keys" title="Show the Pencil keys">keys</button>
+      <button class="more" id="file-more" type="button" popovertarget="file-menu" aria-label="This file: copy, save and revert" title="This file: copy, save and revert">⋯</button>
+    </div>
+    <span id="said" role="status"></span>
+    <div class="tools menu" id="file-menu" popover>
+      <span class="path" id="path"></span>
+      <span class="spacer"></span>
+      <button id="copy" type="button">Copy</button>
+      <button id="save" type="button" title="Download this file">Save</button>
+      <button id="revert" type="button" title="Reload this file from disk, dropping your edits">Revert</button>
+      <button id="revert-all" type="button" title="Reload every file from disk">Revert all</button>
+    </div>
+    <div class="code">
+      <div class="gutter" id="gutter"></div>
+      <pre aria-hidden="true"><div class="inner" id="highlight"></div></pre>
+      <textarea id="source" spellcheck="false" autocapitalize="off" autocomplete="off" wrap="off" aria-label="Source"></textarea>
+    </div>
+    <p class="reading" id="reading" aria-live="polite"></p>
+    <p class="reading pasted" id="pasted" aria-live="polite"></p>
+    <div id="keyboard" hidden></div>
+  </section>
+  <!-- The figure's controls, on a narrow screen, in the editor's place: one or the other. -->
+  <section class="panel" id="controls-panel" role="tabpanel" aria-labelledby="tab-controls" hidden></section>
+  <section class="view" aria-label="Figure">
+    <div class="stage"><pencil-figure id="figure" tabindex="0"></pencil-figure></div>
+    <div class="controls">
+      <div id="clock" style="display: contents">
+        <button id="play" type="button">Pause</button>
+        <input id="time" type="range" min="0" max="10" step="0.001" value="0" aria-label="Time">
+        <output id="time-value">0.00 s</output>
+      </div>
+      <div class="row" id="beat-row" hidden>
+        <button id="back" type="button" aria-label="Previous beat">◀</button>
+        <output id="beat-value"></output>
+        <button id="next" type="button" aria-label="Next beat">▶</button>
+        <span id="caption"></span>
+      </div>
+      <div id="params" style="display: contents"></div>
+    </div>
+    <ul id="errors" role="alert"></ul>
+    <p id="status">Starting…</p>
+  </section>
+</div>
+<dialog id="add-dialog" aria-labelledby="add-title">
+  <form method="dialog" id="add-form">
+    <h2 id="add-title">Add a file</h2>
+    <p>A <code>.style</code> is added as the last sheet. A <code>.pen</code> is one the document can <code>use</code>.</p>
+    <label for="add-name">Name</label>
+    <input id="add-name" type="text" spellcheck="false" autocapitalize="off" autocomplete="off" placeholder="mine.style" aria-describedby="add-bad">
+    <p class="bad" id="add-bad" aria-live="polite"></p>
+    <div class="buttons">
+      <button type="button" value="cancel" id="add-cancel">Cancel</button>
+      <button type="submit" value="add">Add</button>
+    </div>
+  </form>
+</dialog>
+<dialog id="replace-dialog" aria-labelledby="replace-title" aria-describedby="replace-text">
+  <form method="dialog">
+    <h2 id="replace-title">Replace your figure?</h2>
+    <p id="replace-text"></p>
+    <div class="buttons">
+      <button type="submit" value="keep" autofocus>Keep mine</button>
+      <button type="submit" value="replace">Replace it</button>
+    </div>
+  </form>
+</dialog>
+<script type="module" src="playground.js"></script>
+</body>
+</html>
