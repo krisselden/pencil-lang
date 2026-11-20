@@ -112,7 +112,7 @@ test.describe('labels', () => {
     expect(words.italic).toBe(false);
     expect((words.width / words.size) * 1000).toBeGreaterThan(TURN * 0.98);
     expect((words.width / words.size) * 1000).toBeLessThan(TURN * 1.02);
-    const e = turn.runs.find((r) => r.text === '𝑒');
+    const e = turn.runs.find((r) => r.text.endsWith('𝑒'));
     expect(e.formula).toBe(true);
     expect(e.left).toBeGreaterThan(words.right - 1);
     // Its exponent is a real superscript: smaller, and above the line.
