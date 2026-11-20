@@ -595,6 +595,25 @@ Tests hold every mark in the IR to the same value under all the sheets, the same
   their own palettes. A panel can't be hidden or moved by a sheet. Sheets are picked by the page, since the language has no
   media query.
 
+## What's drawn with nothing said
+
+On 2026-11-19 Kris found that a figure showed nothing until a sheet styled it: `corpus/005-tangents/tangents.pen` with an
+empty sheet was its five letters on white, and his hearts labels under the glow look came out as raw `z_b = 1.48e^(1.12i)` in
+sans. "I think it is too confusing not to have default styles." So a mark that would paint nothing now gets its type's
+default paint in the default ink, `stroke: none` and `fill: none` hide a paint, and a value's mathematics is laid out
+whatever the label's font (`language.md`, "What's drawn with nothing said"; decisions of 2026-11-19).
+
+- **A census first, from the compiler.** Every look of every figure, the explainer's, and the sheets the element's test pages
+  load were resolved and each mark's paint read back. Two corpus marks painted nothing, both in the hearts' glow look: the
+  ties to the foci, which the plain look draws dashed. The glow sheet says `stroke: none` for them now. Four test pages
+  (leader, panels, plane, keyed) had 11 unstyled marks, which now draw. With no sheet at all, the 17 documents' 231 marks
+  besides text were all invisible.
+- **Held by tests.** `crates/pencil-core/tests/defaults.rs` resolves every look twice, once behind a sheet that marks what no
+  rule writes, and fails if any corpus mark gets a paint its sheets didn't write, or text whose ink isn't the black it was.
+  It also builds every corpus document with no sheet and requires every mark to paint.
+- **Left to look at:** a `fill` on a mark that never draws one (a segment, an arrow, a parametric curve, an outline) is
+  accepted and does nothing, and a mark with only that gets its default stroke. It says nothing about it yet.
+
 ## Narration timing
 
 `lab/narration`, run on 2026-11-10 against the explainer (`limacon.txt`), first sections 1 to 3 and then all of it. The question was whether a synthesized

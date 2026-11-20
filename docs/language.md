@@ -337,9 +337,8 @@ Terms are separated by spaces. Nothing is diffed: identity is what's written.
 - When a copy goes, it moves into a term of the same name at the same place: factoring.
 
 Each term is a mark named `work.z.1`, with the tags `term`, `work` and `z`, so `style term.a { fill: blue }`
-colors every `a`. A term is mathematics, so under `font: math` it's laid out as a label's `$…$` is, and `x^2` as a term
-has a real exponent (see Mathematics in labels). In any other font it's text, which a renderer measures, and core says
-where each term goes.
+colors every `a`. A term is mathematics, so it's laid out as a label's `$…$` is, whatever its `font`, and `x^2` as a term
+has a real exponent (see Mathematics in labels). Core says where each term goes.
 
 ### Mathematics in labels
 
@@ -364,7 +363,8 @@ notation is Pencil's own, the one a `let` is written in, with parentheses to gro
 - **A fraction stacks at the label's own size.** Inside a superscript or a subscript, or inside another fraction, it stays on the
   line with a slash, where a stacked one would be too small to read. `∕` (U+2215) or `÷` keeps one on the line anywhere.
 - **Some text is mathematics without being marked:** an expression's terms, and what a label writes about a value, its
-  `name`, `expr` and `value`. Under `font: math` they're laid out as a span is. In any other font they're text, as before.
+  `name`, `expr` and `value`. They're laid out as a span is, whatever the label's `font`, which only sets its words. A value
+  written into a label's own words, as `"+{q}"`, is part of the words.
 - **A dollar sign is `$$`,** and a `$` that nothing closes is an error.
 - **What it can't typeset:** matrices, lines aligned on their `=`, limits above and below a `∑` or `∫` (they sit beside it, as a
   subscript and a superscript), accents such as hats, bars and vector arrows, and bold. A tall root or bracket is the font's
@@ -595,7 +595,8 @@ On a page, `player.value` reads an absent binding as `NaN`.
 `style selector, selector { property: value; … }`. Later rules win, across files, with the
 document's own rules last. There's no specificity (SPEC/15). Any property can be `none`, which
 takes back what an earlier rule set, as in CSS: after `style ray { dash: 10px }`,
-`style base { dash: none }` draws that one ray solid, and `stroke: none` draws no line.
+`style base { dash: none }` draws that one ray solid. `stroke: none` and `fill: none` say more: no paint, as in SVG, so
+`stroke: none` draws no line and nothing draws one by default (see What's drawn with nothing said).
 
 **A style sheet can name values** with `let ink = rgb(28, 27, 25)`. The last sheet to define a name decides what it
 means everywhere, including in rules written before it, as a CSS variable does. So `corpus/theme.style` holds a theme's
@@ -647,9 +648,9 @@ pixels, so they can't be in `em`.
 
 | Property | Applies to | Meaning |
 |---|---|---|
-| `fill` | Regions, dots, labels, facets | A color. A field's `fill` needs a facet. |
+| `fill` | Regions, dots, labels, facets | A color, or `none` for no fill. A field's `fill` needs a facet. A label or a term with `fill: none` isn't drawn. |
 | `fill_opacity` | Anything filled | Scales only the fill, on top of `opacity`. |
-| `stroke` | Curves, lines, regions, dots | A color. |
+| `stroke` | Curves, lines, regions, dots | A color, or `none` for no line. |
 | `width` | Strokes | A length. Can vary along the stroke with `self.t`, and with `self.z` on a curve of points in space. |
 | `head`, `head_span` | Curves | With `head: 13px`, a curve ends in an arrowhead. `head_span: 1` holds it to 60% of the last 1 of the curve's parameter, so it can't dwarf a spiral's tight turns. |
 | `dash`, `gap` | Lines | Lengths. A loop gets a whole number of dashes, stretched to fit. `dash: 0`, like `dash: none`, is solid. |
@@ -663,7 +664,7 @@ pixels, so they can't be in `em`.
 | `radius` | Dots, circles, outlines | A length. A dot's size, a cap on a collection's circles, or an outline's least half-size. |
 | `size` | Labels | A length, usually in `em`. Defaults to 1 em. |
 | `halo` | Labels | Its full width, in the paper's color. |
-| `font` | Labels | A role: `sans` (default) or `math`, an italic for names and notes. Both are the package's own fonts, Libertinus Sans and Libertinus Serif Italic, the same files in the command and on a page, with Libertinus Math behind each for the symbols a text face lacks and for a label's mathematics. Under `math`, a term and what a label writes about a value are laid out as mathematics. |
+| `font` | Labels | A role: `sans` (default) or `math`, an italic for names and notes. Both are the package's own fonts, Libertinus Sans and Libertinus Serif Italic, the same files in the command and on a page, with Libertinus Math behind each for the symbols a text face lacks and for a label's mathematics. It sets a label's words: its mathematics is laid out the same in either. |
 | `place` | Labels | `fixed` (default) at its `offset`, or `settle`, tied there by a spring and pushed off what's drawn and other labels. |
 | `format` | Labels | How a point in its text is written: `point` (default) as `(−0.50, −0.87)`, `complex` as `−0.50 − 0.87i`, or `polar` as `e^(−2πi/3)`, with an angle that's a fraction of π up to twelfths written as one. A point and a complex number are one thing in Pencil, so which it reads as is the sheet's. |
 | `text` | Labels | What a label says about the value it's about, as parts joined by `=`: `caption` (its own words, or the value's name if it has none), `name`, `expr` (the expression as written: a `let`'s right side, or what's between the braces) and `value`. `text: expr = value` is `σ(2) = −0.50 − 0.87i`, `text: name = value` is `root = −0.50 − 0.87i`, and `text: caption` is the words alone. Parts that come out the same are said once, so a param's `expr = value` is `q = 3`. Without it, a label says its own words, or its value if it has none. A label that isn't about one value says its words whatever this is. |
@@ -672,6 +673,31 @@ pixels, so they can't be in `em`.
 | `distance` | Labels | How far a label written with `away` sits from its point. Defaults to 16/17 em. |
 | `show` | Any mark | Draws it only while this is above 0, decided per frame. Can also read `view.width`, the view's width in world units, for zoom levels. |
 | `trim` | Curves, lines, arrows, circles | How much of the stroke is drawn, from its start: 0 to 1 of a curve's parameter, or of a straight line's length. An arrow grows from its tail. A circle starts due east of its center and runs counterclockwise, and is drawn as a line to be trimmed. A collection of curves can trim each one with its variables. A traced curve, a region, dots and circles in a collection have no start, so they can't. |
+
+### What's drawn with nothing said
+
+A figure with no sheet shows its marks. After the sheets are applied, a mark that would paint nothing gets its type's
+default paint, in the default ink:
+
+| Mark | Default paint |
+|---|---|
+| `curve`, `circle`, `line`, `ray`, `segment`, `decoration`, `arrow`, `curves`, `circles`, `outline` | A stroke, 1 px wide, with butt caps. An arrow's head is 14 px. |
+| `region` | Its outline, as a stroke. |
+| `dot`, `dots` | A fill, 3 px in radius. |
+| `label`, `term` | Its text in the ink. A label is otherwise as it is with nothing said: sans, 1 em, no halo, at its offset. |
+
+- **A mark that paints anything is left as written.** A side's fill counts, so `c::inside { fill: blue }` alone draws no line
+  around `c`. A `fill` on a mark that never draws one, such as a segment, doesn't count, so the segment still gets its stroke.
+- **What a sheet does write picks the paint and is kept.** `width`, `dash`, `gap`, `head`, `trim` or `ticks` alone ask for a
+  stroke, on a dot too, so `style c { width: 3px }` is a 3 px line in the ink. `radius` or `fill_opacity` alone ask a dot or a
+  region for a fill.
+- **`stroke: none` and `fill: none` keep that paint off,** and a mark is hidden by writing `none` for its default paint:
+  `stroke: none` for a line, `fill: none` for a dot. `stroke: none` on a dot that has nothing else still fills it, as SVG's
+  would. `show: 0` makes a mark absent instead, so labels don't settle around it.
+- **Text takes the ink too:** a label, a term, a panel's title and its formula with no `fill`, and the caption.
+- **The ink is the sheets' `ink`,** if one names a color that, as `corpus/theme.style` does. Otherwise it's black or white,
+  whichever contrasts more with the paper, by WCAG's contrast ratio: black on the default white paper. A paper that changes is
+  judged frame by frame, so the ink turns over when the paper's luminance passes about 0.18.
 
 ### A figure as SVG
 

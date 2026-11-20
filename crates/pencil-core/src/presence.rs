@@ -227,7 +227,9 @@ mod tests {
     const INK: &str = "
         style chord, base { stroke: black; width: 4px }
         style through { stroke: black; width: 2px }
-        style P, Q { fill: black; radius: 6px }";
+        style P, Q { fill: black; radius: 6px }
+        // What the chord is cut from isn't drawn.
+        style c, l { stroke: none }";
 
     fn with(a: f64) -> Inputs {
         Inputs {

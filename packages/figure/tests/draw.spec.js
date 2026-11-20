@@ -25,6 +25,15 @@ test.describe('a figure loads and draws', () => {
     });
   }
 
+  // `plane.pen` has three dots and no sheet. Each gets its default paint, a dot in the ink.
+  test('a figure with no sheet draws its marks', async ({ page }) => {
+    await open(page, 'plane');
+    await drawn(page);
+    expect(await onFigure(page, (f) => f.getAttribute('sheets'))).toBeNull();
+    const canvas = page.locator('#figure canvas');
+    await expect.poll(() => colorsIn(page, canvas), { message: 'the canvas should not be blank' }).toBeGreaterThan(1);
+  });
+
   test('a figure that cannot load says so with an error event', async ({ page }) => {
     await page.goto('/packages/figure/tests/pages/bounds.html');
     await drawn(page);

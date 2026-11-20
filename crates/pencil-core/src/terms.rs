@@ -43,13 +43,10 @@ impl TextWidths for Estimate {
     }
 }
 
-/// How wide a term is. A term is mathematics, and under `font: math` it's laid out as it, so its
-/// width is the layout's. In any other font it's the renderer's text.
-fn term_width(text: &str, size: f64, font: Font, widths: &dyn TextWidths) -> f64 {
-    match font {
-        Font::Math => formula::lay_math(text, size).width,
-        Font::Sans => widths.width(text, size, font),
-    }
+/// How wide a term is. A term is mathematics, laid out as it whatever its font, so its width is
+/// the layout's.
+fn term_width(text: &str, size: f64) -> f64 {
+    formula::lay_math(text, size).width
 }
 
 /// What a term prints as: `z.1` is a copy of `z`.
@@ -87,7 +84,6 @@ struct Scope<'a> {
     width: u32,
     height: u32,
     dpr: f64,
-    widths: &'a dyn TextWidths,
     /// The mark for each term of this expression.
     marks: HashMap<&'a str, usize>,
 }
@@ -105,16 +101,13 @@ impl Scope<'_> {
         }
     }
 
-    fn size_and_font(&self, key: &str) -> Result<(f64, Font), Error> {
-        let Some(mark) = self.marks.get(key) else {
-            return Ok((
-                frame::length_or_em(&None, DEFAULT_LABEL_SIZE, self.env)?,
-                Font::default(),
-            ));
-        };
-        let style = &self.figure.styles.marks[*mark];
-        let size = frame::length_or_em(&style.size, DEFAULT_LABEL_SIZE, self.env)?;
-        Ok((size, style.font))
+    fn size(&self, key: &str) -> Result<f64, Error> {
+        let style = self.marks.get(key).map(|&i| &self.figure.styles.marks[i]);
+        frame::length_or_em(
+            &style.and_then(|s| s.size.clone()),
+            DEFAULT_LABEL_SIZE,
+            self.env,
+        )
     }
 
     fn layout(&self, pieces: &[Piece]) -> Result<HashMap<String, Laid>, Error> {
@@ -138,14 +131,14 @@ impl Scope<'_> {
             let (dx, dy) = frame::device(x, y, self.view, self.width, self.height);
             let mut advances = Vec::with_capacity(piece.keys.len());
             for key in &piece.keys {
-                let (size, font) = self.size_and_font(key)?;
+                let size = self.size(key)?;
                 let text = self.text(key);
                 let pad = if OPERATORS.contains(&text) {
                     OPERATOR_PAD * size
                 } else {
                     0.0
                 };
-                advances.push((term_width(text, size, font, self.widths), pad));
+                advances.push((term_width(text, size), pad));
             }
             let total: f64 = advances.iter().map(|(w, pad)| w + 2.0 * pad).sum();
             let mut left = dx + ox * self.dpr
@@ -258,7 +251,6 @@ pub fn labels(
     height: u32,
     dpr: f64,
     shown: &[bool],
-    widths: &dyn TextWidths,
 ) -> Result<Vec<Label>, Error> {
     let mut out = Vec::new();
     for (index, expression) in figure.scene.expressions.iter().enumerate() {
@@ -281,7 +273,6 @@ pub fn labels(
             width,
             height,
             dpr,
-            widths,
             marks,
         };
         let terms = frame_terms(&scope, expression)?;
@@ -297,23 +288,20 @@ pub fn labels(
             let Some((at, strength)) = terms.get(key) else {
                 continue;
             };
-            if *e != index || !shown[i] || *strength <= 0.0 {
+            let style = &figure.styles.marks[i];
+            if *e != index || !shown[i] || *strength <= 0.0 || style.no_fill {
                 continue;
             }
-            let style = &figure.styles.marks[i];
             let opacity = match &style.opacity {
                 Some(o) => eval::real(o, env)?.clamp(0.0, 1.0),
                 None => 1.0,
             };
-            let size = scope.size_and_font(key)?.0;
+            let size = scope.size(key)?;
             out.push(Label {
                 id: mark.id.clone(),
-                laid: (style.font == Font::Math).then(|| formula::lay_math(text, size)),
+                laid: Some(formula::lay_math(text, size)),
                 // Marked as the mathematics it is, as a label's own would be.
-                text: match style.font {
-                    Font::Math => format!("${text}$"),
-                    Font::Sans => text.clone(),
-                },
+                text: format!("${text}$"),
                 x: at[0],
                 y: at[1],
                 size,
@@ -390,7 +378,12 @@ mod tests {
           empty
         }";
 
-    /// A fixed width, so positions are easy to check by hand.
+    /// How wide a term is laid out, as mathematics.
+    fn w(text: &str, size: f64) -> f64 {
+        formula::lay_math(text, size).width
+    }
+
+    /// A fixed width for words, which a term never uses: its width is its layout's.
     struct Ten;
     impl TextWidths for Ten {
         fn width(&self, text: &str, _size: f64, _font: Font) -> f64 {
@@ -426,10 +419,13 @@ mod tests {
     fn a_state_lays_out_left_to_right_and_holds_at_whole_steps() {
         let two = at(2.0);
         let (a, plus, b) = (find(&two, "e.a"), find(&two, "e.+"), find(&two, "e.b"));
-        // a is 10 wide from 100. + has a 2.3 pad each side, then b.
-        assert_eq!(a.x, 105.0);
-        assert!((plus.x - 117.3).abs() < 1e-9, "{}", plus.x);
-        assert!((b.x - 129.6).abs() < 1e-9, "{}", b.x);
+        // a starts at 100. + has a 2.3 pad each side, then b.
+        let (wa, wp, wb) = (w("a", 10.0), w("+", 10.0), w("b", 10.0));
+        assert!((a.x - (100.0 + wa / 2.0)).abs() < 1e-9, "{}", a.x);
+        let at_plus = 100.0 + wa + 2.3 + wp / 2.0;
+        assert!((plus.x - at_plus).abs() < 1e-9, "{}", plus.x);
+        let at_b = 100.0 + wa + 2.3 + wp + 2.3 + wb / 2.0;
+        assert!((b.x - at_b).abs() < 1e-9, "{}", b.x);
         assert_eq!((a.opacity, plus.opacity, b.opacity), (1.0, 1.0, 1.0));
         assert_eq!(a.y, 200.0);
     }
@@ -459,10 +455,9 @@ mod tests {
     }
 
     /// A term fading in travels with the rest, not ahead of it at its final spot.
-    /// A term is mathematics. Under `font: math` core lays it out and knows its width, and in
-    /// any other font it's the renderer's text.
+    /// A term is mathematics, so core lays it out and knows its width, whatever its font.
     #[test]
-    fn a_term_in_the_math_font_is_laid_out() {
+    fn a_term_is_laid_out_as_mathematics_in_any_font() {
         let doc = "viewport { x: 0..400, y: 0..400 } style figure { width: 400px }
             param step = 1 in 0..1
             place one = (100, 100)
@@ -491,8 +486,8 @@ mod tests {
         let apart = plus_left - (square.x + laid.width / 2.0);
         assert!((apart - OPERATOR_PAD * 20.0).abs() < 1e-9, "{apart}");
         let sans = labels("style term { font: sans; size: 20px }");
-        let square = find(&sans, "e.x^2");
-        assert_eq!((square.text.as_str(), &square.laid), ("x^2", &None));
+        let in_sans = find(&sans, "e.x^2");
+        assert_eq!((&in_sans.text, &in_sans.laid), (&square.text, &square.laid));
     }
 
     #[test]
@@ -514,8 +509,9 @@ mod tests {
             .unwrap()
             .labels;
         let (a, b) = (find(&labels, "e.a"), find(&labels, "e.b"));
-        // Always one width apart, wherever they are on the way.
-        assert!((b.x - a.x - 10.0).abs() < 1e-9, "{} and {}", a.x, b.x);
+        // Always as far apart as at rest, wherever they are on the way.
+        let apart = (w("a", a.size) + w("b", b.size)) / 2.0;
+        assert!((b.x - a.x - apart).abs() < 1e-9, "{} and {}", a.x, b.x);
         assert_eq!(a.y, b.y);
     }
 
@@ -543,10 +539,11 @@ mod tests {
         let (z, copy) = (find(&start, "e.z"), find(&start, "e.z.1"));
         assert!((copy.x - z.x).abs() < 1.0 && (copy.y - z.y).abs() < 1.0);
         assert_eq!(copy.opacity, 1.0);
-        assert_eq!(copy.text, "z");
+        assert_eq!(copy.words(), "z");
         let end = labels(2.0);
-        assert_eq!(find(&end, "e.z.1").x, 305.0);
-        assert_eq!(find(&end, "e.z").x, 105.0);
+        let half = w("z", copy.size) / 2.0;
+        assert!((find(&end, "e.z.1").x - (300.0 + half)).abs() < 1e-9);
+        assert!((find(&end, "e.z").x - (100.0 + half)).abs() < 1e-9);
     }
 
     /// Factoring: z.2 moves into z.1, and z at another place has nothing to do with it.
@@ -576,7 +573,7 @@ mod tests {
         assert_eq!(two.opacity, 1.0);
         assert!(!has(&labels(2.0), "e.z.2"));
         // Parens fade in, riding with what they enclose.
-        assert_eq!(find(&near_end, "e.(").text, "(");
+        assert_eq!(find(&near_end, "e.(").words(), "(");
         assert!(find(&near_end, "e.(").opacity > 0.99);
     }
 
@@ -680,7 +677,7 @@ mod tests {
             .unwrap()
             .labels;
         let (first, second) = (find(&labels, "e.+"), find(&labels, "e.+.1"));
-        assert_eq!((first.text.as_str(), second.text.as_str()), ("+", "+"));
+        assert_eq!((first.words(), second.words()), ("+".into(), "+".into()));
         assert!(first.x < second.x);
         assert_eq!((first.opacity, second.opacity), (1.0, 1.0));
     }
@@ -712,11 +709,12 @@ mod tests {
         };
         let one = labels(1.0);
         let (hub, slow) = (find(&one, "e.hub"), find(&one, "e.slow"));
-        assert_eq!((hub.text.as_str(), slow.text.as_str()), ("a²", "2ab"));
-        // Measured by what it prints: `a²` is two characters wide, and `2ab` three.
+        assert_eq!((hub.words(), slow.words()), ("a²".into(), "2ab".into()));
+        // Measured by what it prints: `a²`, not `hub`.
         let plus = find(&one, "e.+");
+        let apart = (w("a²", 10.0) + w("+", 10.0)) / 2.0 + 2.3;
         assert!(
-            (plus.x - hub.x - 10.0 - 2.3 - 5.0).abs() < 1e-9,
+            (plus.x - hub.x - apart).abs() < 1e-9,
             "{} {}",
             plus.x,
             hub.x
@@ -727,7 +725,7 @@ mod tests {
         assert_eq!(find(&half, "e.slow").opacity, 1.0);
         let two = labels(2.0);
         assert!(find(&two, "e.slow").x < find(&two, "e.hub").x);
-        assert_eq!(find(&two, "e.slow.1").text, "2ab");
+        assert_eq!(find(&two, "e.slow.1").words(), "2ab");
         // Its name is a tag, so a beat can focus it with what it names.
         let mark = f.scene.marks.iter().find(|m| m.id == "e.slow").unwrap();
         assert!(mark.tags.contains(&"slow".to_string()) && mark.tags.contains(&"2ab".to_string()));

@@ -647,8 +647,8 @@ pub fn drag_value(
 /// as `expr = value`. A label with no words of its own shows its value. Parts that come out
 /// the same aren't said twice, so a param's `name = expr = value` is `q = 3`.
 ///
-/// A value's name, its expression and the value are mathematics, so under `font: math` they're
-/// marked as it, and laid out as a label's own `$…$` is.
+/// A value's name, its expression and the value are mathematics, so they're marked as it and
+/// laid out as a label's own `$…$` is, whatever the label's font. The font is for its words.
 fn label_text(
     text: &str,
     values: &[Shown],
@@ -690,12 +690,11 @@ fn label_text(
             said.push(piece);
         }
     }
-    let math = style.font == Font::Math;
     let mut out = String::new();
     // Whether a span of mathematics is open. An equals sign between two pieces of it is in it.
     let mut open = false;
     for (i, (piece, is_math)) in said.iter().enumerate() {
-        let marked = math && *is_math;
+        let marked = *is_math;
         if open && !marked {
             out.push('$');
         }
@@ -1114,7 +1113,8 @@ pub fn prepare_with(
         else {
             continue;
         };
-        if !shown[i] {
+        // Text with `fill: none` has no paint.
+        if !shown[i] || style.no_fill {
             continue;
         }
         let (x, y) = pair(at, &env)?;
@@ -1171,7 +1171,7 @@ pub fn prepare_with(
     }
 
     labels.extend(terms::labels(
-        figure, &env, view, width, height, dpr, &shown, widths,
+        figure, &env, view, width, height, dpr, &shown,
     )?);
 
     let mut prepared = Prepared {
@@ -1235,7 +1235,7 @@ mod tests {
             let sheet = format!("style label {{ format: complex }} {sheet}");
             let figure = crate::build(doc, &[&sheet]).unwrap();
             let prepared = prepare(&figure, &Inputs::at(0.0), 100, 100, 1.0).unwrap();
-            prepared.labels.iter().map(|l| l.text.clone()).collect()
+            prepared.labels.iter().map(|l| l.words()).collect()
         };
         // With no `text`, a label says its own words, or its value if it has none.
         assert_eq!(shown(""), ["−0.50 − 0.87i", "arms", "2", "3 of them"]);
@@ -1266,7 +1266,7 @@ mod tests {
         )
         .unwrap();
         let prepared = prepare(&figure, &Inputs::at(0.0), 100, 100, 1.0).unwrap();
-        assert_eq!(prepared.labels[0].text, "P = (1, 2)");
+        assert_eq!(prepared.labels[0].words(), "P = (1, 2)");
         // With no label beside it, a dot still can't take a label's property.
         let err = crate::build("let P = (1, 2)\ndot P", &["style P { text: name }"]).unwrap_err();
         assert!(err.message.contains("isn't a label"), "{err}");
@@ -1371,9 +1371,9 @@ mod tests {
         assert!(err.message.contains("no `$` closes"), "{err}");
     }
 
-    /// What Pencil writes about a value is mathematics, and `font: math` sets it as it.
+    /// What Pencil writes about a value is mathematics, set as it whatever the label's font.
     #[test]
-    fn a_values_label_is_mathematics_in_the_math_font() {
+    fn a_values_label_is_mathematics_in_any_font() {
         let doc = "viewport { x: -2..2, y: -2..2 }
                    let root = (-0.5, sqrt(3)/2)
                    label root at root
@@ -1388,12 +1388,9 @@ mod tests {
         let laid = math.laid.as_ref().expect("laid out");
         let (base, power) = (&laid.runs[0], laid.runs.last().unwrap());
         assert!(power.size < base.size && power.y < base.y, "{laid:?}");
-        // In any other font it's the text it always was, and so are a label's own words.
+        // In sans it's laid out the same: the font is for a label's own words, which aren't.
         let sans = label_of(doc, &sheet("sans"), "root");
-        assert_eq!(
-            (sans.text.as_str(), &sans.laid),
-            ("root = e^(2πi/3)", &None)
-        );
+        assert_eq!((&sans.text, &sans.laid), (&math.text, &math.laid));
         let note = label_of(doc, &sheet("math"), "note");
         assert_eq!((note.text.as_str(), &note.laid), ("the root", &None));
     }

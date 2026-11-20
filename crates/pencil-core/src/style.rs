@@ -226,6 +226,10 @@ pub struct MarkStyle {
     /// What a label says about its value, as `expr = value`. `None` is its caption, or its
     /// value if it has no words of its own.
     pub text: Option<Vec<TextPart>>,
+    /// A sheet wrote `stroke: none`: no stroke, and none by default either.
+    pub no_stroke: bool,
+    /// A sheet wrote `fill: none`, on the mark or a side of it: no fill, and none by default.
+    pub no_fill: bool,
 }
 
 impl MarkStyle {
@@ -426,6 +430,7 @@ pub fn type_of(e: &Expr, names: &[&str], spatial: bool) -> Result<Ty, String> {
             match (head.as_str(), tys.as_slice()) {
                 ("Oklch" | "Rgb", [Real, Real, Real]) => Ok(Color),
                 ("Hue", [Real]) => Ok(Color),
+                ("Contrast", [Color]) => Ok(Color),
                 ("Mix", [Color, Color, Real]) => Ok(Color),
                 (
                     "Mix" | "Clamp" | "Smoothstep" | "Reveal" | "IfNonnegative",
@@ -930,6 +935,18 @@ pub fn resolve_keeping(
             });
         }
     }
+    // What's drawn with nothing said: a mark with nothing to paint gets its default paint, and
+    // text and titles with no fill get the ink.
+    let ink = default_ink(sheet_names.get("ink"), styled.paper.as_ref(), &names);
+    for (mark, style) in scene.marks.iter().zip(&mut styled.marks) {
+        complete(mark, style, &ink);
+    }
+    for fill in [&mut styled.title_fill, &mut styled.formula_fill] {
+        fill.get_or_insert_with(|| ink.clone());
+    }
+    if let Some(caption) = &mut styled.caption {
+        caption.fill.get_or_insert_with(|| ink.clone());
+    }
     // A dot in a collection is drawn by its stroke, in the color a dot is filled with.
     for (mark, style) in scene.marks.iter().zip(&mut styled.marks) {
         if let Form::Many {
@@ -961,6 +978,90 @@ pub fn resolve_keeping(
         }
     }
     Ok(styled)
+}
+
+/// The color a mark is drawn in when its sheets don't say: the sheets' `ink`, if one names a
+/// color by that name, or else black or white, whichever stands out more against the paper. A
+/// paper that changes is judged frame by frame, by `Contrast`, which the CPU and the shader both
+/// evaluate.
+pub fn default_ink(ink: Option<&Expr>, paper: Option<&Expr>, names: &[&str]) -> Expr {
+    if let Some(ink) = ink.filter(|ink| type_of(ink, names, false) == Ok(Ty::Color)) {
+        return ink.clone();
+    }
+    let Some(paper) = paper else {
+        return Expr::sym("black");
+    };
+    let mut fixed = true;
+    paper.visit_syms(&mut |s| fixed &= COLORS.contains(&s));
+    let contrast = Expr::app("Contrast", vec![paper.clone()]);
+    if fixed && let Ok(c) = crate::eval::color(&contrast, &crate::eval::Env::new(0.0)) {
+        return Expr::sym(if c[0] > 0.5 { "white" } else { "black" });
+    }
+    contrast
+}
+
+/// Gives a mark that would paint nothing the paint its sheets' properties belong to, or its
+/// type's own: a stroke, an outline for a region, and a fill for a dot. A property that only a
+/// stroke has, such as `width`, asks for a stroke, and `radius` or `fill_opacity` for a fill. A
+/// paint written `none` stays off. A mark that paints anything is left as it is, and a label or
+/// a term only gets the ink for its text.
+fn complete(mark: &crate::ir::Mark, style: &mut MarkStyle, ink: &Expr) {
+    let form = &mark.form;
+    if matches!(form, Form::Label { .. } | Form::Term { .. }) {
+        if style.negative.is_none() && !style.no_fill {
+            style.negative = Some(ink.clone());
+        }
+        return;
+    }
+    let dots = matches!(
+        form,
+        Form::Many {
+            shape: Shape::Dots(_),
+            ..
+        }
+    );
+    // What's filled with a plain `fill`, and what's drawn by its sides.
+    let filled = dots || matches!(form, Form::Dot(_) | Form::Region(_));
+    let sided = filled
+        || matches!(form, Form::Field { .. })
+        || matches!(
+            form,
+            Form::Many {
+                shape: Shape::Circles { .. } | Shape::Cycles { .. },
+                ..
+            }
+        );
+    if style.stroke.is_some() || (sided && style.has_sides()) {
+        return;
+    }
+    let stroked = [
+        &style.width,
+        &style.dash,
+        &style.gap,
+        &style.head,
+        &style.head_span,
+        &style.trim,
+        &style.ticks,
+        &style.tick,
+    ]
+    .iter()
+    .any(|p| p.is_some());
+    let mut stroke = stroked && !style.no_stroke;
+    let mut fill =
+        filled && (style.radius.is_some() || style.fill_opacity.is_some()) && !style.no_fill;
+    if !stroke && !fill {
+        if dots || matches!(form, Form::Dot(_)) {
+            fill = !style.no_fill;
+        } else {
+            stroke = !style.no_stroke;
+        }
+    }
+    if stroke {
+        style.stroke = Some(ink.clone());
+    }
+    if fill {
+        style.negative = Some(ink.clone());
+    }
 }
 
 /// A layout value is one number that holds for the whole figure, so it can't read a param.
@@ -1297,6 +1398,13 @@ fn apply(
                 return Err(format!("unknown property `{prop}`"));
             }
         };
+        // A paint written `none` is no paint, which a default doesn't fill in. Every other
+        // property's `none` only takes back what an earlier rule set.
+        match prop.as_str() {
+            "stroke" => target.no_stroke = clear,
+            "fill" => target.no_fill = clear,
+            _ => {}
+        }
         *slot = if clear { None } else { Some(value.clone()) };
     }
     Ok(())
@@ -1640,20 +1748,21 @@ mod tests {
 
     #[test]
     fn selectors_match_names_types_and_tags() {
+        // What a rule doesn't reach is drawn in the default ink, black.
         let f = build(BEATS, &["style circle { stroke: white }"]).unwrap();
-        let has = |i: usize| f.styles.marks[i].stroke.is_some();
+        let has = |i: usize| f.styles.marks[i].stroke == Some(Expr::sym("white"));
         assert!(has(0) && !has(1) && has(2), "by type");
 
         let f = build(BEATS, &["style .aux { stroke: white }"]).unwrap();
-        let has = |i: usize| f.styles.marks[i].stroke.is_some();
+        let has = |i: usize| f.styles.marks[i].stroke == Some(Expr::sym("white"));
         assert!(!has(0) && has(1) && !has(2), "by tag");
 
         let f = build(BEATS, &["style circle.blue { stroke: white }"]).unwrap();
-        let has = |i: usize| f.styles.marks[i].stroke.is_some();
+        let has = |i: usize| f.styles.marks[i].stroke == Some(Expr::sym("white"));
         assert!(has(0) && !has(1) && !has(2), "conjunction");
 
         let f = build(BEATS, &["style c, b { stroke: white }"]).unwrap();
-        let has = |i: usize| f.styles.marks[i].stroke.is_some();
+        let has = |i: usize| f.styles.marks[i].stroke == Some(Expr::sym("white"));
         assert!(!has(0) && has(1) && has(2), "names");
 
         // A shared sheet can name roles a figure doesn't use, but a name has to be there.

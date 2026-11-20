@@ -277,6 +277,8 @@ fn styled_exprs(styled: &Styled, f: &mut impl FnMut(&Expr)) {
             format: _,
             digits,
             text: _,
+            no_stroke: _,
+            no_fill: _,
         } = style;
         [
             negative,

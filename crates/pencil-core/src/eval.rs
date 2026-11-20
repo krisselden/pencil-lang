@@ -92,6 +92,15 @@ pub fn hue(k: f64) -> [f64; 3] {
     oklch(0.68, 0.14, 360.0 * k)
 }
 
+/// The relative luminance where black and white contrast equally with a color, by WCAG's
+/// ratio `(L1 + 0.05) / (L2 + 0.05)`: `sqrt(1.05 · 0.05) − 0.05`.
+pub const CONTRAST_LUMINANCE: f64 = 0.179_128_784_747_792;
+
+/// A linear color's relative luminance.
+pub fn luminance(c: [f64; 3]) -> f64 {
+    0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]
+}
+
 pub fn srgb_encode(c: f64) -> f64 {
     let c = c.clamp(0.0, 1.0);
     if c <= 0.0031308 {
@@ -256,6 +265,12 @@ pub fn eval(e: &Expr, env: &Env) -> Result<Value, Error> {
                 srgb_decode(real(b)? / 255.0),
             ]),
             ("Hue", [k]) => Color(hue(real(k)?)),
+            // Black or white, whichever has more contrast with this color, by WCAG's measure.
+            ("Contrast", [c]) => Color(if luminance(color(c, env)?) >= CONTRAST_LUMINANCE {
+                [0.0; 3]
+            } else {
+                [1.0; 3]
+            }),
             ("Mix", [a, b, t]) => {
                 let t = real(t)?;
                 match (eval(a, env)?, eval(b, env)?) {

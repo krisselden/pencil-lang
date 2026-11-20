@@ -5,7 +5,7 @@
 //! see the same values and a shader only computes what varies per pixel.
 
 use crate::Figure;
-use crate::eval::TANH_LIMIT;
+use crate::eval::{CONTRAST_LUMINANCE, TANH_LIMIT};
 use crate::eval::{MIN_GRADIENT, SNAP_POWER};
 use crate::frame::{
     DEFAULT_DOT_RADIUS, DEFAULT_STROKE_WIDTH, GEOMETRY_VEC4S, SIDE_TEXTURE_WIDTH, VALUE_VEC4S,
@@ -32,6 +32,11 @@ fn oklch(l: f32, c: f32, h: f32) -> vec3<f32> {
 }
 
 fn hue(k: f32) -> vec3<f32> { return oklch(0.68, 0.14, 360.0 * k); }
+
+// Black or white, whichever has more contrast with c, as `eval`'s `Contrast`.
+fn contrast(c: vec3<f32>) -> vec3<f32> {
+    return select(vec3<f32>(1.0), vec3<f32>(0.0), dot(c, vec3<f32>(0.2126, 0.7152, 0.0722)) >= CONTRAST_LUMINANCE);
+}
 
 // WGSL's pow is undefined for a negative base, so whole exponents go through these.
 fn square(x: f32) -> f32 { return x * x; }
@@ -327,6 +332,7 @@ pub fn emit_expr(e: &Expr) -> String {
             ("Oklch", _) => call("oklch", args),
             ("Rgb", _) => call("rgb", args),
             ("Hue", _) => call("hue", args),
+            ("Contrast", _) => call("contrast", args),
             ("Mix", _) => call("mix", args),
             ("Snap", [x]) => format!("snap({}, {})", emit_expr(x), literal(SNAP_POWER)),
             ("Snap", [x, power]) => format!("snap({}, {})", emit_expr(x), emit_expr(power)),
@@ -365,6 +371,10 @@ pub fn emit(figure: &Figure) -> String {
          }}\n"
     );
     out.push_str(&format!("const TANH_LIMIT: f32 = {TANH_LIMIT:?};\n"));
+    out.push_str(&format!(
+        "const CONTRAST_LUMINANCE: f32 = {};\n",
+        literal(CONTRAST_LUMINANCE)
+    ));
     out.push_str(&format!(
         "const NEAREST_WIDTH: i32 = {};\nconst NEAREST_TILE: f32 = {};\n",
         nearest::TEXTURE_WIDTH,
