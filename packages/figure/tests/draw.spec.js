@@ -45,10 +45,16 @@ test.describe('a figure loads and draws', () => {
         new Promise((resolve) => {
           const boxes = [];
           const frame = () => {
-            const label = f.shadowRoot?.querySelector('.label[data-label="z"]');
-            if (label) {
-              const r = label.getBoundingClientRect();
-              if (r.width > 0) boxes.push({ left: r.left, right: r.right, top: r.top, bottom: r.bottom });
+            // A label with mathematics is a point, and its runs are placed around it.
+            const runs = [...(f.shadowRoot?.querySelectorAll('.label[data-label="z"] .run') ?? [])];
+            const rects = runs.map((run) => run.getBoundingClientRect()).filter((r) => r.width > 0);
+            if (rects.length) {
+              boxes.push({
+                left: Math.min(...rects.map((r) => r.left)),
+                right: Math.max(...rects.map((r) => r.right)),
+                top: Math.min(...rects.map((r) => r.top)),
+                bottom: Math.max(...rects.map((r) => r.bottom)),
+              });
             }
             if (boxes.length >= 40) resolve(boxes);
             else requestAnimationFrame(frame);
