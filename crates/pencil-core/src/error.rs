@@ -15,6 +15,9 @@ pub struct Error {
     /// Not a failure: a value that doesn't exist this frame, such as where two curves
     /// don't meet. It travels like an error so that anything built from it is absent too.
     pub absent: bool,
+    /// Another line the message names, as `line N` with this number, which is where it is while
+    /// a figure compiles. Placing the error says it in that line's own file.
+    pub also: Option<usize>,
 }
 
 impl Error {
@@ -26,7 +29,19 @@ impl Error {
             sheet: None,
             file: None,
             absent: false,
+            also: None,
         }
+    }
+
+    /// How a message names another line, `line`, for the error to place along with its own.
+    pub fn line_text(line: usize) -> String {
+        format!("line {line}")
+    }
+
+    /// Says the message names another line, which it wrote with `line_text`.
+    pub fn also(mut self, line: usize) -> Self {
+        self.also = Some(line);
+        self
     }
 
     pub fn absent() -> Self {

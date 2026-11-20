@@ -222,6 +222,24 @@ struct Lowerer {
     scalars: HashSet<String>,
     /// Whether the viewport turns the view, so a point in space is drawn through `VIEW_YAW`.
     turned: bool,
+    /// What the name `duration` reads, from the figure's `duration` statement.
+    duration: Length,
+    /// The params a `bind` drives, for an error that says why one isn't constant.
+    bound: HashSet<String>,
+}
+
+/// The name an expression reads the figure's `duration` by, unless the figure takes the name.
+pub const DURATION: &str = "duration";
+
+/// Where the figure's `duration` statement is, for an expression that reads it.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+enum Length {
+    /// The figure has no `duration` statement.
+    #[default]
+    Unstated,
+    /// The statement's own value is being worked out.
+    Working,
+    Stated(f64),
 }
 
 /// The binding that holds a viewport's `yaw`. A mark's point in space is projected through it,
@@ -563,7 +581,8 @@ impl Lowerer {
                 || self.scalars.contains(name)
                 || SIGNALS.contains(&name)
                 || CONSTANTS.contains(&name)
-                || written_constant(name).is_some())
+                || written_constant(name).is_some()
+                || (name == DURATION && self.duration != Length::Unstated))
     }
 
     /// What `name(…)` means when `name` is a value and not a function: their product, as
@@ -621,6 +640,20 @@ impl Lowerer {
                     match constant {
                         "ImaginaryUnit" => Val::Point(num(0.0), num(1.0)),
                         _ => Val::Scalar(Expr::sym(constant)),
+                    }
+                } else if s == DURATION {
+                    // A number by the time anything sees it, so a style, the CPU and the GPU all
+                    // read the same one.
+                    match self.duration {
+                        Length::Stated(d) => Val::Scalar(num(d)),
+                        Length::Working => {
+                            return Err(Error::new("`duration` can't be worked out from itself"));
+                        }
+                        Length::Unstated => {
+                            return Err(Error::new(
+                                "this figure has no `duration` statement, so there's no `duration` to read",
+                            ));
+                        }
                     }
                 } else if let Some((base, axis)) = s.split_once('.') {
                     match (locals.get(base), axis) {
@@ -1581,9 +1614,10 @@ impl Lowerer {
     /// An end of a param's range: a number, or an expression of params, declared anywhere, as the `q`
     /// of `0..q`. With it comes the furthest that end gets, the least for a start and the most
     /// for an end, found at the ends of the ranges of the params it reads.
-    fn limit(&self, e: &Expr, end: bool, params: &[Param]) -> Result<(f64, Option<Expr>), Error> {
+    fn limit(&self, e: &Expr, end: bool, scene: &Scene) -> Result<(f64, Option<Expr>), Error> {
         let what = "a param's range";
-        let ends = "a param's range is numbers, constants such as π, and params, declared before or after it";
+        let ends = "a param's range is numbers, constants such as π or a constant `let`, and params, declared before or after it";
+        let params = &scene.params;
         let mut signal = None;
         e.visit_syms(&mut |s| {
             if SIGNALS.contains(&s) {
@@ -1595,13 +1629,9 @@ impl Lowerer {
                 "a range's end can't read `{s}`: {ends}, so it's the same each frame unless a param moves it"
             )));
         }
-        let mut reads_names = false;
-        // A signal is left for `constant` to refuse, which says why.
-        e.visit_syms(&mut |s| reads_names |= constant_value(s).is_none() && !SIGNALS.contains(&s));
-        if !reads_names {
-            return Ok((constant(e, what)?, None));
-        }
-        let limit = self.scalar(e, &Locals::new())?;
+        // A constant `let` is its number, and any other is left to be refused below, with why.
+        let mut unsettled = Vec::new();
+        let limit = self.folded(scene, &self.number(e, what)?, &mut unsettled);
         let mut read: Vec<&Param> = Vec::new();
         let mut other = None;
         limit.visit_syms(&mut |s| match params.iter().find(|p| p.id == s) {
@@ -1613,16 +1643,26 @@ impl Lowerer {
         if let Some(name) = other {
             // A choice's value is a binding, read through the param that picks it.
             let index = format!("{name}.index");
-            return Err(Error::new(if params.iter().any(|p| p.id == index) {
-                format!(
+            if params.iter().any(|p| p.id == index) {
+                return Err(Error::new(format!(
                     "`{name}` is a choice, and a range's end can't read its value: {ends}, and the param that picks it is `{index}`"
-                )
-            } else {
-                format!("`{name}` is a `let`, and a range's end can't read one: {ends}")
-            }));
+                )));
+            }
+            let shown = name.split('.').next().unwrap_or(&name);
+            return Err(Error::new(
+                match unsettled.into_iter().find(|(n, _)| *n == name) {
+                    Some((_, Unsettled::Moves(reason))) => {
+                        format!("a range's end can't read `{shown}`, since {reason}: {ends}")
+                    }
+                    Some((_, Unsettled::Fails(err))) => {
+                        format!("a range's end can't read `{shown}`: {}", err.message)
+                    }
+                    None => format!("a range's end can't read `{shown}`: {ends}"),
+                },
+            ));
         }
         if read.is_empty() {
-            return Ok((constant(&limit, what)?, None));
+            return Ok((self.value(scene, &limit, what, FINITE)?, None));
         }
         // Each corner of the ranges it reads, which finds the furthest of anything that only
         // rises or falls with each param.
@@ -1644,12 +1684,200 @@ impl Lowerer {
                 furthest.min(value)
             };
         }
+        if !furthest.is_finite() {
+            return Err(Error::new(format!(
+                "{what} must be a finite number at the ends of the ranges it reads, and there it's {furthest}"
+            )));
+        }
         Ok((furthest, Some(limit)))
+    }
+
+    /// `e` with each constant `let` it reads replaced by its number. Any other name stays, and why
+    /// it isn't constant goes in `unsettled`.
+    fn folded(&self, scene: &Scene, e: &Expr, unsettled: &mut Vec<(String, Unsettled)>) -> Expr {
+        match e {
+            Expr::Sym(s)
+                if !scene.params.iter().any(|p| p.id == *s)
+                    && scene.bindings.iter().any(|b| b.id == *s) =>
+            {
+                match self.settled(scene, e) {
+                    Ok(value) => num(value),
+                    Err(why) => {
+                        unsettled.push((s.clone(), why));
+                        e.clone()
+                    }
+                }
+            }
+            Expr::App(head, args) => Expr::App(
+                head.clone(),
+                args.iter()
+                    .map(|a| self.folded(scene, a, unsettled))
+                    .collect(),
+            ),
+            other => other.clone(),
+        }
+    }
+
+    /// A value that holds for the whole figure, as `duration`, a beat's length or a viewport's
+    /// bounds are: numbers, constants such as π, `duration`, and the `let`s and functions made only
+    /// of those, written anywhere in the figure. Anything the clock or a reader can move would be
+    /// frozen where it was at time 0, so that's an error, and it names what moves. It's a finite
+    /// number, since a GPU can't be given anything else.
+    fn constant(&self, scene: &Scene, e: &Expr, what: &str) -> Result<f64, Error> {
+        self.constant_that(scene, e, what, FINITE)
+    }
+
+    /// `constant`, held to `need` as well.
+    fn constant_that(&self, scene: &Scene, e: &Expr, what: &str, need: Need) -> Result<f64, Error> {
+        let mut signal = None;
+        e.visit_syms(&mut |s| {
+            if SIGNALS.contains(&s) {
+                signal = Some(s.to_string());
+            }
+        });
+        if let Some(s) = signal {
+            return Err(Error::new(format!(
+                "{what} must be constant, and it uses `{s}`"
+            )));
+        }
+        let low = self.number(e, what)?;
+        self.value(scene, &low, what, need)
+    }
+
+    /// `e` lowered, as long as it's a number.
+    fn number(&self, e: &Expr, what: &str) -> Result<Expr, Error> {
+        match self.lower(e, &Locals::new(), 0)? {
+            Val::Scalar(s) => Ok(s),
+            other => Err(Error::new(format!(
+                "{what} must be a number, and this is {}",
+                other.kind()
+            ))),
+        }
+    }
+
+    /// The value of `low`, an expression already lowered, held to `need`.
+    fn value(&self, scene: &Scene, low: &Expr, what: &str, need: Need) -> Result<f64, Error> {
+        let value = self.settled(scene, low).map_err(|why| match why {
+            Unsettled::Moves(reason) => {
+                Error::new(format!("{what} must be constant, and {reason}"))
+            }
+            Unsettled::Fails(err) => {
+                Error::new(format!("{what} can't be worked out: {}", err.message))
+            }
+        })?;
+        let (holds, said) = need;
+        if !holds(value) {
+            return Err(Error::new(format!(
+                "{what} must be {said}, and this is {value}"
+            )));
+        }
+        Ok(value)
+    }
+
+    /// The value of `low`, an expression already lowered, or why it has none that holds.
+    fn settled(&self, scene: &Scene, low: &Expr) -> Result<f64, Unsettled> {
+        let mut env = Env::new(0.0);
+        self.settle(scene, low, None, &mut env)?;
+        eval::real(low, &env).map_err(Unsettled::Fails)
+    }
+
+    /// Works out each binding `e` reads into `env`, as long as nothing that moves is under it.
+    /// `via` is the name the constant reads that led here, for the error.
+    fn settle(
+        &self,
+        scene: &Scene,
+        e: &Expr,
+        via: Option<&str>,
+        env: &mut Env,
+    ) -> Result<(), Unsettled> {
+        let mut names = Vec::new();
+        e.visit_syms(&mut |s| names.push(s.to_string()));
+        for name in names {
+            // What moves, by its own name, as the constant read it, and as read through `via`.
+            let moving = |own: &str, is: String, of: String| {
+                Unsettled::Moves(match via {
+                    Some(via) if via != own => format!("`{via}` depends on {of}"),
+                    _ => is,
+                })
+            };
+            if SIGNALS.contains(&name.as_str()) {
+                return Err(moving(
+                    &name,
+                    format!("it uses `{name}`"),
+                    format!("`{name}`"),
+                ));
+            }
+            if constant_value(&name).is_some() || env.get(&name).is_some() {
+                continue;
+            }
+            if let Some(param) = scene.params.iter().find(|p| p.id == name) {
+                return Err(if let Some(choice) = &param.choice {
+                    let of = &choice.of;
+                    moving(
+                        of,
+                        format!("`{of}` is a choice, which a reader can change"),
+                        format!("the choice `{of}`"),
+                    )
+                } else if name == BEAT_PARAM {
+                    moving(
+                        &name,
+                        format!("`{name}` moves as the figure plays"),
+                        format!("`{name}`, which moves as the figure plays"),
+                    )
+                } else if self.bound.contains(&name) {
+                    moving(
+                        &name,
+                        format!("`{name}` is a param, which `bind` drives"),
+                        format!("the param `{name}`, which `bind` drives"),
+                    )
+                } else {
+                    moving(
+                        &name,
+                        format!("`{name}` is a param, which a reader can change"),
+                        format!("the param `{name}`"),
+                    )
+                });
+            }
+            let Some(binding) = scene.bindings.iter().find(|b| b.id == name) else {
+                return Err(Unsettled::Fails(Error::new(format!(
+                    "no value for `{name}`"
+                ))));
+            };
+            // A point's fields are bindings of their own, and the error names the point.
+            let shown = name.split('.').next().unwrap_or(&name);
+            if let Expr::App(head, _) = &binding.expr
+                && head == "Solved"
+            {
+                return Err(moving(
+                    shown,
+                    format!("`{shown}` comes from a `solve`"),
+                    format!("`{shown}`, which comes from a `solve`"),
+                ));
+            }
+            self.settle(scene, &binding.expr, Some(via.unwrap_or(shown)), env)?;
+            let value = eval::real(&binding.expr, env).map_err(Unsettled::Fails)?;
+            env.set(&name, value);
+        }
+        Ok(())
     }
 }
 
-/// A value that holds for the whole figure. Evaluating it at time 0 would quietly freeze
-/// anything that reads a signal, so that's an error instead.
+/// Why a value that has to hold for the whole figure doesn't.
+enum Unsettled {
+    /// Something under it moves, said as a clause: "`period` depends on the param `a`".
+    Moves(String),
+    /// Nothing under it moves, and it still has no value.
+    Fails(Error),
+}
+
+/// What a constant has to be besides constant, and how an error says it.
+type Need = (fn(f64) -> bool, &'static str);
+const FINITE: Need = (f64::is_finite, "a finite number");
+const POSITIVE: Need = (|v| v.is_finite() && v > 0.0, "a positive number");
+
+/// A value that holds for the whole figure, from a sheet, which can't read the figure's names.
+/// Evaluating it at time 0 would quietly freeze anything that reads a signal, so that's an
+/// error instead.
 pub fn constant(e: &Expr, what: &str) -> Result<f64, Error> {
     let mut signal = None;
     e.visit_syms(&mut |s| {
@@ -2513,7 +2741,7 @@ fn needs(item: &Item) -> Vec<String> {
             &mut out,
         ),
         Item::Choice { options, .. } => all(&mut options.iter().map(|(e, _)| e), &mut out),
-        Item::Duration(e) | Item::Pause(e) => refers(e, &mut out),
+        Item::Duration { expr: e, .. } | Item::Pause { expr: e, .. } => refers(e, &mut out),
         Item::Poster { values, .. } => all(&mut values.iter().map(|(_, e)| e), &mut out),
         Item::Curve { form, .. } => match form {
             CurveSyntax::Implicit { lhs, rhs, .. } => all(&mut [lhs, rhs].into_iter(), &mut out),
@@ -2676,11 +2904,18 @@ fn in_order(items: Vec<Item>) -> Result<Vec<Item>, Error> {
         }
         if matches!(
             item,
-            Item::Move(_) | Item::Pause(_) | Item::Beat { .. } | Item::EndBeat
+            Item::Move(_) | Item::Pause { .. } | Item::Beat { .. } | Item::EndBeat
         ) {
             earlier[i] = last;
             last = Some(i);
         }
+    }
+    // `duration` reads the statement, unless the figure takes the name for something of its own.
+    if let Some(i) = items
+        .iter()
+        .position(|item| matches!(item, Item::Duration { .. }))
+    {
+        definer.entry(DURATION.to_string()).or_insert(i);
     }
     if definer.is_empty() {
         return Ok(items);
@@ -2710,6 +2945,7 @@ fn in_order(items: Vec<Item>) -> Result<Vec<Item>, Error> {
                         Item::Move(crate::parse::Move {
                             name: Some(name), ..
                         }) => name.as_str(),
+                        Item::Duration { .. } => DURATION,
                         _ => defines(item).first().copied().unwrap_or_default(),
                     };
                     return Err(Error::new(format!(
@@ -2773,7 +3009,8 @@ fn line_of(item: &Item) -> usize {
         | Item::Fn { line, .. }
         | Item::Param { line, .. }
         | Item::Choice { line, .. }
-        | Item::Solve { line, .. } => *line,
+        | Item::Solve { line, .. }
+        | Item::Duration { line, .. } => *line,
         _ => 0,
     }
 }
@@ -3012,8 +3249,67 @@ pub fn fill_outlines<'a>(
     Ok(())
 }
 
+/// A figure says its `duration` once, and once it does, the name is its length: nothing else in
+/// the figure can take it, so `duration` never means two things in one figure.
+fn one_duration(items: &[Item]) -> Result<(), Error> {
+    // Items are in the order the figure reads, with a used file's where its `use` is, so which
+    // comes later is by position and not by line, which counts files in the order they're read.
+    let mut stated: Option<(usize, usize)> = None;
+    for (at, item) in items.iter().enumerate() {
+        if let Item::Duration { line, .. } = item {
+            if let Some((_, first)) = stated {
+                return Err(Error::at(
+                    *line,
+                    1,
+                    format!("`duration` is already set, on {}", Error::line_text(first)),
+                )
+                .also(first));
+            }
+            stated = Some((at, *line));
+        }
+    }
+    let Some((statement_at, statement)) = stated else {
+        return Ok(());
+    };
+    for (at, item) in items.iter().enumerate() {
+        let line = match item {
+            Item::Move(crate::parse::Move {
+                name: Some(name),
+                line,
+                ..
+            }) if name == DURATION => *line,
+            _ if defines(item).contains(&DURATION) => line_of(item),
+            _ => continue,
+        };
+        return Err(if at > statement_at {
+            Error::at(
+                line,
+                1,
+                format!(
+                    "`duration` is this figure's length, set by its `duration` statement on {}; give this another name",
+                    Error::line_text(statement)
+                ),
+            )
+            .also(statement)
+        } else {
+            Error::at(
+                statement,
+                1,
+                format!(
+                    "`duration` is defined on {}, and it's this figure's length, set by this statement; give that another name",
+                    Error::line_text(line)
+                ),
+            )
+            .also(line)
+        });
+    }
+    Ok(())
+}
+
 fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
-    let items = &in_order(with_texts(items)?)?;
+    let items = with_texts(items)?;
+    one_duration(&items)?;
+    let items = &in_order(items)?;
     let value_names = value_names(items);
     // How each `let` was written, for a label that shows its expression.
     let written_as: HashMap<&str, &str> = items
@@ -3029,6 +3325,13 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
         turned: items
             .iter()
             .any(|item| matches!(item, Item::Viewport { yaw: Some(_), .. })),
+        bound: items
+            .iter()
+            .filter_map(|item| match item {
+                Item::Bind { name, .. } => Some(name.clone()),
+                _ => None,
+            })
+            .collect(),
         ..Lowerer::default()
     };
     let mut scene = Scene {
@@ -3038,6 +3341,7 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
         marks: Vec::new(),
         viewport: Viewport::default(),
         duration: None,
+        duration_stated: false,
         beats: Vec::new(),
         beat_lengths: Vec::new(),
         handles: Vec::new(),
@@ -3109,8 +3413,9 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
                     declare_beat(&mut scene, &mut lowerer);
                 }
                 let k = story.moves.len();
-                let length =
-                    constant(&written.length, "a beat's length").map_err(at_line(written.line))?;
+                let length = lowerer
+                    .constant(&scene, &written.length, "a beat's length")
+                    .map_err(at_line(written.line))?;
                 if length < 0.0 {
                     return Err(Error::at(
                         written.line,
@@ -3142,10 +3447,12 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
                 }
                 continue;
             }
-            Item::Pause(e) => {
-                let length = constant(e, "a pause")?;
+            Item::Pause { expr: e, line } => {
+                let length = lowerer
+                    .constant(&scene, e, "a pause")
+                    .map_err(at_line(*line))?;
                 if length < 0.0 {
-                    return Err(Error::new("a pause can't take less than no time"));
+                    return Err(Error::at(*line, 1, "a pause can't take less than no time"));
                 }
                 story.steps.push(Step::Pause(length));
                 continue;
@@ -3295,16 +3602,14 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
             } => {
                 claim(name, *line)?;
                 let fail = at_line(*line);
-                let low = lowerer
-                    .limit(&range[0], false, &scene.params)
-                    .map_err(&fail)?;
-                let high = lowerer
-                    .limit(&range[1], true, &scene.params)
-                    .map_err(&fail)?;
+                let low = lowerer.limit(&range[0], false, &scene).map_err(&fail)?;
+                let high = lowerer.limit(&range[1], true, &scene).map_err(&fail)?;
                 let (range, limits) = ([low.0, high.0], [low.1, high.1]);
                 let step = match step {
                     Some(step) => {
-                        let step = constant(step, "a param's step").map_err(&fail)?;
+                        let step = lowerer
+                            .constant(&scene, step, "a param's step")
+                            .map_err(&fail)?;
                         if !(step > 0.0 && step.is_finite()) {
                             return Err(Error::at(
                                 *line,
@@ -3337,14 +3642,26 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
                 let val = lowerer.lower(expr, &none, 0).map_err(at_line(*line))?;
                 lowerer.bind(&mut scene, name, val);
             }
-            Item::Duration(e) => scene.duration = Some(constant(e, "`duration`")?),
+            Item::Duration { expr: e, line } => {
+                // Anything that reads `duration` comes after this, so only the statement itself
+                // can find it being worked out.
+                lowerer.duration = Length::Working;
+                let duration = lowerer
+                    .constant_that(&scene, e, "`duration`", POSITIVE)
+                    .map_err(at_line(*line))?;
+                lowerer.duration = Length::Stated(duration);
+                scene.duration = Some(duration);
+                scene.duration_stated = true;
+            }
             Item::Poster { values, line } => {
                 if scene.poster.is_some() {
                     return Err(Error::at(*line, 1, "a figure has one `poster`"));
                 }
                 let mut poster = crate::ir::Poster::default();
                 for (name, e) in values {
-                    let value = constant(e, "a poster's value").map_err(at_line(*line))?;
+                    let value = lowerer
+                        .constant(&scene, e, "a poster's value")
+                        .map_err(at_line(*line))?;
                     match name.as_str() {
                         "time" => poster.time = Some(value),
                         _ => poster.params.push((name.clone(), value)),
@@ -4053,9 +4370,11 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
                 fit,
                 pad,
                 yaw,
+                line,
             } => {
+                let fail = at_line(*line);
                 if let Some(yaw) = yaw {
-                    let turn = lowerer.scalar(yaw, &none)?;
+                    let turn = lowerer.scalar(yaw, &none).map_err(&fail)?;
                     scene.bindings.push(Binding {
                         id: VIEW_YAW.to_string(),
                         expr: turn,
@@ -4067,10 +4386,15 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
                             Some(r) => {
                                 // A fixed window can't follow anything, and `fit` can.
                                 let bound = |e| {
-                                    constant(e, "a viewport bound").map_err(|mut err| {
-                                        err.message += ". To follow something that moves, `fit` it";
-                                        err
-                                    })
+                                    lowerer.constant(&scene, e, "a viewport bound").map_err(
+                                        |mut err| {
+                                            if err.message.contains("must be constant") {
+                                                err.message +=
+                                                    ". To follow something that moves, `fit` it";
+                                            }
+                                            err
+                                        },
+                                    )
                                 };
                                 Ok([bound(&r[0])?, bound(&r[1])?])
                             }
@@ -4078,11 +4402,13 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
                         }
                     };
                 let optional = |e: &Option<Expr>, what: &str| -> Result<Option<f64>, Error> {
-                    e.as_ref().map(|e| constant(e, what)).transpose()
+                    e.as_ref()
+                        .map(|e| lowerer.constant(&scene, e, what))
+                        .transpose()
                 };
                 scene.viewport = Viewport {
-                    x: bound(x, [-2.0, 2.0])?,
-                    y: bound(y, [-2.0, 2.0])?,
+                    x: bound(x, [-2.0, 2.0]).map_err(&fail)?,
+                    y: bound(y, [-2.0, 2.0]).map_err(&fail)?,
                     // A sheet's `style figure` sets these, or a `style panel`.
                     design_width: None,
                     design_height: None,
@@ -4090,12 +4416,14 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
                     fit: Vec::new(),
                     fit_curves: Vec::new(),
                     fit_families: Vec::new(),
-                    pad: optional(pad, "a viewport's pad")?.unwrap_or(0.1),
+                    pad: optional(pad, "a viewport's pad")
+                        .map_err(&fail)?
+                        .unwrap_or(0.1),
                 };
                 fit_names = fit.clone();
                 let v = &scene.viewport;
                 if v.x[0] >= v.x[1] || v.y[0] >= v.y[1] {
-                    return Err(Error::new("a viewport's bounds must increase"));
+                    return Err(fail(Error::new("a viewport's bounds must increase")));
                 }
             }
             Item::Style(_) => {}
@@ -4350,6 +4678,276 @@ mod tests {
         assert!(
             scene("viewport { x: -2·pi..2·pi, y: -2..2 } style figure { width: 640px }").is_ok()
         );
+    }
+
+    #[test]
+    fn a_named_constant_is_a_constant() {
+        use std::f64::consts::PI;
+        // The number is said once, and the bind reads the same name.
+        let s = scene(
+            "let period = 12\nduration period\nparam theta in 0..2·π\nbind theta = mod(time, period) / period·2·π",
+        )
+        .unwrap();
+        assert_eq!(s.duration, Some(12.0));
+        assert!((at_time(&s, 3.0, &Expr::sym("theta")) - PI / 2.0).abs() < 1e-12);
+        // Built from another constant `let` and from π, both written after it's used.
+        let s = scene("duration half\nlet half = whole / 2\nlet whole = 2·π").unwrap();
+        assert_eq!(s.duration, Some(PI));
+        // A document's function of constants is one.
+        let s = scene("fn twice(x) = 2·x\nduration twice(3)").unwrap();
+        assert_eq!(s.duration, Some(6.0));
+        // A beat's length, a pause, a param's step, a poster's time and a viewport's bounds.
+        let s = scene(
+            "let len = 1.5\nlet gap = len / 3\nlet fine = 0.25\nlet still = 2·gap\nlet r = 3
+             pause gap
+             beat grow for len
+             param p in 0..1 step fine
+             poster { time: still }
+             viewport { x: -r..r, y: -r..r }",
+        )
+        .unwrap();
+        assert_eq!(s.beat_lengths, vec![1.5]);
+        assert_eq!(s.duration, Some(2.0), "the pause and the beat");
+        assert_eq!(
+            s.params.iter().find(|p| p.id == "p").unwrap().step,
+            Some(0.25)
+        );
+        assert_eq!(s.poster.unwrap().time, Some(1.0));
+        assert_eq!(s.viewport.x, [-3.0, 3.0]);
+    }
+
+    #[test]
+    fn what_moves_is_not_a_constant() {
+        let message = |src: &str| scene(src).unwrap_err().message;
+        let cases = [
+            (
+                "param a in 0..1\nlet period = 2 + a\nduration period",
+                "`duration` must be constant, and `period` depends on the param `a`",
+            ),
+            (
+                "let period = 2 + time\nduration period",
+                "`duration` must be constant, and `period` depends on `time`",
+            ),
+            (
+                "param theta in 0..1\nbind theta = time\nlet k = 2·theta\npause k",
+                "a pause must be constant, and `k` depends on the param `theta`, which `bind` drives",
+            ),
+            // A param has a default, and it's still the reader's to change.
+            (
+                "param a = 3 in 0..5\nduration a",
+                "`duration` must be constant, and `a` is a param, which a reader can change",
+            ),
+            (
+                "param c in {1, 2}\nduration c",
+                "`duration` must be constant, and `c` is a choice, which a reader can change",
+            ),
+            (
+                "param c in {1, 2}\nlet k = c + 1\nposter { time: k }",
+                "a poster's value must be constant, and `k` depends on the choice `c`",
+            ),
+            (
+                "beat grow for 1\nlet k = grow\npause k",
+                "a pause must be constant, and `k` depends on `beat`, which moves as the figure plays",
+            ),
+            (
+                "let r = 1 + time\nparam p in 0..1 step r",
+                "a param's step must be constant, and `r` depends on `time`",
+            ),
+        ];
+        for (src, want) in cases {
+            let got = message(src);
+            assert!(got.contains(want), "{src}\n{got}");
+        }
+    }
+
+    #[test]
+    fn an_expression_can_read_duration() {
+        use std::f64::consts::PI;
+        // In a bind, where it's the number the statement says.
+        let s = scene(
+            "duration 12\nparam theta in 0..2·π\nbind theta = mod(time, duration) / duration·2·π",
+        )
+        .unwrap();
+        assert!((at_time(&s, 3.0, &Expr::sym("theta")) - PI / 2.0).abs() < 1e-12);
+        let theta = s.bindings.iter().find(|b| b.id == "theta").unwrap();
+        let mut named = false;
+        theta.expr.visit_syms(&mut |n| named |= n == DURATION);
+        assert!(
+            !named,
+            "folded to a number before anything downstream sees it"
+        );
+        // In a `let`, written before the statement, and where a constant is demanded.
+        let s = scene(
+            "let fifth = duration / 5\nposter { time: fifth }\nduration 10\npause duration / 2",
+        )
+        .unwrap();
+        assert_eq!(s.poster.unwrap().time, Some(2.0));
+        assert_eq!(s.duration, Some(10.0));
+        // With a duration, beats with lengths can take a share of it.
+        let s = scene("duration 6\nbeat a for duration / 3\nbeat b for duration / 3").unwrap();
+        assert_eq!(s.beat_lengths, vec![2.0, 2.0]);
+    }
+
+    #[test]
+    fn duration_needs_a_statement_and_cannot_read_itself() {
+        let message = |src: &str| scene(src).unwrap_err().message;
+        let none = "this figure has no `duration` statement, so there's no `duration` to read";
+        for src in [
+            "let a = duration",
+            "param a in 0..1\nbind a = time / duration",
+            // Without a statement the beats' lengths add up to the duration, so one can't read it.
+            "beat a for 1\nbeat b for duration",
+        ] {
+            let got = message(src);
+            assert!(got.contains(none), "{src}\n{got}");
+        }
+        let got = message("duration duration");
+        assert!(
+            got.contains("`duration` can't be worked out from itself"),
+            "{got}"
+        );
+        for src in [
+            "duration p\nlet p = duration / 2",
+            "let p = duration / 2\nduration p",
+        ] {
+            let got = message(src);
+            assert!(
+                got.contains("is defined in terms of itself"),
+                "{src}\n{got}"
+            );
+        }
+        // A beat's length can't push past the duration it reads.
+        let got = message("duration 4\nbeat a for duration\nbeat b for 1");
+        assert!(got.contains("more than the `duration` of 4"), "{got}");
+    }
+
+    #[test]
+    fn a_figure_can_take_the_name_duration() {
+        // With no `duration` statement, the name is free for a figure's own value, as `pi` is.
+        let s = scene("let duration = 3\nposter { time: duration }").unwrap();
+        assert_eq!(s.duration, None);
+        assert_eq!(s.poster.unwrap().time, Some(3.0));
+        let s = scene("param duration = 2 in 0..5\nlet twice = 2·duration").unwrap();
+        assert!(s.params.iter().any(|p| p.id == DURATION));
+        let s = scene("fn duration(x) = 2·x\nlet four = duration(2)").unwrap();
+        assert!(s.bindings.iter().any(|b| b.id == "four"));
+        // With one, the name is the figure's length, and taking it is an error at the later of the two.
+        let after = "`duration` is this figure's length, set by its `duration` statement on line 1; give this another name";
+        for src in [
+            "duration 12\nlet duration = 3",
+            "duration 12\nparam duration = 2 in 0..5",
+            "duration 12\nfn duration(x) = x",
+            "duration 12\nbeat duration for 1",
+        ] {
+            let err = scene(src).unwrap_err();
+            assert!(err.message.contains(after), "{src}\n{err}");
+            assert_eq!(err.line, 2, "{src}");
+        }
+        let err = scene("let duration = 3\nposter { time: 1 }\nduration 12").unwrap_err();
+        assert!(
+            err.message.contains(
+                "`duration` is defined on line 1, and it's this figure's length, set by this statement; give that another name"
+            ),
+            "{err}"
+        );
+        assert_eq!(err.line, 3);
+    }
+
+    #[test]
+    fn a_constant_is_a_finite_number() {
+        let message = |src: &str| scene(src).unwrap_err();
+        // `duration` is more: a positive number, said at its statement's line.
+        for (src, this) in [
+            ("let a = 1\nduration 0/0", "NaN"),
+            ("let a = 1\nduration 1/0", "inf"),
+            ("let a = 1\nduration sqrt(-1)", "NaN"),
+            ("let a = 1\nduration 0", "0"),
+            ("let a = 1\nduration -3", "-3"),
+        ] {
+            let err = message(src);
+            assert_eq!(
+                err.message,
+                format!("`duration` must be a positive number, and this is {this}"),
+                "{src}"
+            );
+            assert_eq!(err.line, 2, "{src}");
+        }
+        // So nothing downstream, a mark or a style, is handed one that isn't.
+        let err = message("duration 0/0\ncurve c = implicit (x, y): x² + y² = 1 + 0·duration");
+        assert!(err.message.contains("positive number"), "{err}");
+        let cases = [
+            (
+                "duration (1, 2)",
+                "`duration` must be a number, and this is a point",
+            ),
+            (
+                "pause sqrt(-1)",
+                "a pause must be a finite number, and this is NaN",
+            ),
+            (
+                "beat a for 1/0",
+                "a beat's length must be a finite number, and this is inf",
+            ),
+            (
+                "param p in 0..1 step sqrt(-1)",
+                "a param's step must be a finite number, and this is NaN",
+            ),
+            (
+                "poster { time: 1/0 }",
+                "a poster's value must be a finite number, and this is inf",
+            ),
+            (
+                "viewport { x: -1..sqrt(-1), y: -1..1 }",
+                "a viewport bound must be a finite number, and this is NaN",
+            ),
+            (
+                "let P = (1, 1)\nviewport { fit: P, pad: 1/0 }",
+                "a viewport's pad must be a finite number, and this is inf",
+            ),
+        ];
+        for (src, want) in cases {
+            let err = message(src);
+            assert_eq!(err.message, want, "{src}");
+        }
+    }
+
+    #[test]
+    fn an_error_through_a_let_has_the_line_of_what_needs_the_constant() {
+        let err = scene("param a in 0..1\nlet k = a\n\npause k").unwrap_err();
+        assert_eq!(err.line, 4, "{err}");
+        let err =
+            scene("param a in 0..1\nlet P = (1, 1)\nviewport { fit: P, pad: a }").unwrap_err();
+        assert_eq!(err.line, 3, "{err}");
+        assert!(
+            err.message
+                .contains("a viewport's pad must be constant, and `a` is a param"),
+            "{err}"
+        );
+        let err = scene("param a in 0..1\n\nviewport { x: -a..1, y: -1..1 }").unwrap_err();
+        assert_eq!(err.line, 3, "{err}");
+    }
+
+    #[test]
+    fn a_local_name_can_be_duration() {
+        // A function's parameter is local, as any parameter is, and shadows the figure's.
+        let s = scene("duration 3\nfn f(duration) = 2·duration\nposter { time: f(5) }").unwrap();
+        assert_eq!(s.poster.unwrap().time, Some(10.0));
+        // So is a group's.
+        let s =
+            scene("duration 3\ngroup g(duration) {\n  let P = (duration, 0)\n  dot P\n}\nuse g(2)")
+                .unwrap();
+        let x = s.bindings.iter().find(|b| b.id.ends_with("P.x")).unwrap();
+        assert_eq!(at_time(&s, 0.0, &Expr::sym(&x.id)), 2.0);
+    }
+
+    #[test]
+    fn a_figure_says_its_duration_once() {
+        let err = scene("duration 12\nlet a = 1\nduration 6").unwrap_err();
+        assert!(
+            err.message.contains("`duration` is already set, on line 1"),
+            "{err}"
+        );
+        assert_eq!(err.line, 3);
     }
 
     #[test]

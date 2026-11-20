@@ -233,6 +233,20 @@ fn a_label_with_nothing_said_moves_off_its_dot() {
     assert_eq!((p.labels[0].x, p.labels[0].y), (cx, cy));
 }
 
+/// The sheets' `ink` is read as a rule's value is: `duration` in it is the figure's number.
+#[test]
+fn ink_can_read_the_duration() {
+    let doc = format!("duration 4\n{DOT}");
+    let f = build(&doc, &["let ink = mix(black, white, time/duration)"]).unwrap();
+    let stroke = f.styles.marks[0].negative.as_ref().unwrap();
+    let mut read = Vec::new();
+    stroke.visit_syms(&mut |s| read.push(s.to_string()));
+    assert!(!read.iter().any(|s| s == "duration"), "{read:?}");
+    let err = build(DOT, &["let ink = mix(black, white, time/duration)"]).unwrap_err();
+    assert!(err.message.contains("no `duration`"), "{err}");
+    assert_eq!(err.sheet, Some(0));
+}
+
 #[test]
 fn ink_has_to_be_a_color() {
     let err = build(DOT, &["style paper { fill: black }", "let ink = 3"]).unwrap_err();

@@ -409,6 +409,9 @@ pub struct Scene {
     pub viewport: Viewport,
     /// How long one pass of the time bindings takes, for looping and video.
     pub duration: Option<f64>,
+    /// Whether the document says its `duration`, rather than its beats adding up to one. Only
+    /// then can an expression or a style read it.
+    pub duration_stated: bool,
     pub beats: Vec<String>,
     /// Each beat's move in seconds, when beats have lengths, and empty when they don't.
     pub beat_lengths: Vec<f64>,

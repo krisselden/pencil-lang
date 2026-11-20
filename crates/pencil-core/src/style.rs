@@ -8,7 +8,7 @@
 
 use std::collections::HashMap;
 
-use crate::compile::{BEAT_PARAM, CONSTANTS, SIGNALS, constant_value, written_constant};
+use crate::compile::{BEAT_PARAM, CONSTANTS, DURATION, SIGNALS, constant_value, written_constant};
 use crate::error::Error;
 use crate::frame::VIEW_WIDTH;
 use crate::ir::{Expr, Form, Scene, Shape};
@@ -480,9 +480,20 @@ type Functions = HashMap<String, (Vec<String>, Expr)>;
 /// reach.
 const CALL_DEPTH: usize = 32;
 
-/// A sheet's `pi` is the constant, unless the figure has a binding of that name.
-fn constants(e: &Expr, names: &[&str]) -> Expr {
-    match e {
+/// A sheet's `pi` is the constant, and its `duration` the figure's, unless the figure has a
+/// binding of that name. `duration` is a number from here on, so the CPU and the GPU never see
+/// the name.
+fn constants(e: &Expr, names: &[&str], duration: Option<f64>) -> Result<Expr, String> {
+    Ok(match e {
+        Expr::Sym(s) if s == DURATION && !names.contains(&DURATION) => match duration {
+            Some(d) => Expr::Num(d),
+            None => {
+                return Err(
+                    "this figure has no `duration` statement, so there's no `duration` to read"
+                        .into(),
+                );
+            }
+        },
         Expr::Sym(s) if !names.contains(&s.as_str()) => {
             match written_constant(s).filter(|c| constant_value(c).is_some()) {
                 Some(constant) => Expr::sym(constant),
@@ -491,10 +502,12 @@ fn constants(e: &Expr, names: &[&str]) -> Expr {
         }
         Expr::App(head, args) => Expr::App(
             head.clone(),
-            args.iter().map(|a| constants(a, names)).collect(),
+            args.iter()
+                .map(|a| constants(a, names, duration))
+                .collect::<Result<_, _>>()?,
         ),
         other => other.clone(),
-    }
+    })
 }
 
 /// Replaces a style sheet's own names with what they stand for, and its functions' calls with
@@ -707,6 +720,8 @@ pub fn resolve_keeping(
         ..Styled::default()
     };
     let names: Vec<&str> = scene.bindings.iter().map(|b| b.id.as_str()).collect();
+    // What `duration` reads, when the document says it.
+    let duration = scene.duration.filter(|_| scene.duration_stated);
     // The document comes last, and its own `let`s are bindings.
     let sheet_names = sheet_names(&sheets[..sheets.len().saturating_sub(1)])?;
     let functions = sheet_functions(&sheets[..sheets.len().saturating_sub(1)]);
@@ -732,7 +747,10 @@ pub fn resolve_keeping(
                 .iter()
                 .map(|(prop, value)| {
                     let value = with_names(value, &sheet_names, &functions).map_err(&at)?;
-                    Ok((prop.clone(), constants(&value, &names)))
+                    Ok((
+                        prop.clone(),
+                        constants(&value, &names, duration).map_err(&at)?,
+                    ))
                 })
                 .collect::<Result<_, Error>>()?;
             for selector in &rule.selectors {
@@ -961,20 +979,25 @@ pub fn resolve_keeping(
     }
     // What's drawn with nothing said: a mark with nothing to paint gets its default paint, and
     // text and titles with no fill get the ink.
-    let ink = default_ink(sheet_names.get("ink"), styled.paper.as_ref(), &names);
-    if let Some(ink) = sheet_names.get("ink")
-        && type_of(ink, &names, false) != Ok(Ty::Color)
-    {
-        let (index, line) = last_let(&sheets[..sheets.len().saturating_sub(1)], "ink")
-            .expect("a sheet's name is defined in a sheet");
-        return Err(Error::at(
-            line,
-            1,
-            "`ink` is the color a mark is drawn in when no rule gives it one, so it has to be a \
-             color",
-        )
-        .in_sheet(index));
-    }
+    // The sheets' `ink`, read as a rule's value is, so a constant in it is folded.
+    let sheet_ink = match sheet_names.get("ink") {
+        Some(ink) => {
+            let (index, line) = last_let(&sheets[..sheets.len().saturating_sub(1)], "ink")
+                .expect("a sheet's name is defined in a sheet");
+            let at = |message: String| Error::at(line, 1, message).in_sheet(index);
+            let ink = constants(ink, &names, duration).map_err(at)?;
+            if type_of(&ink, &names, false) != Ok(Ty::Color) {
+                return Err(at(
+                    "`ink` is the color a mark is drawn in when no rule gives it \
+                     one, so it has to be a color"
+                        .into(),
+                ));
+            }
+            Some(ink)
+        }
+        None => None,
+    };
+    let ink = default_ink(sheet_ink.as_ref(), styled.paper.as_ref(), &names);
     for (mark, style) in scene.marks.iter().zip(&mut styled.marks) {
         complete(mark, style, &ink);
     }
@@ -1504,6 +1527,48 @@ mod tests {
 
     fn paper_of(doc: &str, sheets: &[&str]) -> Result<Expr, Error> {
         Ok(crate::build(doc, sheets)?.styles.paper.unwrap())
+    }
+
+    /// A style reads the figure's `duration` as a number, so the CPU and the GPU see the same
+    /// value and neither needs the name.
+    #[test]
+    fn a_style_reads_duration() {
+        let doc = format!("duration 4\n{DOC}");
+        let f = build(&doc, &["style c { stroke: black; width: duration·1px }"]).unwrap();
+        let width = f.styles.marks[0].width.clone().unwrap();
+        let four = Expr::app(
+            "Multiply",
+            vec![Expr::Num(4.0), Expr::app("Pixels", vec![Expr::Num(1.0)])],
+        );
+        assert_eq!(width, four);
+        // Without a statement, a figure's own `duration` is its own, as with `pi`.
+        let doc = format!("param duration = 1 in 0..2\n{DOC}");
+        let f = build(&doc, &["style c { stroke: black; width: duration·1px }"]).unwrap();
+        let width = f.styles.marks[0].width.clone().unwrap();
+        let mut named = false;
+        width.visit_syms(&mut |n| named |= n == "duration");
+        assert!(named, "the param, read each frame: {width:?}");
+        // A sheet's own `duration` is the sheet's, as any name a sheet defines is.
+        let doc = format!("duration 4\n{DOC}");
+        let f = build(
+            &doc,
+            &["let duration = 9\nstyle c { stroke: black; width: duration·1px }"],
+        )
+        .unwrap();
+        let nine = Expr::app(
+            "Multiply",
+            vec![Expr::Num(9.0), Expr::app("Pixels", vec![Expr::Num(1.0)])],
+        );
+        assert_eq!(f.styles.marks[0].width.clone().unwrap(), nine);
+        // With no statement there's nothing to read, even where beats add up to a duration.
+        for doc in [DOC.to_string(), format!("beat a for 2\n{DOC}")] {
+            let err = build(&doc, &["style c { width: duration·1px }"]).unwrap_err();
+            assert!(
+                err.message
+                    .contains("this figure has no `duration` statement"),
+                "{err}"
+            );
+        }
     }
 
     /// `none` takes back what an earlier rule set, so one ray can be solid among dashed ones.

@@ -73,7 +73,10 @@ export function readingAt(text, caret) {
   const here = toks.findLastIndex((_, i) => from[i] <= at);
   if (here < 0) return null;
   const word = (i) => toks[i].kind === 'name' && WORDS.has(toks[i].text);
-  const keyword = (i) => word(i) || (toks[i].kind === 'name' && STATEMENTS.has(toks[i].text));
+  // `duration` starts its statement at the start of a line or a block, as in `beat "a" { duration 3 }`,
+  // and anywhere else it's the value an expression reads.
+  const opensStatement = (i) => i === 0 || toks[i - 1].text === '{';
+  const keyword = (i) => word(i) || (toks[i].kind === 'name' && STATEMENTS.has(toks[i].text) && (toks[i].text !== 'duration' || opensStatement(i)));
   const opens = [], closes = [];
   for (let i = 0; i <= here; i++) {
     if (i === 0 || BEFORE.has(toks[i - 1].text) || keyword(i - 1)) opens.push(i);
