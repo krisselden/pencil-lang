@@ -903,35 +903,47 @@ test.describe('the playground\'s Pencil keys', () => {
       await expect.poll(stage).not.toEqual(before);
     });
 
-    test('a hardware keyboard closes the keys for the visit, and so does ▾, until keys brings them back', async ({ page }) => {
+    test('a hardware keyboard drops the keys to the words and the symbols for the visit; only ▾ puts them away, until keys brings them back', async ({ page }) => {
       await openPlayground(page, 'figure=circle');
       await touchEditor(page);
       const source = page.locator('#source');
       const opener = page.locator('#keys-open');
       await expect(opener).toBeHidden();
       await page.keyboard.type('q');
-      await expect(keyboard(page)).toBeHidden();
-      await expect(source).toBeFocused();
-      await expect(source).not.toHaveAttribute('inputmode');
       await expect(source).toHaveValue(/q$/);
-      await expect(opener).toBeVisible();
+      await expect(source).toBeFocused();
+      await expect(keyboard(page)).toBeVisible();
+      await expect(page.locator('#keyboard .keys')).toBeHidden();
+      await expect(page.locator('#keyboard .symbols')).toBeVisible();
+      await expect(page.locator('#keyboard .words-row')).toBeVisible();
+      await expect(source).not.toHaveAttribute('inputmode');
+      await expect(opener).toBeHidden();
+      // Kept for the visit: with the keyboard taken away, a touch has the system's keyboard, the
+      // rows, and the strip's key back to the Pencil keys.
       await page.reload();
       await settled(page);
       await page.locator('#source').tap();
       await expect(source).toBeFocused();
-      await expect(keyboard(page)).toBeHidden();
-      await opener.tap();
-      await expect(keyboard(page)).toBeVisible();
-      await expect(source).toBeFocused();
-      await expect(source).toHaveAttribute('inputmode', 'none');
-      await expect(opener).toBeHidden();
-      // ▾ is remembered the same way.
+      await expect(page.locator('#keyboard .symbols')).toBeVisible();
+      await expect(source).not.toHaveAttribute('inputmode');
+      await expect(page.locator('#keyboard button[data-id="@pencil"]')).toBeVisible();
+      // ▾ is in the strip, and puts it all away for the visit.
       await tapKey(page, '@hide');
       await expect(keyboard(page)).toBeHidden();
       await expect(opener).toBeVisible();
       await page.reload();
       await settled(page);
       await page.locator('#source').tap();
+      await expect(keyboard(page)).toBeHidden();
+      await opener.tap();
+      await expect(keyboard(page)).toBeVisible();
+      await expect(source).toBeFocused();
+      await expect(opener).toBeHidden();
+      await tapKey(page, '@pencil');
+      await expect(source).toHaveAttribute('inputmode', 'none');
+      await expect(page.locator('#keyboard .keys')).toBeVisible();
+      // ▾ on the keys' own row is remembered the same way.
+      await tapKey(page, '@hide');
       await expect(keyboard(page)).toBeHidden();
       await expect(opener).toBeVisible();
     });
@@ -946,13 +958,21 @@ test.describe('the playground\'s Pencil keys', () => {
       await pointer(false);
       await expect(page.locator('html')).not.toHaveClass(/touch/);
       await expect(page.locator('#source')).not.toHaveAttribute('inputmode');
+      // With a mouse, the words and the symbols, there without focus, and never `inputmode`.
+      await expect(keyboard(page)).toBeVisible();
+      await expect(page.locator('#keyboard .symbols')).toBeVisible();
+      await expect(page.locator('#keyboard .keys')).toBeHidden();
+      await expect(page.locator('#keyboard button[data-id="@pencil"]')).toHaveText('all keys');
       await page.locator('#source').tap();
-      await expect(keyboard(page)).toBeHidden();
+      await expect(page.locator('#source')).not.toHaveAttribute('inputmode');
       expect(await page.evaluate(() => document.querySelector('.app').style.getPropertyValue('--app-h'))).toBe('');
       await page.locator('#figure').tap();
       await pointer(true);
       await expect(page.locator('html')).toHaveClass(/touch/);
+      // Back to a finger: the keys wait for the editor to be touched.
+      await expect(keyboard(page)).toBeHidden();
       await touchEditor(page);
+      await expect(page.locator('#keyboard button[data-id="@system"]')).toHaveText('system');
       await expect(page.locator('#source')).toHaveAttribute('inputmode', 'none');
     });
 
@@ -981,6 +1001,24 @@ test.describe('the playground\'s Pencil keys', () => {
       });
       expect(result.after).toBe(result.before);
       if (result.heldBefore !== null) expect(result).toMatchObject({ heldBefore: true, heldZoomed: false });
+    });
+
+    test('a move of three fingers is cancelled while the page holds, and one of two isn\'t', async ({ page, browserName }) => {
+      test.skip(browserName !== 'chromium', 'WebKit can\'t make a Touch');
+      await openPlayground(page, 'figure=circle');
+      const held = await page.evaluate(() => {
+        const code = document.getElementById('source');
+        const move = (n) => {
+          const touches = [...Array(n)].map((_, i) => new Touch({ identifier: i + 1, target: code, clientX: 10 + i * 20, clientY: 10 }));
+          const e = new TouchEvent('touchmove', { cancelable: true, bubbles: true, touches });
+          code.dispatchEvent(e);
+          return e.defaultPrevented;
+        };
+        return { two: move(2), three: move(3) };
+      });
+      // What iOS itself does with a three-finger swipe, a page may not be able to stop: only a
+      // device can say (docs/goals.md, 2026-11-20).
+      expect(held).toEqual({ two: false, three: true });
     });
 
     test('a held key repeats, and stops when the finger lifts or slides off; its click doesn\'t act again', async ({ page }) => {
@@ -1110,6 +1148,7 @@ test.describe('the playground\'s Pencil keys', () => {
       await page.locator('#figure-more').click();
       const hint = page.locator('#figure-menu .hint');
       await expect(hint).toContainText('goes to the keys');
+      await expect(hint).toContainText('Typing on a keyboard leaves the words and the symbols');
       await expect(hint.locator('.if-mouse')).toBeHidden();
     });
   });
@@ -1118,18 +1157,33 @@ test.describe('the playground\'s Pencil keys', () => {
     test.beforeEach(({ isMobile }) => {
       test.skip(isMobile, 'desktop projects only');
     });
+    const clickKey = (page, id) => page.locator(`#keyboard button[data-id="${id}"]`).filter({ visible: true }).click();
+    const rowHeights = (page) => page.evaluate(() => [...document.querySelectorAll('#keyboard > :not([hidden])')].map((el) => el.getBoundingClientRect().height));
+    /** The figure's box and what the status line says it was drawn at. */
+    const figureNow = (page) => page.evaluate(() => {
+      const r = document.getElementById('figure').getBoundingClientRect();
+      return { box: [r.x, r.y, r.width, r.height].map(Math.round), status: document.getElementById('status').textContent.match(/\d+×\d+/)?.[0] };
+    });
 
-    test('no keys, the editor as it was, and the figure laid out as it was', async ({ page }) => {
+    test('the words and the symbols are under the editor while it is shown, and the figure is laid out as it was', async ({ page }) => {
       await openPlayground(page, 'figure=circle');
       await drawnHere(page);
       const source = page.locator('#source');
-      await source.click();
-      await page.keyboard.type('// typed');
-      await expect(source).toHaveValue(/\/\/ typed$/);
-      await expect(keyboard(page)).toBeHidden();
+      // There before the editor has focus, so its box doesn't change as focus comes and goes.
+      await expect(keyboard(page)).toBeVisible();
+      await expect(page.locator('#keyboard .words-row')).toBeVisible();
+      await expect(page.locator('#keyboard .symbols')).toBeVisible();
+      await expect(page.locator('#keyboard .keys')).toBeHidden();
       await expect(source).not.toHaveAttribute('inputmode');
       await expect(source).toHaveCSS('font-size', '13px');
-      expect(await page.locator('html').getAttribute('class')).toBeFalsy();
+      await expect(page.locator('html')).not.toHaveClass(/touch/);
+      // A plain name for the key that shows the rest.
+      await expect(page.locator('#keyboard button[data-id="@pencil"]')).toHaveText('all keys');
+      const code = await box(page, '.code');
+      await source.click();
+      expect(await box(page, '.code')).toEqual(code);
+      await page.locator('#figure').click();
+      expect(await box(page, '.code')).toEqual(code);
       // The figure's own rule, as before the keys: as wide as its column, to the window's height.
       const laid = await page.evaluate(() => {
         const view = document.querySelector('.view');
@@ -1141,10 +1195,690 @@ test.describe('the playground\'s Pencil keys', () => {
       });
       expect(Math.abs(laid.width - laid.expected)).toBeLessThan(1);
       expect(laid).toMatchObject({ app: 'static', stage: 'contents' });
-      await expect(page.locator('#keys-open')).toBeHidden();
-      await expect(page.locator('#figure-menu .hint .if-touch')).toBeHidden();
-      await expect(page.locator('#figure-menu .hint')).toContainText('Esc leaves the editor');
+      // The rows' height is the editor's: put away, the figure is where it was.
+      const figure = await figureNow(page);
+      await clickKey(page, '@hide');
+      await expect(keyboard(page)).toBeHidden();
+      expect(await figureNow(page)).toEqual(figure);
+      await expect(page.locator('#keys-open')).toBeVisible();
     });
+
+    test('a click on a symbol or a word types it, keeps focus in the editor, and typing closes nothing', async ({ page }) => {
+      await openPlayground(page, 'figure=circle');
+      const source = page.locator('#source');
+      await source.click();
+      await source.evaluate((t) => t.setSelectionRange(t.value.length, t.value.length));
+      const before = await source.inputValue();
+      await clickKey(page, '=·');
+      await expect(source).toHaveValue(`${before}·`);
+      await expect(source).toBeFocused();
+      await page.keyboard.type('\ncu');
+      // The words follow the caret.
+      await expect(page.locator('#keyboard .words-row .run button').first()).toHaveText('curve');
+      await clickKey(page, '~curve');
+      await expect(source).toHaveValue(`${before}·\ncurve `);
+      await expect(source).toBeFocused();
+      await expect(keyboard(page)).toBeVisible();
+      await expect(page.locator('#keyboard .symbols')).toBeVisible();
+      // Clicked with the editor away, a symbol goes where the caret was.
+      await page.locator('#figure').click();
+      await clickKey(page, '=π');
+      await expect(source).toHaveValue(`${before}·\ncurve π`);
+      await expect(source).toBeFocused();
+    });
+
+    test('all keys opens the palette, symbol row goes back, kept for the visit; ▾ puts it away and keys brings it back', async ({ page }) => {
+      await openPlayground(page, 'figure=circle');
+      const source = page.locator('#source');
+      await source.click();
+      await source.evaluate((t) => t.setSelectionRange(t.value.length, t.value.length));
+      const before = await source.inputValue();
+      await clickKey(page, '@pencil');
+      await expect(page.locator('#keyboard .keys')).toBeVisible();
+      await expect(page.locator('#keyboard .symbols')).toBeHidden();
+      await expect(page.locator('#keyboard .words-row')).toBeVisible();
+      await expect(page.locator('#keyboard button[data-id="@system"]')).toHaveText('symbol row');
+      await expect(page.locator('#keyboard button[data-id="@system"]')).toHaveAttribute('aria-label', 'Back to the row of symbols');
+      await expect(source).not.toHaveAttribute('inputmode');
+      // Its pages: Greek, and the functions and Pencil's words.
+      await clickKey(page, '@page:greek');
+      await clickKey(page, '=θ');
+      await clickKey(page, '@page:words');
+      await clickKey(page, '=sqrt(');
+      await expect(source).toHaveValue(`${before}θsqrt(`);
+      await expect(source).toBeFocused();
+      // Typing on the keyboard closes nothing.
+      await page.keyboard.type('x');
+      await expect(page.locator('#keyboard .keys')).toBeVisible();
+      await page.reload();
+      await settled(page);
+      await expect(page.locator('#keyboard .keys')).toBeVisible();
+      await clickKey(page, '@system');
+      await expect(page.locator('#keyboard .keys')).toBeHidden();
+      await expect(page.locator('#keyboard .symbols')).toBeVisible();
+      // ▾, for the visit; keys by the tabs brings them back.
+      await clickKey(page, '@hide');
+      await expect(keyboard(page)).toBeHidden();
+      const opener = page.locator('#keys-open');
+      await expect(opener).toBeVisible();
+      await expect(opener).toHaveAttribute('aria-label', 'Show the words and symbols');
+      await page.reload();
+      await settled(page);
+      await expect(keyboard(page)).toBeHidden();
+      await opener.click();
+      await expect(keyboard(page)).toBeVisible();
+      await expect(opener).toBeHidden();
+      await expect(source).toBeFocused();
+    });
+
+    test('the keyboard reaches the rows: Esc into them, arrows among them, Enter presses, Esc out; Tab is as it was', async ({ page }) => {
+      await openPlayground(page, 'figure=circle');
+      const source = page.locator('#source');
+      await source.click();
+      await source.evaluate((t) => t.setSelectionRange(t.value.length, t.value.length));
+      const before = await source.inputValue();
+      const focused = () => page.evaluate(() => document.activeElement?.dataset?.id ?? document.activeElement?.id);
+      // Tab is two spaces, as before.
+      await page.keyboard.press('Tab');
+      await expect(source).toHaveValue(`${before}  `);
+      await page.keyboard.press('Escape');
+      expect(await focused()).toMatch(/^[=@~]/);
+      await page.keyboard.press('ArrowDown');
+      expect(await focused()).toMatch(/^[=@~]/);
+      await page.locator('#keyboard button[data-id="=·"]').focus();
+      await page.keyboard.press('Enter');
+      await expect(source).toHaveValue(`${before}  ·`);
+      expect(await focused()).toBe('=·');
+      await page.keyboard.press('ArrowRight');
+      expect(await focused()).toBe('=²');
+      // The key to the palette, and back, by the keyboard: focus goes to the key that goes back.
+      await page.locator('#keyboard button[data-id="@pencil"]').focus();
+      await page.keyboard.press('Enter');
+      expect(await focused()).toBe('@system');
+      await page.keyboard.press('Enter');
+      expect(await focused()).toBe('@pencil');
+      // Undo, from the words row, keeps its focus. The two spaces and the · were one run of typing.
+      await page.locator('#keyboard button[data-id="@undo"]').focus();
+      await page.keyboard.press('Enter');
+      await expect(source).toHaveValue(before);
+      expect(await focused()).toBe('@undo');
+      await page.keyboard.press('Escape');
+      await expect(page.locator('#figure')).toBeFocused();
+      await expect(keyboard(page)).toBeVisible();
+    });
+
+    test('the menu says what the rows are and what Esc does with a mouse', async ({ page }) => {
+      await openPlayground(page, 'figure=circle');
+      const hint = page.locator('#figure-menu .hint');
+      await expect(hint.locator('.if-touch')).toBeHidden();
+      await expect(hint).toContainText('Under the editor are words that finish what you type, symbols, and all keys for the rest');
+      await expect(hint).toContainText('Esc in the editor goes to them, and again leaves for the figure');
+    });
+
+    test('at 700 px the rows belong to the text, and go with it when the controls are shown', async ({ page }) => {
+      await page.setViewportSize({ width: 700, height: 919 });
+      await openPlayground(page, 'figure=mobius');
+      await drawnHere(page);
+      await expect(page.locator('#panel-switch')).toBeVisible();
+      await expect(keyboard(page)).toBeVisible();
+      const figure = await figureNow(page);
+      const rows = await rowHeights(page);
+      await page.getByRole('tab', { name: 'Controls' }).click();
+      await expect(keyboard(page)).toBeHidden();
+      await expect(page.locator('#controls-panel')).toBeVisible();
+      await page.getByRole('tab', { name: 'Text' }).click();
+      await expect(keyboard(page)).toBeVisible();
+      expect(await rowHeights(page)).toEqual(rows);
+      // Their room is the editor's, not the figure's.
+      await page.locator('#keyboard button[data-id="@hide"]').click();
+      await expect(keyboard(page)).toBeHidden();
+      expect(await figureNow(page)).toEqual(figure);
+      expect(await page.evaluate(() => document.documentElement.scrollHeight - innerHeight)).toBe(0);
+    });
+
+    test('the rows keep one height each, with words or none', async ({ page }) => {
+      await openPlayground(page, 'figure=circle');
+      const source = page.locator('#source');
+      await source.click();
+      await source.evaluate((t) => t.setSelectionRange(t.value.length, t.value.length));
+      const heights = await rowHeights(page);
+      let none = 0;
+      for (const typed of ['\nz', 'q', '\n', 'c']) {
+        await page.keyboard.type(typed);
+        none += await page.locator('#keyboard .words-row .none').count();
+        expect(await rowHeights(page)).toEqual(heights);
+      }
+      expect(none).toBeGreaterThan(0);
+    });
+  });
+});
+
+// Undo and redo: keys at the end of the words row, Cmd/Ctrl+Z, and the system's own (a
+// `beforeinput` of `historyUndo`), all of them one history for each file (web/history.js).
+test.describe('undo and redo', () => {
+  /** Presses a key in the rows as the pointer does: a tap on a touch screen, a click with a mouse. */
+  const pressKey = async (page, id, isMobile) => {
+    const key = page.locator(`#keyboard button[data-id="${id}"]`).filter({ visible: true });
+    // Undo and Redo say they have nothing to do with `aria-disabled`, and a press then does nothing.
+    const force = /^@(undo|redo)$/.test(id);
+    if (isMobile) await key.tap({ force });
+    else await key.click({ force });
+  };
+  /** The editor, with its keys up on a touch screen, and the caret at the end of the file. */
+  const intoEditor = async (page, isMobile) => {
+    const source = page.locator('#source');
+    if (isMobile) await source.tap();
+    else await source.click();
+    await source.evaluate((t) => t.setSelectionRange(t.value.length, t.value.length));
+    await expect(page.locator('#keyboard')).toBeVisible();
+  };
+  const enabled = (page, id) => page.locator(`#keyboard button[data-id="${id}"]`).evaluate((b) => b.getAttribute('aria-disabled') !== 'true');
+  const tabTo = (page, name) => page.locator('#tabs .pick', { hasText: name }).click();
+  /** Every way an undo or a redo comes: the key, the shortcut, a `beforeinput` made by hand as the
+   * system's undo sends one (its redo half no browser sends, since the page leaves the browser
+   * nothing to redo), and the browser's own `execCommand`, which Chromium does without a
+   * `beforeinput`, and is put back and done from the file's history. */
+  const WAYS = {
+    key: (page, which, isMobile) => pressKey(page, which === 'undo' ? '@undo' : '@redo', isMobile),
+    shortcut: async (page, which) => {
+      await page.locator('#source').focus();
+      await page.keyboard.press(which === 'undo' ? 'ControlOrMeta+z' : 'ControlOrMeta+Shift+z');
+    },
+    'beforeinput made by hand': (page, which) => page.locator('#source').evaluate((t, which) => {
+      t.focus();
+      t.dispatchEvent(new InputEvent('beforeinput', { inputType: which === 'undo' ? 'historyUndo' : 'historyRedo', bubbles: true, cancelable: true }));
+    }, which),
+    browser: (page, which) => page.locator('#source').evaluate((t, which) => {
+      t.focus();
+      document.execCommand(which);
+    }, which),
+  };
+
+  test('the keys are drawn, the same everywhere, and named', async ({ page, isMobile }) => {
+    await openPlayground(page, 'figure=circle');
+    await intoEditor(page, isMobile);
+    for (const [id, name] of [['@undo', 'Undo'], ['@redo', 'Redo']]) {
+      const key = page.locator(`#keyboard button[data-id="${id}"]`);
+      await expect(key).toHaveAccessibleName(name);
+      await expect(key.locator('svg')).toHaveAttribute('aria-hidden', 'true');
+      await expect(key.locator('svg')).toHaveAttribute('stroke', 'currentColor');
+      const size = await key.locator('svg').boundingBox();
+      expect(size.width).toBeGreaterThanOrEqual(20);
+    }
+  });
+
+  test('the keys are in the words row with the Pencil keys up and over the system keyboard, and say when there is nothing to do', async ({ page, isMobile }) => {
+    test.skip(!isMobile, 'touch projects only');
+    await openPlayground(page, 'figure=circle');
+    await intoEditor(page, isMobile);
+    const row = page.locator('#keyboard .words-row');
+    for (const [id, name] of [['@undo', 'Undo'], ['@redo', 'Redo']]) {
+      const key = row.locator(`.history button[data-id="${id}"]`);
+      await expect(key).toBeVisible();
+      await expect(key).toHaveAttribute('aria-label', name);
+      await expect(key).toHaveAttribute('aria-disabled', 'true');
+    }
+    // Outside the part that scrolls, and at the row's right end, in view at 375 px.
+    const at = await row.evaluate((r) => {
+      const keys = r.querySelector('.history').getBoundingClientRect();
+      return { right: r.getBoundingClientRect().right - keys.right, inRun: !!r.querySelector('.run .history') };
+    });
+    expect(at.inRun).toBe(false);
+    expect(at.right).toBeLessThan(10);
+    await pressKey(page, '=7', isMobile);
+    expect(await enabled(page, '@undo')).toBe(true);
+    await pressKey(page, '@system', isMobile);
+    await expect(row.locator('button[data-id="@undo"]')).toBeVisible();
+    await expect(row.locator('button[data-id="@redo"]')).toBeVisible();
+    await pressKey(page, '@pencil', isMobile);
+  });
+
+  test('undo takes back the keys, a word, a symbol written for its name and a LaTeX paste, each, and redo puts them back', async ({ page, isMobile }) => {
+    await openPlayground(page, 'figure=circle');
+    await intoEditor(page, isMobile);
+    const source = page.locator('#source');
+    const start = await source.inputValue();
+    const undo = () => WAYS.key(page, 'undo', isMobile);
+    const redo = () => WAYS.key(page, 'redo', isMobile);
+    // Keys: a new line and `cu`, then the word they start.
+    if (isMobile) await pressKey(page, '@enter', isMobile);
+    else await page.keyboard.press('Enter');
+    if (isMobile) await pressKey(page, '@page:letters', isMobile);
+    if (isMobile) for (const id of ['=c', '=u']) await pressKey(page, id, isMobile);
+    else await page.keyboard.type('cu');
+    await pressKey(page, '~curve', isMobile);
+    await expect(source).toHaveValue(`${start}\ncurve `);
+    await undo();
+    await expect(source).toHaveValue(`${start}\ncu`);
+    await undo();
+    await expect(source).toHaveValue(start);
+    expect(await enabled(page, '@undo')).toBe(false);
+    await redo();
+    await expect(source).toHaveValue(`${start}\ncu`);
+    await redo();
+    await expect(source).toHaveValue(`${start}\ncurve `);
+    expect(await enabled(page, '@redo')).toBe(false);
+    // Focus stayed in the editor through all of it.
+    await expect(source).toBeFocused();
+    // A symbol for its name: the undo gives back what was typed.
+    await source.evaluate((t) => t.setSelectionRange(t.value.length, t.value.length));
+    await page.keyboard.type('c \\theta ');
+    await expect(source).toHaveValue(`${start}\ncurve c θ `);
+    await undo();
+    await expect(source).toHaveValue(`${start}\ncurve c \\theta `);
+    await redo();
+    await expect(source).toHaveValue(`${start}\ncurve c θ `);
+    // A LaTeX paste, after typing: a step of its own.
+    await source.evaluate((t) => t.setSelectionRange(t.value.length, t.value.length));
+    await page.keyboard.type('= ');
+    await source.evaluate((t) => {
+      const data = new DataTransfer();
+      data.setData('text/plain', '\\frac{1}{2}');
+      t.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }));
+    });
+    await expect(source).toHaveValue(`${start}\ncurve c θ = 1/2`);
+    await undo();
+    await expect(source).toHaveValue(`${start}\ncurve c θ = `);
+    // What's undone is what the figure has, and what's kept.
+    await expect.poll(() => page.evaluate(() => window.pencil.files()[0].text)).toBe(`${start}\ncurve c θ = `);
+  });
+
+  for (const way of Object.keys(WAYS)) {
+    test(`by the ${way}, an undo or a redo never reaches another file, and each file keeps its own`, async ({ page, isMobile }) => {
+      test.skip(way === 'shortcut' && isMobile, 'a phone has no Cmd or Ctrl');
+      await openPlayground(page, 'figure=circle');
+      const source = page.locator('#source');
+      const [pen, sheet] = await page.evaluate(() => window.pencil.files().map((f) => f.text));
+      const texts = () => page.evaluate(() => window.pencil.files().map((f) => f.text));
+      const go = (which) => WAYS[way](page, which, isMobile);
+      // Typed in the .pen, then the sheet shown: undo there, with nothing done in it, changes nothing.
+      await intoEditor(page, isMobile);
+      await page.keyboard.type('// A');
+      await expect.poll(texts).toEqual([`${pen}// A`, sheet]);
+      await tabTo(page, 'circle.style');
+      await expect(source).toHaveValue(sheet);
+      await intoEditor(page, isMobile);
+      await go('undo');
+      await expect(source).toHaveValue(sheet);
+      await go('redo');
+      await expect(source).toHaveValue(sheet);
+      expect(await texts()).toEqual([`${pen}// A`, sheet]);
+      // Typed in the sheet: two undos take back its edit, and only its.
+      await page.keyboard.type('// B');
+      await go('undo');
+      await expect(source).toHaveValue(sheet);
+      await go('undo');
+      await expect(source).toHaveValue(sheet);
+      expect(await texts()).toEqual([`${pen}// A`, sheet]);
+      if (way === 'browser') {
+        // In Chromium `execCommand` sends no `beforeinput`, so the browser undoes or redoes, and
+        // that's put back and done from the sheet's history; in WebKit it sends one, which is
+        // stopped, and WebKit still keeps the step to redo. Both give the sheet's own B back, and
+        // never the .pen's edit:
+        await tabTo(page, 'circle.pen');
+        await intoEditor(page, isMobile);
+        await WAYS.key(page, 'undo', isMobile);
+        await expect(source).toHaveValue(pen);
+        await tabTo(page, 'circle.style');
+        await intoEditor(page, isMobile);
+        const seen = [];
+        for (const which of ['redo', 'redo', 'undo', 'redo']) {
+          await go(which);
+          seen.push((await source.inputValue()) === sheet ? 'sheet' : (await source.inputValue()) === `${sheet}// B` ? 'B' : 'other');
+        }
+        expect(seen).toEqual(['B', 'B', 'sheet', 'B']);
+        expect((await texts())[0]).toBe(pen);
+        return;
+      }
+      // Back on the .pen, its own history: undo takes back its edit.
+      await tabTo(page, 'circle.pen');
+      await expect(source).toHaveValue(`${pen}// A`);
+      await intoEditor(page, isMobile);
+      await go('undo');
+      await expect(source).toHaveValue(pen);
+      // Undone in the .pen, then the sheet shown: a redo there is the sheet's own, B, and never
+      // the .pen's edit.
+      await tabTo(page, 'circle.style');
+      await intoEditor(page, isMobile);
+      await go('redo');
+      await expect(source).toHaveValue(`${sheet}// B`);
+      await go('redo');
+      await expect(source).toHaveValue(`${sheet}// B`);
+      await expect.poll(texts).toEqual([pen, `${sheet}// B`]);
+      // And the .pen's redo is still its own: A comes back.
+      await tabTo(page, 'circle.pen');
+      await intoEditor(page, isMobile);
+      await go('redo');
+      await expect(source).toHaveValue(`${pen}// A`);
+      await expect.poll(texts).toEqual([`${pen}// A`, `${sheet}// B`]);
+    });
+  }
+
+  test('an undo the browser makes anyway, as iOS Safari did with the .pen\'s edit in the sheet, is put back and done from the file\'s own history', async ({ page, isMobile }) => {
+    await openPlayground(page, 'figure=circle');
+    const source = page.locator('#source');
+    const [pen, sheet] = await page.evaluate(() => window.pencil.files().map((f) => f.text));
+    await intoEditor(page, isMobile);
+    await page.keyboard.type('// A');
+    await tabTo(page, 'circle.style');
+    await intoEditor(page, isMobile);
+    await page.keyboard.type('// B');
+    // What Kris saw on his iPhone: the system's undo put the .pen's edit into the sheet. Here it's
+    // made by hand, as a browser whose `beforeinput` couldn't be stopped would make it.
+    for (const inputType of ['historyUndo', 'historyRedo']) {
+      await source.evaluate((t, inputType) => {
+        t.value = `${t.value}label d at d`;
+        t.dispatchEvent(new InputEvent('input', { inputType, bubbles: true }));
+      }, inputType);
+      await expect(source).not.toHaveValue(/label d/);
+    }
+    await expect(source).toHaveValue(`${sheet}// B`);
+    await WAYS.key(page, 'undo', isMobile);
+    await expect(source).toHaveValue(sheet);
+    await expect.poll(() => page.evaluate(() => window.pencil.files().map((f) => f.text))).toEqual([`${pen}// A`, sheet]);
+  });
+
+  test('adding a file and removing one keep every file\'s history, though each file is copied into your figure', async ({ page, isMobile }) => {
+    await openPlayground(page, 'figure=circle');
+    const source = page.locator('#source');
+    const [pen] = await page.evaluate(() => window.pencil.files().map((f) => f.text));
+    await intoEditor(page, isMobile);
+    await page.keyboard.type('// A');
+    await page.locator('#add').click();
+    await page.locator('#add-name').fill('x.style');
+    await page.locator('#add-name').press('Enter');
+    await expect(page.locator('#figure-pick')).toHaveValue('yours');
+    await tabTo(page, 'circle.pen');
+    await expect(source).toHaveValue(`${pen}// A`);
+    await intoEditor(page, isMobile);
+    expect(await enabled(page, '@undo')).toBe(true);
+    await WAYS.key(page, 'undo', isMobile);
+    await expect(source).toHaveValue(pen);
+    await WAYS.key(page, 'redo', isMobile);
+    await expect(source).toHaveValue(`${pen}// A`);
+    // Removed: the rest keep theirs.
+    await page.locator('#tabs .remove[data-path$="x.style"]').click();
+    await expect(page.locator('#tabs .pick', { hasText: 'x.style' })).toHaveCount(0);
+    await tabTo(page, 'circle.pen');
+    await intoEditor(page, isMobile);
+    await WAYS.key(page, 'undo', isMobile);
+    await expect(source).toHaveValue(pen);
+  });
+
+  test('a sheet keeps its history when another look is chosen and then its own again', async ({ page, isMobile }) => {
+    await openPlayground(page, 'figure=hearts');
+    const source = page.locator('#source');
+    await tabTo(page, 'plain.style');
+    const plain = await source.inputValue();
+    await intoEditor(page, isMobile);
+    await page.keyboard.type('// P');
+    await page.locator('#style-pick').selectOption('hearts-glow');
+    await expect(page.locator('#tabs .pick', { hasText: 'glow.style' })).toBeVisible();
+    // The glow sheet is another file, with nothing to undo.
+    await tabTo(page, 'glow.style');
+    await intoEditor(page, isMobile);
+    expect(await enabled(page, '@undo')).toBe(false);
+    await page.locator('#style-pick').selectOption('hearts');
+    await tabTo(page, 'plain.style');
+    await expect(source).toHaveValue(`${plain}// P`);
+    await intoEditor(page, isMobile);
+    await WAYS.key(page, 'undo', isMobile);
+    await expect(source).toHaveValue(plain);
+  });
+
+  test('a historyUndo the browser can\'t stop is one step, not two', async ({ page, isMobile }) => {
+    await openPlayground(page, 'figure=circle');
+    const source = page.locator('#source');
+    const start = await source.inputValue();
+    await intoEditor(page, isMobile);
+    await page.keyboard.type('// A');
+    await page.waitForTimeout(2100);
+    await pressKey(page, '=π', isMobile);
+    await expect(source).toHaveValue(`${start}// Aπ`);
+    await source.evaluate((t) => {
+      t.dispatchEvent(new InputEvent('beforeinput', { inputType: 'historyUndo', bubbles: true, cancelable: false }));
+      // The browser goes on with its own undo of the π, as one that couldn't be stopped does.
+      t.value = t.value.replace(/π$/, '');
+      t.dispatchEvent(new InputEvent('input', { inputType: 'historyUndo', bubbles: true }));
+    });
+    await expect(source).toHaveValue(`${start}// A`);
+  });
+
+  test('a Backspace at the start, which makes no edit, leaves nothing behind for the next', async ({ page, isMobile }) => {
+    test.skip(isMobile, 'a hardware Backspace');
+    await openPlayground(page, 'figure=circle');
+    const source = page.locator('#source');
+    await source.click();
+    await source.evaluate((t) => t.setSelectionRange(0, 0));
+    await page.keyboard.press('Backspace');
+    await source.evaluate((t) => t.setSelectionRange(t.value.length, t.value.length));
+    await page.waitForTimeout(100);
+    await pressKey(page, '=π', isMobile);
+    const length = (await source.inputValue()).length;
+    await page.keyboard.press('ControlOrMeta+z');
+    // The caret goes back to where the π went, not to the top of the file.
+    expect(await source.evaluate((t) => [t.selectionStart, t.selectionEnd])).toEqual([length - 1, length - 1]);
+  });
+
+  test('a composition is a step, a run of them where each ended is one, and one somewhere else is another', async ({ page, browserName }) => {
+    test.skip(browserName !== 'chromium', 'an input method through CDP');
+    await openPlayground(page, 'figure=circle');
+    const source = page.locator('#source');
+    const start = await source.inputValue();
+    await source.click();
+    await source.evaluate((t) => t.setSelectionRange(t.value.length, t.value.length));
+    const cdp = await page.context().newCDPSession(page);
+    const compose = async (reading, word) => {
+      await cdp.send('Input.imeSetComposition', { text: reading, selectionStart: 1, selectionEnd: 1 });
+      await cdp.send('Input.insertText', { text: word });
+    };
+    // Word after word at the end: one step, as a run of typing is.
+    await compose('か', '漢');
+    await compose('じ', '字');
+    await expect(source).toHaveValue(`${start}漢字`);
+    // Then one at the start of the file.
+    await source.evaluate((t) => t.setSelectionRange(0, 0));
+    await page.waitForTimeout(50);
+    await compose('ひ', '日');
+    await expect(source).toHaveValue(`日${start}漢字`);
+    await page.keyboard.press('ControlOrMeta+z');
+    await expect(source).toHaveValue(`${start}漢字`);
+    await page.keyboard.press('ControlOrMeta+z');
+    await expect(source).toHaveValue(start);
+  });
+
+  test('a drag of text within the editor is one step', async ({ page, isMobile }) => {
+    await openPlayground(page, 'figure=circle');
+    const source = page.locator('#source');
+    const start = await source.inputValue();
+    await intoEditor(page, isMobile);
+    await source.evaluate((t) => {
+      // `doc circle` moved to the end, as a drag does it: the text taken out, then dropped.
+      const from = t.value.indexOf('doc circle');
+      const edit = (inputType, make) => {
+        t.dispatchEvent(new InputEvent('beforeinput', { inputType, bubbles: true, cancelable: true }));
+        make();
+        t.dispatchEvent(new InputEvent('input', { inputType, bubbles: true }));
+      };
+      t.setSelectionRange(from, from + 10);
+      edit('deleteByDrag', () => t.setRangeText('', from, from + 10, 'end'));
+      t.setSelectionRange(t.value.length, t.value.length);
+      edit('insertFromDrop', () => t.setRangeText('doc circle', t.value.length, t.value.length, 'end'));
+    });
+    await expect(source).toHaveValue(/doc circle$/);
+    await WAYS.key(page, 'undo', isMobile);
+    await expect(source).toHaveValue(start);
+  });
+
+  test('an undo by the shortcut brings the caret into view, and leaves the scroll when it is', async ({ page, isMobile }) => {
+    test.skip(isMobile, 'a hardware keyboard');
+    await openPlayground(page, 'figure=circle');
+    const source = page.locator('#source');
+    await source.click();
+    await source.evaluate((t) => t.setSelectionRange(t.value.length, t.value.length));
+    await page.keyboard.type(`${'\n'.repeat(80)}// far`);
+    await page.waitForTimeout(2100);
+    await page.keyboard.type('X');
+    // Scrolled to the top, as a wheel does, with the caret left at the end.
+    await source.evaluate((t) => (t.scrollTop = 0));
+    await page.keyboard.press('ControlOrMeta+z');
+    const far = await source.evaluate((t) => ({ top: t.scrollTop, max: t.scrollHeight - t.clientHeight }));
+    expect(far.top).toBeGreaterThan(far.max - 60);
+    // An edit in view: the scroll stays put.
+    await source.evaluate((t) => t.setSelectionRange(t.value.length, t.value.length));
+    await page.waitForTimeout(2100);
+    await page.keyboard.type('Y');
+    const before = await source.evaluate((t) => t.scrollTop);
+    await page.keyboard.press('ControlOrMeta+z');
+    expect(await source.evaluate((t) => t.scrollTop)).toBe(before);
+  });
+
+  test('Cmd or Ctrl+Z in the Add a file dialog and with the controls shown leaves the text; on a key in the rows it undoes it', async ({ page, isMobile }) => {
+    test.skip(isMobile, 'a hardware keyboard');
+    await openPlayground(page, 'figure=mobius');
+    const source = page.locator('#source');
+    const [pen] = await page.evaluate(() => window.pencil.files().map((f) => f.text));
+    await source.click();
+    await source.evaluate((t) => t.setSelectionRange(t.value.length, t.value.length));
+    await page.keyboard.type('// A');
+    // The dialog's empty field: the browser would send its undo to the editor behind it.
+    await page.locator('#add').click();
+    await page.locator('#add-name').focus();
+    for (let i = 0; i < 3; i++) await page.keyboard.press('ControlOrMeta+z');
+    await page.keyboard.type('ab');
+    await page.keyboard.press('ControlOrMeta+z');
+    for (let i = 0; i < 3; i++) await page.keyboard.press('ControlOrMeta+z');
+    await expect(source).toHaveValue(`${pen}// A`);
+    await page.locator('#add-cancel').click();
+    // The dialog gives focus back to where it was as it closes, a task later.
+    await expect(page.locator('#add-dialog')).toHaveJSProperty('open', false);
+    await page.waitForTimeout(100);
+    // Focus on a key in the rows is still the editor's.
+    await source.focus();
+    await page.keyboard.press('Escape');
+    expect(await page.evaluate(() => document.activeElement?.closest('#keyboard') !== null)).toBe(true);
+    await page.keyboard.press('ControlOrMeta+z');
+    await expect(source).toHaveValue(pen);
+    await page.keyboard.press('ControlOrMeta+Shift+z');
+    await expect(source).toHaveValue(`${pen}// A`);
+    // Narrow, with the controls shown and focus on a slider, the hidden text stays as it is.
+    await page.setViewportSize({ width: 700, height: 919 });
+    await page.getByRole('tab', { name: 'Controls' }).click();
+    await page.locator('#controls-panel input[type=range]').first().focus();
+    await page.keyboard.press('ControlOrMeta+z');
+    await page.waitForTimeout(200);
+    await expect(source).toHaveValue(`${pen}// A`);
+  });
+
+  test('Cmd or Ctrl+Z on the figure, with the editor shown, is the editor\'s undo, as the browser always made it', async ({ page, isMobile }) => {
+    test.skip(isMobile, 'a hardware keyboard');
+    await openPlayground(page, 'figure=mobius');
+    const source = page.locator('#source');
+    const [pen] = await page.evaluate(() => window.pencil.files().map((f) => f.text));
+    await source.click();
+    await source.evaluate((t) => t.setSelectionRange(t.value.length, t.value.length));
+    await page.keyboard.type('// A');
+    await page.locator('#figure').focus();
+    await page.keyboard.press('ControlOrMeta+z');
+    await expect(source).toHaveValue(pen);
+  });
+
+  test('on a Mac Ctrl+Y is left to the system, Cocoa\'s yank; elsewhere it redoes', async ({ page, isMobile }) => {
+    test.skip(isMobile, 'a hardware keyboard');
+    await openPlayground(page, 'figure=circle');
+    const source = page.locator('#source');
+    await source.click();
+    const mac = await page.evaluate(() => /Mac/.test(navigator.platform));
+    const prevented = page.evaluate(() => new Promise((done) => addEventListener('keydown', (e) => e.key.toLowerCase() === 'y' && setTimeout(() => done(e.defaultPrevented)))));
+    await page.keyboard.press('Control+y');
+    expect(await prevented).toBe(!mac);
+  });
+
+  test('Revert is undone, and so is Revert all, for each file when it is shown', async ({ page, isMobile }) => {
+    await openPlayground(page, 'figure=circle');
+    const source = page.locator('#source');
+    const [pen, sheet] = await page.evaluate(() => window.pencil.files().map((f) => f.text));
+    await intoEditor(page, isMobile);
+    await page.keyboard.type('// mine');
+    await press(page, 'revert');
+    await expect(source).toHaveValue(pen);
+    await intoEditor(page, isMobile);
+    await WAYS.key(page, 'undo', isMobile);
+    await expect(source).toHaveValue(`${pen}// mine`);
+    await expect.poll(() => page.evaluate(() => window.pencil.files()[0].text)).toBe(`${pen}// mine`);
+    // Revert all: edits in both files.
+    await page.locator('#tabs .pick', { hasText: 'circle.style' }).click();
+    await intoEditor(page, isMobile);
+    await page.keyboard.type('// sheet');
+    await press(page, 'revert-all');
+    await expect(source).toHaveValue(sheet);
+    await intoEditor(page, isMobile);
+    await WAYS.key(page, 'undo', isMobile);
+    await expect(source).toHaveValue(`${sheet}// sheet`);
+    await page.locator('#tabs .pick', { hasText: 'circle.pen' }).click();
+    await expect(source).toHaveValue(pen);
+    await intoEditor(page, isMobile);
+    await WAYS.key(page, 'undo', isMobile);
+    await expect(source).toHaveValue(`${pen}// mine`);
+  });
+
+  test('another figure, a link and the recompile start nothing on the history, and keep it right', async ({ page, isMobile }) => {
+    await openPlayground(page, 'figure=circle');
+    const source = page.locator('#source');
+    await intoEditor(page, isMobile);
+    await page.keyboard.type('// typed');
+    // The recompile between keys leaves every step.
+    await expect(page.locator('#status')).toContainText('compiled');
+    await page.keyboard.type(' more');
+    await WAYS.key(page, 'undo', isMobile);
+    await expect(source).not.toHaveValue(/more$/);
+    await WAYS.key(page, 'redo', isMobile);
+    await expect(source).toHaveValue(/\/\/ typed more$/);
+    // Another figure: nothing of the circle's to undo there.
+    await page.locator('#figure-pick').selectOption('tangents');
+    await expect(source).toHaveValue(/doc tangents/);
+    const tangents = await source.inputValue();
+    await intoEditor(page, isMobile);
+    expect(await enabled(page, '@undo')).toBe(false);
+    await WAYS['beforeinput made by hand'](page, 'undo');
+    await WAYS.browser(page, 'undo');
+    await expect(source).toHaveValue(tangents);
+    // A link opened in the page, after an edit there: the same.
+    await intoEditor(page, isMobile);
+    await page.keyboard.type('// t');
+    const link = `#pen=${await pack(SOURCES)}`;
+    await page.evaluate((l) => (location.hash = l), link);
+    await expect(source).toHaveValue(DOC);
+    await intoEditor(page, isMobile);
+    expect(await enabled(page, '@undo')).toBe(false);
+    await WAYS['beforeinput made by hand'](page, 'undo');
+    await WAYS.key(page, 'undo', isMobile);
+    await expect(source).toHaveValue(DOC);
+    // And a link loaded as a page.
+    await page.goto(addressOf('', link));
+    await settled(page);
+    await expect(source).toHaveValue(DOC);
+    await intoEditor(page, isMobile);
+    await WAYS['beforeinput made by hand'](page, 'undo');
+    await expect(source).toHaveValue(DOC);
+  });
+
+  test('the text and the controls taking turns keep the history', async ({ page, isMobile }) => {
+    test.skip(!isMobile, 'phone projects only');
+    await openPlayground(page, 'figure=mobius');
+    await drawnHere(page);
+    const source = page.locator('#source');
+    const start = await source.inputValue();
+    await intoEditor(page, isMobile);
+    await pressKey(page, '=7', isMobile);
+    await page.getByRole('tab', { name: 'Controls' }).tap();
+    await expect(page.locator('#controls-panel')).toBeVisible();
+    await page.getByRole('tab', { name: 'Text' }).tap();
+    await intoEditor(page, isMobile);
+    await pressKey(page, '@undo', isMobile);
+    await expect(source).toHaveValue(start);
+    await pressKey(page, '@redo', isMobile);
+    await expect(source).toHaveValue(`${start}7`);
   });
 });
 

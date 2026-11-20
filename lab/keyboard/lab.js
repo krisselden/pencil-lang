@@ -6,6 +6,7 @@ import { PencilFigure } from '@pencil-lang/figure';
 import { ready as symbolsReady, typeSymbols, finishSymbol } from '../../web/symbols.js';
 import { keyboard } from '../../web/keyboard.js';
 import { holdToViewport } from '../../web/viewport.js';
+import { editHistory } from '../../web/history.js';
 
 const $ = (id) => document.getElementById(id);
 const app = $('app');
@@ -20,6 +21,8 @@ let variant = (query.get('keys') ?? 'c').toLowerCase();
 if (!['a', 'b', 'c'].includes(variant)) variant = 'c';
 const ways = { a: { keys: false, words: false }, b: { keys: true, words: false }, c: { keys: true, words: true } };
 let keys = null;
+// Undo and redo, a history for each file, as the playground keeps them.
+const edits = editHistory(textarea, { within: [$('keyboard')] });
 
 // ---- The shell: the app is the visual viewport (web/viewport.js) ----
 
@@ -93,7 +96,7 @@ function showFile(i) {
   if (was && textarea.value === was.text) Object.assign(was, { selection: [textarea.selectionStart, textarea.selectionEnd], scroll: textarea.scrollTop });
   active = i;
   const file = files[i];
-  textarea.value = file.text;
+  edits.show(file, file.text);
   textarea.setAttribute('aria-label', `Source of ${file.path}`);
   textarea.setSelectionRange(...file.selection);
   textarea.scrollTop = file.scroll;
@@ -148,6 +151,7 @@ keys = keyboard({
   remember: 'pencil-keys-lab',
   files: () => files,
   path: () => files[active]?.path ?? '',
+  history: edits,
   ...ways[variant],
   leave: () => figure.focus(),
 });

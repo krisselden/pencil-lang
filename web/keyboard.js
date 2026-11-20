@@ -1,10 +1,13 @@
 // The Pencil keys: keys of Pencil's own under an editor on a touch screen, with a row of words that
-// finish what's being typed, and the system keyboard one key away. The playground uses them for
-// its editor, and lab/keyboard is the bench they were tried on, which loads this same file.
+// finish what's being typed, and the system keyboard one key away. With a mouse, the row of words
+// and a row of symbols are under the editor, and the keys are a palette one key away. The
+// playground uses them for its editor, and lab/keyboard is the bench they were tried on, which
+// loads this same file.
 //
-// They type through the browser's own editing (`execCommand`), so undo takes back what they
-// typed, and the textarea has `inputmode="none"` while they're up, so the system keyboard stays
-// down. A hardware keyboard still types into it. Pressing a key never takes focus from the editor.
+// They type through the browser's own editing (`execCommand`), so an undo takes back what they
+// typed (history.js), and the textarea has `inputmode="none"` while they're up on a touch screen,
+// so the system keyboard stays down. A hardware keyboard still types into it. Pressing a key never
+// takes focus from the editor.
 import { ready as hostReady, functions, symbols } from '@pencil-lang/figure/host';
 import {
   PAGES, BOTTOM, STRIP, key, nameGreek, knowFunctions, FUNCTIONS, STATEMENTS, CLAUSES, CONSTANTS,
@@ -137,6 +140,14 @@ export function step(text, at, by) {
 
 // ---- The keyboard ----
 
+// Undo and Redo are drawn, so they look the same everywhere: an arrowhead and a shaft that turns
+// back, mirrored for redo. The key's name is what's read.
+const ARROW = '<path d="M9 5 4 10l5 5"/><path d="M4 10h10a5 5 0 0 1 0 10h-3"/>';
+const ICONS = {
+  undo: `<svg aria-hidden="true" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ARROW}</svg>`,
+  redo: `<svg aria-hidden="true" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><g transform="matrix(-1 0 0 1 24 0)">${ARROW}</g></svg>`,
+};
+
 /**
  * Puts the Pencil keys in `root`, for `textarea`.
  *
@@ -145,19 +156,24 @@ export function step(text, at, by) {
  * - `keys`: whether there are Pencil keys at all. Without them it's the system keyboard, with the
  *   symbol strip over it.
  * - `words`: whether there's a row of suggested words.
- * - `on`: whether there are any keys, which a page sets from `touch` (viewport.js). Off, the textarea
- *   is a plain one.
+ * - `on`: whether there are any keys. Off, the textarea is a plain one.
+ * - `touch`: whether the main pointer is a finger, which a page sets from `touch` (viewport.js).
+ * - `history`: the textarea's undo and redo (history.js), for the Undo and Redo keys at the end
+ *   of the words row.
  * - `opener`: a button the page shows, which brings the keys back once they were closed.
  * - `remember`: the start of the session storage keys under which the choices of the system
- *   keyboard and of closing the keys are kept for the visit, or null to keep them for this page.
+ *   keyboard, of the palette and of closing the keys are kept for the visit, or null to keep them
+ *   for this page.
  * - `leave()`: where focus goes when Escape leaves the keys.
  *
- * The keys come up when the textarea takes focus, and go when focus leaves both it and them. ▾
- * closes them, and so does the first key typed on a hardware keyboard, which needs no keys on the
- * screen: the textarea is then a plain one until `opener` is pressed.
+ * On a touch screen the keys come up when the textarea takes focus, and go when focus leaves both
+ * it and them. The first key typed on a hardware keyboard, which needs no keys on the screen,
+ * drops them to the words and the symbols over the system keyboard, with a key back to them.
+ * With a mouse, the words and the symbols are there while the editor is, and the hardware keyboard
+ * is the keyboard. Either way ▾ closes everything until `opener` is pressed.
  */
-export function keyboard({ textarea, root, files, path, on = true, opener = null, keys = true, words = true, remember = 'pencil-keys', leave = () => {} }) {
-  const state = { on, keys, words, system: false, closed: false, shown: false, page: 'numbers', shift: 0 };
+export function keyboard({ textarea, root, files, path, on = true, touch = true, history = null, opener = null, keys = true, words = true, remember = 'pencil-keys', leave = () => {} }) {
+  const state = { on, touch, keys, words, system: false, palette: false, closed: false, shown: false, page: 'numbers', shift: 0 };
   const recall = (name) => {
     try {
       return remember ? sessionStorage.getItem(`${remember}:${name}`) === '1' : false;
@@ -171,7 +187,11 @@ export function keyboard({ textarea, root, files, path, on = true, opener = null
     } catch {}
   };
   state.system = recall('system');
+  state.palette = recall('palette');
   state.closed = recall('closed');
+  /** Whether it's the two rows, the words and the symbols, rather than the words and the keys:
+   * over the system keyboard on a touch screen, and with a mouse unless the palette is open. */
+  const rows = () => !state.keys || (state.touch ? state.system : !state.palette);
 
   root.classList.add('keyboard');
   const wordsEl = Object.assign(document.createElement('div'), { className: 'strip words-row' });
@@ -183,6 +203,9 @@ export function keyboard({ textarea, root, files, path, on = true, opener = null
   const keysEl = Object.assign(document.createElement('div'), { className: 'keys' });
   keysEl.setAttribute('role', 'group');
   root.replaceChildren(wordsEl, symbolsEl, keysEl);
+  // The words scroll; Undo and Redo stay at the row's end, in both ways of typing.
+  const wordsRun = Object.assign(document.createElement('div'), { className: 'run' });
+  wordsEl.append(wordsRun);
 
   // ---- The caret, kept in view ----
 
@@ -222,7 +245,12 @@ export function keyboard({ textarea, root, files, path, on = true, opener = null
     kept = [textarea.selectionStart, textarea.selectionEnd];
     paintWords();
   });
-  textarea.addEventListener('input', () => paintWords());
+  textarea.addEventListener('input', (e) => {
+    // An undo or a redo, by a key, a shortcut or the system, shows where it was: the caret is
+    // brought into view, and the scroll stays where it is when it already is.
+    if (/^history/.test(e.inputType ?? '')) revealCaret();
+    paintWords();
+  });
   // Not every browser says when a textarea's selection changes, so it's read again as focus leaves.
   textarea.addEventListener('blur', () => (kept = [textarea.selectionStart, textarea.selectionEnd]));
 
@@ -293,22 +321,43 @@ export function keyboard({ textarea, root, files, path, on = true, opener = null
     insert(`\n${/^\s*/.exec(line)[0]}${/\{\s*$/.test(line) ? '  ' : ''}`);
   }
 
+  /** A word from the row, as a step of its own for undo. */
   function finishWord({ w, after, prefix }) {
     toEditor();
     const at = textarea.selectionStart;
     textarea.setSelectionRange(at - prefix.length, at);
+    history?.separate();
     insert(w + (after === '(' && textarea.value[at] === '(' ? '' : after));
+    history?.separate();
+  }
+
+  /** One step of the file's history back or on, with focus kept in the editor. */
+  function undo(way) {
+    toEditor();
+    endComposition();
+    if (way === 'undo') history?.undo();
+    else history?.redo();
+    revealCaret();
+    paintWords();
   }
 
   // ---- Which keys are up ----
 
   function apply() {
     if (!state.on || state.closed) state.shown = false;
-    const system = !state.keys || state.system;
-    // `inputmode="none"` keeps the system keyboard down for a field that has focus.
-    if (!state.on || state.closed || system) textarea.removeAttribute('inputmode');
+    // With a mouse they're there while the editor is, not only while it has focus.
+    else if (!state.touch) state.shown = true;
+    const system = rows();
+    // `inputmode="none"` keeps the system keyboard down for a field that has focus. Only on a
+    // touch screen: with a mouse it's never set.
+    if (!state.touch || !state.on || state.closed || system) textarea.removeAttribute('inputmode');
     else textarea.setAttribute('inputmode', 'none');
-    if (opener) opener.hidden = !(state.on && state.closed);
+    if (opener) {
+      opener.hidden = !(state.on && state.closed);
+      const label = state.touch ? 'Show the Pencil keys' : 'Show the words and symbols';
+      opener.setAttribute('aria-label', label);
+      opener.title = label;
+    }
     root.hidden = !state.shown;
     // For the page's styles, which can give the keys room while they're up.
     document.documentElement.classList.toggle('keys-up', state.shown);
@@ -340,14 +389,23 @@ export function keyboard({ textarea, root, files, path, on = true, opener = null
   });
 
   // A key typed on a hardware keyboard while the Pencil keys are up says there's a keyboard, so
-  // they close. Esc, Tab and the arrows don't: Esc goes into the keys, and the others move.
+  // they drop to the words and the symbols, which are still worth having with one. That's kept
+  // for the visit as the choice of the system keyboard is, so a keyboard taken away later leaves
+  // the system's, with the strip's key back to these. Esc, Tab and the arrows don't: Esc goes into
+  // the keys, and the others move. With a mouse nothing closes.
   textarea.addEventListener('keydown', (e) => {
-    if (!state.shown || !state.keys || state.system || e.isComposing || e.ctrlKey || e.metaKey || e.altKey) return;
-    if (e.key.length === 1 || e.key === 'Backspace' || e.key === 'Delete' || e.key === 'Enter') close(true);
+    if (!state.touch || !state.shown || rows() || e.isComposing || e.ctrlKey || e.metaKey || e.altKey) return;
+    if (e.key.length === 1 || e.key === 'Backspace' || e.key === 'Delete' || e.key === 'Enter') {
+      // No blur and focus, as the system key does: the key being typed goes on into the editor,
+      // and a hardware keyboard has the system's down anyway. The next touch reads `inputmode`.
+      state.system = true;
+      keep('system', true);
+      apply();
+    }
   });
 
   function hide() {
-    if (!state.shown) return;
+    if (!state.shown || !state.touch) return;
     state.shown = false;
     apply();
   }
@@ -398,6 +456,7 @@ export function keyboard({ textarea, root, files, path, on = true, opener = null
   /** Hands the field to the system keyboard, or takes it back. A blur and a focus in the same tap
    * make each browser read the new `inputmode` (lab/keyboard/README.md). */
   function useSystem(on) {
+    if (!state.touch) return usePalette(!on);
     state.system = on;
     keep('system', on);
     const selection = [...kept];
@@ -407,12 +466,35 @@ export function keyboard({ textarea, root, files, path, on = true, opener = null
     textarea.setSelectionRange(...selection);
   }
 
+  /** With a mouse: opens the palette of keys under the words, or goes back to the symbols. A
+   * keyboard's focus goes to the key that goes back. */
+  function usePalette(on) {
+    const inKeys = root.contains(document.activeElement);
+    state.palette = on;
+    keep('palette', on);
+    apply();
+    if (inKeys) {
+      const back = root.querySelector(`button[data-id="${on ? '@system' : '@pencil'}"]`);
+      if (back) {
+        rove(back.closest('.keys, .strip'), back.dataset.id);
+        back.focus({ preventScroll: true });
+      }
+    }
+  }
+
   // ---- Drawing the keys ----
 
   const specs = new WeakMap();
 
+  // With a mouse there's no system keyboard: the two keys say what they show.
+  const MOUSE_NAMES = {
+    system: { t: 'symbol row', name: 'Back to the row of symbols' },
+    pencil: { t: 'all keys', name: 'All the keys: numbers, letters, words and Greek' },
+  };
+
   function makeKey(spec) {
-    const k = key(spec);
+    let k = key(spec);
+    if (!state.touch && MOUSE_NAMES[k.action]) k = { ...k, ...MOUSE_NAMES[k.action] };
     if (k.gap !== undefined) {
       const gap = document.createElement('span');
       gap.className = 'gap';
@@ -427,6 +509,7 @@ export function keyboard({ textarea, root, files, path, on = true, opener = null
     let text = k.t;
     if (state.page === 'letters' && state.shift && ins && /^[a-z]$/.test(ins)) text = ins = ins.toUpperCase();
     b.textContent = text;
+    if (ICONS[k.action]) b.innerHTML = ICONS[k.action];
     if (k.name && k.name !== text) b.setAttribute('aria-label', k.name);
     if (k.action) b.classList.add(k.action === 'page' ? 'page-key' : 'action');
     if (k.action === 'space') b.classList.add('wide');
@@ -440,7 +523,10 @@ export function keyboard({ textarea, root, files, path, on = true, opener = null
       b.setAttribute('aria-pressed', String(state.shift > 0));
       if (state.shift === 2) b.setAttribute('aria-label', 'Shift, locked');
     }
-    b.style.flexGrow = String(k.w ?? 1);
+    // A key in a row of the pages takes its share of the row. One in a row that scrolls is as wide
+    // as what it says: two words alone in the row stretched across the whole of it.
+    if (k.w !== undefined && k.w !== 1) b.style.flexGrow = String(k.w);
+    else b.style.removeProperty('flex-grow');
     b.dataset.id = k.action ? `@${k.action}${k.page ? `:${k.page}` : ''}` : `=${ins}`;
     specs.set(b, { ...k, ins });
     return b;
@@ -512,7 +598,8 @@ export function keyboard({ textarea, root, files, path, on = true, opener = null
     run.append(...STRIP.map(makeKey));
     const tail = document.createElement('div');
     tail.className = 'fixed';
-    tail.append(makeKey('@left'), makeKey('@right'));
+    // ▾ is here too, for a reader with a hardware keyboard, whose keys dropped to these rows.
+    tail.append(makeKey('@left'), makeKey('@right'), makeKey('@hide'));
     parts.push(run, tail);
     symbolsEl.replaceChildren(...parts);
     rove(symbolsEl, null);
@@ -522,11 +609,30 @@ export function keyboard({ textarea, root, files, path, on = true, opener = null
     textarea.selectionStart === textarea.selectionEnd ? suggest(textarea.value, textarea.selectionStart, path(), files()) : [];
 
   // The row is as tall empty as full (keyboard.css), so nothing above it moves as it fills.
+  let historyTail = null;
+  function paintHistory() {
+    if (!history) return;
+    if (!historyTail) {
+      historyTail = document.createElement('div');
+      historyTail.className = 'fixed history';
+      historyTail.append(makeKey('@undo'), makeKey('@redo'));
+      wordsEl.append(historyTail);
+    }
+    for (const b of historyTail.children) {
+      const can = b.dataset.id === '@undo' ? history.canUndo : history.canRedo;
+      b.setAttribute('aria-disabled', String(!can));
+    }
+  }
+  history?.onChange(() => state.shown && paintHistory());
+
   function paintWords() {
     if (!state.shown || wordsEl.hidden) return;
+    paintHistory();
     const found = suggestions();
-    const run = document.createElement('div');
-    run.className = 'run';
+    const focused = wordsEl.contains(document.activeElement) ? document.activeElement.dataset.id : null;
+    const run = wordsRun;
+    run.replaceChildren();
+    run.scrollLeft = 0;
     if (!found.length) {
       const none = document.createElement('span');
       none.className = 'none';
@@ -539,8 +645,6 @@ export function keyboard({ textarea, root, files, path, on = true, opener = null
       b.dataset.id = `~${s.w}`;
       return b;
     }));
-    const focused = wordsEl.contains(document.activeElement) ? document.activeElement.dataset.id : null;
-    wordsEl.replaceChildren(run);
     rove(wordsEl, focused);
     if (focused) wordsEl.querySelector('[tabindex="0"]')?.focus();
   }
@@ -559,7 +663,7 @@ export function keyboard({ textarea, root, files, path, on = true, opener = null
 
   function act(b) {
     const k = specs.get(b);
-    if (!k) return;
+    if (!k || b.getAttribute('aria-disabled') === 'true') return;
     switch (k.action) {
       case undefined:
         insert(k.ins);
@@ -585,6 +689,8 @@ export function keyboard({ textarea, root, files, path, on = true, opener = null
         state.page = k.page;
         state.shift = 0;
         return paintKeys();
+      case 'undo': return undo('undo');
+      case 'redo': return undo('redo');
       case 'system': return useSystem(true);
       case 'pencil': return useSystem(false);
       case 'hide': {
@@ -709,9 +815,13 @@ export function keyboard({ textarea, root, files, path, on = true, opener = null
       kept = [textarea.selectionStart, textarea.selectionEnd];
       paintWords();
     },
-    /** Changes which keys there are: `on`, as `touch` changes, and the lab's ways of typing. */
+    /** Changes which keys there are: `touch`, as a mouse comes and goes, and the lab's ways of
+     * typing. */
     set(changes) {
+      const was = state.touch;
       Object.assign(state, changes);
+      // To a touch screen, they're up only while the editor has focus.
+      if (state.touch && !was) state.shown = document.activeElement === textarea || root.contains(document.activeElement);
       apply();
     },
   };

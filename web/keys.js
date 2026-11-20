@@ -93,6 +93,8 @@ const ACTIONS = {
   shift: { t: '⇧', name: 'Shift' },
   system: { t: 'system', name: 'Use the system keyboard', click: true },
   hide: { t: '▾', name: 'Hide the keys', click: true },
+  undo: { t: '↶', name: 'Undo' },
+  redo: { t: '↷', name: 'Redo' },
 };
 
 /** A key's full description from what a row says. */

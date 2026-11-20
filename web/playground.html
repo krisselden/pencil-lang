@@ -183,8 +183,12 @@
   .if-touch { display: none; }
   .touch .if-touch { display: inline; }
   .touch .if-mouse { display: none; }
-  /* The button that brings the keys back once they were put away, at every width. */
-  .touch #keys-open:not([hidden]) { display: block; }
+  /* The button that brings the keys back once they were put away, at every width, with a mouse as
+     on a touch screen. */
+  #keys-open:not([hidden]) { display: block; }
+  /* With a mouse the words and the symbols are under the editor, and its palette of keys is
+     shorter than a finger needs. They're in the editor's column, so its text gives up the room. */
+  html:not(.touch) .keyboard { --key-h: 30px; }
   .files #keys-open + #file-more { margin-left: 4px; }
   /* What's visible is short, under 500 px: a phone held sideways, or one with its system keyboard
      up (viewport.js marks it). With the keys up, the editor gives up its own room first, down to
@@ -258,7 +262,7 @@
       <input id="open-files" type="file" multiple accept=".pen,.style" hidden>
       <button id="share" type="button" title="Put every open file in a link, and copy it">Share</button>
       <a id="alone" target="_top" title="Open the playground without the page around it" hidden>Open on its own</a>
-      <p class="hint">Edits recompile as you type and stay in this browser; Share puts the whole figure in a link. <span class="if-mouse"><kbd>Esc</kbd> leaves the editor;</span><span class="if-touch">▾ puts the Pencil keys away for the visit, and so does typing on a keyboard; <b>keys</b> by the tabs brings them back. <kbd>Esc</kbd> in the editor goes to the keys while they’re up, and again leaves for the figure;</span> then <kbd>Space</kbd> plays, <kbd>←</kbd> <kbd>→</kbd> step beats.</p>
+      <p class="hint">Edits recompile as you type and stay in this browser; Share puts the whole figure in a link. Undo and redo are the two keys at the end of the words, or <kbd>Cmd</kbd>/<kbd>Ctrl</kbd>+<kbd>Z</kbd> and <kbd>Shift</kbd> with it, each in the file you’re in. <span class="if-mouse">Under the editor are words that finish what you type, symbols, and <b>all keys</b> for the rest; ▾ puts them away, <b>keys</b> brings them back. <kbd>Esc</kbd> in the editor goes to them, and again leaves for the figure;</span><span class="if-touch">▾ puts the Pencil keys away for the visit; <b>keys</b> by the tabs brings them back. Typing on a keyboard leaves the words and the symbols. <kbd>Esc</kbd> in the editor goes to the keys while they’re up, and again leaves for the figure;</span> then <kbd>Space</kbd> plays, <kbd>←</kbd> <kbd>→</kbd> step beats.</p>
     </div>
   </header>
   <section class="editor" id="editor" aria-label="Sources">

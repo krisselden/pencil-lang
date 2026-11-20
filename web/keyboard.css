@@ -12,7 +12,8 @@
 }
 .keyboard[hidden], .keyboard [hidden] { display: none !important; }
 
-/* A row of keys that scrolls sideways: the words, and the symbols over the system keyboard. Its
+/* A row of keys that scrolls sideways: the words, and the symbols over the system keyboard or, with
+   a mouse, under the words. Its
    height is set, not taken from what it holds, so the words row is as tall empty as full. When it
    changed, the space it gave up went to what's above it, and the editor's text moved
    (lab/keyboard/README.md). */
@@ -20,10 +21,16 @@
 .keyboard .run { display: flex; gap: 4px; flex: 1; min-width: 0; overflow-x: auto; overscroll-behavior: contain; scrollbar-width: none; touch-action: pan-x; }
 .keyboard .run::-webkit-scrollbar { display: none; }
 .keyboard .fixed { display: flex; gap: 4px; flex: none; }
-.keyboard .strip button { flex: none; min-width: 36px; height: 36px; padding: 0 8px; }
+.keyboard .strip button { flex: none; min-width: 36px; height: 36px; }
 .keyboard .words-row button { font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 0.875rem; }
 .keyboard .none { align-self: center; color: var(--muted); font-size: 0.75rem; padding: 0 4px; white-space: nowrap; }
 .keyboard .strip .to-keys { font-size: 0.75rem; }
+/* Undo and Redo, at the end of the words row, outside what scrolls. */
+/* Their arrows are drawn (keyboard.js), in the key's own colour. */
+.keyboard .words-row .history button { display: flex; align-items: center; justify-content: center; background: var(--key-side); }
+.keyboard .history svg { display: block; pointer-events: none; }
+/* A key with nothing to do stays where it is and keeps its focus, and says so (`aria-disabled`). */
+.keyboard button[aria-disabled=true] { opacity: 0.4; cursor: default; }
 
 /* The keys. */
 .keyboard .keys { display: flex; flex-direction: column; gap: 5px; padding: 6px 4px calc(6px + env(safe-area-inset-bottom)); background: var(--keys); border-top: 1px solid var(--rule); touch-action: none; user-select: none; -webkit-user-select: none; }
@@ -44,6 +51,8 @@
   font-family: inherit; font-size: 1.125rem; line-height: 1; padding: 0; cursor: pointer; touch-action: manipulation;
   -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none;
 }
+/* After the rule above, which gives a key no padding: a word has room either side of it. */
+.keyboard .strip button { padding: 0 8px; }
 .keyboard .row .k { flex: 1 1 0; min-width: 0; }
 .keyboard .k.action { background: var(--key-side); font-size: 1rem; }
 .keyboard .k.page-key, .keyboard .k.wide { font-size: 0.875rem; }

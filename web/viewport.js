@@ -36,7 +36,7 @@ const zoomed = () => (window.visualViewport?.scale ?? 1) > 1.01;
 /**
  * Sizes `el` to the visual viewport as it changes. One finger can then only move what scrolls,
  * since anything else would drag the page, or pan the visual viewport into what a keyboard pushed
- * up. Two fingers still zoom.
+ * up. Two fingers still zoom, and three move nothing.
  *
  * - `pin: false` leaves a scrolled page where it is, to try without.
  * - `short`: below this many pixels of height, `el` has `data-short`, which a page's styles can
@@ -61,8 +61,12 @@ export function holdToViewport(el, { pin = true, short = 0 } = {}) {
   vv?.addEventListener('scroll', fit);
   addEventListener('resize', fit);
   addEventListener('scroll', fit, { passive: true });
+  // Three fingers are iOS's undo and redo, a swipe of them scrolled the editor or the page as well,
+  // so they move nothing here. Two are a pinch, and still zoom. Whether iOS lets a page keep its
+  // own gesture from scrolling is for a device to say (docs/goals.md, 2026-11-20).
   document.addEventListener('touchmove', (e) => {
-    if (on && e.touches.length === 1 && !zoomed() && !moves(e.target)) e.preventDefault();
+    if (!on) return;
+    if (e.touches.length >= 3 || (e.touches.length === 1 && !zoomed() && !moves(e.target))) e.preventDefault();
   }, { passive: false });
   fit();
   return (now) => {

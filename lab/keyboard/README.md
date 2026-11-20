@@ -8,8 +8,8 @@ thing that scrolls.
 **The playground took variant C on 2026-11-18** (`docs/goals.md`, The playground). The keys, the words and the hold on
 the viewport moved to `web/keys.js`, `web/keyboard.js`, `web/keyboard.css` and `web/viewport.js`, and this page loads those
 same files, so it stays a bench for what the playground has. It opens on C now, and the keys come up when the editor takes
-focus and go when focus leaves it and them, as in the playground. ▾ closes them for the visit, and so does typing on a
-hardware keyboard; **keys** in the bar brings them back. The lab keeps its choices apart from the playground's.
+focus and go when focus leaves it and them, as in the playground. ▾ closes them for the visit, and typing on a hardware
+keyboard drops them to the words and the symbols (since 2026-11-20); **keys** in the bar brings them back. The lab keeps its choices apart from the playground's.
 
 ## Opening it
 
@@ -62,7 +62,8 @@ answer to that. It also stays over the system keyboard after a hand-over.
 In every variant:
 - A hardware keyboard types into the editor as usual.
 - Typing `\theta` and a space writes θ, as in the playground, using `web/symbols.js` itself.
-- Undo takes back what a key typed, because keys type through the browser's own editing (`execCommand('insertText')`).
+- Undo takes back what a key typed. Since 2026-11-20 it's the page's history for each file (`web/history.js`), with Undo
+  and Redo keys at the end of the words row, as in the playground.
 - Every key is a real button with a name a screen reader says ("times" for `·`, "theta" for θ).
 - The keys are one tab stop: the arrow keys move between them, and Enter or Space presses one.
 - A key acts as it's pressed, so a held ⌫, ‹, › or space repeats.

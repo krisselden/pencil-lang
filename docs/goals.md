@@ -283,7 +283,9 @@ What a figure has pointed at but not needed yet. `decisions.md` lists what the s
 
 ### Not checked
 
-- **Phones:** a touch drag, the sides benchmark (`lab/sides`), and label springs.
+- **Phones:** a touch drag, the sides benchmark (`lab/sides`), and label springs. The playground's undo on an iPhone:
+  whether iOS's three-finger tap and swipe reach the page's history, and whether a three-finger swipe still scrolls
+  ("Undo on a phone", 2026-11-20).
 - **Other browsers and devices.** Everything has been measured on one M1 Pro, mostly in Chrome.
 - **GPU time,** anywhere. Every timing is CPU.
 - **Label springs on a Doyle figure,** and an in-between spot in a video that holds still while its label is still gliding.
@@ -740,8 +742,9 @@ the third way:
 
 - **On a touch screen the Pencil keys come up when the editor is touched,** as Desmos's do, and the system keyboard
   stays down (`inputmode="none"`). They go when focus goes elsewhere, and not while a finger is still down, so a drag
-  on a handle doesn't move the figure under it. ▾ closes them for the visit, and so does the first key typed on a
-  hardware keyboard, which an iPad or a phone may have; **keys**, by the tabs, brings them back. Their pages are numbers and operators,
+  on a handle doesn't move the figure under it. ▾ closes them for the visit, and so did the first key typed on a
+  hardware keyboard, which an iPad or a phone may have, until 2026-11-20 (below: it drops them to the words and the
+  symbols now); **keys**, by the tabs, brings them back. Their pages are numbers and operators,
   letters, Pencil's words and functions, and Greek with a label's symbols. A held ⌫ or caret key repeats. The row of
   words finishes what's at the caret by where it is: statements and the figure's names in a `.pen`, and in a `.style`
   the statements a sheet has, then selectors, properties and values in its rules. **system** hands the editor to the
@@ -757,7 +760,8 @@ the third way:
   Without that the explainer's figure was 40 px tall at 393×659. (Its controls have their own panel now: below.)
   The words row, the four pages and the line under the editor each keep one height, so nothing above them moves. A
   pinch zoom lets go of the hold until the page is back to its size, so a finger can pan it. A tablet that gains a
-  mouse turns the keys and the hold off, and on again when it loses it.
+  mouse turns the keys and the hold off, and on again when it loses it. (Since 2026-11-20 a mouse has the words and
+  the symbols: below.)
 - **A short screen,** under 500 px of what's visible: a phone held sideways, or one with the system keyboard up, which
   no media query can see, since Safari's keyboard leaves the layout viewport as it was. With the keys up, the editor
   gives up its own room first: no line under it, no row of the file's tools, and no lines it must show. The keys are
@@ -778,8 +782,8 @@ the third way:
   long hold ends with doesn't type once more. A key ends a word the system keyboard is composing before it types, as
   Gboard composes every word. ‹, › and ⌫ go a character at a time as a reader sees one: an emoji, a flag, or a letter
   with its accent. The menu's hint says what Esc does on a touch screen.
-- **With a mouse or a trackpad, nothing changed.** Every box of the page matches what it was, in Chromium and WebKit, at
-  1633×919 and 700 px wide.
+- **With a mouse or a trackpad, nothing changed,** then. Every box of the page matched what it was, in Chromium and
+  WebKit, at 1633×919 and 700 px wide. Since 2026-11-20 a mouse has the words and the symbols under the editor (below).
 - **Checked** in Playwright on the iPhone 15 and Pixel 7 projects, and in the desktop app's pane at 375×812 and 1633×919,
   alone and framed by the built site: the keys type and the figure follows, a suggestion inserts, the rows keep their
   heights and the editor its box and scroll, the page and the frame don't scroll with the keys up or down, the system key
@@ -819,6 +823,104 @@ show at the same time", and the controls didn't scroll, so a figure with many pa
 - **The figure is larger,** since its controls aren't under it any more: on a touch screen at 375×812 the Möbius figure
   is drawn at 189×264 with either panel, where it was 74×104, and at 812×375 at 169×236, where it was 52×72. At
   1633×919 with a mouse it's 499×699 and every box of the page is where it was.
+
+**Undo on a phone, and the words with a mouse, 2026-11-20.** Two things Kris met using the playground. On his iPhone
+there was no way to undo: Revert only goes back to the file on disk, and iOS's own gestures are no answer (a
+three-finger swipe undoes and scrolls too, a three-finger tap took the wrong file, and few readers know either). And
+on the desktop he missed the keys: "the word selection would be helpful for people learning/experimenting, and having
+the math symbols easily reachable is nice."
+
+- **Undo and Redo are keys** at the right end of the words row, each a drawn arrow (an arrowhead and a shaft that turns
+  back, mirrored for redo) rather than a character, which drew as a thin hook in some fonts, outside the part that scrolls. That row is
+  up with the Pencil keys and over the system keyboard, so they're one tap away in both, and with a mouse too. They
+  act as they're pressed, once (no repeat), keep focus in the editor, are buttons named Undo and Redo in the row's
+  arrow keys, and say when there's nothing to do with `aria-disabled`, so focus stays on one through its last step.
+  Measured at 375 px: the words have 283 px of the row, where they had the whole of it, and the row scrolls as before.
+  The symbol strip has ▾ at its end as well, for the hardware keyboard below.
+- **What was found: the browser's undo crosses files.** One textarea shows each file, and its text is set from script
+  when the file changes. The browser keeps one stack of edits for the page, and the old file's stay on it. On his
+  iPhone a three-finger tap on the sheet's tab undid an edit in the `.pen` in the sheet, and a redo put
+  `label d label d at d`, typed in the `.pen` and undone, on line 7 of `circle.style`, which stopped compiling.
+  Playwright's WebKit and Chromium don't do that: there a stale step does nothing, though it's still counted, so an
+  Undo is offered with nothing to undo. Both do apply a step to another file when the two texts are the same, since
+  setting a value to what it is changes nothing (seen with a redo). WebKit also groups every insertion from script
+  with the typing before it, so a Revert by select-all and insert was undone together with the last typing, and lost
+  it. So the fix couldn't be in the keys alone.
+- **Each file has its own history, kept by the page** (`web/history.js`): what a reader expects, an undo on the
+  sheet's tab undoes the sheet. Every way in goes there: the keys; Cmd+Z and Shift+Cmd+Z on a Mac, Ctrl elsewhere,
+  and Ctrl+Y off a Mac, caught as keys since the browser has nothing to redo once its own undo was stopped; and the
+  system's own undo (the Edit menu, iOS's gestures), a `beforeinput` of `historyUndo`, which is stopped when it can
+  be. An undo the browser makes anyway is put back and done from the file's history. The page's own rule groups the
+  steps, not the browser's: a run of typed characters, or of deletes, each where the last left the caret and within
+  two seconds of it, is one step; so is one composition from an input method, or a run of them each where the last
+  ended; a text dragged within the editor is one; a word from the row, a symbol written for its name, a paste and a
+  LaTeX paste are each a step of their own. The browser's own stack still records every edit and is never applied.
+  It's still what offers the system's undo, which it does only while it has something, so on a page just opened the
+  gestures may offer nothing. **Redo is the Redo key or the shortcut.** Once the page stops the browser's undo, the
+  browser has nothing to redo, so the Edit menu's Redo and iOS's redo gesture aren't offered after a shortcut or a
+  key; a `historyRedo` the browser does send is handled the same way, as a guard. Enabled and disabled come from the
+  page's history, so they're right in both engines; the browser's `queryCommandEnabled` wasn't, for the stale steps
+  above.
+- **Switching files, opening another figure or a link (loaded, or opened in the page by its `#pen=`), the recompile,
+  and the text or the controls** leave each history as it was: a file shown again has its own undo and redo, another
+  figure's files start with none, and neither the compile nor the panel touches the text. Adding a file to an example
+  or removing one copies every file into your figure, and each copy takes its file's history; a sheet the document had
+  in a look before, with the same text, has its history again when that look comes back.
+- **No undo while a modal dialog is open or the editor is hidden.** The browser sends its undo to the textarea's last
+  edit wherever focus is: in Chromium, Cmd+Z in the Add a file dialog's empty field undid the file behind it. Now
+  nothing is undone then, nor with the controls shown in the text's place. With focus on the figure and the editor
+  shown, Cmd+Z is still the editor's undo, as it was before any of this (checked on main: it undid the text from the
+  figure in both engines, and from the dialog in WebKit; from a slider with the controls shown it didn't).
+- **After an undo or a redo, by any way, the caret is brought into view,** and the scroll stays where it is when the
+  caret already is.
+- **Revert can be undone.** The file shown takes the file from disk as a step of its history. Revert all does the same
+  for every file, each as it's shown next; a file that was never shown in this visit has no history to go back to.
+- **With a mouse the editor has the words row and the symbol strip under it,** the two rows a phone has over the system
+  keyboard, there while the editor is and not only while it has focus, so its box doesn't change as focus comes and
+  goes. The hardware keyboard is the keyboard, and typing on it closes nothing. The words follow the caret, and a click
+  on a word or a symbol types it where the caret was and leaves focus in the editor. **all keys**, at the start of the
+  strip, opens the pages as a palette (numbers, letters, the f(x) words page with every function and Pencil's words,
+  and Greek), which is where the whole Greek set is; **symbol row** goes back. "system" and "Pencil keys" said nothing
+  with a mouse, so with one the two keys are named for what they show. Which one is up is kept for the visit. ▾ puts it
+  all away for the visit and **keys** by the tabs brings it back, as on touch. `inputmode` is never set with a mouse,
+  and the page's hold stays a touch screen's. The palette's keys are 30 px tall with a mouse.
+- **A hardware keyboard on a touch screen** (an iPad) no longer closes the keys. The first key typed drops them to the
+  words and the symbols, for the same reason, and that's kept for the visit as the choice of the system keyboard is:
+  a keyboard taken away later leaves the system's keyboard, with the strip's key back to the Pencil keys. Only ▾ puts it
+  all away.
+- **The keyboard reaches the rows with a mouse as on touch:** in the editor Esc goes to them, the arrows move, Enter
+  presses and focus stays (on the key that goes back, after all keys or symbol row), and Esc again leaves for the
+  figure. Tab in the editor is as it was. The ☰ menu's hint says this for each.
+- **The figure is where it was.** The rows are in the editor's column, and their height comes from its text. Drawn, by
+  the status line, before and after: at 1633×919, the circle 699×699, Möbius 499×699 and the explainer 793×446, with
+  the palette open too; at 700×919, 349×349, 249×349 and 621×349; at 375×812 on the iPhone 15, 264×264, 189×264 and
+  359×202. Each row keeps one height with words or none. At 700 px they belong to the Text panel and go with it when
+  Controls is shown.
+- **A move of three fingers is cancelled while the page holds,** since a three-finger swipe scrolled the editor or
+  the page as it undid. A move of two isn't, so a pinch is left to the browser as before; a test shows that much, not
+  that iOS lets a page stop its own gesture.
+- **Found in review, the same day,** and fixed with a test each that failed before: adding or removing a file, or
+  another look, dropped every file's history, since histories were kept by the file's object and those are copied; a
+  `historyUndo` the browser can't stop, followed by its own undo, took two steps; a `beforeinput` with no edit after it
+  (a Backspace at the start, in Chromium) left its selection for the next edit, whose undo put the caret at the top of
+  the file; two compositions in different places within two seconds were one step; Cmd+Z in the dialog undid the file
+  behind it; Ctrl+Y was taken on a Mac, where it's Cocoa's yank; a drag within the editor was two steps; only the Undo
+  key brought the caret into view. The strip's keys had lost their padding to a later rule, so `style` and `curve` ran
+  edge to edge, and a few words alone in the row stretched across it.
+- **Checked** in Playwright, on Chromium and WebKit with a mouse at 1633×919 and 700 px, and on the iPhone 15 and Pixel
+  7: each kind of edit undone and redone; an undo and a redo by the key, the shortcut, a `beforeinput` made by hand as
+  the system's undo sends one, and the browser's own `execCommand`, after a switch with and without an edit, never
+  reaching another file (redo too); an undo the browser makes anyway with another file's text; Revert and Revert all
+  undone; another figure, a link loaded and one opened in the page, the recompile and the Text and Controls swap; and
+  each item of the review. A full run after the review: 516 passed, 136 skipped (each only where its project has no
+  such thing, a phone or a mouse), none failed, on the source files and on the minified bundle alike. Looked
+  at in screenshots at 1633×919 and 375×812, and framed by the built site (served as its Worker serves it) with a mouse in
+  Chromium and WebKit: the rows there, a symbol typed and undone, focus kept, no `inputmode`, and the page not scrolled. The keyboard lab
+  loads the same files and has the same keys.
+- **Only a device can say:** whether iOS Safari's three-finger tap and swipe send a `beforeinput` the page can stop,
+  so they undo the file shown (Playwright's WebKit is the desktop's, which didn't reproduce the crossing); whether a
+  page can keep iOS's three-finger swipe from scrolling; and whether `execCommand('insertText')` from a key and a
+  gesture's undo agree on an iPad with a keyboard.
 
 - **Errors now say which file they're in.** A sheet's error came back with the sheet's line and no file, and `pencil` printed it
   after the `.pen`'s path. `Error` has a `sheet` now, so the page marks the right tab, line and column, and the CLI names the

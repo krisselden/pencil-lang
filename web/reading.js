@@ -3,6 +3,7 @@
 // shows it beside what was typed, so `2πr` visibly reads `2·π·r` and a slip shows before it
 // becomes a puzzle.
 import { ready as init, inspect, functions, is_latex, from_latex } from '@pencil-lang/figure/host';
+import { historyOf } from './history.js';
 
 // Each built-in's head, back to how it's written: the first spelling, as `acos` for `Arccos`.
 const WRITTEN = new Map();
@@ -119,7 +120,10 @@ export function pasteLatex(textarea, note) {
       return;
     }
     e.preventDefault();
+    // A step of its own for undo, not part of what was typed before it.
+    historyOf(textarea)?.separate();
     document.execCommand('insertText', false, text);
+    historyOf(textarea)?.separate();
     note(`Pasted LaTeX as ${text}`);
   });
 }

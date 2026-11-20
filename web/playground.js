@@ -10,6 +10,7 @@ import { ready as readingReady, readingAt, pasteLatex } from './reading.js';
 import { typeSymbols, finishSymbol } from './symbols.js';
 import { viewing } from './controls.js';
 import { keyboard } from './keyboard.js';
+import { editHistory } from './history.js';
 import { touch, holdToViewport } from './viewport.js';
 import { uses } from '@pencil-lang/figure/host';
 import { pack, unpack } from '@pencil-lang/figure/pack';
@@ -74,30 +75,6 @@ const figure = $('figure');
 if (query.has('gl')) figure.setAttribute('gl', '');
 const textarea = $('source');
 
-// On a touch screen the page holds still at what's visible, and the editor has the Pencil keys,
-// which come up when it's touched, with the system keyboard a key away. A mouse or a trackpad has
-// neither, and the page is as it always was.
-// A tablet can gain a mouse or lose one, and the page follows. Below 500 px of what's visible, as
-// on a phone held sideways or with its system keyboard up, the styles squeeze for the keys.
-const keys = keyboard({
-  textarea,
-  root: $('keyboard'),
-  opener: $('keys-open'),
-  files: () => files,
-  path: () => files[active]?.path ?? '',
-  on: touch.matches,
-  leave: () => figure.focus(),
-});
-let hold = null;
-function followTouch() {
-  document.documentElement.classList.toggle('touch', touch.matches);
-  if (touch.matches) hold ??= holdToViewport(document.querySelector('.app'), { short: 500 });
-  hold?.(touch.matches);
-  keys.set({ on: touch.matches });
-}
-followTouch();
-touch.addEventListener('change', followTouch);
-
 const fetchText = async (path) => {
   const response = await fetch(`../${path}`, { cache: 'no-store' });
   if (!response.ok) throw new Error(`${path}: ${response.status}`);
@@ -117,6 +94,34 @@ const fetchText = async (path) => {
 let files = [];
 let active = 0;
 let inEditor = null; // the file the textarea shows, to keep its caret and scroll when another is shown
+
+// On a touch screen the page holds still at what's visible, and the editor has the Pencil keys,
+// which come up when it's touched, with the system keyboard a key away. With a mouse or a
+// trackpad the page doesn't hold, and the editor has the row of words and the row of symbols
+// under it, with the keys a palette one key away.
+// A tablet can gain a mouse or lose one, and the page follows. Below 500 px of what's visible, as
+// on a phone held sideways or with its system keyboard up, the styles squeeze for the keys.
+// Undo and redo are the page's, a history for each file (history.js).
+const edits = editHistory(textarea, { within: [$('keyboard')] });
+const keys = keyboard({
+  textarea,
+  root: $('keyboard'),
+  opener: $('keys-open'),
+  files: () => files,
+  path: () => files[active]?.path ?? '',
+  touch: touch.matches,
+  history: edits,
+  leave: () => figure.focus(),
+});
+let hold = null;
+function followTouch() {
+  document.documentElement.classList.toggle('touch', touch.matches);
+  if (touch.matches) hold ??= holdToViewport(document.querySelector('.app'), { short: 500 });
+  hold?.(touch.matches);
+  keys.set({ touch: touch.matches });
+}
+followTouch();
+touch.addEventListener('change', followTouch);
 let failure = null; // { file, line, col, message }
 let warning = null; // a draw error, which has no place in a file
 let notice = null; // a link that couldn't be read, until another figure is opened
@@ -353,7 +358,8 @@ function show(i, caret) {
   active = i;
   const file = files[i];
   inEditor = file;
-  textarea.value = file.text;
+  // Its own history: an undo never reaches another file's edits.
+  edits.show(file, file.text);
   textarea.setAttribute('aria-label', `Source of ${file.path}`);
   if (caret !== undefined) {
     textarea.focus();
@@ -437,6 +443,9 @@ textarea.addEventListener('keydown', (e) => {
   }
 });
 $('copy').addEventListener('click', () => navigator.clipboard.writeText(files[active].text));
+// Revert reads the file from disk again, and the file's history keeps what it replaced, so an
+// undo brings the edits back (history.js): for the file shown at once, and for the others of Revert
+// all when they're shown.
 const revert = (file) => {
   file.text = file.disk;
   persist(file);
@@ -806,7 +815,6 @@ async function start(link = null) {
   await follow();
   lastGood = null;
   warning = null;
-  textarea.value = '';
   show(0);
   compiled = "doesn't compile yet";
   figure.release();
@@ -828,12 +836,16 @@ async function open(look) {
     return;
   }
   showing = look;
+  sheetsSeen = new Map();
   files = paths.map((path, i) => ({ path, disk: disks[i], text: stored(path) ?? disks[i], root: true }));
   await start();
 }
 
 /** Puts the open example's document in another of its looks, keeping the document, its edits and
  * the time. */
+/** The sheets the open example's looks had, by path, for their undo and redo when a look comes
+ * back. */
+let sheetsSeen = new Map();
 async function restyle(look) {
   let disks;
   try {
@@ -846,7 +858,13 @@ async function restyle(look) {
   const shown = files[active]?.path;
   opening = true;
   showing = look;
+  for (const f of files.slice(1)) sheetsSeen.set(f.path, f);
   files = [files[0], ...look.sheets.map((path, i) => ({ path, disk: disks[i], text: stored(path) ?? disks[i], root: true }))];
+  // A sheet this document had in a look before, with the same text, keeps its undo and redo.
+  for (const f of files.slice(1)) {
+    const same = sheetsSeen.get(f.path);
+    if (same && same.text === f.text) edits.rekey(same, f);
+  }
   paintMenus();
   address();
   await follow();
@@ -934,6 +952,8 @@ async function adopt() {
   const copy = files.map((f) => ({
     path: f.path, disk: f.text, text: f.text, kept: f.text, root: !!f.root, pinned: false, scroll: f.scroll, selection: f.selection,
   }));
+  // Each copy takes its file's undo and redo with it.
+  files.forEach((f, i) => edits.rekey(f, copy[i]));
   // The example's file keeps the caret it had; the copy takes it from here.
   if (inEditor) Object.assign(inEditor, { scroll: [textarea.scrollTop, textarea.scrollLeft], selection: [textarea.selectionStart, textarea.selectionEnd] });
   yours = { name: showing.doc.name, link: null, restructured: true, files: copy };
