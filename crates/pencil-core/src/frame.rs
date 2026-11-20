@@ -1426,10 +1426,10 @@ mod tests {
             )
         };
         // Up and to the right on the screen, so y goes down. No direction means no move.
-        let (x, y, mx, my) = at("style label { distance: 10px }");
+        let (x, y, mx, my) = at("style label { distance: 10px; place: fixed }");
         assert!((x - 6.0).abs() < 1e-9 && (y + 8.0).abs() < 1e-9, "{x} {y}");
         assert_eq!((mx, my), (0.0, 0.0));
-        let (x, y, ..) = at("style label { distance: 20px }");
+        let (x, y, ..) = at("style label { distance: 20px; place: fixed }");
         assert!(
             (x - 12.0).abs() < 1e-9 && (y + 16.0).abs() < 1e-9,
             "{x} {y}"

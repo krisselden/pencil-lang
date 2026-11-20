@@ -1378,7 +1378,7 @@ mod tests {
              style c { stroke: black; width: 2px; fill_opacity: 0.25 }
              style s { stroke: rgb(171, 58, 51); width: 1.5px; dash: 6px; gap: 4px; opacity: 0.5 }
              style P { fill: black; radius: 4px }
-             style n { fill: rgb(96, 66, 166); halo: 3px }",
+             style n { fill: rgb(96, 66, 166); halo: 3px; place: fixed }",
         );
         assert_eq!(drawn.skipped, []);
         let svg = &drawn.svg;

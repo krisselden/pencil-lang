@@ -34,6 +34,42 @@ test.describe('a figure loads and draws', () => {
     await expect.poll(() => colorsIn(page, canvas), { message: 'the canvas should not be blank' }).toBeGreaterThan(1);
   });
 
+  // `bare.pen`: `dot z` and `label z at z`, and no sheet. The label settles off its dot, and it's
+  // there from its first frame: it doesn't glide in from anywhere.
+  test('a label with no sheet is off its dot from its first frame', async ({ page }) => {
+    await open(page, 'bare');
+    // Every frame from the label's first, in CSS pixels, until it has stayed put a while.
+    const seen = await onFigure(
+      page,
+      (f) =>
+        new Promise((resolve) => {
+          const boxes = [];
+          const frame = () => {
+            const label = f.shadowRoot?.querySelector('.label[data-label="z"]');
+            if (label) {
+              const r = label.getBoundingClientRect();
+              if (r.width > 0) boxes.push({ left: r.left, right: r.right, top: r.top, bottom: r.bottom });
+            }
+            if (boxes.length >= 40) resolve(boxes);
+            else requestAnimationFrame(frame);
+          };
+          frame();
+        }),
+    );
+    await drawn(page);
+    const last = seen.at(-1);
+    for (const box of seen) {
+      expect(Math.abs(box.left - last.left)).toBeLessThan(1);
+      expect(Math.abs(box.top - last.top)).toBeLessThan(1);
+    }
+    // The dot is at (0.5, 0.5) in a view from -2 to 2, 3 px across: the label's box clears it.
+    const canvas = await page.locator('#figure canvas').boundingBox();
+    const dot = { x: canvas.x + canvas.width * 0.625, y: canvas.y + canvas.height * 0.375 };
+    const dx = Math.max(last.left - dot.x, dot.x - last.right, 0);
+    const dy = Math.max(last.top - dot.y, dot.y - last.bottom, 0);
+    expect(Math.hypot(dx, dy)).toBeGreaterThan(3);
+  });
+
   test('a figure that cannot load says so with an error event', async ({ page }) => {
     await page.goto('/packages/figure/tests/pages/bounds.html');
     await drawn(page);

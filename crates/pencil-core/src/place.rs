@@ -31,6 +31,9 @@ const STEP: f64 = 0.22;
 /// Clear space around a label's text, in style pixels.
 const MARGIN: f64 = 3.0;
 const WALL: f64 = 2.0;
+/// How near its own point a label's home is to count as on it, in style pixels, and how far
+/// up and to the right it starts from there.
+const ON_POINT: f64 = 0.5;
 /// Being soft, the bumps don't need a font's real widths, so a page and a video place labels
 /// alike.
 use crate::terms::EM_PER_CHAR;
@@ -210,7 +213,22 @@ pub fn settle(
         .iter()
         .map(|l| l.place == Place::Settle)
         .collect();
-    let mut at = home.clone();
+    // A bump pushes nowhere at its own center, so a label written on its own point, as
+    // `label z at z` is, would stay on it. It starts a little up and to the right instead, where
+    // labels usually go, and the bump does the rest.
+    let mut at: Vec<[f64; 2]> = home
+        .iter()
+        .zip(&moves)
+        .map(|(&[x, y], &moves)| {
+            let on_point = found
+                .iter()
+                .any(|o| matches!(o, Obstacle::Point(p) if (p[0] - x).hypot(p[1] - y) < ON_POINT));
+            match moves && on_point {
+                true => [x + ON_POINT, y - ON_POINT],
+                false => [x, y],
+            }
+        })
+        .collect();
     let mut env = env.clone();
     let mut edges: Vec<Vec<Option<Edge>>> = vec![vec![None; fields.len()]; at.len()];
     for step in 0..ITERATIONS {
@@ -457,7 +475,11 @@ mod tests {
 
     #[test]
     fn a_fixed_label_stays_at_its_offset() {
-        let f = build(SWEEP, &["style s { stroke: black; width: 2px }"]).unwrap();
+        let f = build(
+            SWEEP,
+            &["style s { stroke: black; width: 2px }\nstyle label { place: fixed }"],
+        )
+        .unwrap();
         assert_eq!(label_x(&f, 0.05), 200.0);
     }
 

@@ -665,7 +665,7 @@ pixels, so they can't be in `em`.
 | `size` | Labels | A length, usually in `em`. Defaults to 1 em. |
 | `halo` | Labels | Its full width, in the paper's color. |
 | `font` | Labels | A role: `sans` (default) or `math`, an italic for names and notes. Both are the package's own fonts, Libertinus Sans and Libertinus Serif Italic, the same files in the command and on a page, with Libertinus Math behind each for the symbols a text face lacks and for a label's mathematics. It sets a label's words: its mathematics is laid out the same in either. |
-| `place` | Labels | `fixed` (default) at its `offset`, or `settle`, tied there by a spring and pushed off what's drawn and other labels. |
+| `place` | Labels | `settle` (default), tied to its `offset` by a spring and pushed off what's drawn and other labels, or `fixed`, exactly at its `offset`. A label written on its own point, as `label z at z` is, starts a little up and to the right of it, and settles from there. |
 | `format` | Labels | How a point in its text is written: `point` (default) as `(−0.50, −0.87)`, `complex` as `−0.50 − 0.87i`, or `polar` as `e^(−2πi/3)`, with an angle that's a fraction of π up to twelfths written as one. A point and a complex number are one thing in Pencil, so which it reads as is the sheet's. |
 | `text` | Labels | What a label says about the value it's about, as parts joined by `=`: `caption` (its own words, or the value's name if it has none), `name`, `expr` (the expression as written: a `let`'s right side, or what's between the braces) and `value`. `text: expr = value` is `σ(2) = −0.50 − 0.87i`, `text: name = value` is `root = −0.50 − 0.87i`, and `text: caption` is the words alone. Parts that come out the same are said once, so a param's `expr = value` is `q = 3`. Without it, a label says its own words, or its value if it has none. A label that isn't about one value says its words whatever this is. |
 | `digits` | Labels | How many decimal places its values are written to. Defaults to 2. A whole number is written whole, and a part that rounds to zero is left out of a complex number. |
@@ -684,7 +684,7 @@ default paint, in the default ink:
 | `curve`, `circle`, `line`, `ray`, `segment`, `decoration`, `arrow`, `curves`, `circles`, `outline` | A stroke, 1 px wide, with butt caps. An arrow's head is 14 px. |
 | `region` | Its outline, as a stroke. |
 | `dot`, `dots` | A fill, 3 px in radius. |
-| `label`, `term` | Its text in the ink. A label is otherwise as it is with nothing said: sans, 1 em, no halo, at its offset. |
+| `label`, `term` | Its text in the ink. A label settles, so `label z at z` moves off its dot; it's otherwise as it is with nothing said: sans, 1 em, no halo. A term keeps its place in its expression. |
 
 - **A mark that paints anything is left as written.** A side's fill counts, so `c::inside { fill: blue }` alone draws no line
   around `c`. A `fill` on a mark that never draws one, such as a segment, doesn't count, so the segment still gets its stroke.

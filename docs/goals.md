@@ -618,9 +618,10 @@ whatever the label's font (`language.md`, "What's drawn with nothing said"; deci
 - **A paper that turns over.** The CPU decides the ink in single precision, in the shader's order, but the shader's time is
   single precision too, a step of 2.4e-7 s at t = 3.28. So when a paper's luminance passes the line, the two can be a frame
   apart for about 1e-7 s either side (measured on `mix(white, black, time/4)`, 5 samples 2e-8 s apart fail `pencil check`).
-- **Not done: labels that settle by default.** A value's label on its own dot, `label z at z`, now has the dot drawn over it.
-  `place: settle` as the default would move the labels of unroll's two looks and bounds' blog look by up to 22 px, which no
-  sheet of theirs fixes, so it waits for Kris.
+- **Labels settle by default.** A value's label on its own dot, `label z at z`, had the dot drawn over it once dots drew.
+  `settle` as the default moved the labels of unroll's two looks and bounds' blog look by up to 22 px, so those sheets say
+  `place: fixed` now, as Kris suggested, and render as before, bounds under the theme too. A label on its own point starts
+  up and to the right, since a bump has no direction at its center.
 - **Left to look at:** a `fill` on a mark that never draws one (a segment, an arrow, a parametric curve, an outline) is
   accepted and does nothing, and a mark with only that gets its default stroke. It says nothing about it yet.
 

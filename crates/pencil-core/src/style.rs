@@ -168,10 +168,11 @@ pub enum Format {
 /// How a label finds its spot. See `place.rs`.
 #[derive(Clone, Copy, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum Place {
-    /// At its offset from its point.
-    #[default]
+    /// At its offset from its point, exactly.
     Fixed,
-    /// Tied to that spot by a spring, and pushed off what's drawn and other labels.
+    /// Tied to that spot by a spring, and pushed off what's drawn and other labels, so a label
+    /// with nothing said doesn't sit on its own dot.
+    #[default]
     Settle,
 }
 

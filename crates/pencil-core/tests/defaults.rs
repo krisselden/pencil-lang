@@ -58,11 +58,11 @@ fn a_mark_with_nothing_said_gets_its_types_paint() {
         (&black(), &None)
     );
     assert_eq!(of(&s, "d").stroke, black());
-    // Text gets the ink and nothing else: no halo, no settling, and still sans.
+    // Text gets the ink, and a label settles. Nothing else: no halo, and still sans.
     let label = of(&s, "name");
     assert_eq!(label.negative, black());
     assert_eq!(label.halo, None);
-    assert_eq!(label.place, pencil_core::style::Place::Fixed);
+    assert_eq!(label.place, pencil_core::style::Place::Settle);
     assert_eq!(label.font, pencil_core::style::Font::Sans);
 }
 
@@ -207,6 +207,30 @@ fn the_ink_is_the_sheets_ink_or_stands_out_from_the_paper() {
     let p = prepare(&f, &Inputs::at(0.0), 100, 100, 1.0).unwrap();
     assert_eq!(p.labels[0].color, [1.0; 3]);
     assert_eq!(f.styles.title_fill, Some(Expr::sym("white")));
+}
+
+/// With nothing said, a value's label settles off its own dot rather than sitting on it.
+#[test]
+fn a_label_with_nothing_said_moves_off_its_dot() {
+    let doc = "viewport { x: -2..2, y: -2..2 }\nlet z = (0.5, 0.5)\ndot z\nlabel z at z";
+    let f = build(doc, &[]).unwrap();
+    assert_eq!(f.styles.marks[1].place, pencil_core::style::Place::Settle);
+    let p = prepare(&f, &Inputs::at(0.0), 400, 400, 1.0).unwrap();
+    let label = &p.labels[0];
+    let [hw, hh] = label.half(&pencil_core::terms::Estimate);
+    // The dot is at (250, 150), 3 px across: the nearest point of the label's box is past it.
+    let (cx, cy) = (250.0, 150.0);
+    let dx = (cx - label.x).abs() - hw;
+    let dy = (cy - label.y).abs() - hh;
+    let gap = dx.max(0.0).hypot(dy.max(0.0));
+    assert!(
+        gap > pencil_core::frame::DEFAULT_DOT_RADIUS,
+        "{gap} from {label:?}"
+    );
+    // `place: fixed` keeps it where it's written, on the dot.
+    let f = build(doc, &["style label { place: fixed }"]).unwrap();
+    let p = prepare(&f, &Inputs::at(0.0), 400, 400, 1.0).unwrap();
+    assert_eq!((p.labels[0].x, p.labels[0].y), (cx, cy));
 }
 
 #[test]
