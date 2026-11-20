@@ -608,7 +608,7 @@ it, but a rule by type or tag may match nothing, since a shared sheet can't know
 
 **Selectors** combine a name or type with tags: `c`, `circle`, `.aux`, `circle.blue`, and
 `c::inside` for a facet. A mark's type is one of its tags: `circle`, `line`, `ray`, `curve`,
-`segment`, `decoration`, `region`, `dot`, `label`, `arrow`, `term`, `dots`, `circles`, `outline`. `paper` is the background.
+`segment`, `decoration`, `region`, `dot`, `label`, `arrow`, `term`, `dots`, `circles`, `curves`, `outline`. `paper` is the background.
 
 **Facets** are the two sides of a mark. `::negative` and `::positive` are the field's sign. On a circle, `::inside` and
 `::outside` are its true disk and everything else, whichever way round it runs, and on a line, where there's no disk, they follow the sign. Where both name the same part of the plane,
@@ -648,7 +648,7 @@ pixels, so they can't be in `em`.
 
 | Property | Applies to | Meaning |
 |---|---|---|
-| `fill` | Regions, dots, labels, facets | A color, or `none` for no fill. A field's `fill` needs a facet. A label or a term with `fill: none` isn't drawn. |
+| `fill` | Regions, dots, labels, facets | A color, or `none` for no fill. A field's `fill` needs a facet, and so does a `circles` collection's, `fill: none` included, since they're filled only by their sides. A label, a term, a panel's `title` or `formula`, or the `caption` with `fill: none` isn't drawn. The `paper` can't be `none`: leave its fill out for white. |
 | `fill_opacity` | Anything filled | Scales only the fill, on top of `opacity`. |
 | `stroke` | Curves, lines, regions, dots | A color, or `none` for no line. |
 | `width` | Strokes | A length. Can vary along the stroke with `self.t`, and with `self.z` on a curve of points in space. |
@@ -688,14 +688,17 @@ default paint, in the default ink:
 
 - **A mark that paints anything is left as written.** A side's fill counts, so `c::inside { fill: blue }` alone draws no line
   around `c`. A `fill` on a mark that never draws one, such as a segment, doesn't count, so the segment still gets its stroke.
-- **What a sheet does write picks the paint and is kept.** `width`, `dash`, `gap`, `head`, `trim` or `ticks` alone ask for a
-  stroke, on a dot too, so `style c { width: 3px }` is a 3 px line in the ink. `radius` or `fill_opacity` alone ask a dot or a
-  region for a fill.
+- **What a sheet does write picks the paint and is kept,** on a mark it applies to. Alone, these ask for a stroke: `width` on
+  any mark, a dot too, so `style c { width: 3px }` is a 3 px line in the ink; `dash` and `gap` on anything but a dot or
+  `dots`; `head` on a curve, `curves` or an arrow; `head_span` on a curve or `curves`; and `trim`, `ticks` and `tick`, which
+  are only taken where they apply. `radius` asks a dot or `dots` for a fill, and `fill_opacity` a dot or a region. Anything
+  else, such as a `radius` on a region, asks for nothing, and the mark gets its type's own paint.
 - **`stroke: none` and `fill: none` keep that paint off,** and a mark is hidden by writing `none` for its default paint:
   `stroke: none` for a line, `fill: none` for a dot. `stroke: none` on a dot that has nothing else still fills it, as SVG's
   would. `show: 0` makes a mark absent instead, so labels don't settle around it.
 - **Text takes the ink too:** a label, a term, a panel's title and its formula with no `fill`, and the caption.
-- **The ink is the sheets' `ink`,** if one names a color that, as `corpus/theme.style` does. Otherwise it's black or white,
+- **The ink is the sheets' `ink`,** if one names a color that, as `corpus/theme.style` does, and a sheet's `ink` that isn't a
+  color is an error. Otherwise it's black or white,
   whichever contrasts more with the paper, by WCAG's contrast ratio: black on the default white paper. A paper that changes is
   judged frame by frame, so the ink turns over when the paper's luminance passes about 0.18.
 

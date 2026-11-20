@@ -510,11 +510,14 @@ mod tests {
         let wide = |text: &str, role| (fonts.width(text, 1000.0, role) * 10.0).round() / 10.0;
         assert_eq!(wide("arg z", FontRole::Math), ARG_Z);
         assert_eq!(wide("Pencil", FontRole::Sans), PENCIL);
+        // A sans label's words beside its value, which is mathematics: `turn = e^(2πi/3)`.
+        assert_eq!(wide("turn = ", FontRole::Sans), TURN);
         // And a run of mathematics, which core measures and both draw.
         assert_eq!(pencil_core::formula::lay_math("sin", 1000.0).width, SIN);
     }
     const ARG_Z: f64 = 2006.0;
     const PENCIL: f64 = 2492.0;
+    const TURN: f64 = 2798.0;
     const SIN: f64 = 1203.0;
 
     /// A fraction is drawn: ink above its bar, the bar solid across, ink below.

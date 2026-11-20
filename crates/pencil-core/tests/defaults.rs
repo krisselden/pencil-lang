@@ -98,6 +98,20 @@ fn a_written_property_picks_its_paint() {
         (&of(&s, "P").negative, &of(&s, "P").stroke),
         (&black(), &None)
     );
+    // A property asks for a paint only on a mark it applies to: `radius` doesn't size a region,
+    // and a dot's stroke is a ring, which has no dashes and no head.
+    let s = styles(
+        MARKS,
+        &["style z { radius: 4px }\nstyle P { dash: 4px; gap: 2px; head: 9px; head_span: 1 }"],
+    );
+    assert_eq!(
+        (&of(&s, "z").stroke, &of(&s, "z").negative),
+        (&black(), &None)
+    );
+    assert_eq!(
+        (&of(&s, "P").negative, &of(&s, "P").stroke),
+        (&black(), &None)
+    );
     // A fill its type never draws is no paint, so a segment with one still gets its stroke.
     let s = styles(MARKS, &["style g { fill: white }"]);
     assert_eq!(of(&s, "g").stroke, black());
@@ -196,6 +210,52 @@ fn the_ink_is_the_sheets_ink_or_stands_out_from_the_paper() {
 }
 
 #[test]
+fn ink_has_to_be_a_color() {
+    let err = build(DOT, &["style paper { fill: black }", "let ink = 3"]).unwrap_err();
+    assert!(
+        err.message.contains("`ink`") && err.message.contains("has to be a color"),
+        "{err}"
+    );
+    assert_eq!((err.sheet, err.line), (Some(1), 1));
+}
+
+#[test]
+fn text_with_fill_none_isnt_drawn() {
+    let labels = |doc: &str, sheet: &str, time: f64| -> Vec<String> {
+        let composition = pencil_core::compose(doc, &[sheet]).unwrap();
+        let inputs = Inputs::at(time);
+        let frames = composition
+            .prepare(&inputs, 400, 200, 1.0, None, &pencil_core::terms::Estimate)
+            .unwrap();
+        composition
+            .labels(&frames, &inputs, &pencil_core::terms::Estimate)
+            .unwrap()
+            .into_iter()
+            .map(|l| l.id)
+            .collect()
+    };
+    let panels = "panel one \"One\" \"x^2\" { viewport { x: 0..1, y: 0..1 } }";
+    assert_eq!(labels(panels, "", 0.0), ["one/title", "one/formula"]);
+    let none = "style title { fill: none }\nstyle formula { fill: none }";
+    assert!(labels(panels, none, 0.0).is_empty());
+    // A caption, once its beat has faded it in.
+    let story = "beat grow \"A circle.\" for 1 show c\ncurve c = circle((0, 0), (grow, 0))";
+    let caption = labels(story, "style caption { size: 12px }", 0.5);
+    assert!(caption[0].starts_with("caption/"), "{caption:?}");
+    assert!(labels(story, "style caption { size: 12px; fill: none }", 0.5).is_empty());
+    // The paper, and what's filled by its sides, can't be `fill: none`, and say why.
+    let err = build(DOT, &["style paper { fill: none }"]).unwrap_err();
+    assert!(err.message.contains("everything is drawn on"), "{err}");
+    let err = build(MARKS, &["style c { fill: none }"]).unwrap_err();
+    assert!(
+        err.message.contains("needs a facet, such as `c::inside`"),
+        "{err}"
+    );
+    let err = build(MARKS, &["style o { fill: none }"]).unwrap_err();
+    assert!(err.message.contains("filled by its sides"), "{err}");
+}
+
+#[test]
 fn contrast_turns_at_equal_contrast() {
     let at = |l: f64| {
         let c = Expr::app(
@@ -214,14 +274,20 @@ fn contrast_turns_at_equal_contrast() {
     assert!(((turn + 0.05) / 0.05 - 1.05 / (turn + 0.05)).abs() < 1e-9);
 }
 
-// The corpus: every look, and the sheets the test pages and the explainer load. None of their
-// marks should get a paint their sheets didn't write, and text that gets the ink gets black.
+// The corpus: every look of every figure, light and dark, the explainer's, the highlights' and the
+// sheets the element's formulas page loads. None of their marks should get a paint their sheets
+// didn't write, and text that gets the ink has to get the black it had.
+//
+// Left out: the element's fixture pages with no sheet or only the theme (`plane`, `keyed`, `panels`,
+// and `leader`'s dot), whose marks are meant to draw by default now; `web/strokes.html`, whose
+// inline sheets all give a stroke; and the playground, the keyboard lab and the prompter, which
+// load the corpus looks above or a take generated from the explainer.
 
 const THEME: &str = "corpus/theme.style";
 const DARK: &str = "corpus/dark.style";
 
 fn looks() -> Vec<(&'static str, Vec<&'static str>)> {
-    vec![
+    let mut looks = vec![
         (
             "corpus/001-circle/circle.pen",
             vec!["corpus/001-circle/circle.style"],
@@ -232,7 +298,7 @@ fn looks() -> Vec<(&'static str, Vec<&'static str>)> {
         ),
         (
             "corpus/001-circle/circle.pen",
-            vec![THEME, "corpus/001-circle/circle.style", DARK],
+            vec![THEME, "corpus/001-circle/circle.style"],
         ),
         (
             "corpus/002-strokes/ring.pen",
@@ -268,15 +334,15 @@ fn looks() -> Vec<(&'static str, Vec<&'static str>)> {
         ),
         (
             "corpus/005-tangents/tangents.pen",
-            vec![THEME, "corpus/005-tangents/plain.style", DARK],
+            vec![THEME, "corpus/005-tangents/plain.style"],
         ),
         (
             "corpus/006-square/square.pen",
-            vec![THEME, "corpus/006-square/plain.style", DARK],
+            vec![THEME, "corpus/006-square/plain.style"],
         ),
         (
             "corpus/007-lattice/lattice.pen",
-            vec![THEME, "corpus/007-lattice/plain.style", DARK],
+            vec![THEME, "corpus/007-lattice/plain.style"],
         ),
         (
             "corpus/007-lattice/lattice.pen",
@@ -288,7 +354,7 @@ fn looks() -> Vec<(&'static str, Vec<&'static str>)> {
         ),
         (
             "corpus/008-hearts/hearts.pen",
-            vec![THEME, "corpus/008-hearts/plain.style", DARK],
+            vec![THEME, "corpus/008-hearts/plain.style"],
         ),
         (
             "corpus/008-hearts/hearts.pen",
@@ -303,11 +369,11 @@ fn looks() -> Vec<(&'static str, Vec<&'static str>)> {
         ),
         (
             "corpus/009-squaring/squaring.pen",
-            vec![THEME, "corpus/009-squaring/plain.style", DARK],
+            vec![THEME, "corpus/009-squaring/plain.style"],
         ),
         (
             "corpus/010-mobius/mobius.pen",
-            vec![THEME, "corpus/010-mobius/plain.style", DARK],
+            vec![THEME, "corpus/010-mobius/plain.style"],
         ),
         (
             "corpus/010-mobius/mobius.pen",
@@ -327,25 +393,24 @@ fn looks() -> Vec<(&'static str, Vec<&'static str>)> {
         ),
         (
             "corpus/013-tube/tube.pen",
-            vec![THEME, "corpus/013-tube/plain.style", DARK],
+            vec![THEME, "corpus/013-tube/plain.style"],
         ),
         (
             "corpus/014-scaled-copy/scaled-copy.pen",
-            vec![THEME, "corpus/014-scaled-copy/plain.style", DARK],
+            vec![THEME, "corpus/014-scaled-copy/plain.style"],
         ),
         (
             "corpus/015-log-nearest/log-nearest.pen",
-            vec![THEME, "corpus/015-log-nearest/plain.style", DARK],
+            vec![THEME, "corpus/015-log-nearest/plain.style"],
         ),
         (
             "corpus/016-unwrap/unwrap.pen",
-            vec![THEME, "corpus/016-unwrap/plain.style", DARK],
+            vec![THEME, "corpus/016-unwrap/plain.style"],
         ),
         (
             "lab/explainer/limacon.pen",
             vec![
                 THEME,
-                DARK,
                 "lab/explainer/limacon.style",
                 "lab/explainer/caption.style",
             ],
@@ -354,16 +419,40 @@ fn looks() -> Vec<(&'static str, Vec<&'static str>)> {
             "lab/explainer/proof.pen",
             vec![
                 THEME,
-                DARK,
                 "lab/explainer/proof.style",
                 "lab/explainer/caption.style",
             ],
         ),
         (
+            "lab/highlights/near.pen",
+            vec![THEME, "lab/highlights/styles/near.style"],
+        ),
+        (
+            "lab/highlights/central.pen",
+            vec![THEME, "lab/highlights/styles/central.style"],
+        ),
+        (
             "packages/figure/tests/pages/formulas.pen",
             vec!["packages/figure/tests/pages/formulas.style"],
         ),
-    ]
+    ];
+    for part in [
+        "1_part", "2_ring", "3_spot", "4_arms", "5_taper", "6_circle",
+    ] {
+        let sheet: &'static str = format!("lab/highlights/styles/{part}.style").leak();
+        looks.push((
+            "lab/highlights/spike.pen",
+            vec![THEME, "lab/highlights/styles/base.style", sheet],
+        ));
+    }
+    // Every look that loads the theme has a dark variant, which only renames its colors.
+    let dark: Vec<_> = looks
+        .iter()
+        .filter(|(_, sheets)| sheets.contains(&THEME))
+        .map(|(pen, sheets)| (*pen, [sheets.clone(), vec![DARK]].concat()))
+        .collect();
+    looks.extend(dark);
+    looks
 }
 
 fn read(name: &str) -> Option<String> {
@@ -372,11 +461,10 @@ fn read(name: &str) -> Option<String> {
 }
 
 /// A paint no sheet writes stays as this, so a mark that still has it was given it by default.
-const UNWRITTEN_STROKE: &str = "rgb(1, 2, 3)";
-const UNWRITTEN_FILL: &str = "rgb(4, 5, 6)";
+const UNWRITTEN_STROKE: [f64; 3] = [1.0, 2.0, 3.0];
+const UNWRITTEN_FILL: [f64; 3] = [4.0, 5.0, 6.0];
 
-fn compose(pen: &str, sheets: &[String]) -> pencil_core::Composition {
-    let doc = read(pen).unwrap();
+fn compose(pen: &str, doc: &str, sheets: &[String]) -> pencil_core::Composition {
     let texts: Vec<(&str, String)> = sheets
         .iter()
         .map(|s| match read(s) {
@@ -391,7 +479,7 @@ fn compose(pen: &str, sheets: &[String]) -> pencil_core::Composition {
     Sources::read(
         Source {
             name: pen,
-            text: &doc,
+            text: doc,
         },
         &sources,
         &read,
@@ -401,12 +489,40 @@ fn compose(pen: &str, sheets: &[String]) -> pencil_core::Composition {
     .unwrap_or_else(|e| panic!("{pen}: {e}"))
 }
 
-#[test]
-fn no_corpus_look_gets_a_paint_it_didnt_write() {
+/// The type a mark was declared as.
+fn type_of(mark: &pencil_core::ir::Mark) -> &str {
+    const TYPES: [&str; 15] = [
+        "circle",
+        "line",
+        "ray",
+        "curve",
+        "segment",
+        "decoration",
+        "region",
+        "dot",
+        "label",
+        "arrow",
+        "term",
+        "dots",
+        "circles",
+        "curves",
+        "outline",
+    ];
+    mark.tags
+        .iter()
+        .map(String::as_str)
+        .find(|t| TYPES.contains(t))
+        .unwrap_or_else(|| panic!("`{}` has no type", mark.id))
+}
+
+/// What in this document under these sheets was given a paint, or text a color other than black,
+/// that no sheet wrote: `panel mark` for each, and `panel title`, `panel formula` and `caption`.
+fn defaulted(pen: &str, doc: &str, sheets: &[String]) -> Vec<String> {
+    let [s, f] = [UNWRITTEN_STROKE, UNWRITTEN_FILL].map(|[r, g, b]| format!("rgb({r}, {g}, {b})"));
     let probe = format!(
         "style curve, circle, line, ray, segment, decoration, region, dot, arrow, dots, circles, \
-         outline {{ stroke: {UNWRITTEN_STROKE} }}\n\
-         style dot, region, dots, label, term, title, formula {{ fill: {UNWRITTEN_FILL} }}"
+         curves, outline {{ stroke: {s} }}\n\
+         style dot, region, dots, label, term, title, formula, caption {{ fill: {f} }}"
     );
     let unwritten = |e: &Option<Expr>, rgb: [f64; 3]| {
         e.as_ref()
@@ -417,54 +533,164 @@ fn no_corpus_look_gets_a_paint_it_didnt_write() {
                     .all(|(a, b)| (a - eval::srgb_decode(b / 255.0)).abs() < 1e-12)
             })
     };
+    let plain = compose(pen, doc, sheets);
+    let probed = compose(pen, doc, &[vec![probe], sheets.to_vec()].concat());
+    let mut found = Vec::new();
+    for (panel, probe_panel) in plain.panels.iter().zip(&probed.panels) {
+        let (f, p) = (&panel.figure.styles, &probe_panel.figure.styles);
+        // Text that takes the ink may only take the black it had.
+        let not_black = |e: &Option<Expr>| e.is_some() && *e != black();
+        if panel.title.is_some()
+            && unwritten(&p.title_fill, UNWRITTEN_FILL)
+            && not_black(&f.title_fill)
+        {
+            found.push(format!("{} title", panel.id));
+        }
+        if panel.formula.is_some()
+            && unwritten(&p.formula_fill, UNWRITTEN_FILL)
+            && not_black(&f.formula_fill)
+        {
+            found.push(format!("{} formula", panel.id));
+        }
+        if let (Some(caption), Some(probe)) = (&f.caption, &p.caption)
+            && unwritten(&probe.fill, UNWRITTEN_FILL)
+            && not_black(&caption.fill)
+        {
+            found.push("caption".into());
+        }
+        let scene = &panel.figure.scene;
+        for ((mark, style), probe) in scene.marks.iter().zip(&f.marks).zip(&p.marks) {
+            // What `show: 0` keeps out of every frame shows no paint, given or not.
+            let absent = style
+                .show
+                .as_ref()
+                .and_then(|e| pencil_core::compile::constant(e, "show").ok())
+                .is_some_and(|v| v <= 0.0);
+            if absent {
+                continue;
+            }
+            let defaulted = match type_of(mark) {
+                "label" | "term" => {
+                    unwritten(&probe.negative, UNWRITTEN_FILL) && not_black(&style.negative)
+                }
+                // A collection of dots is drawn by its stroke, in its fill.
+                "dots" => unwritten(&probe.stroke, UNWRITTEN_FILL) && style.stroke.is_some(),
+                _ => {
+                    (unwritten(&probe.stroke, UNWRITTEN_STROKE) && style.stroke.is_some())
+                        || (unwritten(&probe.negative, UNWRITTEN_FILL) && style.negative.is_some())
+                }
+            };
+            if defaulted {
+                found.push(format!("{} {}", panel.id, mark.id));
+            }
+        }
+    }
+    found
+}
+
+#[test]
+fn no_corpus_look_gets_a_paint_it_didnt_write() {
     let mut found = Vec::new();
     for (pen, sheets) in looks() {
         let sheets: Vec<String> = sheets.iter().map(|s| s.to_string()).collect();
-        let plain = compose(pen, &sheets);
-        let probed = compose(pen, &[vec![probe.clone()], sheets.clone()].concat());
-        for (panel, probe_panel) in plain.panels.iter().zip(&probed.panels) {
-            let (f, p) = (&panel.figure, &probe_panel.figure);
-            for title in [
-                (&f.styles.title_fill, &p.styles.title_fill),
-                (&f.styles.formula_fill, &p.styles.formula_fill),
-            ] {
-                if unwritten(title.1, [4.0, 5.0, 6.0]) && panel.title.is_some() {
-                    found.push(format!("{pen} {sheets:?}: a title or formula's fill"));
-                }
-            }
-            for ((mark, style), probe) in f
-                .scene
-                .marks
-                .iter()
-                .zip(&f.styles.marks)
-                .zip(&p.styles.marks)
-            {
-                let text = matches!(mark.form, Form::Label { .. } | Form::Term { .. });
-                let dots = mark.tags.iter().any(|t| t == "dots");
-                let defaulted = if text {
-                    // The ink replaces black, so it may only be black.
-                    unwritten(&probe.negative, [4.0, 5.0, 6.0]) && style.negative != black()
-                } else if dots {
-                    unwritten(&probe.stroke, [4.0, 5.0, 6.0]) && style.stroke.is_some()
-                } else {
-                    (unwritten(&probe.stroke, [1.0, 2.0, 3.0]) && style.stroke.is_some())
-                        || (unwritten(&probe.negative, [4.0, 5.0, 6.0]) && style.negative.is_some())
-                };
-                if defaulted {
-                    found.push(format!("{pen} {sheets:?}: {} {}", panel.id, mark.id));
-                }
-            }
+        for what in defaulted(pen, &read(pen).unwrap(), &sheets) {
+            found.push(format!("{pen} {sheets:?}: {what}"));
         }
     }
     assert!(found.is_empty(), "given a default:\n{}", found.join("\n"));
 }
 
+/// The guard above can see every type of mark the corpus has: one of each, given nothing, is
+/// flagged, and given its paint, isn't.
+/// One mark of every type, and an outline, which only a figure with panels has.
+const EVERY_TYPE: [&str; 2] = [
+    "viewport { x: -2..2, y: -2..2 }
+    param step = 1 in 0..1
+    let P = (0.5, 0.5)
+    curve a_curve = parametric (t): (t, t²) for t in 0..1
+    curve a_circle = circle((0, 0), (1, 0))
+    curve a_line = line((-2, -1), (2, -1))
+    curve a_ray = ray((0, 0), (1, -1))
+    segment a_segment = (-1, 1.5), (1, 1.5)
+    rightangle a_decoration = (1, 0), (0, 0), (0, 1) size 0.2
+    region a_region = (-1.8, -1.8), (-1.2, -1.8), (-1.5, -1.2)
+    dot P
+    arrow an_arrow = (0, 0), (1, 0)
+    dots some_dots = (n/4, -1.5) for n in 0..3
+    circles some_circles = circle((n, 0), (n + 0.1, 0)) for n in 0..1
+    curves some_curves = parametric (t): (t, t + n) for t in 0..1 for n in 0..1
+    label a_label = \"P\" at P
+    place spot = (0, 0)
+    expression e by step {
+      \"x\" at spot
+      \"x\" at spot
+    }",
+    "let P = (0.5, 0.5)
+    panel whole \"Whole\" {
+      viewport { x: -2..2, y: -2..2 }
+      outline an_outline = detail
+    }
+    panel detail \"Detail\" {
+      viewport { x: 0..1, y: 0..1 }
+      dot P
+    }",
+];
+
+/// The guard above can see every type of mark the corpus has: one of each, given nothing, is
+/// flagged, and given its paint, isn't.
+#[test]
+fn the_guard_sees_every_type_the_corpus_has() {
+    let mut fixture = std::collections::BTreeMap::new();
+    for doc in EVERY_TYPE {
+        for panel in &compose("", doc, &[]).panels {
+            for mark in &panel.figure.scene.marks {
+                let at = format!("{} {}", panel.id, mark.id).trim().to_string();
+                fixture
+                    .entry(type_of(mark).to_string())
+                    .or_insert((doc, at, mark.id.clone()));
+            }
+        }
+    }
+    let mut corpus = std::collections::BTreeSet::new();
+    for (pen, _) in looks() {
+        for panel in &compose(pen, &read(pen).unwrap(), &[]).panels {
+            for mark in &panel.figure.scene.marks {
+                corpus.insert(type_of(mark).to_string());
+            }
+        }
+    }
+    assert!(
+        corpus.contains("curves") && corpus.contains("outline"),
+        "{corpus:?}"
+    );
+    // On a dark paper, so the ink isn't the black that text may take.
+    let paper = "style paper { fill: black }".to_string();
+    for ty in &corpus {
+        let (doc, at, id) = fixture
+            .get(ty)
+            .unwrap_or_else(|| panic!("the guard's fixture has no `{ty}`"));
+        let flagged = |sheet: &str| {
+            defaulted("", doc, &[sheet.to_string()])
+                .iter()
+                .any(|f| f.trim() == at)
+        };
+        assert!(flagged(&paper), "`{ty}` given nothing isn't flagged");
+        let paint = match ty.as_str() {
+            "dot" | "dots" | "label" | "term" => "fill",
+            _ => "stroke",
+        };
+        let painted = format!("{paper}\nstyle {id} {{ {paint}: white }}");
+        assert!(!flagged(&painted), "`{ty}` given its paint is flagged");
+    }
+}
+
 #[test]
 fn every_corpus_figure_draws_with_no_sheet() {
     let mut pens: Vec<&str> = looks().into_iter().map(|(pen, _)| pen).collect();
+    pens.sort();
     pens.dedup();
     for pen in pens {
-        let bare = compose(pen, &[]);
+        let bare = compose(pen, &read(pen).unwrap(), &[]);
         for panel in &bare.panels {
             for (mark, style) in panel
                 .figure

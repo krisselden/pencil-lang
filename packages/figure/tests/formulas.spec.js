@@ -7,6 +7,7 @@ import { open, drawn, onFigure } from './helpers.js';
 // command to (`the_widths_a_page_is_held_to`): the same numbers from the same fonts.
 const ARG_Z = 2006;
 const PENCIL = 2492;
+const TURN = 2798;
 const SIN = 1203;
 
 /** Every font the figure's text needs is in, the math font included. */
@@ -98,6 +99,25 @@ test.describe('labels', () => {
     // A value in a span is laid out with it: z to the n, with n at 3.
     const power = await pieces(page, 'power');
     expect(power.runs.some((r) => r.text === '3' && r.size < power.size)).toBe(true);
+  });
+
+  test('lay out a value as mathematics in a sans label, beside its sans words', async ({ page }) => {
+    await ready(page);
+    // `turn = e^(2πi/3)`: the words in the label's own sans, the value in the math font.
+    const turn = await pieces(page, 'v');
+    expect(turn.family).toContain('Pencil Sans');
+    expect(turn.text).not.toContain('$');
+    const words = turn.runs.find((r) => r.text === 'turn = ');
+    expect(words.formula).toBe(false);
+    expect(words.italic).toBe(false);
+    expect((words.width / words.size) * 1000).toBeGreaterThan(TURN * 0.98);
+    expect((words.width / words.size) * 1000).toBeLessThan(TURN * 1.02);
+    const e = turn.runs.find((r) => r.text === '𝑒');
+    expect(e.formula).toBe(true);
+    expect(e.left).toBeGreaterThan(words.right - 1);
+    // Its exponent is a real superscript: smaller, and above the line.
+    const power = turn.runs.find((r) => r.formula && r.size < e.size);
+    expect(power.top).toBeLessThan(e.top);
   });
 
   test('set a run as wide as the core measured it', async ({ page }) => {

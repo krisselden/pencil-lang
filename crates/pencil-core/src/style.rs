@@ -66,7 +66,7 @@ pub const PROPERTIES: [&str; 27] = [
 ];
 pub const COLORS: [&str; 2] = ["white", "black"];
 /// The tags that say what kind of mark something is.
-const MARK_TYPES: [&str; 14] = [
+const MARK_TYPES: [&str; 15] = [
     "circle",
     "line",
     "ray",
@@ -80,6 +80,7 @@ const MARK_TYPES: [&str; 14] = [
     "term",
     "dots",
     "circles",
+    "curves",
     "outline",
 ];
 
@@ -349,6 +350,9 @@ pub struct Styled {
     /// Beat captions, drawn in the figure only when a sheet asks: a page can show them as text.
     pub caption: Option<CaptionStyle>,
     pub formula_fill: Option<Expr>,
+    /// A sheet wrote `fill: none` for the titles or the formulas: they aren't drawn.
+    pub no_title_fill: bool,
+    pub no_formula_fill: bool,
     pub panels: PanelStyle,
 }
 
@@ -603,6 +607,8 @@ pub struct CaptionStyle {
     /// How far its center sits from the bottom of the canvas, in `px`.
     pub distance: Option<Expr>,
     pub font: Font,
+    /// A sheet wrote `fill: none`: captions aren't drawn.
+    pub no_fill: bool,
 }
 
 /// Replaces `self.age`, `self.life` and `self.focus` with this mark's own expressions in
@@ -788,12 +794,17 @@ pub fn resolve_keeping(
                 }
                 if selector.target == "formula" && selector.tags.is_empty() {
                     for (prop, value) in &decls {
+                        if prop == "fill" && is_none(value) {
+                            (styled.formula_fill, styled.no_formula_fill) = (None, true);
+                            continue;
+                        }
                         if prop != "fill"
                             || type_of(value, &checked, false).map_err(&at)? != Ty::Color
                         {
                             return Err(at(format!("`formula` only takes a `fill`, not `{prop}`")));
                         }
-                        styled.formula_fill = Some(value.clone());
+                        (styled.formula_fill, styled.no_formula_fill) =
+                            (Some(value.clone()), false);
                     }
                     continue;
                 }
@@ -801,11 +812,14 @@ pub fn resolve_keeping(
                     let caption = styled.caption.get_or_insert_with(CaptionStyle::default);
                     for (prop, value) in &decls {
                         match (prop.as_str(), value) {
+                            ("fill", _) if is_none(value) => {
+                                (caption.fill, caption.no_fill) = (None, true)
+                            }
                             ("fill", _) => {
                                 if type_of(value, &checked, false).map_err(&at)? != Ty::Color {
                                     return Err(at("`fill` needs a Color".into()));
                                 }
-                                caption.fill = Some(value.clone());
+                                (caption.fill, caption.no_fill) = (Some(value.clone()), false);
                             }
                             ("size", _) => caption.size = Some(value.clone()),
                             ("halo", _) => caption.halo = Some(value.clone()),
@@ -824,11 +838,15 @@ pub fn resolve_keeping(
                 if selector.target == "title" && selector.tags.is_empty() {
                     for (prop, value) in &decls {
                         match prop.as_str() {
+                            "fill" if is_none(value) => {
+                                (styled.title_fill, styled.no_title_fill) = (None, true);
+                            }
                             "fill" => {
                                 if type_of(value, &checked, false).map_err(&at)? != Ty::Color {
                                     return Err(at("`fill` needs a Color".into()));
                                 }
-                                styled.title_fill = Some(value.clone());
+                                (styled.title_fill, styled.no_title_fill) =
+                                    (Some(value.clone()), false);
                             }
                             "size" => styled.title_size = Some(value.clone()),
                             other => {
@@ -861,6 +879,11 @@ pub fn resolve_keeping(
                             return Err(at(format!(
                                 "`paper` only takes `fill` and `tone`, not `{prop}`"
                             )));
+                        }
+                        if is_none(value) {
+                            return Err(at("the paper is what everything is drawn on, so it \
+                                can't be `fill: none`: leave its fill out for white"
+                                .into()));
                         }
                         if type_of(value, &checked, false).map_err(&at)? != Ty::Color {
                             return Err(at("`fill` needs a Color".into()));
@@ -938,13 +961,33 @@ pub fn resolve_keeping(
     // What's drawn with nothing said: a mark with nothing to paint gets its default paint, and
     // text and titles with no fill get the ink.
     let ink = default_ink(sheet_names.get("ink"), styled.paper.as_ref(), &names);
+    if let Some(ink) = sheet_names.get("ink")
+        && type_of(ink, &names, false) != Ok(Ty::Color)
+    {
+        let (index, line) = last_let(&sheets[..sheets.len().saturating_sub(1)], "ink")
+            .expect("a sheet's name is defined in a sheet");
+        return Err(Error::at(
+            line,
+            1,
+            "`ink` is the color a mark is drawn in when no rule gives it one, so it has to be a \
+             color",
+        )
+        .in_sheet(index));
+    }
     for (mark, style) in scene.marks.iter().zip(&mut styled.marks) {
         complete(mark, style, &ink);
     }
-    for fill in [&mut styled.title_fill, &mut styled.formula_fill] {
-        fill.get_or_insert_with(|| ink.clone());
+    for (fill, none) in [
+        (&mut styled.title_fill, styled.no_title_fill),
+        (&mut styled.formula_fill, styled.no_formula_fill),
+    ] {
+        if !none {
+            fill.get_or_insert_with(|| ink.clone());
+        }
     }
-    if let Some(caption) = &mut styled.caption {
+    if let Some(caption) = &mut styled.caption
+        && !caption.no_fill
+    {
         caption.fill.get_or_insert_with(|| ink.clone());
     }
     // A dot in a collection is drawn by its stroke, in the color a dot is filled with.
@@ -1034,23 +1077,32 @@ fn complete(mark: &crate::ir::Mark, style: &mut MarkStyle, ink: &Expr) {
     if style.stroke.is_some() || (sided && style.has_sides()) {
         return;
     }
-    let stroked = [
-        &style.width,
-        &style.dash,
-        &style.gap,
-        &style.head,
-        &style.head_span,
-        &style.trim,
-        &style.ticks,
-        &style.tick,
-    ]
-    .iter()
-    .any(|p| p.is_some());
+    // A property asks for a paint only on a mark it applies to.
+    let dot = matches!(form, Form::Dot(_));
+    let curve = matches!(
+        form,
+        Form::Parametric(_)
+            | Form::Many {
+                shape: Shape::Curves(_),
+                ..
+            }
+    );
+    let arrow = matches!(form, Form::Arrow { .. });
+    let set = |p: &Option<Expr>| p.is_some();
+    // `trim`, `ticks` and `tick` are only accepted where there's a line to trim or mark.
+    let stroked = set(&style.width)
+        || (!(dot || dots) && (set(&style.dash) || set(&style.gap)))
+        || ((curve || arrow) && set(&style.head))
+        || (curve && set(&style.head_span))
+        || set(&style.trim)
+        || set(&style.ticks)
+        || set(&style.tick);
+    let asks_fill = ((dot || dots) && set(&style.radius))
+        || ((dot || matches!(form, Form::Region(_))) && set(&style.fill_opacity));
     let mut stroke = stroked && !style.no_stroke;
-    let mut fill =
-        filled && (style.radius.is_some() || style.fill_opacity.is_some()) && !style.no_fill;
+    let mut fill = asks_fill && !style.no_fill;
     if !stroke && !fill {
-        if dots || matches!(form, Form::Dot(_)) {
+        if dots || dot {
             fill = !style.no_fill;
         } else {
             stroke = !style.no_stroke;
@@ -1062,6 +1114,25 @@ fn complete(mark: &crate::ir::Mark, style: &mut MarkStyle, ink: &Expr) {
     if fill {
         style.negative = Some(ink.clone());
     }
+}
+
+fn is_none(value: &Expr) -> bool {
+    matches!(value, Expr::Sym(word) if word == "none")
+}
+
+/// The sheet and line of the last `let` of this name, which is the one that holds.
+fn last_let(sheets: &[Document], name: &str) -> Option<(usize, usize)> {
+    let mut found = None;
+    for (index, sheet) in sheets.iter().enumerate() {
+        for item in &sheet.items {
+            if let Item::Let { name: n, line, .. } = item
+                && n == name
+            {
+                found = Some((index, *line));
+            }
+        }
+    }
+    found
 }
 
 /// A layout value is one number that holds for the whole figure, so it can't read a param.
@@ -1381,6 +1452,13 @@ fn apply(
                 }
             }
             (None, "fill") => {
+                if (many_circles || matches!(form, Form::Field { .. })) && clear {
+                    return Err(format!(
+                        "`{id}` is filled by its sides, which have no fill of their own until a \
+                         sheet gives them one, so `fill: none` needs a facet, such as \
+                         `{id}::inside`"
+                    ));
+                }
                 if many_circles || matches!(form, Form::Field { .. }) {
                     return Err("`fill` needs a facet, such as `::inside`, for now".into());
                 }

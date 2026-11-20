@@ -575,6 +575,7 @@ impl Composition {
                 let size = frame::length_or(&styles.title_size, TITLE_SIZE, &env)?;
                 let y = oy - size * 0.75;
                 let mut x = ox;
+                // What a sheet gave `fill: none` isn't drawn, and takes no room.
                 let parts = [
                     (&panel.title, "title", style::Font::Sans, &styles.title_fill),
                     (
@@ -584,8 +585,11 @@ impl Composition {
                         &styles.formula_fill,
                     ),
                 ];
-                for (text, part, font, fill) in parts {
-                    let Some(text) = text else { continue };
+                let hidden = [styles.no_title_fill, styles.no_formula_fill];
+                for ((text, part, font, fill), hidden) in parts.into_iter().zip(hidden) {
+                    let Some(text) = text.as_ref().filter(|_| !hidden) else {
+                        continue;
+                    };
                     let wide = formula::width(text, size, font, widths);
                     let at = [x + wide / 2.0, y];
                     out.push(frame::Label {
@@ -640,7 +644,8 @@ impl Composition {
             return Ok(());
         };
         let figure = &panel.figure;
-        let Some(style) = &figure.styles.caption else {
+        // With `fill: none`, a sheet asked for no captions after all.
+        let Some(style) = figure.styles.caption.as_ref().filter(|c| !c.no_fill) else {
             return Ok(());
         };
         let beats = &figure.scene.beats;

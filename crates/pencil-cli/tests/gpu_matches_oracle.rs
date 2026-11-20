@@ -5,6 +5,11 @@ use std::process::{Command, Output};
 /// Runs `pencil check` on a document and a sheet at 320 wide, at time 0. None on a machine with no
 /// GPU, which can't say either way.
 fn check(name: &str, doc: &str, sheet: &str) -> Option<Output> {
+    check_at(name, doc, sheet, "0")
+}
+
+/// `check` at this time.
+fn check_at(name: &str, doc: &str, sheet: &str, time: &str) -> Option<Output> {
     let dir = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join(name);
     std::fs::create_dir_all(&dir).unwrap();
     let (doc_path, sheet_path) = (dir.join("doc.pen"), dir.join("sheet.style"));
@@ -17,7 +22,7 @@ fn check(name: &str, doc: &str, sheet: &str) -> Option<Output> {
             "--style",
             sheet_path.to_str().unwrap(),
         ])
-        .args(["--t", "0", "--size", "320"])
+        .args(["--t", time, "--size", "320"])
         .output()
         .unwrap();
     let out = String::from_utf8_lossy(&output.stdout);
@@ -86,4 +91,25 @@ fn lengths_in_every_unit_agree() {
          style g::outside { fill: rgb(40, 40, 255) }
          style P { fill: black; radius: 0.5em }",
     ));
+}
+
+/// The default ink turns from black to white as a paper darkens past the luminance where they
+/// contrast equally, which is at t = 3.28348486… here. The shader's time is single precision, a
+/// step of 2.4e-7 s there, so within about 1e-7 s of that moment the two can still be a frame
+/// apart. Either side of that, they turn over together.
+#[test]
+fn the_default_ink_turns_over_with_the_paper_on_both() {
+    let doc = "viewport { x: -2..2, y: -2..2 }
+               curve c = circle((0, 0), (1, 0))
+               let z = (0, 1)
+               dot z";
+    let sheet = "style paper { fill: mix(white, black, time/4) }";
+    for (name, time) in [
+        ("ink-light", "0"),
+        ("ink-before", "3.2834845"),
+        ("ink-after", "3.2834852"),
+        ("ink-dark", "4"),
+    ] {
+        passes(check_at(name, doc, sheet, time));
+    }
 }

@@ -3,3 +3,5 @@ style paper { fill: white }
 style label { font: math; fill: black; halo: 0.18em }
 style w { text: name = value; format: polar }
 style plain { font: sans }
+// Sans words beside a value, which is laid out as mathematics whatever the font.
+style v { font: sans; text: caption = value; format: polar }

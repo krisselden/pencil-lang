@@ -243,6 +243,8 @@ fn styled_exprs(styled: &Styled, f: &mut impl FnMut(&Expr)) {
         title_size,
         caption,
         formula_fill,
+        no_title_fill: _,
+        no_formula_fill: _,
         panels,
     } = styled;
     for style in marks {
@@ -315,6 +317,7 @@ fn styled_exprs(styled: &Styled, f: &mut impl FnMut(&Expr)) {
         halo,
         distance,
         font: _,
+        no_fill: _,
     }) = caption
     {
         [fill, size, halo, distance]

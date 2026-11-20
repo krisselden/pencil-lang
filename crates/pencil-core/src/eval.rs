@@ -96,9 +96,12 @@ pub fn hue(k: f64) -> [f64; 3] {
 /// ratio `(L1 + 0.05) / (L2 + 0.05)`: `sqrt(1.05 · 0.05) − 0.05`.
 pub const CONTRAST_LUMINANCE: f64 = 0.179_128_784_747_792;
 
-/// A linear color's relative luminance.
-pub fn luminance(c: [f64; 3]) -> f64 {
-    0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]
+/// Whether a linear color's relative luminance is at least `CONTRAST_LUMINANCE`, so black
+/// stands out more on it than white. Worked out in `f32`, in the shader's order, so that a paper
+/// passing the line turns the ink over on the same frame on both.
+pub fn light(c: [f64; 3]) -> bool {
+    let [r, g, b] = c.map(|v| v as f32);
+    0.2126f32 * r + 0.7152f32 * g + 0.0722f32 * b >= CONTRAST_LUMINANCE as f32
 }
 
 pub fn srgb_encode(c: f64) -> f64 {
@@ -266,7 +269,7 @@ pub fn eval(e: &Expr, env: &Env) -> Result<Value, Error> {
             ]),
             ("Hue", [k]) => Color(hue(real(k)?)),
             // Black or white, whichever has more contrast with this color, by WCAG's measure.
-            ("Contrast", [c]) => Color(if luminance(color(c, env)?) >= CONTRAST_LUMINANCE {
+            ("Contrast", [c]) => Color(if light(color(c, env)?) {
                 [0.0; 3]
             } else {
                 [1.0; 3]

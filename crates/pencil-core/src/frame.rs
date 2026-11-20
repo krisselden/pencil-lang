@@ -1393,6 +1393,9 @@ mod tests {
         assert_eq!((&sans.text, &sans.laid), (&math.text, &math.laid));
         let note = label_of(doc, &sheet("math"), "note");
         assert_eq!((note.text.as_str(), &note.laid), ("the root", &None));
+        // A sans label's own words stay words, set by the renderer, as they are in math.
+        let note = label_of(doc, &sheet("sans"), "note");
+        assert_eq!((note.text.as_str(), &note.laid), ("the root", &None));
     }
 
     #[test]

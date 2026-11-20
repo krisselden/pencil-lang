@@ -33,9 +33,10 @@ fn oklch(l: f32, c: f32, h: f32) -> vec3<f32> {
 
 fn hue(k: f32) -> vec3<f32> { return oklch(0.68, 0.14, 360.0 * k); }
 
-// Black or white, whichever has more contrast with c, as `eval`'s `Contrast`.
+// Black or white, whichever has more contrast with c, as `eval::light` decides it, in its order.
 fn contrast(c: vec3<f32>) -> vec3<f32> {
-    return select(vec3<f32>(1.0), vec3<f32>(0.0), dot(c, vec3<f32>(0.2126, 0.7152, 0.0722)) >= CONTRAST_LUMINANCE);
+    let luminance = 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
+    return select(vec3<f32>(1.0), vec3<f32>(0.0), luminance >= CONTRAST_LUMINANCE);
 }
 
 // WGSL's pow is undefined for a negative base, so whole exponents go through these.

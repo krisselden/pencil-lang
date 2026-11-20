@@ -611,6 +611,16 @@ whatever the label's font (`language.md`, "What's drawn with nothing said"; deci
 - **Held by tests.** `crates/pencil-core/tests/defaults.rs` resolves every look twice, once behind a sheet that marks what no
   rule writes, and fails if any corpus mark gets a paint its sheets didn't write, or text whose ink isn't the black it was.
   It also builds every corpus document with no sheet and requires every mark to paint.
+- **Reviewed.** An independent review rendered every corpus look at three times, and the square and the scaled copy frame by
+  frame, against the commit before: pixel-identical. It found the guard blind to `curves`, which no type selector reached;
+  `curves` is a type now, the guard checks the light and dark variants, the highlights and captions, and a test shows it
+  flags one unstyled mark of every type the corpus has. Marks that `show: 0` keeps out are left out of it.
+- **A paper that turns over.** The CPU decides the ink in single precision, in the shader's order, but the shader's time is
+  single precision too, a step of 2.4e-7 s at t = 3.28. So when a paper's luminance passes the line, the two can be a frame
+  apart for about 1e-7 s either side (measured on `mix(white, black, time/4)`, 5 samples 2e-8 s apart fail `pencil check`).
+- **Not done: labels that settle by default.** A value's label on its own dot, `label z at z`, now has the dot drawn over it.
+  `place: settle` as the default would move the labels of unroll's two looks and bounds' blog look by up to 22 px, which no
+  sheet of theirs fixes, so it waits for Kris.
 - **Left to look at:** a `fill` on a mark that never draws one (a segment, an arrow, a parametric curve, an outline) is
   accepted and does nothing, and a mark with only that gets its default stroke. It says nothing about it yet.
 
