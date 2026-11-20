@@ -834,6 +834,12 @@ fn marks(
         {
             env.set(SELF_CURVATURE, curvature);
         }
+        // A stroke drawn per pixel can fade with its distance, as a glow does, and its fade is
+        // worked out per pixel too.
+        if reads(&style.opacity, SELF_DIST) {
+            writer.skip(&name, Left::Mark, "opacity", PER_PIXEL);
+            continue;
+        }
         let opacity = match &style.opacity {
             // One that varies along a stroke is already in its segments' ink.
             Some(_) if style.ink().is_some() => 1.0,
@@ -1468,6 +1474,18 @@ mod tests {
             "{}",
             drawn.svg
         );
+
+        // A curve drawn per pixel whose opacity fades with its distance, as a glow does.
+        let drawn = draw(
+            "curve p = parametric (t): (2 + cos(t), 2 + sin(t)) for t in 0..2·pi",
+            "style p { draw: field; stroke: white; opacity: tanh(self.pixel / abs(self.dist)) }",
+        );
+        let left: Vec<_> = drawn
+            .skipped
+            .iter()
+            .map(|s| (s.mark.as_str(), s.left, s.property))
+            .collect();
+        assert_eq!(left, [("p", Left::Mark, "opacity")]);
     }
 
     #[test]

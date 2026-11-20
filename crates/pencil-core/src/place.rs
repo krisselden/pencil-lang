@@ -15,8 +15,9 @@ use crate::error::Error;
 use crate::eval::{self, Env, MIN_GRADIENT};
 use crate::frame::{self, Inputs, Label, Prepared};
 use crate::ir::Form;
+use crate::nearest;
 use crate::stroke::FLOATS_PER_SEGMENT;
-use crate::style::Place;
+use crate::style::{Place, SELF_DIST, SELF_PIXEL};
 
 /// How far a bump reaches, in multiples of a label's size.
 const REACH: f64 = 2.4;
@@ -62,13 +63,40 @@ struct Edge {
 }
 const EDGE_EVERY: usize = 8;
 
-fn opacity_of(style: &crate::style::MarkStyle, env: &Env) -> Result<f64, Error> {
+/// How opaque a mark is where it's drawn. One whose stroke is drawn per pixel can fade with its
+/// distance, as a glow does, and a drawn frame gives it `self.pixel` and `self.dist` there: the
+/// same pixel, on the curve itself, at its middle.
+fn opacity_of(style: &crate::style::MarkStyle, env: &Env, pixel: f64) -> Result<f64, Error> {
     match &style.opacity {
         // One that varies along a stroke has no single value: the stroke is there.
         Some(_) if style.ink().is_some() => Ok(1.0),
-        Some(o) => eval::real(o, env),
+        Some(o) => {
+            let mut env = env.clone();
+            env.set(SELF_PIXEL, pixel);
+            env.set(SELF_DIST, 0.0);
+            eval::real(o, &env)
+        }
         None => Ok(1.0),
     }
+}
+
+/// One stroke as a line of segments, in style pixels, if it has any.
+fn line(segments: impl Iterator<Item = [f64; 4]>) -> Option<Obstacle> {
+    let mut bounds = [
+        f64::INFINITY,
+        f64::INFINITY,
+        f64::NEG_INFINITY,
+        f64::NEG_INFINITY,
+    ];
+    let segments: Vec<[f64; 4]> = segments
+        .inspect(|at| {
+            bounds[0] = bounds[0].min(at[0]).min(at[2]);
+            bounds[1] = bounds[1].min(at[1]).min(at[3]);
+            bounds[2] = bounds[2].max(at[0]).max(at[2]);
+            bounds[3] = bounds[3].max(at[1]).max(at[3]);
+        })
+        .collect();
+    (!segments.is_empty()).then_some(Obstacle::Line { segments, bounds })
 }
 
 fn obstacles(
@@ -81,7 +109,7 @@ fn obstacles(
     let dpr = prepared.dpr;
     let mut out = Vec::new();
     let mut fields = Vec::new();
-    let mut layer = 0;
+    let (mut layer, mut measured) = (0, 0);
     for (i, (mark, style)) in figure
         .scene
         .marks
@@ -92,6 +120,8 @@ fn obstacles(
         let is_line = style.stroke_is_line(&mark.form);
         let this_layer = layer;
         layer += usize::from(is_line);
+        let this_trace = measured;
+        measured += usize::from(nearest::measures(mark, style));
         if !prepared.shown[i]
             // A collection is a backdrop, as lattice points and a spiral's circles are, and
             // pushing against thousands of pieces of it would be slow and look unsettled.
@@ -99,29 +129,15 @@ fn obstacles(
                 mark.form,
                 Form::Label { .. } | Form::Term { .. } | Form::Many { .. } | Form::Outline { .. }
             )
-            || opacity_of(style, env)? < 0.01
+            || opacity_of(style, env, prepared.pixel)? < 0.01
         {
             continue;
         }
         if is_line {
-            let mut segments = Vec::new();
-            let mut bounds = [
-                f64::INFINITY,
-                f64::INFINITY,
-                f64::NEG_INFINITY,
-                f64::NEG_INFINITY,
-            ];
-            for s in prepared.strokes[this_layer].chunks(FLOATS_PER_SEGMENT) {
-                let at = [s[0], s[1], s[2], s[3]].map(|v| v as f64 / dpr);
-                bounds[0] = bounds[0].min(at[0]).min(at[2]);
-                bounds[1] = bounds[1].min(at[1]).min(at[3]);
-                bounds[2] = bounds[2].max(at[0]).max(at[2]);
-                bounds[3] = bounds[3].max(at[1]).max(at[3]);
-                segments.push(at);
-            }
-            if !segments.is_empty() {
-                out.push(Obstacle::Line { segments, bounds });
-            }
+            let segments = prepared.strokes[this_layer]
+                .chunks(FLOATS_PER_SEGMENT)
+                .map(|s| [s[0], s[1], s[2], s[3]].map(|v| v as f64 / dpr));
+            out.extend(line(segments));
             continue;
         }
         match &mark.form {
@@ -134,6 +150,14 @@ fn obstacles(
                     height,
                 );
                 out.push(Obstacle::Point([x / dpr, y / dpr]));
+            }
+            // A curve whose stroke is drawn per pixel, from its trace: the same segments the
+            // frame measures its distance to.
+            Form::Parametric(_) if style.stroke.is_some() => {
+                let segments = prepared.traced[this_trace]
+                    .iter()
+                    .map(|s| s.map(|v| v as f64 / dpr));
+                out.extend(line(segments));
             }
             Form::Field { .. } if style.stroke.is_some() => {
                 out.push(Obstacle::Field(fields.len()));
@@ -491,6 +515,32 @@ mod tests {
         .unwrap();
         let p = prepare(&f, &Inputs::at(0.0), 400, 400, 1.0).unwrap();
         assert!(p.labels[0].x > 303.0 + 3.0, "{}", p.labels[0].x);
+    }
+
+    /// A curve drawn per pixel that glows by its distance, as `008-hearts`' glow look draws its
+    /// hearts: its opacity reads `self.pixel` and `self.dist`, which settling has as a frame does.
+    #[test]
+    fn it_avoids_a_glowing_curve_drawn_per_pixel() {
+        let doc = "viewport { x: -2..2, y: -2..2 } style figure { width: 400px; height: 400px }
+                   param a = 0 in -2..2
+                   let P = (0, 0)
+                   curve c = parametric (t): (a, t) for t in -2..2
+                   label n = \"P\" at P";
+        let glow = |fade: &str| {
+            format!(
+                "fn glow(d, w) = tanh(w·self.pixel / abs(d))
+                 style c {{ draw: field; stroke: black; width: 8px; opacity: {fade}·glow(self.dist, 2) }}
+                 style n {{ place: settle; size: 16px }}"
+            )
+        };
+        let f = build(doc, &[&glow("1")]).unwrap();
+        // World x = 0.05 is 5 px right of the label, so it goes left, and the other way round.
+        assert!(label_x(&f, 0.05) < 195.0, "{}", label_x(&f, 0.05));
+        assert!(label_x(&f, -0.05) > 205.0, "{}", label_x(&f, -0.05));
+        assert_eq!(label_x(&f, 1.5), 200.0);
+        // Faded out, it's drawn nowhere, so it isn't in the way.
+        let f = build(doc, &[&glow("0")]).unwrap();
+        assert_eq!(label_x(&f, 0.05), 200.0);
     }
 
     #[test]
