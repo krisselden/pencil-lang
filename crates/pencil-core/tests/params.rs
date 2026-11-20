@@ -80,15 +80,49 @@ fn a_page_can_read_the_widest_range_and_what_it_follows() {
 #[test]
 fn a_range_reads_numbers_and_params() {
     let message = |doc: &str| build(doc, &[]).unwrap_err().to_string();
-    let ends =
-        "a param's range is numbers, constants such as π, and params, declared before or after it";
-    // Each says what the name is that it can't read.
-    let named = message("let n = 3\nparam p = 0 in 0..n\nlet P = (p, 0)\ndot P");
+    let ends = "a param's range is numbers, constants such as π or a constant `let`, and params, declared before or after it";
+    // Each says what the name is that it can't read. A `let` that a param moves isn't constant.
+    let named =
+        message("param q = 1 in 0..2\nlet n = q + 1\nparam p = 0 in 0..n\nlet P = (p, 0)\ndot P");
     assert!(
         named.contains(&format!(
-            "`n` is a `let`, and a range's end can't read one: {ends}"
+            "a range's end can't read `n`, since `n` depends on the param `q`: {ends}"
         )),
         "{named}"
+    );
+    // A range's end is lowered once: a construction in it works as it does in a `let`.
+    let arg = value(
+        "param p = 9 in 0..arg((1, 1))·4\nlet P = (p, 0)\ndot P",
+        "p",
+        &[],
+    );
+    assert!((arg - std::f64::consts::PI).abs() < 1e-12, "{arg}");
+    // A range's end is a finite number, at the ends of the ranges it reads too.
+    for (doc, want) in [
+        (
+            "param p = 0 in 0..1/0\nlet P = (p, 0)\ndot P",
+            "a param's range must be a finite number, and this is inf",
+        ),
+        (
+            "param p = 0 in 0..sqrt(-1)\nlet P = (p, 0)\ndot P",
+            "a param's range must be a finite number, and this is NaN",
+        ),
+        (
+            "param q = 0 in 0..1\nparam p = 0 in 0..1/q\nlet P = (p, q)\ndot P",
+            "a param's range must be a finite number at the ends of the ranges it reads, and there it's inf",
+        ),
+    ] {
+        let got = message(doc);
+        assert!(got.contains(want), "{doc}\n{got}");
+    }
+    // A constant `let` is a number, wherever it's written.
+    assert_eq!(
+        value(
+            "param p = 9 in 0..n\nlet n = 2·m\nlet m = 1.5\nlet P = (p, 0)\ndot P",
+            "p",
+            &[]
+        ),
+        3.0
     );
     for doc in [
         "param p = 0 in 0..time\nlet P = (p, 0)\ndot P",

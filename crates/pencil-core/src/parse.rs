@@ -77,7 +77,10 @@ pub enum Item {
         expr: Expr,
         line: usize,
     },
-    Duration(Expr),
+    Duration {
+        expr: Expr,
+        line: usize,
+    },
     /// `poster { time: 3.5, roll: 0.6 }`: the moment a still of the figure shows.
     Poster {
         values: Vec<(String, Expr)>,
@@ -224,7 +227,10 @@ pub enum Item {
     /// one, and `show`, `drop` and `focus` name marks declared anywhere, by name or `.tag`.
     Move(Move),
     /// A hold between moves, in seconds.
-    Pause(Expr),
+    Pause {
+        expr: Expr,
+        line: usize,
+    },
     /// Tags the marks the statement before it made.
     Tag(Vec<String>),
     /// Dragging a mark sets one param, or two. Each expression is the explicit inverse from
@@ -241,6 +247,7 @@ pub enum Item {
         pad: Option<Expr>,
         /// How far the view is turned about its vertical axis, for points in space.
         yaw: Option<Expr>,
+        line: usize,
     },
     Style(StyleRule),
 }
@@ -845,7 +852,10 @@ impl Parser {
                 let expr = self.expr()?;
                 items.push(Item::Bind { name, expr, line });
             }
-            "duration" => items.push(Item::Duration(self.expr()?)),
+            "duration" => {
+                let expr = self.expr()?;
+                items.push(Item::Duration { expr, line });
+            }
             "poster" => {
                 self.expect("{")?;
                 let mut values = Vec::new();
@@ -1184,7 +1194,10 @@ impl Parser {
                 }
                 return Ok(());
             }
-            "pause" => items.push(Item::Pause(self.expr()?)),
+            "pause" => {
+                let expr = self.expr()?;
+                items.push(Item::Pause { expr, line });
+            }
             "beat" => {
                 let caption = match self.bump() {
                     Tok::Str(text) => text,
@@ -1217,7 +1230,7 @@ impl Parser {
                 }
                 items.push(Item::EndBeat);
             }
-            "viewport" => items.push(self.viewport()?),
+            "viewport" => items.push(self.viewport(line)?),
             "style" => items.push(Item::Style(self.style(line)?)),
             other => {
                 return Err(Error::at(line, 1, format!("unknown statement `{other}`")));
@@ -1705,7 +1718,7 @@ impl Parser {
         })
     }
 
-    fn viewport(&mut self) -> Result<Item, Error> {
+    fn viewport(&mut self, line: usize) -> Result<Item, Error> {
         if matches!(self.peek(), Tok::Ident(_)) {
             self.bump();
         }
@@ -1746,6 +1759,7 @@ impl Parser {
             fit,
             pad,
             yaw,
+            line,
         })
     }
 
@@ -2096,6 +2110,7 @@ mod tests {
                 fit: Vec::new(),
                 pad: None,
                 yaw: None,
+                line: 1,
             }
         );
     }

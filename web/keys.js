@@ -125,7 +125,7 @@ export const CLAUSES = [
 ];
 
 /** Names that are always there. */
-export const CONSTANTS = ['time', 'pi', 'e', 'i', 'pointer.x', 'pointer.y', 'GoldenRatio', 'Degrees', 'white', 'black'];
+export const CONSTANTS = ['time', 'duration', 'pi', 'e', 'i', 'pointer.x', 'pointer.y', 'GoldenRatio', 'Degrees', 'white', 'black'];
 
 /** A sheet's properties (docs/language.md, Styles), most used first. */
 export const PROPERTIES = [

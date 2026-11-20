@@ -39,20 +39,20 @@ that names them. `lab/explainer/limacon.pen` is the example: a file to each part
 | Statement | Meaning |
 |---|---|
 | `doc name` | Names the document. |
-| `duration 13` | How long one pass of the time bindings takes, for looping and video. Any constant will do: `duration 2·π` loops once per turn of `time`. |
+| `duration 13` | How long one pass of the time bindings takes, for looping and video. Any constant will do (see Constants): `duration 2·π` loops once per turn of `time`. An expression reads it as `duration`. |
 | `poster { time: 3.5, roll: 0.6 }` | The moment a still of the figure shows: a time, and params held at values, as a reader could set them. A build draws it for a page to show until the figure runs (see Posters). |
 | `viewport { … }` | The world window (see below). |
 | `let x = expr` | A named value: a number, point, circle or line. |
 | `fn f(a, b) = expr` | A function, inlined where it's called. No recursion. |
 | `param a = 1 in 0..2·π` | A root that time or a reader can drive. It stays in its range however it's driven: its default, a binding, a reader's control and a drag all stop at the range's ends. |
-| `param p = 2 in 0..q step 1` | A range whose end follows other params, here one that says `p` can't pass `q`. An end is numbers, constants such as π, and params, declared before or after it: not a `let`, a choice's value or `time`. The figure keeps `p` inside the range as it stands each frame, so a reader who lowers `q` below `p` brings `p` down with it. What the reader set isn't lost: raise `q` again and `p` goes back to it. A page reads the widest the range gets and which params move it (`info.params`: `min`, `max`, `follows`), and the range as it stands (`figure.range("p")`), so a control built from them stops where the figure does. The widest is found at the ends of the ranges it reads, which is right for an end that only rises or falls with each. A range that ends before it starts leaves its start. |
-| `param n = 3 in 1..12 step 1` | A param that only takes its range's start plus whole steps, however it's driven: its default, a binding, a reader or a drag goes to the nearest one. A step of 1 makes it a whole number, and a page's control steps the same way. |
+| `param p = 2 in 0..q step 1` | A range whose end follows other params, here one that says `p` can't pass `q`. An end is numbers, constants (see Constants), and params, declared before or after it: not a `let` that a param or `time` moves, a choice's value or `time`. The figure keeps `p` inside the range as it stands each frame, so a reader who lowers `q` below `p` brings `p` down with it. What the reader set isn't lost: raise `q` again and `p` goes back to it. A page reads the widest the range gets and which params move it (`info.params`: `min`, `max`, `follows`), and the range as it stands (`figure.range("p")`), so a control built from them stops where the figure does. The widest is found at the ends of the ranges it reads, which is right for an end that only rises or falls with each. A range that ends before it starts leaves its start. |
+| `param n = 3 in 1..12 step 1` | A param that only takes its range's start plus whole steps, however it's driven: its default, a binding, a reader or a drag goes to the nearest one. A step of 1 makes it a whole number, and a page's control steps the same way. The step is a constant (see Constants). |
 | `param axis in {ω, 1, 1 + ω}` | A param that's one of these values, the first unless `= 1` names another as written. They can be any one kind, and numbers go with points as points on the real axis. The name is the chosen value, so the math can use it directly: `imag(conj(axis)·P)` is the cross product with whichever direction was chosen. The param a reader sets is `axis.index`, which option it is, from 0, and a page labels each option with its text, or with its name: in `{"p = 0": 2·π / q, "q = 2p": …}` a page shows the names and the math gets the values, and `= "q = 2p"` starts there. |
 | `solve (x, y) from 0, 1: f(x, y) = 0, g(x, y) = 2` | Unknowns defined by equations (see below). |
 | `bind a = expr` | What drives a param when no reader has taken it over. A param with a binding has two drivers, the binding and the reader, and the reader's last action picks. Setting it, with a drag, a key, a control or a page's `hold`, takes it over. Setting a param its binding reads, directly, through other bindings, a choice's options or a range, hands it back: in `bind theta = case`, where the case's options read `q`, setting `q` or the case brings θ back to its binding. Params set together, as in the element's `params="q: 8; theta: 1"`, keep each other. Time is the same: setting it, or playing, hands back what it drives. A page reads which params each binding reads in `info.params` (`reads`), and needs no script of its own for this. |
 | `beat "caption" tag t { … }` | A discrete step of a construction (see below). |
 | `beat spin "caption" for 2 show P drop c focus P, .arms` | One move of a figure's story, with a length (see below). |
-| `pause 0.4` | A hold between moves, in seconds. |
+| `pause 0.4` | A hold between moves, in seconds, a constant (see Constants). |
 | `curve c = …` | A drawn curve, in one of the forms below. |
 | `segment s = A, B` | A straight line between points. |
 | `path p = A, B, C` | An open line through points. |
@@ -110,10 +110,10 @@ ranges: with both signs, count over them first, `for s in {1, -1}, k in 0..(2 + 
 `viewport { x: -2..2, y: -2..2 }`
 
 - `x`, `y`: a fixed world window, as `-2..2` or `0 ± 2`. It always has one scale for both axes, so at a different shape it shows more, rather than stretching.
-  Its bounds are constant, so they can't read `time` or a param. To follow something that moves, `fit` it.
+  Its bounds are constants (see Constants), so they can't read `time` or a param. To follow something that moves, `fit` it.
 - `fit: a b c`: bounds these points and circles each frame instead of a fixed window, ignoring
   any param a handle has taken over, so a drag doesn't rescale the figure under the pointer.
-- `pad: 0.04`: extra space around a `fit`, as a fraction of its size.
+- `pad: 0.04`: extra space around a `fit`, as a fraction of its size. A constant (see Constants).
 - `yaw: 0.45·roll`: how far the view is turned about its vertical axis, for points in space (see Points in space). It can
   read params and `time`, so a view can turn as a figure plays.
 
@@ -129,7 +129,7 @@ the document says:
 
 `poster { time: 3.5, roll: 0.6 }`
 
-- **`time`** is a moment of the clock, and anything else is a param, held there as if a reader had set it. Each is a constant.
+- **`time`** is a moment of the clock, and anything else is a param, held there as if a reader had set it. Each is a constant (see Constants), so `time: duration / 5` is a fifth of the way through.
 - **Without one,** the poster is the end of the story for a figure whose beats have lengths, where everything has arrived,
   and the start of the clock for any other.
 - **It changes nothing about the figure as it runs.** A page that wants the figure to start where its poster is holds those
@@ -158,7 +158,7 @@ so the beat is about what a reader picked: `focus level, .boundary if case = "p 
 
 **A beat can have a length,** which makes it one move of a figure's story. Beats and pauses run in
 the order they're written, and their lengths add up to the `duration`, so making one longer moves
-everything after it instead of everything having to be retimed:
+everything after it instead of everything having to be retimed. A length is a constant (see Constants):
 
 ```
 pause 0.4
@@ -392,13 +392,36 @@ such as `for`, `in`, `step` or `tag`. A function's name before `(` is a call. An
 `a (b + c)` are products, and a power after them is the parentheses' own: `a(b + c)²` is a·(b + c)². Letters together are one name, so `ab` is a name and `a b` is a product. The
 constants' own glyphs `π`, `ℯ`, `ⅈ` and `ⅇ` never join a name, so `2πi`, `2πr` and `iπ` are products, and `π_1` is still a name. `(a, b)` is a
 point, which is also a complex number (see below), and `P.x` and `P.y` read one. Names can be Unicode. A subscript is part of a name, and
-`x1`, `x_1`, `x₁` and `x_{1}` are all the name `x_1`, as in Desmos and LaTeX; digits inside a name, as in `p2q`, aren't one. `time` is always available. `pi` and `π` are π, and `e`
+`x1`, `x_1`, `x₁` and `x_{1}` are all the name `x_1`, as in Desmos and LaTeX; digits inside a name, as in `p2q`, aren't one. `time` is always available. `duration` is the number the figure's `duration` statement says, so `bind theta = mod(time, duration) / duration·2·π` turns once a pass and the length is written once. It reads the same in a `let`, a `bind`, a mark and a style, and it's a constant, but not in its own statement, and not in a figure without one: there, reading it is an error, even when beats with lengths add up to a duration, since a length that read it would be defined in terms of itself. A figure says its `duration` once, and once it does, nothing else at its top level can take the name: a second statement, or a `let`, `param`, choice, `fn`, `solve` unknown or beat called `duration`, is an error. A parameter is local as always, so a `fn` or group whose parameter is called `duration` reads its own argument, and a sheet's own `let duration` is the sheet's. A figure with no `duration` statement can take the name for its own value, as with `pi`. `pi` and `π` are π, and `e`
 and `ℯ` are Euler's number, unless the figure takes the name for something of its own, as bounds does with its curve `e`; then
 every `e` in the figure is that, and `exp` is Euler's. In the IR they're MathJSON's `Pi` and `ExponentialE`. `2e` is 2·e, while
 `2e3` is 2000. Coordinates only exist inside the curve that names them.
 
 Points add and subtract, scale by a number, and negate. All of this expands to scalars at
 compile time, so the IR stays symbolic and bindings are evaluated once per frame.
+
+### Constants
+
+`duration`, a `pause`, a beat's length, a param's `step`, a poster's values, and a viewport's bounds and `pad` each hold
+for the whole figure, so each has to be a constant. A constant is a number, a constant such as `π`, `duration`, or a `let`
+or a call to the figure's own `fn` made only of those, written anywhere in the figure:
+
+```
+let period = 12
+duration period
+bind theta = mod(time, period) / period·2·π
+```
+
+A param's range is the one place that can also follow params: an end may read params directly, and apart from them it
+has to be constant, so a `let` it reads has to be a constant one.
+
+Anything that can change isn't a constant, even where it hasn't yet: `time`, a param, though it has a default, a choice,
+`beat` and a beat's name, a `solve`'s unknowns, and a `let` that reads any of them. The error names it, and what a `let`
+depends on: `` `duration` must be constant, and `period` depends on the param `a` ``.
+
+A constant is a finite number, since nothing that draws a figure can take anything else: `duration 0/0`, `pause 1/0` and
+`poster { time: (1, 2) }` are errors. `duration` is more: a number above 0, so `duration 0` is an error too. A pause and a
+beat's length can't be below 0, a step has to be above 0, and a viewport's bounds have to increase.
 
 ### MathJSON
 
@@ -616,7 +639,7 @@ it, but a rule by type or tag may match nothing, since a shared sheet can't know
 So a circle through three points that turns over straightens into a line and comes back with its sides' signs where they were, and its disk on the other one. Style `::negative` and the plane doesn't flash, and style `::inside` and
 the color stays with the disk. A style can tell which it is from `self.curvature`.
 
-**Values are expressions**, so they can use `time`, params and bindings. A few more names exist only here:
+**Values are expressions**, so they can use `time`, `duration` (see Expressions), params and bindings. A few more names exist only here:
 
 | Name | Meaning |
 |---|---|

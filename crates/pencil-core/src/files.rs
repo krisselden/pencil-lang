@@ -36,14 +36,31 @@ impl Origins {
         if error.line == 0 || error.file.is_some() {
             return error;
         }
-        if let Some(index) = self.files.iter().rposition(|(base, _)| *base < error.line) {
+        let own = self.file_of(error.line);
+        if let Some(index) = own {
             let (base, name) = &self.files[index];
             error.line -= base;
             if index > 0 {
                 error.file = Some(name.clone());
             }
         }
+        // Another line the message names: in this file, its line, and in another, which file too.
+        if let Some(other) = error.also.take()
+            && let Some(index) = self.file_of(other)
+        {
+            let (base, name) = &self.files[index];
+            let placed = match Some(index) == own {
+                true => Error::line_text(other - base),
+                false => format!("{} of `{name}`", Error::line_text(other - base)),
+            };
+            error.message = error.message.replacen(&Error::line_text(other), &placed, 1);
+        }
         error
+    }
+
+    /// Which file, by its place in `files`, a line numbered while compiling is in.
+    fn file_of(&self, line: usize) -> Option<usize> {
+        self.files.iter().rposition(|(base, _)| *base < line)
     }
 
     /// Every file read, in order, after the document itself.
@@ -347,6 +364,58 @@ mod tests {
                 &[sheet("use \"shared.style\"\nstyle R { fill: black }")]
             ),
             (Some(0), None, 2)
+        );
+    }
+
+    /// A message that names another line says it in that line's own file, and which comes later
+    /// is by where the figure reads it, with a used file's statements where its `use` is.
+    #[test]
+    fn a_message_names_another_line_in_its_own_file() {
+        use crate::{Source, Sources};
+        let lib = (
+            "lib.pen",
+            "// lib\n// lib2\n// lib3\nlet period = 12\nduration 5",
+        );
+        let error = |text: &str| {
+            let doc = Source {
+                name: "main.pen",
+                text,
+            };
+            let error = Sources::read(doc, &[], &among(&[lib]))
+                .unwrap()
+                .build()
+                .unwrap_err();
+            (error.file.clone(), error.line, error.message)
+        };
+        assert_eq!(
+            error("// main\nuse \"lib.pen\"\nduration 7"),
+            (
+                None,
+                3,
+                "`duration` is already set, on line 5 of `lib.pen`".to_string()
+            )
+        );
+        assert_eq!(
+            error("// main\nuse \"lib.pen\"\nlet duration = 3"),
+            (
+                None,
+                3,
+                "`duration` is this figure's length, set by its `duration` statement on line 5 of `lib.pen`; give this another name".to_string()
+            )
+        );
+        // The `let` is read first, so the error is at the statement, in the used file.
+        assert_eq!(
+            error("// main\nlet duration = 3\nuse \"lib.pen\""),
+            (
+                Some("lib.pen".to_string()),
+                5,
+                "`duration` is defined on line 2 of `main.pen`, and it's this figure's length, set by this statement; give that another name".to_string()
+            )
+        );
+        // Both in one file: just the line.
+        assert_eq!(
+            error("duration 1\n// two\nduration 2"),
+            (None, 3, "`duration` is already set, on line 1".to_string())
         );
     }
 

@@ -9,7 +9,7 @@ poster { time: 2.4 }
 viewport { x: -2..2, y: -2..2 }
 
 param theta in 0..2·π
-bind theta = mod(time, 12) / 12·2·π
+bind theta = mod(time, duration) / duration·2·π
 param shift = 0 in 0..2·π
 
 fn bipolar(σ, τ) = coth((τ - σ·i) / 2)
