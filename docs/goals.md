@@ -721,8 +721,8 @@ the third way:
   smaller (Safari shrinks only the visual viewport, and scrolls the page to the caret even when nothing can scroll), and
   only the editor, the tabs and the keys' rows scroll. The site's page holds itself and the frame the same way, since
   inside a frame what's visible is the frame. The figure is as big as the room left for it, centred in it. While the keys
-  are up on a phone, the editor shows five lines at least and the figure has its part to itself, with any error under it:
-  the time, beats and params come back when the keys go. Without that the explainer's figure was 40 px tall at 393×659.
+  are up on a phone, the editor shows five lines at least and the figure has its part to itself, with any error under it.
+  Without that the explainer's figure was 40 px tall at 393×659. (Its controls have their own panel now: below.)
   The words row, the four pages and the line under the editor each keep one height, so nothing above them moves. A
   pinch zoom lets go of the hold until the page is back to its size, so a finger can pan it. A tablet that gains a
   mouse turns the keys and the hold off, and on again when it loses it.
@@ -755,6 +755,38 @@ the third way:
   there are no keys. Then each item of the review: keys in view sideways, the way back in a 260 px view, a real touch
   drag on a handle (Chromium only, through CDP), a hardware key and ▾ remembered, a mouse paired and unpaired, a pinch,
   a held key, a composition, characters of more than one code unit, and the keyboard path into the keys and out.
+
+**The text or the controls, 2026-11-19.** Kris, on his phone: the controls and the editor should take turns, "not try to
+show at the same time", and the controls didn't scroll, so a figure with many params left the editor little room.
+
+- **One panel under the figure, picked in the bar.** Where the bars are compact (a window 800 px wide or less, and a
+  touch screen under 500 px tall, as a phone held sideways), the bar has a switch, Text and Controls, beside the Figure
+  and Style menus. The figure's time, beats and params are then a panel of their own in the editor's place, and the
+  switch shows one or the other. Held sideways, the figure is on the right and the panel on the left. A wide window with
+  a mouse has no switch and the controls under the figure, as before.
+- **The controls scroll in their panel,** and nothing else moves: the figure, the bar and the page stay where they are.
+  Tried with twenty params, more than any figure in the corpus has (Möbius has five).
+- **Controls puts the keys away,** Pencil's and the system's. Text brings the editor back with its caret and scroll
+  where they were for the file it shows, and no keys until it's touched.
+- **Only the reader takes the text away:** by the switch, or by opening another figure, which opens on the panel last
+  chosen. A recompile, a resize or a rotation never does, and touching the text makes it the choice. A review found
+  the text taken from under a reader typing a param into a figure that had none, as the recompile showed the controls
+  remembered from before; and on a wide touch screen a keyboard that made the window short would have hidden the text
+  it was typing into. Going from wide to narrow shows whichever has focus. A control keeps its focus as a resize
+  moves it between its panel and the figure, and a recompile keeps the sliders it had when its params are the same,
+  so one being dragged isn't replaced.
+- **A figure with nothing to control shows no switch,** rather than a Controls that leads to an empty panel or one
+  that's disabled, since a choice of one isn't a choice. Its place in the bar stays, empty, so the menus beside it don't
+  move as figures change or while a figure loads, which they did when it was taken out. Ring, wave and the lattice are
+  such figures. The choice is kept for the visit, across figures and a reload, and one with nothing to control shows
+  the text without forgetting it.
+- **Errors and what it was drawn with stay under the figure,** in view with either panel, so an edit that failed is
+  seen while a slider is dragged. Going to an error shows the text.
+- **The switch is a tablist:** two tabs, one tab stop, the arrows, Home and End move and show, and each panel is named
+  by its tab.
+- **The figure is larger,** since its controls aren't under it any more: on a touch screen at 375×812 the Möbius figure
+  is drawn at 189×264 with either panel, where it was 74×104, and at 812×375 at 169×236, where it was 52×72. At
+  1633×919 with a mouse it's 499×699 and every box of the page is where it was.
 
 - **Errors now say which file they're in.** A sheet's error came back with the sheet's line and no file, and `pencil` printed it
   after the `.pen`'s path. `Error` has a `sheet` now, so the page marks the right tab, line and column, and the CLI names the

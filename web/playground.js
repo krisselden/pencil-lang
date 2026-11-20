@@ -347,7 +347,9 @@ function moveAmongTabs(e) {
 }
 
 function show(i, caret) {
-  if (inEditor) Object.assign(inEditor, { scroll: [textarea.scrollTop, textarea.scrollLeft], selection: [textarea.selectionStart, textarea.selectionEnd] });
+  // While the controls have the text's place, the file shown kept its place as the text went.
+  const away = document.querySelector('.editor').hidden;
+  if (inEditor && !away) Object.assign(inEditor, { scroll: [textarea.scrollTop, textarea.scrollLeft], selection: [textarea.selectionStart, textarea.selectionEnd] });
   active = i;
   const file = files[i];
   inEditor = file;
@@ -593,6 +595,7 @@ function paintErrors() {
     li.append(note);
     li.title = 'Go to it';
     li.addEventListener('click', () => {
+      if (document.querySelector('.app').dataset.panel === 'controls') choose('text');
       const file = files[failure.file];
       show(failure.file, failure.line ? offsetOf(file.text, failure.line, Math.max(1, failure.col)) : undefined);
     });
@@ -618,6 +621,11 @@ function paintControls() {
   $('time').max = figure.duration;
   $('beat-row').hidden = beats.length === 0;
   const params = $('params');
+  // The same params as before keep their sliders, so a recompile, or going back to the last
+  // figure that drew, doesn't take one from under a finger that's dragging it, or take its focus.
+  const same = JSON.stringify(declared.map(({ id, min, max, step, choice }) => [id, min, max, step, choice])) + beats.length;
+  if (params.dataset.same === same && params.childElementCount) return paintPlay();
+  params.dataset.same = same;
   params.replaceChildren();
   for (const param of declared) {
     // Beats are stepped, not slid.
@@ -789,6 +797,7 @@ function paintMenus() {
 
 /** Shows what's in `files` from the start: its first file, at time 0. */
 async function start(link = null) {
+  opening = true;
   active = 0;
   inEditor = null;
   spare = new Map();
@@ -835,6 +844,7 @@ async function restyle(look) {
     return;
   }
   const shown = files[active]?.path;
+  opening = true;
   showing = look;
   files = [files[0], ...look.sheets.map((path, i) => ({ path, disk: disks[i], text: stored(path) ?? disks[i], root: true }))];
   paintMenus();
@@ -1184,12 +1194,16 @@ function arrange() {
   const app = document.querySelector('.app');
   const editor = app.querySelector('.editor');
   const view = app.querySelector('.view');
+  const panel = $('controls-panel');
   const before = narrow.matches ? null : view;
-  if (editor.nextElementSibling === before) return;
-  const focused = editor.contains(document.activeElement) ? document.activeElement : null;
+  if (editor.nextElementSibling === panel && panel.nextElementSibling === before) return;
+  // Focus stays where it was, in the text or on a control in the panel.
+  const focused = editor.contains(document.activeElement) || panel.contains(document.activeElement) ? document.activeElement : null;
   const kept = [textarea.scrollTop, textarea.scrollLeft, textarea.selectionStart, textarea.selectionEnd, textarea.selectionDirection];
   const tabsAt = $('tabs').scrollLeft;
   app.insertBefore(editor, before);
+  // The controls' panel, which takes the editor's place on a narrow screen, follows it.
+  app.insertBefore(panel, before);
   textarea.setSelectionRange(kept[2], kept[3], kept[4]);
   textarea.scrollTop = kept[0];
   textarea.scrollLeft = kept[1];
@@ -1209,6 +1223,136 @@ narrow.addEventListener('change', () => {
   arrange();
 });
 compact.addEventListener('change', closeMenus);
+
+// ---- The text or the controls, on a narrow screen ----
+
+// Where the bars are compact, the figure's controls aren't under it: they're a panel of their
+// own in the editor's place, and a switch in the bar shows one or the other, so neither is
+// squeezed and a long list of params scrolls. Errors and what it was drawn with stay under the
+// figure, in view with either.
+//
+// Only the reader takes the text away: by the switch, or by opening another figure, which opens
+// on the panel they last chose. A recompile, a resize or a rotation never does, and touching the
+// text makes it the choice. A figure with nothing to control shows the text and no switch.
+const PANEL = 'pencil-playground:panel';
+const tabs = [$('tab-text'), $('tab-controls')];
+const controls = document.querySelector('.controls');
+/** The panel chosen, kept for the visit. */
+let wanted = 'text';
+try {
+  if (sessionStorage.getItem(PANEL) === 'controls') wanted = 'controls';
+} catch {}
+/** The panel shown where the bars are compact. */
+let current = 'text';
+/** A figure was opened, and the panel it opens on waits for it to say what it has. */
+let opening = true;
+
+/** Whether what's open has anything to control: time, beats, or a param that isn't the beat. */
+function controllable() {
+  const { params = [], beats = [], usesTime = false } = info() ?? {};
+  return usesTime || beats.length > 0 || params.some((p) => !(p.id === 'beat' && beats.length));
+}
+
+/** Moves `node` into `parent` (before `before`), keeping focus on what had it inside. */
+function move(node, parent, before = null) {
+  const focused = node.contains(document.activeElement) ? document.activeElement : null;
+  parent.insertBefore(node, before);
+  focused?.focus({ preventScroll: true });
+}
+
+/** The text's place in the file shown, kept while the text is away, since a hidden textarea can't
+ * hold its scroll. The file shown can change meanwhile, so it's the file's own. */
+function leaveText() {
+  if (editor.hidden || !inEditor) return;
+  Object.assign(inEditor, { scroll: [textarea.scrollTop, textarea.scrollLeft], selection: [textarea.selectionStart, textarea.selectionEnd] });
+  keys.hide();
+  if (editor.contains(document.activeElement)) textarea.blur();
+}
+function backToText() {
+  const file = files[active];
+  if (!file) return;
+  textarea.setSelectionRange(...(file.selection ?? [0, 0]));
+  [textarea.scrollTop, textarea.scrollLeft] = file.scroll ?? [0, 0];
+}
+
+/** Lays out what `current` says: the controls in their panel or under the figure, the switch,
+ * and which panel is shown. It decides nothing. */
+function panels() {
+  const on = compact.matches;
+  const panel = $('controls-panel');
+  const offered = on && controllable();
+  if (!offered) current = 'text';
+  const swtch = $('panel-switch');
+  // A tab that's going leaves focus with the figure, not on nothing.
+  if (!offered && swtch.contains(document.activeElement)) figure.focus({ preventScroll: true });
+  swtch.toggleAttribute('data-empty', !offered);
+  const shown = on ? current : 'text';
+  if (shown === 'controls') leaveText();
+  const back = editor.hidden && shown === 'text';
+  editor.hidden = shown === 'controls';
+  panel.hidden = shown !== 'controls';
+  // Moved once where they're going is shown, so a control with focus keeps it.
+  if (on && controls.parentElement !== panel) move(controls, panel);
+  if (!on && controls.parentElement === panel) move(controls, document.querySelector('.view'), document.querySelector('.view .stage').nextElementSibling);
+  if (back) backToText();
+  document.querySelector('.app').dataset.panel = on ? shown : '';
+  // A tab and the panel it names, while there's a switch; otherwise the editor is a region.
+  if (offered) {
+    editor.setAttribute('role', 'tabpanel');
+    editor.setAttribute('aria-labelledby', 'tab-text');
+  } else {
+    editor.removeAttribute('role');
+    editor.removeAttribute('aria-labelledby');
+  }
+  for (const tab of tabs) {
+    const selected = tab.id === `tab-${shown}`;
+    tab.setAttribute('aria-selected', String(selected));
+    tab.tabIndex = selected ? 0 : -1;
+  }
+}
+
+/** The reader's choice: shows the text or the controls, and keeps it for the visit. */
+function choose(which) {
+  wanted = which;
+  try {
+    sessionStorage.setItem(PANEL, which);
+  } catch {}
+  current = which;
+  panels();
+}
+
+for (const tab of tabs) {
+  tab.addEventListener('click', () => choose(tab.id.slice(4)));
+  // The arrows, Home and End move between the two and show the one they reach.
+  tab.addEventListener('keydown', (e) => {
+    const at = tabs.indexOf(tab);
+    const to = { ArrowLeft: at - 1, ArrowRight: at + 1, Home: 0, End: tabs.length - 1 }[e.key];
+    if (to === undefined || e.metaKey || e.ctrlKey || e.altKey) return;
+    e.preventDefault();
+    const next = tabs[(to + tabs.length) % tabs.length];
+    choose(next.id.slice(4));
+    next.focus();
+  });
+}
+// Touching the text is choosing it.
+textarea.addEventListener('focus', () => {
+  if (wanted !== 'text' || current !== 'text') choose('text');
+});
+// A figure just opened opens on the panel last chosen, once it says what it has to control.
+figure.addEventListener('load', () => {
+  if (opening) {
+    opening = false;
+    current = wanted;
+  }
+  panels();
+});
+// Going from wide to compact, where both were in view, keeps the one in use: the controls when
+// one of them has focus, and otherwise the text.
+compact.addEventListener('change', () => {
+  if (compact.matches) current = controls.contains(document.activeElement) ? 'controls' : 'text';
+  panels();
+});
+panels();
 
 // Framed by another page, such as the site's, it offers itself alone, at the address it has now.
 if (window.top !== window) {

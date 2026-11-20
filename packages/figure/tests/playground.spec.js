@@ -477,7 +477,8 @@ test.describe('the playground\'s bars', () => {
       const box = (selector) => document.querySelector(selector).getBoundingClientRect();
       const [figure, code] = [box('#figure'), box('.code')];
       return {
-        figureTop: figure.top,
+        // The figure's room is right under the bar; the figure is in the middle of it.
+        figureTop: document.querySelector('.view').getBoundingClientRect().top,
         figureShown: figure.height > 100 && figure.bottom <= innerHeight,
         under: code.top >= figure.bottom,
         codeShown: code.height >= 100 && code.bottom <= innerHeight,
@@ -529,7 +530,7 @@ test.describe('the playground\'s bars', () => {
     await openPlayground(page, 'figure=circle');
     await drawnHere(page);
     const order = () => page.evaluate(() => [...document.querySelector('.app').children].map((el) => el.className.split(' ')[0] || el.tagName.toLowerCase()));
-    expect(await order()).toEqual(['header', 'editor', 'view']);
+    expect(await order()).toEqual(['header', 'editor', 'panel', 'view']);
     const source = page.locator('#source');
     await source.focus();
     await source.evaluate((t) => t.setSelectionRange(12, 20));
@@ -539,13 +540,13 @@ test.describe('the playground\'s bars', () => {
     });
 
     await page.setViewportSize({ width: 375, height: 812 });
-    await expect.poll(order).toEqual(['header', 'view', 'editor']);
+    await expect.poll(order).toEqual(['header', 'view', 'editor', 'panel']);
     await expect(source).toBeFocused();
     expect(await source.evaluate((t) => [t.selectionStart, t.selectionEnd])).toEqual([12, 20]);
     await expect(page.locator('#figure-more')).toBeVisible();
 
     await page.setViewportSize({ width: 1633, height: 919 });
-    await expect.poll(order).toEqual(['header', 'editor', 'view']);
+    await expect.poll(order).toEqual(['header', 'editor', 'panel', 'view']);
     await expect(source).toBeFocused();
     expect(await source.evaluate((t) => [t.selectionStart, t.selectionEnd])).toEqual([12, 20]);
     // The figure wasn't moved, so it didn't start again.
@@ -1144,5 +1145,365 @@ test.describe('the playground\'s Pencil keys', () => {
       await expect(page.locator('#figure-menu .hint .if-touch')).toBeHidden();
       await expect(page.locator('#figure-menu .hint')).toContainText('Esc leaves the editor');
     });
+  });
+});
+
+// On a narrow screen the text and the figure's controls take turns under the figure, picked by a
+// switch in the bar; with a mouse in a wide window the controls stay under the figure.
+test.describe('the text or the controls', () => {
+  // A figure with more params than the corpus has, which has five at most: twenty sliders.
+  const NAMES = ['a', 'b', 'c', 'd', 'f', 'g', 'h', 'j', 'k', 'm', 'n', 'q', 's', 'u', 'v', 'w', 'z', 'α', 'β', 'γ'];
+  const MANY = {
+    name: 'many params',
+    doc: 'many.pen',
+    sheets: ['many.style'],
+    files: {
+      'many.pen': `doc many\nviewport { x: -2..2, y: -2..2 }\n${NAMES.map((n) => `param ${n} in 0..1`).join('\n')}\ncurve ring = implicit (x, y): x² + y² = (0.5 + (${NAMES.join(' + ')}) / 20)²\n`,
+      'many.style': 'style ring { stroke: white; width: 3px }\n',
+    },
+  };
+  const switcher = (page) => page.locator('#panel-switch');
+  const tab = (page, name) => page.getByRole('tab', { name });
+  const panelShown = (page) => page.evaluate(() => document.querySelector('.app').dataset.panel);
+  const inView = (page, selector) => page.locator(selector).evaluate((el) => {
+    const r = el.getBoundingClientRect();
+    return r.height > 0 && r.top >= -0.5 && r.bottom <= innerHeight + 0.5;
+  });
+  const stays = (page) => page.evaluate(() => document.documentElement.scrollHeight - innerHeight);
+  /** Counts the figure's loads from here on, in `window.loads`. */
+  const countLoads = (page) => page.evaluate(() => {
+    window.loads = 0;
+    window.pencil.figure.addEventListener('load', () => (window.loads += 1));
+  });
+
+  test.describe('on a phone', () => {
+    test.beforeEach(({ isMobile }) => {
+      test.skip(!isMobile, 'phone projects only');
+    });
+
+    test('a switch in the bar swaps the text for the controls under the figure, and back', async ({ page }) => {
+      await openPlayground(page, 'figure=mobius');
+      await drawnHere(page);
+      await expect(switcher(page)).toBeVisible();
+      // In the one bar, with the figure's menus.
+      expect(await switcher(page).evaluate((el) => el.parentElement.tagName)).toBe('HEADER');
+      await expect(tab(page, 'Text')).toHaveAttribute('aria-selected', 'true');
+      await expect(page.locator('.editor')).toBeVisible();
+      await expect(page.locator('#controls-panel')).toBeHidden();
+      // The controls aren't under the figure with the text.
+      await expect(page.locator('.view .controls')).toHaveCount(0);
+      await tab(page, 'Controls').tap();
+      await expect(tab(page, 'Controls')).toHaveAttribute('aria-selected', 'true');
+      await expect(page.locator('.editor')).toBeHidden();
+      await expect(page.locator('#controls-panel')).toBeVisible();
+      await expect(page.locator('#controls-panel')).toHaveAttribute('aria-labelledby', 'tab-controls');
+      await expect(page.locator('#controls-panel input[type=range]').first()).toBeVisible();
+      expect(await inView(page, '#figure')).toBe(true);
+      expect(await inView(page, 'header')).toBe(true);
+      expect(await stays(page)).toBe(0);
+      // A slider still sets the figure.
+      const slider = page.locator('#controls-panel input[type=range]').nth(1);
+      await slider.focus();
+      await page.keyboard.press('ArrowRight');
+      await expect(page.locator('#controls-panel .held')).toHaveCount(1);
+      await tab(page, 'Text').tap();
+      await expect(page.locator('.editor')).toBeVisible();
+      await expect(page.locator('#controls-panel')).toBeHidden();
+      await expect(page.locator('.editor')).toHaveAttribute('aria-labelledby', 'tab-text');
+    });
+
+    test('twenty params scroll in their panel, and the figure and the bar stay put', async ({ page }) => {
+      await openPlayground(page, '', `#pen=${await pack(MANY)}`);
+      await drawnHere(page);
+      await tab(page, 'Controls').tap();
+      const panel = page.locator('#controls-panel');
+      await expect(panel.locator('#params input[type=range]')).toHaveCount(20);
+      const figure = await page.locator('#figure').boundingBox();
+      const sizes = await panel.evaluate((el) => [el.scrollHeight, el.clientHeight]);
+      expect(sizes[0]).toBeGreaterThan(sizes[1]);
+      await panel.evaluate((el) => (el.scrollTop = el.scrollHeight));
+      // The last slider is in the panel's box, and in the window.
+      const last = await panel.locator('#params input[type=range]').last().boundingBox();
+      const box = await panel.boundingBox();
+      expect(last.y + last.height).toBeLessThanOrEqual(box.y + box.height + 0.5);
+      expect(last.y + last.height).toBeLessThanOrEqual(page.viewportSize().height + 0.5);
+      expect(await page.locator('#figure').boundingBox()).toEqual(figure);
+      expect(await inView(page, '#figure')).toBe(true);
+      expect(await inView(page, 'header')).toBe(true);
+      expect(await stays(page)).toBe(0);
+    });
+
+    test('the controls put the keys away, and the text comes back with its caret and no keys', async ({ page }) => {
+      // A file longer than any phone's window, with the keys up or not.
+      await openPlayground(page, 'figure=explainer');
+      const source = page.locator('#source');
+      await source.tap();
+      // The keys up, and the caret brought into view as they came, which takes a frame or two.
+      await expect(page.locator('#keyboard')).toBeVisible();
+      await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+      await source.evaluate((t) => {
+        // Long enough to scroll on any phone, with the keys up or not.
+        t.value += '\n//'.repeat(80);
+        t.dispatchEvent(new Event('input'));
+        t.setSelectionRange(40, 40);
+        t.scrollTop = 60;
+      });
+      const scrolled = await source.evaluate((t) => t.scrollTop);
+      // It did scroll, so the check below can tell a kept place from none.
+      expect(scrolled).toBeGreaterThan(0);
+      await tab(page, 'Controls').tap();
+      await expect(page.locator('#keyboard')).toBeHidden();
+      await expect(source).not.toBeFocused();
+      expect(await page.evaluate(() => document.documentElement.classList.contains('keys-up'))).toBe(false);
+      await tab(page, 'Text').tap();
+      await expect(source).toBeVisible();
+      await expect(source).not.toBeFocused();
+      await expect(page.locator('#keyboard')).toBeHidden();
+      expect(await source.evaluate((t) => [t.selectionStart, t.selectionEnd])).toEqual([40, 40]);
+      expect(await source.evaluate((t) => t.scrollTop)).toBe(scrolled);
+      // A touch in the text brings the keys.
+      await source.tap();
+      await expect(page.locator('#keyboard')).toBeVisible();
+    });
+
+    test('a figure with nothing to control has no switch, and the choice holds for the next that has', async ({ page }) => {
+      await openPlayground(page, 'figure=mobius');
+      await tab(page, 'Controls').tap();
+      await countLoads(page);
+      await page.locator('#figure-pick').selectOption({ label: '002 strokes, ring' });
+      // Ring itself has loaded, not Möbius still.
+      await expect.poll(() => page.evaluate(() => window.loads > 0 && window.pencil.files()[0].path)).toBe('corpus/002-strokes/ring.pen');
+      await expect(switcher(page)).toBeHidden();
+      await expect(page.locator('.editor')).toBeVisible();
+      expect(await panelShown(page)).toBe('text');
+      // It keeps its place, so the menus beside it don't move.
+      expect((await switcher(page).boundingBox()).width).toBeGreaterThan(40);
+      await page.locator('#figure-pick').selectOption({ label: '004 bounds' });
+      await expect(switcher(page)).toBeVisible();
+      await expect(tab(page, 'Controls')).toHaveAttribute('aria-selected', 'true');
+      await expect(page.locator('#controls-panel')).toBeVisible();
+      // And across a reload, for the visit.
+      await page.reload();
+      await settled(page);
+      await expect(tab(page, 'Controls')).toHaveAttribute('aria-selected', 'true');
+    });
+
+    test('typing a param into a figure that had none leaves the text, its focus and its keys where they are', async ({ page }) => {
+      await openPlayground(page, 'figure=mobius');
+      await tab(page, 'Controls').tap();
+      await countLoads(page);
+      await page.locator('#figure-pick').selectOption({ label: '002 strokes, ring' });
+      await expect.poll(() => page.evaluate(() => window.loads > 0 && window.pencil.files()[0].path)).toBe('corpus/002-strokes/ring.pen');
+      const source = page.locator('#source');
+      await source.tap();
+      await expect(page.locator('#keyboard')).toBeVisible();
+      await page.evaluate(() => (window.loads = 0));
+      // Typed as the keys type, through the browser's editing, so the keys stay up.
+      await source.evaluate((t) => {
+        t.setSelectionRange(t.value.length, t.value.length);
+        document.execCommand('insertText', false, '\nparam q in 0..1');
+      });
+      await expect.poll(() => page.evaluate(() => window.loads)).toBeGreaterThan(0);
+      await page.waitForTimeout(300);
+      await expect(switcher(page)).toBeVisible();
+      await expect(tab(page, 'Text')).toHaveAttribute('aria-selected', 'true');
+      await expect(page.locator('.editor')).toBeVisible();
+      await expect(source).toBeFocused();
+      await expect(page.locator('#keyboard')).toBeVisible();
+      // Touching the text made it the choice: the next figure opens on it.
+      await page.locator('#figure-pick').selectOption({ label: '004 bounds' });
+      await expect(switcher(page)).toBeVisible();
+      await expect(tab(page, 'Text')).toHaveAttribute('aria-selected', 'true');
+    });
+
+    test('a tap in the text before the figure loads keeps the text, though the controls were chosen', async ({ page }) => {
+      await openPlayground(page, 'figure=mobius');
+      await tab(page, 'Controls').tap();
+      await page.goto('about:blank');
+      // Slowed, so the tap comes before the figure's first load.
+      await page.route('**/corpus/010-mobius/mobius.pen', async (route) => {
+        await new Promise((r) => setTimeout(r, 1500));
+        await route.continue();
+      });
+      await page.goto(addressOf('figure=mobius'));
+      // The page's script is running, and the figure's files are still on their way.
+      await page.waitForFunction(() => 'panel' in document.querySelector('.app').dataset);
+      expect(await page.evaluate(() => !!window.pencil)).toBe(false);
+      await page.locator('#source').tap();
+      await settled(page);
+      await drawnHere(page);
+      await expect(page.locator('.editor')).toBeVisible();
+      await expect(tab(page, 'Text')).toHaveAttribute('aria-selected', 'true');
+    });
+
+    test('the text comes back at the place of the file it shows, after a figure changed under the controls', async ({ page }) => {
+      await openPlayground(page, 'figure=mobius');
+      const source = page.locator('#source');
+      await source.evaluate((t) => (t.scrollTop = 200));
+      expect(await source.evaluate((t) => t.scrollTop)).toBeGreaterThan(0);
+      await tab(page, 'Controls').tap();
+      await page.locator('#figure-pick').selectOption({ label: '004 bounds' });
+      await expect(page.locator('#tabs .tab.active .pick')).toHaveText(/bounds\.pen/);
+      await tab(page, 'Text').tap();
+      expect(await source.evaluate((t) => t.scrollTop)).toBe(0);
+      // Its own place is kept the same way.
+      await source.evaluate((t) => (t.scrollTop = 120));
+      const own = await source.evaluate((t) => t.scrollTop);
+      expect(own).toBeGreaterThan(0);
+      await tab(page, 'Controls').tap();
+      await tab(page, 'Text').tap();
+      expect(await source.evaluate((t) => t.scrollTop)).toBe(own);
+    });
+
+    test('a tab\'s focus goes to the figure when the next figure has nothing to control', async ({ page }) => {
+      await openPlayground(page, 'figure=mobius');
+      await drawnHere(page);
+      await tab(page, 'Controls').focus();
+      const still = await pack({ name: 'still', doc: 'still.pen', sheets: [], files: { 'still.pen': 'doc still\nviewport { x: -2..2, y: -2..2 }\ncurve ring = implicit (x, y): x² + y² = 1\n' } });
+      await countLoads(page);
+      await page.evaluate((link) => (location.hash = `pen=${link}`), still);
+      await expect.poll(() => page.evaluate(() => window.loads)).toBeGreaterThan(0);
+      await expect(switcher(page)).toBeHidden();
+      await expect(page.locator('#figure')).toBeFocused();
+    });
+
+    test('an error stays in view on the controls, and going to it shows the text', async ({ page }) => {
+      await openPlayground(page, 'figure=mobius');
+      await drawnHere(page);
+      await typeAtEnd(page, '\n)');
+      await expect(page.locator('#errors li')).toHaveCount(1);
+      await tab(page, 'Controls').tap();
+      expect(await inView(page, '#errors li')).toBe(true);
+      const error = await page.locator('#errors li').boundingBox();
+      const panel = await page.locator('#controls-panel').boundingBox();
+      expect(error.y + error.height).toBeLessThanOrEqual(panel.y + 0.5);
+      await page.locator('#errors li').click();
+      await expect(tab(page, 'Text')).toHaveAttribute('aria-selected', 'true');
+      await expect(page.locator('#source')).toBeFocused();
+    });
+
+    test('held sideways, the figure is on the right and the text or the controls on the left', async ({ page }) => {
+      await page.setViewportSize({ width: 812, height: 375 });
+      await openPlayground(page, 'figure=mobius');
+      await drawnHere(page);
+      await expect(switcher(page)).toBeVisible();
+      await tab(page, 'Controls').tap();
+      const [figure, panel] = await Promise.all([page.locator('#figure').boundingBox(), page.locator('#controls-panel').boundingBox()]);
+      expect(panel.x + panel.width).toBeLessThanOrEqual(figure.x + 0.5);
+      expect(panel.y + panel.height).toBeLessThanOrEqual(375.5);
+      expect(await inView(page, '#figure')).toBe(true);
+      expect(await stays(page)).toBe(0);
+      // And the text takes the same column.
+      await tab(page, 'Text').tap();
+      await expect(page.locator('#controls-panel')).toBeHidden();
+      const text = await page.locator('.editor').boundingBox();
+      expect(text.x).toBeLessThan(1);
+      expect(text.x + text.width).toBeLessThanOrEqual(figure.x + 0.5);
+      expect(text.y + text.height).toBeLessThanOrEqual(375.5);
+    });
+  });
+
+  test('a wide touch screen made short, as a keyboard does, keeps the text and its focus', async ({ page, isMobile }) => {
+    test.skip(!isMobile, 'a touch screen');
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await openPlayground(page, 'figure=mobius');
+    // The controls were the choice before, on this visit.
+    await page.evaluate(() => sessionStorage.setItem('pencil-playground:panel', 'controls'));
+    await page.reload();
+    await settled(page);
+    await drawnHere(page);
+    await expect(switcher(page)).toBeHidden();
+    const source = page.locator('#source');
+    await source.tap();
+    await expect(source).toBeFocused();
+    await page.setViewportSize({ width: 1280, height: 450 });
+    await expect(switcher(page)).toBeVisible();
+    await expect(page.locator('.editor')).toBeVisible();
+    await expect(source).toBeFocused();
+    await expect(tab(page, 'Text')).toHaveAttribute('aria-selected', 'true');
+    // And back, with nothing moved.
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await expect(source).toBeFocused();
+  });
+
+  test('the switch is worked with the arrow keys, as tabs are', async ({ page, isMobile }) => {
+    test.skip(isMobile, 'a phone has no arrow keys; a narrow window does');
+    await page.setViewportSize({ width: 700, height: 800 });
+    await openPlayground(page, 'figure=mobius');
+    await expect(switcher(page)).toBeVisible();
+    await tab(page, 'Text').focus();
+    await page.keyboard.press('ArrowRight');
+    await expect(tab(page, 'Controls')).toBeFocused();
+    await expect(tab(page, 'Controls')).toHaveAttribute('aria-selected', 'true');
+    await expect(page.locator('#controls-panel')).toBeVisible();
+    // One tab stop: the selected tab.
+    expect(await tab(page, 'Text').getAttribute('tabindex')).toBe('-1');
+    await expect(page.locator('.editor')).toBeHidden();
+    const showing = async (name) => {
+      await expect(tab(page, name)).toBeFocused();
+      await expect(tab(page, name)).toHaveAttribute('aria-selected', 'true');
+      await expect(page.locator('.editor')).toBeVisible({ visible: name === 'Text' });
+      await expect(page.locator('#controls-panel')).toBeVisible({ visible: name === 'Controls' });
+    };
+    await page.keyboard.press('ArrowRight');
+    await showing('Text');
+    await page.keyboard.press('End');
+    await showing('Controls');
+    await page.keyboard.press('ArrowLeft');
+    await showing('Text');
+    await page.keyboard.press('ArrowLeft');
+    await showing('Controls');
+    await page.keyboard.press('Home');
+    await showing('Text');
+  });
+
+  test('a control keeps focus when a resize moves it between its panel and the figure', async ({ page, isMobile }) => {
+    test.skip(isMobile, 'a window resized with a mouse');
+    await page.setViewportSize({ width: 700, height: 800 });
+    await openPlayground(page, 'figure=mobius');
+    await drawnHere(page);
+    await tab(page, 'Controls').click();
+    const slider = page.locator('#param-b');
+    await slider.focus();
+    await page.setViewportSize({ width: 1633, height: 919 });
+    await expect(page.locator('.view .controls')).toBeVisible();
+    await expect(slider).toBeFocused();
+    await page.setViewportSize({ width: 700, height: 800 });
+    await expect(page.locator('#controls-panel .controls')).toHaveCount(1);
+    await expect(slider).toBeFocused();
+    // From the narrow window to the phone's order and back, the arrangement moves the panel too.
+    await page.setViewportSize({ width: 375, height: 800 });
+    await expect(slider).toBeFocused();
+  });
+
+  test('a recompile keeps the sliders it had, so one being dragged or focused stays', async ({ page }) => {
+    await openPlayground(page, 'figure=mobius');
+    await drawnHere(page);
+    await page.evaluate(() => (document.getElementById('param-b').dataset.mine = 'yes'));
+    const compiled = await page.locator('#status').textContent();
+    await page.evaluate(() => window.pencil.compile());
+    await expect.poll(() => page.locator('#status').textContent()).not.toBe(compiled);
+    expect(await page.evaluate(() => document.getElementById('param-b').dataset.mine)).toBe('yes');
+    // A figure with other params has its own.
+    await page.locator('#figure-pick').selectOption({ label: '004 bounds' });
+    await expect(page.locator('#param-b')).toHaveCount(0);
+  });
+
+  test('a wide window has no switch, and the controls under the figure as before', async ({ page, isMobile }) => {
+    test.skip(isMobile, 'desktop projects only');
+    await openPlayground(page, 'figure=mobius');
+    await drawnHere(page);
+    await expect(switcher(page)).toBeHidden();
+    await expect(page.locator('.view .controls')).toBeVisible();
+    await expect(page.locator('#controls-panel')).toBeHidden();
+    await expect(page.locator('.editor')).toBeVisible();
+    expect(await page.locator('.editor').getAttribute('role')).toBeNull();
+    expect(await panelShown(page)).toBe('');
+    // Narrowed and widened again, the controls go to their panel and come back under the figure.
+    await page.setViewportSize({ width: 600, height: 800 });
+    await expect(page.locator('#controls-panel .controls')).toHaveCount(1);
+    await page.setViewportSize({ width: 1633, height: 919 });
+    await expect(page.locator('.view .controls')).toBeVisible();
+    await expect(switcher(page)).toBeHidden();
   });
 });
