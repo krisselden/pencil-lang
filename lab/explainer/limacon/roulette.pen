@@ -25,24 +25,22 @@ arrow fast_arm = A2, E tag fast
 dot A2
 label name_E = "z²" at E away E - C tag callout
 
-let said = name_hub + name_slow + name_fast + squaring + quiet
 place at_z = (-6.1, 4.3)
 place at_sum = (-6.1, 3.3)
-expression work by said {
-  "hub:a²" at at_sum
-  "hub:a² + slow:2ab·u" at at_sum
-  "hub:a² + slow:2ab·u +.1 fast:b²·u²" at at_sum
-  "z =.1 a +.2 b·u" at at_z, "z² = hub:a² + slow:2ab·u +.1 fast:b²·u²" at at_sum
-  empty
+// The sum grows a term as each arm is named. `squaring` sets z above it and puts `z² =` in
+// front, and `quiet`, the glow's first beat, takes it all away.
+expression work {
+  on name_hub: "hub:a²" at at_sum
+  on name_slow: "hub:a² + slow:2ab·u" at at_sum
+  on name_fast: "hub:a² + slow:2ab·u +.1 fast:b²·u²" at at_sum
+  on squaring: "z =.1 a +.2 b·u" at at_z, "z² = hub:a² + slow:2ab·u +.1 fast:b²·u²" at at_sum
+  on quiet: empty
 }
 // What a, b and u are, smaller, under the sum. Its own expression, so its sheet can set it apart.
 place at_a = (-6.1, 2.5)
 place at_b = (-6.1, 1.95)
 place at_u = (-6.1, 1.4)
-expression defs by said {
-  empty
-  empty
-  empty
-  "a = cosh(s)" at at_a, "b =.1 sinh(s)" at at_b, "u =.2 cos(t) + i·sin(t)" at at_u
-  empty
+expression defs {
+  on squaring: "a = cosh(s)" at at_a, "b =.1 sinh(s)" at at_b, "u =.2 cos(t) + i·sin(t)" at at_u
+  on quiet: empty
 }

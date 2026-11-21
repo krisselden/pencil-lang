@@ -501,6 +501,15 @@ each one changes the language or the frame's order, so they come before more fig
      meant. A place that doesn't exist was already an error, and now says the nearest name. Two checks that would
      catch slips near this one, neither built: a state that changes nothing (a hold written by habit), and a place
      that's written and never cleared or written again before the end, which is usually right, as `z` is.
+   - **The roulette on named beats, 2026-11-21.** `lab/explainer/limacon/roulette.pen` drove its two expressions
+     `by said`, with `let said = name_hub + name_slow + name_fast + squaring + quiet`: the sum `on` works out, written by
+     hand, with which beat goes with which row left to their order. A sum with a beat more or a beat fewer than the rows
+     compiles without a word. Both expressions now say their beats, and `said` is gone, since nothing else read it.
+     `defs` was five rows, three of them `empty` only to stay in step with `work`, and is two states: `on squaring` and
+     `on quiet: empty`. `work` is five states as before: it's one line that grows, so each state still writes the
+     whole line, and writing per place saves it nothing. Nothing drawn changed: 661 frames as SVG over the whole 65.6 s
+     and 142 rendered from 39 to 58.5 s are the same bytes. In the IR, `said` is gone, each `by` is its sum, `defs` has
+     two states, and one state of `work` lists its two places in the other order, the one already there first.
    - **The square's `shorten` beat is a pause, 2026-11-21.** The cleanup the note proposed, as its own change, since
      it changes what a reader sees: `shorten` did nothing but shorten the equation, so the beat is gone, the 1.6 s
      after `name` is one pause, and `z = a + b i` becomes `z` on `measure`, as its angle and length are written. The
