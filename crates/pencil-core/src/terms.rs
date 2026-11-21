@@ -342,11 +342,14 @@ fn frame_terms(
     let step = step.clamp(0.0, last as f64);
     let k = (step.floor() as usize).min(last);
     let was = scope.layout(state(k))?;
-    if k == last {
+    // On a whole number it holds, and what's drawn is that state alone. The next state's copies
+    // start on what they copy, at full strength, so they'd be drawn over it for the whole hold.
+    let moved = step - k as f64;
+    if k == last || moved == 0.0 {
         return Ok(between(&was, &was, 1.0));
     }
     let now = scope.layout(state(k + 1))?;
-    Ok(between(&was, &now, snap(step - k as f64, None)))
+    Ok(between(&was, &now, snap(moved, None)))
 }
 
 #[cfg(test)]
@@ -540,6 +543,8 @@ mod tests {
         assert!((copy.x - z.x).abs() < 1.0 && (copy.y - z.y).abs() < 1.0);
         assert_eq!(copy.opacity, 1.0);
         assert_eq!(copy.words(), "z");
+        // While the state before it holds, the copy isn't drawn over what it copies.
+        assert!(has(&labels(1.0), "e.z") && !has(&labels(1.0), "e.z.1"));
         let end = labels(2.0);
         let half = w("z", copy.size) / 2.0;
         assert!((find(&end, "e.z.1").x - (300.0 + half)).abs() < 1e-9);
