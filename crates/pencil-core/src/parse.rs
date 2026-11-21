@@ -38,7 +38,7 @@ pub struct Move {
 pub struct State {
     /// The beat that brings the expression to this state, in `on factor: …`.
     pub on: Option<String>,
-    /// Each written expression and the place it sits at. None for `empty`.
+    /// Each written expression and the place it sits at, and none for `empty`.
     pub pieces: Vec<(String, String)>,
     pub line: usize,
 }
