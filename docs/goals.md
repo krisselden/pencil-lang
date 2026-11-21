@@ -1317,6 +1317,13 @@ stood in for the `let`, which the language lets nothing but the document set. A 
 document's ways (`r1` for `r_1`). The check is the command's, in `held_params`, and the core still takes whatever inputs
 it's handed, so the page's `set_param` is as it was.
 
+**`duration` from the beats, 2026-11-21.** Kris wants `duration` readable wherever the figure has one. It was an error
+without a `duration` statement, even where beats with lengths added up to the number a video and the page's clock already
+used. Now it reads that sum (`language.md`, Expressions; `decisions.md`), above the beats or below. A beat's length or a pause
+that reads it, itself or through a `let`, would be part of the sum, and gets an error saying so at the line that reads it.
+The explainer's limaçon, which has no statement, can now read its own 65.6 s. No golden changed, and the IR lost the flag that
+said whether a duration was stated, which only this refusal read.
+
 ## Distance to a curve
 
 Fixed on 2026-11-11, after Kris drew the heart `(x² + y² − 1)³ − x²y³ = 0` with `bands.style` in the playground and found

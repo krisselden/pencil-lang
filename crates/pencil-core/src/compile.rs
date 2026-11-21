@@ -222,7 +222,8 @@ struct Lowerer {
     scalars: HashSet<String>,
     /// Whether the viewport turns the view, so a point in space is drawn through `VIEW_YAW`.
     turned: bool,
-    /// What the name `duration` reads, from the figure's `duration` statement.
+    /// What the name `duration` reads: the figure's `duration` statement, or what its beats and
+    /// pauses add up to when it has none.
     duration: Length,
     /// The params a `bind` drives, for an error that says why one isn't constant.
     bound: HashSet<String>,
@@ -231,16 +232,25 @@ struct Lowerer {
 /// The name an expression reads the figure's `duration` by, unless the figure takes the name.
 pub const DURATION: &str = "duration";
 
-/// Where the figure's `duration` statement is, for an expression that reads it.
+/// What the figure's length is, for an expression that reads `duration`.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 enum Length {
-    /// The figure has no `duration` statement.
+    /// The figure has no `duration` statement, and no beats with lengths to add up to one.
     #[default]
     Unstated,
     /// The statement's own value is being worked out.
     Working,
-    Stated(f64),
+    /// There's no statement, and the beats and pauses that add up to it are still being read.
+    Adding,
+    /// What the statement says, or what the beats and pauses came to.
+    Known(f64),
 }
+
+/// A figure with nothing to say how long it is.
+pub const NO_DURATION: &str = "this figure has no `duration` statement, and no beats with lengths to add up to one, so there's no `duration` to read";
+
+/// A length that would be part of the sum it reads.
+const DURATION_FROM_ITSELF: &str = "this figure has no `duration` statement, so `duration` is what its beats and pauses add up to, and a beat's length or a pause that reads it, itself or through a `let`, is working it out from itself";
 
 /// The binding that holds a viewport's `yaw`. A mark's point in space is projected through it,
 /// so the view can turn with a param or with time like anything else.
@@ -645,15 +655,12 @@ impl Lowerer {
                     // A number by the time anything sees it, so a style, the CPU and the GPU all
                     // read the same one.
                     match self.duration {
-                        Length::Stated(d) => Val::Scalar(num(d)),
+                        Length::Known(d) => Val::Scalar(num(d)),
                         Length::Working => {
                             return Err(Error::new("`duration` can't be worked out from itself"));
                         }
-                        Length::Unstated => {
-                            return Err(Error::new(
-                                "this figure has no `duration` statement, so there's no `duration` to read",
-                            ));
-                        }
+                        Length::Adding => return Err(Error::new(DURATION_FROM_ITSELF)),
+                        Length::Unstated => return Err(Error::new(NO_DURATION)),
                     }
                 } else if let Some((base, axis)) = s.split_once('.') {
                     match (locals.get(base), axis) {
@@ -1357,6 +1364,31 @@ enum Step {
     Pause(f64),
 }
 
+impl Story {
+    /// How long the beats and pauses read so far take, added up in the order they run.
+    fn length(&self) -> f64 {
+        self.steps.iter().fold(0.0, |now, step| match step {
+            Step::Move(length) | Step::Pause(length) => now + length,
+        })
+    }
+}
+
+/// The last beat or pause of a figure whose length is what they add up to: one with beats that
+/// have lengths and no `duration` statement. `duration` is known once that one is read.
+fn adds_up_at(items: &[Item]) -> Option<usize> {
+    let stated = items
+        .iter()
+        .any(|item| matches!(item, Item::Duration { .. }));
+    let moves = items.iter().any(|item| matches!(item, Item::Move(_)));
+    (moves && !stated)
+        .then(|| {
+            items
+                .iter()
+                .rposition(|item| matches!(item, Item::Move(_) | Item::Pause { .. }))
+        })
+        .flatten()
+}
+
 fn declare_beat(scene: &mut Scene, lowerer: &mut Lowerer) {
     scene.params.push(Param {
         id: BEAT_PARAM.to_string(),
@@ -1410,7 +1442,8 @@ fn finish_story(scene: &mut Scene, story: &Story) -> Result<(), Error> {
         binding.expr = Expr::app("Timeline", windows);
     }
     match scene.duration {
-        None => scene.duration = Some(now),
+        // The same sum `duration` read as, added in the same order.
+        None => scene.duration = Some(story.length()),
         Some(d) if d + 1e-9 < now => {
             return Err(Error::new(format!(
                 "the beats and pauses take {now} seconds, more than the `duration` of {d}"
@@ -2921,6 +2954,14 @@ fn in_order(items: Vec<Item>) -> Result<Vec<Item>, Error> {
     {
         definer.entry(DURATION.to_string()).or_insert(i);
     }
+    // With no statement it's what the beats and pauses add up to, known after the last of them.
+    let mut added = None;
+    if let Some(i) = adds_up_at(&items)
+        && !definer.contains_key(DURATION)
+    {
+        definer.insert(DURATION.to_string(), i);
+        added = Some(i);
+    }
     if definer.is_empty() {
         return Ok(items);
     }
@@ -2936,15 +2977,37 @@ fn in_order(items: Vec<Item>) -> Result<Vec<Item>, Error> {
         earlier: &'a [Option<usize>],
         state: Vec<State>,
         order: Vec<usize>,
+        /// The last beat or pause, when `duration` is what they add up to.
+        added: Option<usize>,
+        /// The statements being put in order, outermost first, and whether each was reached
+        /// by reading that `duration`.
+        visiting: Vec<(usize, bool)>,
     }
     impl Order<'_> {
         /// Puts statement `i` next, after what it needs. `early` says something written before
-        /// it needs it.
-        fn visit(&mut self, i: usize, early: bool) -> Result<(), Error> {
+        /// it needs it, and `adding` that it was reached by reading a `duration` the beats and
+        /// pauses add up to.
+        fn visit(&mut self, i: usize, early: bool, adding: bool) -> Result<(), Error> {
             let item = &self.items[i];
+            // The statement that read such a `duration` on the way here, if one did.
+            let read_it = |visiting: &[(usize, bool)], from: usize| {
+                let at = visiting[from..].iter().position(|(_, adding)| *adding)?;
+                Some(visiting[(from + at).saturating_sub(1)].0)
+            };
             match self.state[i] {
                 State::Done => return Ok(()),
                 State::Visiting => {
+                    // A beat's length or a pause that the sum it reads would have to hold.
+                    let from = self.visiting.iter().position(|(j, _)| *j == i);
+                    let mut round = self.visiting[from.unwrap_or(0)..].to_vec();
+                    round.push((i, adding));
+                    if let Some(reader) = read_it(&round, 1) {
+                        return Err(Error::at(
+                            reader_line(&self.items[reader]),
+                            1,
+                            DURATION_FROM_ITSELF,
+                        ));
+                    }
                     let name = match item {
                         Item::Move(crate::parse::Move {
                             name: Some(name), ..
@@ -2965,17 +3028,32 @@ fn in_order(items: Vec<Item>) -> Result<Vec<Item>, Error> {
                     | Item::EndBeat
             );
             if early && holds_marks {
-                return Err(Error::new(
-                    "this reads a beat that's written after it, and a beat with a block, or one after it, can't come early",
-                ));
+                let mut round = self.visiting.clone();
+                round.push((i, adding));
+                return Err(match read_it(&round, 1) {
+                    Some(reader) => Error::at(
+                        reader_line(&self.items[reader]),
+                        1,
+                        "this reads `duration`, which with no `duration` statement is what the beats and pauses add up to, and a beat with a block that's written after this can't come early. Say the figure's `duration`, or read it after its beats",
+                    ),
+                    None => Error::new(
+                        "this reads a beat that's written after it, and a beat with a block, or one after it, can't come early",
+                    ),
+                });
             }
             self.state[i] = State::Visiting;
-            let wanted = needs(item)
+            self.visiting.push((i, adding));
+            let wanted: Vec<(usize, bool)> = needs(item)
                 .into_iter()
-                .filter_map(|name| self.definer.get(&name).copied())
-                .filter(|j| *j != i);
-            for j in self.earlier[i].into_iter().chain(wanted) {
-                self.visit(j, true).map_err(|e| match e.line {
+                .filter_map(|name| {
+                    let j = self.definer.get(&name).copied()?;
+                    Some((j, name == DURATION && self.added == Some(j)))
+                })
+                .filter(|(j, _)| *j != i)
+                .collect();
+            let before = self.earlier[i].map(|j| (j, false));
+            for (j, adding) in before.into_iter().chain(wanted) {
+                self.visit(j, true, adding).map_err(|e| match e.line {
                     0 => Error {
                         line: line_of(item),
                         col: 1,
@@ -2984,6 +3062,7 @@ fn in_order(items: Vec<Item>) -> Result<Vec<Item>, Error> {
                     _ => e,
                 })?;
             }
+            self.visiting.pop();
             self.state[i] = State::Done;
             self.order.push(i);
             Ok(())
@@ -2995,9 +3074,11 @@ fn in_order(items: Vec<Item>) -> Result<Vec<Item>, Error> {
         earlier: &earlier,
         state: vec![State::Waiting; items.len()],
         order: Vec::with_capacity(items.len()),
+        added,
+        visiting: Vec::new(),
     };
     for i in 0..items.len() {
-        order.visit(i, false)?;
+        order.visit(i, false, false)?;
     }
     let order = order.order;
     let mut slots: Vec<Option<Item>> = items.into_iter().map(Some).collect();
@@ -3016,6 +3097,15 @@ fn line_of(item: &Item) -> usize {
         | Item::Solve { line, .. }
         | Item::Duration { line, .. } => *line,
         _ => 0,
+    }
+}
+
+/// Where a statement that can read `duration` is written, a beat or a pause included.
+fn reader_line(item: &Item) -> usize {
+    match item {
+        Item::Move(written) => written.line,
+        Item::Pause { line, .. } => *line,
+        _ => line_of(item),
     }
 }
 
@@ -3418,7 +3508,6 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
         marks: Vec::new(),
         viewport: Viewport::default(),
         duration: None,
-        duration_stated: false,
         beats: Vec::new(),
         beat_lengths: Vec::new(),
         handles: Vec::new(),
@@ -3468,7 +3557,14 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
         }};
     }
 
-    for item in items {
+    // With no `duration` statement, the beats and pauses add up to it, and until the last of them
+    // is read there's no sum to hand out.
+    let adds_up_at = adds_up_at(items);
+    if adds_up_at.is_some() {
+        lowerer.duration = Length::Adding;
+    }
+
+    for (at, item) in items.iter().enumerate() {
         let marks_before = scene.marks.len();
         match item {
             Item::Tag(tags) => {
@@ -3511,6 +3607,9 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
                 scene.beats.push(story.caption.clone());
                 story.steps.push(Step::Move(length));
                 story.moves.push(written.clone());
+                if adds_up_at == Some(at) {
+                    lowerer.duration = Length::Known(story.length());
+                }
                 if written.block {
                     beat = Some(k);
                     beat_tags = written.tags.clone();
@@ -3532,6 +3631,9 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
                     return Err(Error::at(*line, 1, "a pause can't take less than no time"));
                 }
                 story.steps.push(Step::Pause(length));
+                if adds_up_at == Some(at) {
+                    lowerer.duration = Length::Known(story.length());
+                }
                 continue;
             }
             Item::Beat {
@@ -3726,9 +3828,8 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
                 let duration = lowerer
                     .constant_that(&scene, e, "`duration`", POSITIVE)
                     .map_err(at_line(*line))?;
-                lowerer.duration = Length::Stated(duration);
+                lowerer.duration = Length::Known(duration);
                 scene.duration = Some(duration);
-                scene.duration_stated = true;
             }
             Item::Poster { values, line } => {
                 if scene.poster.is_some() {
@@ -4909,15 +5010,15 @@ mod tests {
     #[test]
     fn duration_needs_a_statement_and_cannot_read_itself() {
         let message = |src: &str| scene(src).unwrap_err().message;
-        let none = "this figure has no `duration` statement, so there's no `duration` to read";
         for src in [
             "let a = duration",
             "param a in 0..1\nbind a = time / duration",
-            // Without a statement the beats' lengths add up to the duration, so one can't read it.
-            "beat a for 1\nbeat b for duration",
+            // A pause alone, and beats with no lengths, add up to nothing.
+            "pause 2\nlet a = duration",
+            "let P = (0, 0)\nbeat \"One.\" {\n  dot P\n}\nlet a = duration",
         ] {
             let got = message(src);
-            assert!(got.contains(none), "{src}\n{got}");
+            assert!(got.contains(NO_DURATION), "{src}\n{got}");
         }
         let got = message("duration duration");
         assert!(
@@ -4937,6 +5038,75 @@ mod tests {
         // A beat's length can't push past the duration it reads.
         let got = message("duration 4\nbeat a for duration\nbeat b for 1");
         assert!(got.contains("more than the `duration` of 4"), "{got}");
+    }
+
+    #[test]
+    fn duration_is_what_beats_with_lengths_add_up_to_when_none_is_stated() {
+        let value = |s: &Scene, id: &str| {
+            let binding = s.bindings.iter().find(|b| b.id == id).unwrap();
+            binding.expr.clone()
+        };
+        // Read after the beats, before them, and between them: the same number, the scene's own.
+        for src in [
+            "pause 0.5\nbeat a for 1\npause 0.25\nbeat b for 2\nlet half = duration / 2",
+            "let half = duration / 2\npause 0.5\nbeat a for 1\npause 0.25\nbeat b for 2",
+            "pause 0.5\nbeat a for 1\nlet half = duration / 2\npause 0.25\nbeat b for 2",
+            // A pause can be the last of them.
+            "let half = duration / 2\npause 0.5\nbeat a for 1\nbeat b for 2\npause 0.25",
+        ] {
+            let s = scene(src).unwrap();
+            assert_eq!(s.duration, Some(3.75), "{src}");
+            assert_eq!(value(&s, "half"), div(num(3.75), num(2.0)), "{src}");
+            // Reading it early doesn't move a beat: `a` is still the first.
+            assert_eq!(value(&s, "a"), progress(0), "{src}");
+        }
+        // A beat's progress still reads as itself beside it.
+        let s = scene("beat a for 2\nparam p in 0..9\nbind p = a·duration").unwrap();
+        assert_eq!(s.duration, Some(2.0));
+        // A statement wins, and what's left over is a hold at the end.
+        let s = scene("duration 6\nbeat a for 2\nlet d = duration").unwrap();
+        assert_eq!(value(&s, "d"), num(6.0));
+        // And a figure's own `duration` is still the figure's.
+        let s = scene("let duration = 9\nbeat a for 2\nlet d = duration").unwrap();
+        assert_eq!(s.duration, Some(2.0));
+        assert_eq!(value(&s, "d"), Expr::sym("duration"));
+    }
+
+    #[test]
+    fn a_length_cannot_read_the_duration_it_adds_up_to() {
+        let from_itself = "is working it out from itself";
+        for (src, line) in [
+            // The last beat, an earlier one, and a pause.
+            ("beat a for 1\nbeat b for duration", 2),
+            ("beat a for duration\nbeat b for 1", 1),
+            ("beat a for 1\npause duration / 4\nbeat b for 1", 2),
+            ("beat a for 1\npause duration / 4", 2),
+            // Through a `let`, written before or after, the error is where `duration` is read.
+            (
+                "let quarter = duration / 4\nbeat a for quarter\nbeat b for 1",
+                1,
+            ),
+            (
+                "beat a for quarter\nbeat b for 1\nlet quarter = duration / 4",
+                3,
+            ),
+        ] {
+            let err = scene(src).unwrap_err();
+            assert!(err.message.contains(from_itself), "{src}\n{err}");
+            assert_eq!(err.line, line, "{src}\n{err}");
+        }
+        // A beat with a block holds marks, so it can't come early for a `let` above it.
+        let err =
+            scene("let P = (0, 0)\nlet d = duration\nbeat a for 1 {\n  dot P\n}").unwrap_err();
+        assert!(
+            err.message
+                .contains("Say the figure's `duration`, or read it after its beats"),
+            "{err}"
+        );
+        assert_eq!(err.line, 2);
+        // Read after the block, it's the sum.
+        let s = scene("let P = (0, 0)\nbeat a for 1 {\n  dot P\n}\nlet d = duration").unwrap();
+        assert_eq!(s.duration, Some(1.0));
     }
 
     #[test]
