@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+<script src="./imports.js"></script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A term is what's between spaces</title>
+<style>
+  :root { color-scheme: light dark; --ink: #1c1b19; --paper: #fbfaf7; --muted: #6b675f; --line: #a29d93; --bad: #b5443c; }
+  @media (prefers-color-scheme: dark) { :root { --ink: #ece9e2; --paper: #1a1917; --muted: #a29d93; --line: #6b675f; --bad: #e58a80; } }
+  body { margin: 0; padding: 24px 16px; background: var(--paper); color: var(--ink); font: 0.9375rem/1.45 ui-sans-serif, system-ui, sans-serif; }
+  main { max-width: 660px; margin: 0 auto; }
+  h1 { font-size: 1rem; font-weight: 600; margin: 0 0 4px; }
+  h2 { font-size: 0.875rem; font-weight: 600; margin: 0 0 4px; }
+  p { margin: 4px 0 10px; color: var(--muted); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 14px; }
+  pencil-figure { max-width: 300px; }
+  pre { margin: 6px 0 6px; font: 0.8125rem/1.5 ui-monospace, Menlo, monospace; white-space: pre-wrap; }
+  .controls { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; margin: 12px 0; }
+  .controls input[type=range] { flex: 1; min-width: 10rem; }
+  output { font-variant-numeric: tabular-nums; }
+  button { font: inherit; }
+  #error { color: var(--bad); white-space: pre-wrap; font-family: ui-monospace, monospace; font-size: 0.8125rem; }
+</style>
+</head>
+<body>
+<main>
+  <h1>A term is what's between spaces</h1>
+  <p>Two expressions with the same two states, on one clock. The second state writes <code>b</code> at another place. They differ only in their spaces.</p>
+  <div class="controls">
+    <button id="play" type="button">Pause</button>
+    <input id="time" type="range" min="0" max="5" step="0.01" value="0" aria-label="Time">
+    <output id="clock" for="time"></output>
+  </div>
+  <div class="grid">
+    <section>
+      <h2>Written together</h2>
+      <pencil-figure id="joined" src="../lab/expressions/joined.pen" sheets="../corpus/theme.style ../lab/expressions/terms.style"
+        aria-label="2ab fades out, while 2a fades in where it was and b fades in further right. Nothing moves."></pencil-figure>
+      <pre>on write: "2ab" at product
+on part: "2a" at product, "b" at apart</pre>
+      <p>One term, <code>2ab</code>, and the next state has none, so it fades out and the rest fades in. Nothing moves.</p>
+    </section>
+    <section>
+      <h2>With spaces</h2>
+      <pencil-figure id="spaced" src="../lab/expressions/spaced.pen" sheets="../corpus/theme.style ../lab/expressions/terms.style"
+        aria-label="2 and a stay where they are, and b moves to the right, solid all the way."></pencil-figure>
+      <pre>on write: "2 a b" at product
+on part: "2 a" at product, "b" at apart</pre>
+      <p>Three terms. The next state has all three, with <code>b</code> somewhere else, so <code>b</code> alone moves there.</p>
+    </section>
+  </div>
+  <p id="status">Starting…</p>
+  <p id="error" role="alert"></p>
+</main>
+<script type="module">
+  import { fromQuery, report } from './controls.js';
+
+  const $ = (id) => document.getElementById(id);
+  const figures = [$('joined'), $('spaced')];
+  figures.forEach(fromQuery);
+  report(figures[0], $('status'), $('error'));
+  figures[1].addEventListener('error', (e) => { $('error').textContent = String(e.detail.error?.message ?? e.detail.error); });
+
+  // One clock for both: the first figure's. The second is set to it on every frame it draws, so
+  // the two can't drift, and it's paused so it never runs a clock of its own.
+  const [lead, follow] = figures;
+  const paint = () => {
+    $('time').max = lead.duration;
+    $('time').value = lead.time;
+    $('clock').textContent = `${lead.time.toFixed(2)} s`;
+    $('play').textContent = lead.paused ? 'Play' : 'Pause';
+  };
+  follow.addEventListener('load', () => follow.pause());
+  lead.addEventListener('draw', () => {
+    if (Math.abs(follow.time - lead.time) > 1e-9) follow.time = lead.time;
+    paint();
+  });
+  for (const type of ['load', 'play', 'pause']) lead.addEventListener(type, paint);
+  $('play').addEventListener('click', () => (lead.paused ? lead.play() : lead.pause()));
+  $('time').addEventListener('input', () => {
+    lead.pause();
+    lead.time = Number($('time').value);
+    follow.time = lead.time;
+  });
+
+  window.pencil = { figures };
+</script>
+</body>
+</html>

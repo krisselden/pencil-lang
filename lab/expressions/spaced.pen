@@ -1,0 +1,20 @@
+// With spaces, `2 a b` is three terms. The next state keeps `2` and `a` where they are and writes
+// `b` at another place, so `b` alone travels there, solid all the way. Beside joined.pen, which
+// differs only in its spaces. See web/terms.html.
+doc spaced
+
+viewport { x: 0..6, y: 0..2 }
+
+pause 0.5
+beat write for 0.5
+pause 1
+beat part for 1.5
+pause 1.5
+
+place product = (1.2, 1)
+place apart = (4.2, 1)
+
+expression e {
+  on write: "2 a b" at product
+  on part: "2 a" at product, "b" at apart
+}

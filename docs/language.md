@@ -373,7 +373,9 @@ expression series by n {
 `by beat` is a state for every beat, in order, with a state that holds written again, and `by` a sum of beats' names
 is what `on` works out: how many of those beats are done, and how far the one that's moving has come.
 
-Terms are separated by spaces. Nothing is diffed: identity is what's written.
+Terms are separated by spaces. Nothing is diffed: identity is what's written. So `2ab` is one term and `2 a b` is
+three. If the next state writes `b` somewhere else, the spaced `b` moves there and the rest stays, and the joined `2ab`
+has nothing in the next state, so it fades out while `2a` and `b` fade in (`web/terms.html` shows the two side by side).
 
 - The same term in the next state moves to its new spot, and stays solid.
 - A new term fades in, and a term that's gone fades out, riding along with its neighbors.

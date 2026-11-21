@@ -452,6 +452,12 @@ each one changes the language or the frame's order, so they come before more fig
      1.6 s and not 0.9 s. Nothing else moved: over the same 4,561 frames no stroke, region or arrow differs at all,
      and no other label by more than 1e-11 px. The figure is 19 s as before, with 15 beats where it had 16, so a reader
      stepping through has one stop fewer, and the fifth step shows the short form and the measurements together.
+   - **A term is what's between spaces, shown, 2026-11-21.** Two figures in `lab/expressions`, `joined.pen` and
+     `spaced.pen`, with the same two states, written `2ab` and `2 a b`, where the second state writes `b` at another
+     place. Spaced, `2` and `a` don't move at all and `b` travels solid. Joined, `2ab` fades where it is while `2a` and
+     `b` fade in where they end, their strengths adding to 1, and nothing travels. A test holds both to that, and
+     `web/terms.html` plays them on one clock. They're in the lab and not the corpus, since no figure of the site's
+     needs them: they show a rule of the language, which `language.md` now says next to it.
    - **Copies drawn early, fixed the same day.** On a whole step an expression was drawn as the start of its next move:
      the state it holds, plus the next state's copies at full strength on what they copy. So `z` was drawn twice, and
      darker, through the two pauses before `scale_a` and `scale_b` (7.5 to 7.8 s and 8.9 to 9.2 s), and nowhere else:

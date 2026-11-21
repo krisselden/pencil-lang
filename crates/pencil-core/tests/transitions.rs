@@ -255,3 +255,58 @@ fn the_references_examples_compile() {
     // The series starts on its first term, and a reader's `n` takes it to the fourth.
     assert_eq!(labels(&by, 0.0).len(), 1);
 }
+
+/// `lab/expressions/joined.pen` and `spaced.pen`: the same two states, written `2ab` and
+/// `2 a b`. A term is what's between spaces, so only the second has a `b` to move.
+#[test]
+fn written_together_a_product_fades_and_spaced_its_last_factor_moves() {
+    let root = concat!(env!("CARGO_MANIFEST_DIR"), "/../../lab/expressions/");
+    let figure = |name: &str| {
+        build(
+            &std::fs::read_to_string(format!("{root}{name}")).unwrap(),
+            &[],
+        )
+        .unwrap()
+    };
+    let (joined, spaced) = (figure("joined.pen"), figure("spaced.pen"));
+    let find = |f: &Figure, time: f64, id: &str| {
+        labels(f, time)
+            .iter()
+            .find(|l| l.id == id)
+            .map(|l| (l.x, l.y, l.opacity))
+    };
+    // Written at 1 s, and `part` runs from 2 s to 3.5 s.
+    let (held, moving, done) = (1.9, 2.3, 4.0);
+
+    // Spaced: `b` goes from the end of the product to its own place, solid, and nothing else moves.
+    let (from, y, _) = find(&spaced, held, "e.b").unwrap();
+    let (to, _, _) = find(&spaced, done, "e.b").unwrap();
+    let (x, at_y, strength) = find(&spaced, moving, "e.b").unwrap();
+    assert!(from < x && x < to, "{from} {x} {to}");
+    assert_eq!((at_y, strength), (y, 1.0));
+    for id in ["e.2", "e.a"] {
+        let still = find(&spaced, held, id).unwrap();
+        assert_eq!(find(&spaced, moving, id), Some(still), "{id}");
+        assert_eq!(find(&spaced, done, id), Some(still), "{id}");
+    }
+
+    // Joined: the product has no part in the next state, so it fades where it is, and what
+    // replaces it fades in where it ends up. Nothing travels.
+    let (at, _, _) = find(&joined, held, "e.2ab").unwrap();
+    let (x, _, going) = find(&joined, moving, "e.2ab").unwrap();
+    assert_eq!(x, at);
+    assert!(0.0 < going && going < 1.0, "{going}");
+    assert_eq!(find(&joined, done, "e.2ab"), None);
+    for id in ["e.2a", "e.b"] {
+        let (ends, _, _) = find(&joined, done, id).unwrap();
+        let (x, _, coming) = find(&joined, moving, id).unwrap();
+        assert_eq!(x, ends, "{id}");
+        assert!((going + coming - 1.0).abs() < 1e-12, "{id}: {coming}");
+        assert_eq!(find(&joined, held, id), None, "{id}");
+    }
+    // Both end the same: `b` at its place, and what's left where the product was.
+    assert_eq!(
+        find(&joined, done, "e.b").map(|l| l.0),
+        find(&spaced, done, "e.b").map(|l| l.0)
+    );
+}
