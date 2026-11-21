@@ -32,7 +32,7 @@ cargo run -p pencil-cli -- latex formulas.tex   # LaTeX from Desmos or MathLive,
 scripts/build-web.sh           # the WASM, into packages/figure/pkg
 pnpm install && pnpm test:web  # the element's and the playground's Playwright tests, in packages/figure/tests (after scripts/build-web.sh); PENCIL_MIN=1 runs them on the minified bundle, PENCIL_GL=1 on WebGL2
 cargo run --release -p pencil-cli -- video corpus/003-unroll/unroll.pen --style corpus/003-unroll/blog.style --size 1280 --out out/unroll.mp4
-scripts/serve.py              # port 8741, no caching; then open /web/playground.html, /web/unroll.html, /web/bounds.html, /web/tube.html, /web/strokes.html, /web/text.html, /web/terms.html or /web/ast.html (add ?gl for WebGL2)
+scripts/serve.py              # port 8741, no caching; then open /web/playground.html, /web/unroll.html, /web/bounds.html, /web/tube.html, /web/strokes.html, /web/text.html, /web/terms.html, /web/stepped.html or /web/ast.html (add ?gl for WebGL2)
 node scripts/logo.mjs --touch   # the site's icon and its touch icon, from the hearts' formula; change the weight or gap there, not in the SVG
 cd site && pnpm install && pnpm build   # the pencil-lang.dev site into site/dist, after scripts/build-web.sh and cargo build --release -p pencil-cli, from the same source; pnpm dev serves it on 4321
 ```

@@ -164,24 +164,44 @@ Proposed by Claude on 2026-11-09, not yet agreed:
   labels). Kris is on the fence about TeX inside the span, which a LaTeX or manim user types from memory. Its braces collide
   with `{expr}`, and it would be a second notation.
 - **How should a state arrive on a beat a reader steps to?** Open since 2026-11-21, with states on named beats, and Kris's
-  to decide. Two facts first. A beat with no length (`beat "…" { … }`) has no name and no "during": `beat` is a whole
-  number there, so `on` can't name one, the error says so, and such a figure writes `by beat` and its states switch at
-  once. And a reader's step never plays a move, whatever the beat: the element seeks to the end of the next beat and
-  pauses (in the square, six steps land at 1.2, 2.2, 3.2, 4.1, 6.2 and 7.5 s), so a reader who steps through the
-  square sees 15 stills, and no term travels, copies off `z`, or factors. The ways to go:
-  1. **It arrives at once.** A beat with no length gets a name, and a state `on` it switches as the reader steps. The
-     square stepped this way is what stepping shows today: `z = a + b i` is replaced by `z` between two frames. It's the
-     least to build, and a figure's spaces, copies and names then do nothing a reader can see.
-  2. **A move has a length, and a step plays it** (recommended). `on` keeps needing a beat with a length, as built, and
-     the element's forward step plays from where it is to the end of the next beat and stops, where it now jumps. The
-     square needs no change, and each press shows one move at the length its author gave it: 0.5 s for the equation to
-     shorten, 1.1 s for the copy to leave `z`. A step back still jumps. A figure made only for stepping writes a length
-     on each beat, which is the one place the time a move takes is said. It changes how every figure with lengths
-     steps, the explainer included, so it wants watching there before it's kept. The bounds' beats have no lengths
-     and would step as they do.
-  3. **A length nobody wrote.** A beat with no length that a state names takes a default, from the language or a sheet.
-     Time appears in a figure that didn't say any, a video's length moves with a default, and the rule that beats with
-     lengths and without don't mix would have to go.
+  to decide. Two facts first. The older step, `beat "…" { … }`, has no name and no "during": `beat` is a whole number
+  there, so `on` can't name one, and such a figure writes `by beat` and its states switch at once. And a reader's step
+  never plays a move, whatever the beat: the element seeks to the end of the next beat and pauses (in the square, six
+  steps land at 1.2, 2.2, 3.2, 4.1, 6.2 and 7.5 s), so a reader who steps through the square sees 15 stills, and no term
+  travels, copies off `z`, or factors.
+
+  Kris's suggestion, the same day: "If a beat has no length and there is no duration maybe just make it 1 second by
+  default?" It can mean two things, and only the second makes anything play:
+  1. **Steps get a clock.** With no `duration`, the older steps take a second each, so the figure has a length, a
+     `duration` to read and a video. Each is still a step: `beat` stays whole, and a state arrives at once, in a video
+     too. No figure here or on the blog has steps and no `duration` (bounds states 30), so it would change none of
+     them. Not built.
+  2. **A beat with no length is a move of a second** (tried, in its own commit, to take or leave). A named beat can
+     leave `for` out, and is then a move like any other, with progress. The square with every length taken off
+     compiles as it is: 15 beats of a second and its 8.4 s of pauses, 23.4 s where its author's lengths made 18.8, and
+     the algebra plays through each second, exactly as if every beat said `for 1` (`tests/transitions.rs`). Under a
+     stated `duration` such beats share what the written lengths and pauses leave, which is what Kris took to be true
+     already.
+
+  The second is needed for a step to play, and it isn't enough: the element still seeks. `web/stepped.html` shows what
+  it would do in its place, in page script, on that square: go to where the beat starts (its end, less its length), play,
+  and pause at its end. Each press of Next then plays one second and stops (0.4 to 1.4 s, then 1.7 to 2.7 s), and the
+  same page jumps, as now, for comparison. In the element that's `step` going forward, for a figure whose beats time
+  drives, and a step back would still jump. It changes how every figure with moves steps, the explainer included, so it
+  wants watching there, and its keys and what it says to a screen reader want their tests run.
+
+  Not tried, and a bigger change: making the older steps moves too, so that the two kinds mix and bounds' ten steps
+  become moves of their 3 s share. Measured on a copy of bounds rewritten that way: `beat` runs 0 to 10 where it ran 0
+  to 9 and follows a timeline where it was a floor, 54 of its 55 marks change in the IR (each gets a `life`, or its
+  `focus` shifts by a beat), and 116 of 121 frames at four a second render differently. Its sheet reads
+  `reveal(self.age, now, later)`, which turns over at an age of a half, so every mark would go to its `later` look
+  halfway through its own 3 s. Bounds' sheet would have to be rewritten on `self.life` and `self.focus` first. The
+  trial leaves that form alone, so bounds and its golden are as they were.
+
+  Recommended: the second, for named beats as tried, and then the element's step playing the move. Against it: a
+  second nobody wrote is an implicit rule in a language that prefers things declared, and the alternative that keeps
+  it declared is to leave `for` required and change only the element. The square's own lengths run from 0.4 to 1.1 s,
+  so a second is a fair first guess and rarely the last word.
 - **How should a moving loop's dashes behave?** A loop gets a whole number of dashes, so they jump as it grows: about 25 times a
   cycle on the breathing circle, by arithmetic, not watched. The blog's hysteresis depends on history, which breaks seeking. A
   related one: dashes on a moving range ride with its start, and a real string's would stay put as it unwinds.

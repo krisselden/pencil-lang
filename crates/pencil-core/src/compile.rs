@@ -1360,16 +1360,49 @@ struct Story {
 }
 
 enum Step {
-    Move(f64),
+    /// A beat, and its length if it wrote one.
+    Move(Option<f64>),
     Pause(f64),
 }
 
+/// What a beat with no length takes in a figure with no `duration` statement, in seconds.
+const BEAT_LENGTH: f64 = 1.0;
+
 impl Story {
-    /// How long the beats and pauses read so far take, added up in the order they run.
+    /// How long the beats and pauses read so far take, added up in the order they run, in a
+    /// figure with no `duration` statement, where a beat with no length takes a second.
     fn length(&self) -> f64 {
         self.steps.iter().fold(0.0, |now, step| match step {
-            Step::Move(length) | Step::Pause(length) => now + length,
+            Step::Move(length) => now + length.unwrap_or(BEAT_LENGTH),
+            Step::Pause(length) => now + length,
         })
+    }
+
+    /// What a beat with no length takes: a second, or under a stated `duration` an even share of
+    /// what the written lengths and pauses leave of it.
+    fn open_length(&self, stated: Option<f64>) -> Result<f64, Error> {
+        let Some(duration) = stated else {
+            return Ok(BEAT_LENGTH);
+        };
+        let open = (self.steps.iter())
+            .filter(|step| matches!(step, Step::Move(None)))
+            .count();
+        let written = self.steps.iter().fold(0.0, |now, step| match step {
+            Step::Move(length) => now + length.unwrap_or(0.0),
+            Step::Pause(length) => now + length,
+        });
+        let left = duration - written;
+        if open > 0 && left <= 1e-9 {
+            let beats = if open == 1 {
+                "the beat".to_string()
+            } else {
+                format!("the {open} beats")
+            };
+            return Err(Error::new(format!(
+                "the beats with lengths and the pauses take {written} seconds, which leaves nothing of the `duration` of {duration} for {beats} with no length"
+            )));
+        }
+        Ok(if open == 0 { 0.0 } else { left / open as f64 })
     }
 }
 
@@ -1425,16 +1458,22 @@ fn finish_story(scene: &mut Scene, story: &Story) -> Result<(), Error> {
     if let Some(param) = scene.params.iter_mut().find(|p| p.id == BEAT_PARAM) {
         param.range = [0.0, count as f64];
     }
+    // A `duration` here is one the document stated: with none, this is where it's worked out.
+    let open = story.open_length(scene.duration).map_err(|e| {
+        let first = story.moves.iter().find(|m| m.length.is_none());
+        at_line(first.map_or(0, |m| m.line))(e)
+    })?;
     let mut now = 0.0;
     let mut windows = vec![Expr::sym("time")];
     for step in &story.steps {
         match step {
             Step::Pause(length) => now += length,
             Step::Move(length) => {
+                let length = length.unwrap_or(open);
                 windows.push(num(now));
                 now += length;
                 windows.push(num(now));
-                scene.beat_lengths.push(*length);
+                scene.beat_lengths.push(length);
             }
         }
     }
@@ -2855,7 +2894,7 @@ fn needs(item: &Item) -> Vec<String> {
         }
         Item::Arrow { from, to, .. } => all(&mut [from, to].into_iter(), &mut out),
         Item::Move(m) => {
-            refers(&m.length, &mut out);
+            m.length.iter().for_each(|length| refers(length, &mut out));
             out.extend(
                 m.focus
                     .iter()
@@ -3586,10 +3625,15 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
                     declare_beat(&mut scene, &mut lowerer);
                 }
                 let k = story.moves.len();
-                let length = lowerer
-                    .constant(&scene, &written.length, "a beat's length")
-                    .map_err(at_line(written.line))?;
-                if length < 0.0 {
+                let length = match &written.length {
+                    Some(length) => Some(
+                        lowerer
+                            .constant(&scene, length, "a beat's length")
+                            .map_err(at_line(written.line))?,
+                    ),
+                    None => None,
+                };
+                if length.is_some_and(|length| length < 0.0) {
                     return Err(Error::at(
                         written.line,
                         1,

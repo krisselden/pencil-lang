@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+<script src="./imports.js"></script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stepping the square with no lengths</title>
+<style>
+  :root { color-scheme: light dark; --ink: #1c1b19; --paper: #fbfaf7; --muted: #6b675f; --bad: #b5443c; }
+  @media (prefers-color-scheme: dark) { :root { --ink: #ece9e2; --paper: #1a1917; --muted: #a29d93; --bad: #e58a80; } }
+  body { margin: 0; padding: 24px 16px; background: var(--paper); color: var(--ink); font: 0.9375rem/1.45 ui-sans-serif, system-ui, sans-serif; }
+  main { max-width: 620px; margin: 0 auto; }
+  h1 { font-size: 1rem; font-weight: 600; margin: 0 0 4px; }
+  p { margin: 4px 0 10px; color: var(--muted); }
+  pencil-figure { max-width: 340px; margin: 0 auto; }
+  .controls { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; margin: 12px 0; }
+  output { font-variant-numeric: tabular-nums; }
+  button, select { font: inherit; }
+  #error { color: var(--bad); white-space: pre-wrap; font-family: ui-monospace, monospace; font-size: 0.8125rem; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Stepping the square with no lengths</h1>
+  <p>A trial. This is <code>corpus/006-square/square.pen</code> with every <code>for</code> taken off its beats, and its <code>duration</code> and <code>poster</code> gone, so each beat takes the second a beat with no length gets. Next plays that second and stops, or jumps to its end as the element's own step does today.</p>
+  <pencil-figure id="figure" paused
+    aria-label="z = a + bi is built from a and bi. A copy of z is scaled by a, and another by b and turned 90 degrees by i. Tip to tail they make z squared."></pencil-figure>
+  <div class="controls">
+    <button id="back" type="button">Back</button>
+    <button id="next" type="button">Next</button>
+    <label>A step <select id="how">
+      <option value="play" selected>plays the move</option>
+      <option value="jump">jumps to its end, as today</option>
+    </select></label>
+    <output id="where"></output>
+  </div>
+  <p id="status">Starting…</p>
+  <p id="error" role="alert"></p>
+</main>
+<script type="module">
+  import { fromQuery, report } from './controls.js';
+  import { gather } from '@pencil-lang/figure/host';
+
+  const $ = (id) => document.getElementById(id);
+  const figure = $('figure');
+  fromQuery(figure);
+  report(figure, $('status'), $('error'));
+
+  // The square, with `for 0.6` off each beat and no `duration` or `poster`.
+  const names = ['../corpus/006-square/square.pen', '../corpus/theme.style', '../corpus/006-square/plain.style'];
+  const read = async (url) => (await fetch(new URL(url, document.baseURI), { cache: 'no-store' })).text();
+  const [pen, ...sheets] = await Promise.all(names.map(read));
+  const doc = pen
+    .split('\n')
+    .filter((line) => !line.startsWith('duration ') && !line.startsWith('poster '))
+    .map((line) => (line.startsWith('beat ') ? line.replace(/ for [0-9.]+/, '') : line))
+    .join('\n');
+  figure.load(doc, sheets, await gather(names, [doc, ...sheets], read));
+
+  // What the element would do in place of seeking: go to where the beat starts, play, and stop
+  // where it ends. The page does it here, from what the figure says of itself.
+  let stop = null;
+  const paint = () => {
+    const done = Math.floor(figure.beat + 1e-6);
+    const count = figure.info?.beats.length ?? 0;
+    $('where').textContent = `beat ${Math.min(done + (stop === null ? 0 : 1), count)} of ${count} · ${figure.time.toFixed(2)} s`;
+    $('back').disabled = stop === null && done <= 0;
+    $('next').disabled = stop !== null || done >= count;
+  };
+  figure.addEventListener('draw', () => {
+    if (stop !== null && figure.time >= stop) {
+      figure.pause();
+      figure.time = stop;
+      stop = null;
+    }
+    paint();
+  });
+  figure.addEventListener('load', () => {
+    figure.pause();
+    figure.time = 0;
+    paint();
+  });
+  $('next').addEventListener('click', () => {
+    const done = Math.floor(figure.beat + 1e-6);
+    const length = figure.info.beatLengths[done];
+    if (length === undefined) return;
+    figure.pause();
+    // Setting `beat` seeks to the first moment it's reached, which is the beat's end.
+    figure.beat = done + 1;
+    const end = figure.time;
+    if ($('how').value === 'play') {
+      stop = end;
+      figure.time = end - length;
+      figure.play();
+    }
+    paint();
+  });
+  $('back').addEventListener('click', () => {
+    stop = null;
+    figure.step(-1);
+    paint();
+  });
+
+  window.pencil = { figure };
+</script>
+</body>
+</html>

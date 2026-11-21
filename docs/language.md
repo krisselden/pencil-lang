@@ -51,7 +51,7 @@ that names them. `lab/explainer/limacon.pen` is the example: a file to each part
 | `solve (x, y) from 0, 1: f(x, y) = 0, g(x, y) = 2` | Unknowns defined by equations (see below). |
 | `bind a = expr` | What drives a param when no reader has taken it over. A param with a binding has two drivers, the binding and the reader, and the reader's last action picks. Setting it, with a drag, a key, a control or a page's `hold`, takes it over. Setting a param its binding reads, directly, through other bindings, a choice's options or a range, hands it back: in `bind theta = case`, where the case's options read `q`, setting `q` or the case brings θ back to its binding. Params set together, as in the element's `params="q: 8; theta: 1"`, keep each other. Time is the same: setting it, or playing, hands back what it drives. A page reads which params each binding reads in `info.params` (`reads`), and needs no script of its own for this. |
 | `beat "caption" tag t { … }` | A discrete step of a construction (see below). |
-| `beat spin "caption" for 2 show P drop c focus P, .arms` | One move of a figure's story, with a length (see below). |
+| `beat spin "caption" for 2 show P drop c focus P, .arms` | One move of a figure's story, with a length (see below). On trial: a named one can leave `for 2` out. |
 | `pause 0.4` | A hold between moves, in seconds, a constant (see Constants). |
 | `curve c = …` | A drawn curve, in one of the forms below. |
 | `segment s = A, B` | A straight line between points. |
@@ -187,7 +187,12 @@ beat gone for 0.5 drop c, P
   something else, and before any does, everything is in focus. A sheet reads it as `self.focus`.
 - **A caption holds until a beat has another,** and `""` clears it. Captions are drawn in the
   figure only when a sheet asks, with `style caption { … }`, since a page can show them as text.
-- Beats with lengths and beats without can't be mixed in one figure.
+- **A named beat can leave its length out,** on trial since 2026-11-21 and not settled: `beat grow show c`. With no
+  `duration` statement it takes a second. Under a stated `duration`, the beats with no length share evenly what the
+  written lengths and pauses leave of it, and it's an error if they leave nothing. Either way it's a move like any
+  other: its name is its progress, and `duration` counts it.
+- The older `beat "caption" { … }`, with no name, is a step with no progress, and it can't be mixed with moves in one
+  figure.
 
 ### Equations
 
@@ -351,8 +356,8 @@ expression work {
 - **States are written in the order their beats run,** and each beat brings one state. A state out of order, a beat
   named twice, and a name that isn't a beat's are errors at that state's line: `` `factor` comes before `expand` in the
   timeline, but follows it in `work` ``.
-- **Only a beat with a length has a name,** so that's what `on` takes. A figure whose beats have none, which a reader
-  steps through, drives its expression `by beat`, as below.
+- **Only a move has a name,** so that's what `on` takes. A figure of the older steps, `beat "caption" { … }`, which a
+  reader steps through, drives its expression `by beat`, as below.
 
 **A number, for scrubbing.** `by` takes any number, and a state is written for each whole value from 1: at 3.4 the
 expression is on its way from state 3 to state 4. State 0 is the empty one before the first that's written, and

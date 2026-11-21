@@ -23,7 +23,9 @@ pub struct Document {
 pub struct Move {
     pub name: Option<String>,
     pub caption: Option<String>,
-    pub length: Expr,
+    /// How long it takes. A named beat can leave it out, and takes a second, or its share of
+    /// what a stated `duration` has left.
+    pub length: Option<Expr>,
     pub show: Vec<String>,
     pub drop: Vec<String>,
     pub focus: Vec<Focus>,
@@ -710,13 +712,14 @@ pub const MINUS_PLUS: &str = "MinusPlus";
 const MOVE_WORDS: [&str; 5] = ["for", "show", "drop", "focus", "tag"];
 
 impl Parser {
-    /// Whether the `beat` just read has a length: `beat name "caption" for 2`, with the name
-    /// and caption optional. The older `beat "caption" { … }` is a step with no length.
+    /// Whether the `beat` just read is a move: `beat name "caption" for 2`, with the name and
+    /// caption optional, or one with a name and no length, `beat name show P`. The older
+    /// `beat "caption" { … }` is a step with no length and no name.
     fn is_move(&self) -> bool {
         let mut at = self.pos;
         let tok = |i: usize| self.toks.get(i).map(|t| &t.tok);
         if matches!(tok(at), Some(Tok::Ident(w)) if !MOVE_WORDS.contains(&w.as_str())) {
-            at += 1;
+            return true;
         }
         if matches!(tok(at), Some(Tok::Str(_))) {
             at += 1;
@@ -1190,8 +1193,12 @@ impl Parser {
                     _ => None,
                 };
                 let caption = self.optional_string();
-                self.keyword("for")?;
-                let length = self.expr()?;
+                let length = if self.at_word("for") {
+                    self.bump();
+                    Some(self.expr()?)
+                } else {
+                    None
+                };
                 let (mut show, mut drop, mut focus, mut tags) = (vec![], vec![], vec![], vec![]);
                 loop {
                     if self.at_word("focus") {

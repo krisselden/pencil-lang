@@ -310,3 +310,136 @@ fn written_together_a_product_fades_and_spaced_its_last_factor_moves() {
         find(&spaced, done, "e.b").map(|l| l.0)
     );
 }
+
+/// A trial, from Kris's "maybe just make it 1 second by default": a named beat can leave out its
+/// length. With no `duration` it takes a second, so it has a during, and a state `on` it plays.
+const OPEN: &str = "viewport { x: 0..400, y: 0..400 } style figure { width: 400px; height: 400px }
+beat write
+pause 0.5
+beat wait for 2
+beat move
+place left = (100, 200)
+place right = (300, 200)
+expression e {
+  on write: \"a + b\" at left
+  on move: \"a\" at left, \"+ b\" at right
+}
+";
+
+/// When each beat starts and ends, from the timeline `beat` follows.
+fn windows(figure: &Figure) -> Vec<f64> {
+    let beat = figure
+        .scene
+        .bindings
+        .iter()
+        .find(|b| b.id == "beat")
+        .unwrap();
+    let pencil_core::ir::Expr::App(head, args) = &beat.expr else {
+        panic!("{:?}", beat.expr);
+    };
+    assert_eq!(head, "Timeline");
+    args[1..]
+        .iter()
+        .map(|e| match e {
+            pencil_core::ir::Expr::Num(n) => *n,
+            other => panic!("{other:?}"),
+        })
+        .collect()
+}
+
+#[test]
+fn a_named_beat_with_no_length_takes_a_second_and_a_state_on_it_plays() {
+    let f = build(OPEN, &[]).unwrap();
+    assert_eq!(windows(&f), [0.0, 1.0, 1.5, 3.5, 3.5, 4.5]);
+    assert_eq!(f.scene.duration, Some(4.5));
+    assert_eq!(f.scene.beat_lengths, [1.0, 2.0, 1.0]);
+    // Halfway through `move`, which has no length, `b` is on its way and solid: it has a during.
+    let b = |time: f64| {
+        let all = labels(&f, time);
+        let b = all.iter().find(|l| l.id == "e.b").unwrap();
+        (b.x, b.opacity)
+    };
+    let (from, to) = (b(3.5).0, b(4.5).0);
+    let (x, strength) = b(4.0);
+    assert!(from < x && x < to, "{from} {x} {to}");
+    assert_eq!(strength, 1.0);
+    // It's the same figure as one that says `for 1` on both.
+    let said = OPEN
+        .replace("beat write\n", "beat write for 1\n")
+        .replace("beat move\n", "beat move for 1\n");
+    assert_ne!(said, OPEN);
+    assert_same(&f, &build(&said, &[]).unwrap(), 4.5);
+}
+
+#[test]
+fn under_a_stated_duration_beats_with_no_length_share_what_is_left() {
+    // 10 s, less 2 s and a pause of 0.5 s, leaves 3.75 s for each of the two.
+    let f = build(&format!("duration 10\n{OPEN}"), &[]).unwrap();
+    assert_eq!(windows(&f), [0.0, 3.75, 4.25, 6.25, 6.25, 10.0]);
+    assert_eq!(f.scene.duration, Some(10.0));
+    // With nothing left, there's no length to give them.
+    let err = build(&format!("duration 2.5\n{OPEN}"), &[]).unwrap_err();
+    assert_eq!(
+        err.message,
+        "the beats with lengths and the pauses take 2.5 seconds, which leaves nothing of the `duration` of 2.5 for the 2 beats with no length"
+    );
+    assert_eq!(err.line, 3);
+    // And `duration` reads the sum when it isn't stated, a second for each.
+    let f = build(&format!("{OPEN}let d = duration\n"), &[]).unwrap();
+    let d = f.scene.bindings.iter().find(|b| b.id == "d").unwrap();
+    assert_eq!(d.expr, pencil_core::ir::Expr::Num(4.5));
+}
+
+/// The square with every length taken out, and its `duration` and `poster` with them: what the
+/// trial does to a real figure. Each of its 15 beats is a second, and its algebra still plays.
+#[test]
+fn the_square_with_no_lengths_plays_a_second_a_beat() {
+    let root = concat!(env!("CARGO_MANIFEST_DIR"), "/../../corpus/");
+    let read = |path: &str| std::fs::read_to_string(format!("{root}{path}")).unwrap();
+    let sheets = [read("theme.style"), read("006-square/plain.style")];
+    let sheets: Vec<&str> = sheets.iter().map(String::as_str).collect();
+    let mut beats = 0;
+    let pen: String = read("006-square/square.pen")
+        .lines()
+        .filter(|line| !line.starts_with("duration ") && !line.starts_with("poster "))
+        .map(|line| {
+            let Some(rest) = line.strip_prefix("beat ") else {
+                return format!("{line}\n");
+            };
+            // `beat name for 0.6 show hypotenuse` to `beat name show hypotenuse`.
+            let mut words: Vec<&str> = rest.split(' ').collect();
+            let at = words.iter().position(|w| *w == "for").unwrap();
+            words.drain(at..at + 2);
+            beats += 1;
+            format!("beat {}\n", words.join(" "))
+        })
+        .collect();
+    let f = build(&pen, &sheets).unwrap();
+    assert_eq!((beats, f.scene.beat_lengths.len()), (15, 15));
+    assert!(f.scene.beat_lengths.iter().all(|length| *length == 1.0));
+    // 15 s of beats and the 8.4 s of pauses it wrote.
+    let duration = f.scene.duration.unwrap();
+    assert!((duration - 23.4).abs() < 1e-9, "{duration}");
+    // Halfway through `scale_a`, the copy of z has left z and is on its way to the arrow's tip.
+    let times = windows(&f);
+    let (start, end) = (times[2 * 6], times[2 * 6 + 1]);
+    assert_eq!(end - start, 1.0);
+    let at = |time: f64, id: &str| {
+        let all = prepare(&f, &Inputs::at(time), 680, 470, 2.0)
+            .unwrap()
+            .labels;
+        all.iter()
+            .find(|l| l.id == id)
+            .map(|l| (l.x, l.y, l.opacity))
+    };
+    let z = at(start + 0.5, "work.z").unwrap();
+    let copy = at(start + 0.5, "work.z.1").unwrap();
+    let there = at(end, "work.z.1").unwrap();
+    assert_eq!(copy.2, 1.0);
+    let gone = ((copy.0 - z.0).powi(2) + (copy.1 - z.1).powi(2)).sqrt();
+    let left = ((copy.0 - there.0).powi(2) + (copy.1 - there.1).powi(2)).sqrt();
+    assert!(
+        gone > 5.0 && left > 0.5,
+        "{gone} px from z, {left} px to go"
+    );
+}
