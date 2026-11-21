@@ -663,7 +663,8 @@ mod tests {
         let err = doc("\"a + b + c\" at p").unwrap_err();
         assert!(err.message.contains("`+` is written twice"), "{err}");
         assert!(err.message.contains("Write the second as `+.1`"), "{err}");
-        assert_eq!(err.line, 4);
+        // At the state's own line, not the expression's.
+        assert_eq!(err.line, 5);
         // Across the pieces of one state, too, and the suggestion skips copies already written.
         let err = doc("\"z +.1\" at p, \"+ z\" at q").unwrap_err();
         assert!(err.message.contains("`z` is written twice"), "{err}");

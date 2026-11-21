@@ -237,8 +237,6 @@ Proposed by Claude on 2026-11-09, not yet agreed:
 
 Built, and wrong or short in a known way. None has blocked a figure.
 
-- **Copies drawn early:** in `006-square`, a copy of `z` was drawn on top of `z` a state early, so it was darker. A bug in how
-  copies are drawn, not fixed.
 - **Roots can swap** if a construction reverses its line's direction, as `line(A, B)` does when A passes through B. Branch labels and
   a tracker would fix it.
 - **Marks pop in and out:** no `:appearing`, `:vanishing` or `on appear: fade`. Rim-only disks also pop a half-plane on as a circle
@@ -437,6 +435,22 @@ each one changes the language or the frame's order, so they come before more fig
      `corpus/006-square` and `web/square.html` as the figure. Its test checks the math itself: F.O. + I.L. is z², and
      its triangle is the first one scaled by |z| and turned. GPU matches the oracle within 1/255 at six times.
      Not built: statements like `zbi = zb · i` that would drive an arrow and its label from one line.
+   - **States on named beats, 2026-11-21.** Kris's note: in the square nothing read `shorten` by name, and its job was
+     to be the fifth beat, so that `work by beat` reached its fifth row. Making it a pause would have moved every later
+     row onto the wrong beat. An expression's states can now each say the beat that brings them, `on factor: …`
+     (`language.md`, Expressions that move; `decisions.md`), and a beat no state names is a hold that isn't written.
+     The square's `work` went from 16 rows to 13 states with nothing else changed. Checked by number: every label of
+     the figure, 22,400 of them over 4,561 frames at 240 a second, is in the same place at the same strength as with
+     the rows, to the bit, and a test keeps that, writing the rows back out from the states (`tests/transitions.rs`).
+     The driver is the sum of the named beats' progress, which the explainer's roulette already wrote by hand as
+     `by said`, so the IR has nothing new, and only the square's golden changed: its `by`, and three states fewer.
+     `by` a number stays, for a param a reader scrubs.
+   - **Copies drawn early, fixed the same day.** On a whole step an expression was drawn as the start of its next move:
+     the state it holds, plus the next state's copies at full strength on what they copy. So `z` was drawn twice, and
+     darker, through the two pauses before `scale_a` and `scale_b` (7.5 to 7.8 s and 8.9 to 9.2 s), and nowhere else:
+     of 381 frames written as SVG by the command before and after, those 14 differ, each by one doubled `z`. A whole
+     step now draws the state it holds alone. This had to go first, since with states on named beats the square holds
+     on a whole step through `measure` and `unmeasure` too.
    - **What these transitions are for:** making the math feel physical, at a middle school level. `SquareZ` is F.O.I.L.
      on z²: F.O. is z·a and I.L. is z·bi, which build a right triangle similar to the one of a and bi, scaled by |z|
      and turned. Numbers have length, negative turns 180°, and i turns 90°, which gives lateral space, any direction,

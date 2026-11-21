@@ -2815,7 +2815,11 @@ fn needs(item: &Item) -> Vec<String> {
             );
         }
         Item::Place { at, offset, .. } => all(&mut [at].into_iter().chain(offset), &mut out),
-        Item::Expression { by, .. } => refers(by, &mut out),
+        // A state's beat is read as a value is, so a beat written after the expression comes early.
+        Item::Expression { by, states, .. } => {
+            by.iter().for_each(|by| refers(by, &mut out));
+            out.extend(states.iter().filter_map(|state| state.on.clone()));
+        }
         Item::Arrow { from, to, .. } => all(&mut [from, to].into_iter(), &mut out),
         Item::Move(m) => {
             refers(&m.length, &mut out);
@@ -3304,6 +3308,79 @@ fn one_duration(items: &[Item]) -> Result<(), Error> {
         });
     }
     Ok(())
+}
+
+/// What drives an expression whose states each say `on` a beat: how many of those beats are done,
+/// and how far the one that's moving has come. That's the sum of their progress, since a beat's
+/// name is 0 before it, 1 after, and they run one at a time. A beat no state names leaves the sum
+/// alone, so the expression holds through it.
+///
+/// States are checked in the order they're written, and an error is at the state it's about.
+fn on_beats(
+    name: &str,
+    states: &[crate::parse::State],
+    story: &Story,
+    scene: &Scene,
+) -> Result<Expr, Error> {
+    let beats: Vec<&str> = story
+        .moves
+        .iter()
+        .filter_map(|m| m.name.as_deref())
+        .collect();
+    let mut by = None;
+    // The state before this one: its beat, and which beat of the timeline that is.
+    let mut before: Option<(&str, usize)> = None;
+    let mut named: Vec<(&str, usize)> = Vec::new();
+    for state in states {
+        let beat = state.on.as_deref().expect("a state with no `by` says `on`");
+        let fail = |message: String| Error::at(state.line, 1, message);
+        let Some(k) = story
+            .moves
+            .iter()
+            .position(|m| m.name.as_deref() == Some(beat))
+        else {
+            let reaches = format!("`{name}` reaches a state on `{beat}`");
+            return Err(fail(if scene.bindings.iter().any(|b| b.id == beat) {
+                format!(
+                    "{reaches}, which is a value and not a beat. Only a beat with a length has a name to reach it on, as in `beat {beat} for 0.5`"
+                )
+            } else if beats.is_empty() && !scene.beats.is_empty() {
+                format!(
+                    "{reaches}, and this figure's beats have no names. A beat has one when it has a length, as in `beat {beat} for 0.5`, and `expression {name} by beat` takes a state for each beat that has none"
+                )
+            } else {
+                match crate::suggest::suggestion(beat, beats.iter().copied()) {
+                    Some(hint) => {
+                        format!("{reaches}, and no beat is named that: did you mean {hint}?")
+                    }
+                    None => format!(
+                        "{reaches}, and no beat is named that. A beat is named with its length, as in `beat {beat} for 0.5`"
+                    ),
+                }
+            }));
+        };
+        if let Some((_, line)) = named.iter().find(|(other, _)| *other == beat) {
+            return Err(fail(format!(
+                "`{beat}` brings `{name}` to a state twice, here and on {}. A beat is one move, so it ends in one state",
+                Error::line_text(*line)
+            ))
+            .also(*line));
+        }
+        if let Some((earlier, at)) = before
+            && k < at
+        {
+            return Err(fail(format!(
+                "`{beat}` comes before `{earlier}` in the timeline, but follows it in `{name}`. Its states are written in the order their beats run"
+            )));
+        }
+        named.push((beat, state.line));
+        before = Some((beat, k));
+        by = Some(match by {
+            Some(sum) => add(sum, Expr::sym(beat)),
+            None => Expr::sym(beat),
+        });
+    }
+    Ok(by.unwrap_or_else(|| num(0.0)))
 }
 
 fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
@@ -4230,8 +4307,10 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
                 line,
             } => {
                 claim(name, *line)?;
-                let fail = at_line(*line);
-                let by = lowerer.scalar(by, &none).map_err(&fail)?;
+                let by = match by {
+                    Some(by) => lowerer.scalar(by, &none).map_err(at_line(*line))?,
+                    None => on_beats(name, states, &story, &scene)?,
+                };
                 let index = scene.expressions.len();
                 let mut written = Vec::with_capacity(states.len());
                 let mut seen: Vec<String> = Vec::new();
@@ -4239,9 +4318,10 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
                 // so it's what moves between states and what a style or a beat can name.
                 let mut printed: HashMap<String, String> = HashMap::new();
                 for state in states {
-                    let mut pieces = Vec::with_capacity(state.len());
+                    let fail = at_line(state.line);
+                    let mut pieces = Vec::with_capacity(state.pieces.len());
                     let mut in_state: Vec<String> = Vec::new();
-                    for (text, place) in state {
+                    for (text, place) in &state.pieces {
                         let Some(spot) = scene.spots.iter().position(|s| s.id == *place) else {
                             return Err(fail(Error::new(format!(
                                 "no place named `{place}`. Places come first"

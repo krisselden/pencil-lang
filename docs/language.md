@@ -76,7 +76,8 @@ that names them. `lab/explainer/limacon.pen` is the example: a file to each part
 | `outline o = detail` | The rectangle another panel is looking at. |
 | `panel p "Title" { … }` | One view of the figure, with its own marks (see below). |
 | `place p = P offset (8, 18) hang end` | Where an expression can sit (see below). |
-| `expression e by step { … }` | A list of states whose matching parts move (see below). |
+| `expression e { on grow: … }` | A list of states whose matching parts move, each reached on the beat it names (see below). |
+| `expression e by step { … }` | The same, with a number saying which state it's in. |
 | `handle P sets a = expr` | Dragging `P` sets param `a` to `expr`, the inverse from the pointer to the param, written out. `expr` can use `pointer.x` and `pointer.y`, and `pointer` by itself is the pointer's point, so `abs(pointer)` is its distance from the origin and `real(ln(pointer))` the log of that. `a` takes the value within its range and step, which is what constrains the drag. Dragging, or the keys on the handle, take `a` over from its binding, until a param that binding reads is set (see `bind`). The handle is `a`'s control: the site's controls give a param a handle sets no slider. |
 | `handle z sets a = expr, b = expr` | A point dragged in two dimensions: dragging `z` sets two params, each to its own expression, which can use the pointer as above. For `let z = a + b·i` it's `a = pointer.x, b = pointer.y`, and for a point on a lattice, `z = a + b·ω`, the two expressions turn the pointer into its coefficients: `a = pointer.x - pointer.y·real(ω)/imag(ω), b = pointer.y/imag(ω)`. Both are worked out from the same pointer and the params as they were, then each param takes its value within its own range and step, so at the end of one range that param stops and the other goes on. One drag sets both, so they don't hand each other back. Arrow keys move the point on the page through the same expressions, and Home, End, Page Up and Page Down are long moves left, right, up and down. A key's move stays within 45° of its way, going on to a param's next step if it has to, so on a slanted lattice Up is never mostly Left, and a key with no such move, as along the edge of a range, does nothing. Two at most, each a `param`, each named once. A mark has one handle: a second on the same mark is an error, since a drag takes one, so a point dragged in two dimensions is one handle setting both. The check goes by name, so two names for one point, `let w = z` with `dot z, w`, can each have a handle, and a drag takes the nearer, or the later where they're the same point. |
 | `style selector { … }` | A style rule (see below). |
@@ -315,20 +316,62 @@ styles panel titles. `fit` can name parametric curves and `curves` collections a
 
 ### Expressions that move
 
-An expression is a list of states, driven by a number: at 3.4 it's on its way from state 3 to state 4.
-State 0 is the empty one before the first that's written, and `empty` writes another.
+An expression is a list of states, and what's written the same in two of them moves from one to the other. There
+are two ways to say when, and a figure picks by what drives it.
+
+**Named beats, for a derivation that's told.** Each state says `on` the beat that brings it:
 
 ```
-place at_tip = tip offset (8, 18)
-place at_sum = Z2 offset (-8, -12) hang end
+pause 0.5
+beat write for 0.8
+pause 1
+beat measure for 0.5
+pause 1
+beat expand for 0.8
+pause 1
+beat factor for 0.6
 
-expression work by step {
-  "z" at at_z, "z.1 a" at at_tip
-  "z" at at_z, "z.1 a + z.2 b i" at at_sum
-  "z" at at_z, "z.1 ( a + b i )" at at_sum
-  "z" at at_z, "z.1 ²" at at_sum
+place equation = (0, 1)
+
+expression work {
+  on write: "z ( a + b )" at equation
+  on expand: "z a + z.1 b" at equation
+  on factor: "z ( a + b )" at equation
 }
 ```
+
+- **A state is where its beat ends.** The expression starts from the state before, moves through the beat, is the
+  written state as the beat ends, and holds it until the next beat a state names. Before the first, it's empty, and
+  `on clear: empty` empties it again.
+- **A beat no state names changes nothing,** so a hold isn't written: `measure` above can show an angle, and take as
+  long as it likes, while the algebra stays put. Making a beat longer, or putting a pause or another beat between two
+  states, retimes the story and leaves which terms move alone.
+- **States are written in the order their beats run,** and each beat brings one state. A state out of order, a beat
+  named twice, and a name that isn't a beat's are errors at that state's line: `` `factor` comes before `expand` in the
+  timeline, but follows it in `work` ``.
+- **Only a beat with a length has a name,** so that's what `on` takes. A figure whose beats have none, which a reader
+  steps through, drives its expression `by beat`, as below.
+
+**A number, for scrubbing.** `by` takes any number, and a state is written for each whole value from 1: at 3.4 the
+expression is on its way from state 3 to state 4. State 0 is the empty one before the first that's written, and
+`empty` writes another. A param a reader drags is the usual driver, as here, where each state is one more term of a
+series and `n` can drive the curve it approximates too:
+
+```
+param n = 1 in 1..4
+
+place sum = (0, 1)
+
+expression series by n {
+  "1" at sum
+  "1 + x" at sum
+  "1 + x +.1 x²/2" at sum
+  "1 + x +.1 x²/2 +.2 x³/6" at sum
+}
+```
+
+`by beat` is a state for every beat, in order, with a state that holds written again, and `by` a sum of beats' names
+is what `on` works out: how many of those beats are done, and how far the one that's moving has come.
 
 Terms are separated by spaces. Nothing is diffed: identity is what's written.
 

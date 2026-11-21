@@ -166,7 +166,7 @@
   "duration": 19.0,
   "expressions": [
     {
-      "by": "beat",
+      "by": ["Add",["Add",["Add",["Add",["Add",["Add",["Add",["Add",["Add",["Add",["Add",["Add","build_a","build_b"],"join"],"name"],"shorten"],"scale_a"],"scale_b"],"rotate"],"slide"],"add"],"factor"],"squared"],"clear"],
       "id": "work",
       "states": [
         [
@@ -195,18 +195,6 @@
           {
             "place": "at_z",
             "terms": ["z","=","a","+","b","i"]
-          }
-        ],
-        [
-          {
-            "place": "at_z",
-            "terms": ["z"]
-          }
-        ],
-        [
-          {
-            "place": "at_z",
-            "terms": ["z"]
           }
         ],
         [
@@ -285,16 +273,6 @@
           {
             "place": "at_sum",
             "terms": ["z.1","(","a","+","b","i",")"]
-          }
-        ],
-        [
-          {
-            "place": "at_z",
-            "terms": ["z"]
-          },
-          {
-            "place": "at_sum",
-            "terms": ["z.1","²"]
           }
         ],
         [

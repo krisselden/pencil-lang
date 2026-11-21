@@ -89,22 +89,20 @@ place at_tip_b = tip_b offset (-28, -12)
 place beside_b = from + along·0.5 offset (4, 6)
 place at_sum = Z2 offset (-8, -12) hang end
 
-// A state per beat. Measuring and the result don't change it, so it's written again.
-expression work by beat {
-  "a" at at_a
-  "a" at at_a, "+ b i" at at_b
-  "a + b i" at at_z
-  "z = a + b i" at at_z
-  "z" at at_z
-  "z" at at_z
-  "z" at at_z
-  "z" at at_z, "z.1 a" at at_tip_a
-  "z" at at_z, "z.1 a" at at_tip_a, "z.2 b" at at_tip_b
-  "z" at at_z, "z.1 a" at at_tip_a, "z.2 b i" at at_tip_b
-  "z" at at_z, "z.1 a" at at_tip_a, "+ z.2 b i" at beside_b
-  "z" at at_z, "z.1 a + z.2 b i" at at_sum
-  "z" at at_z, "z.1 ( a + b i )" at at_sum
-  "z" at at_z, "z.1 ²" at at_sum
-  "z" at at_z, "z.1 ²" at at_sum
-  empty
+// Each state says the beat that brings it. A beat that isn't here leaves the algebra as it is:
+// measuring, and the result.
+expression work {
+  on build_a: "a" at at_a
+  on build_b: "a" at at_a, "+ b i" at at_b
+  on join: "a + b i" at at_z
+  on name: "z = a + b i" at at_z
+  on shorten: "z" at at_z
+  on scale_a: "z" at at_z, "z.1 a" at at_tip_a
+  on scale_b: "z" at at_z, "z.1 a" at at_tip_a, "z.2 b" at at_tip_b
+  on rotate: "z" at at_z, "z.1 a" at at_tip_a, "z.2 b i" at at_tip_b
+  on slide: "z" at at_z, "z.1 a" at at_tip_a, "+ z.2 b i" at beside_b
+  on add: "z" at at_z, "z.1 a + z.2 b i" at at_sum
+  on factor: "z" at at_z, "z.1 ( a + b i )" at at_sum
+  on squared: "z" at at_z, "z.1 ²" at at_sum
+  on clear: empty
 }

@@ -1,0 +1,257 @@
+//! An expression whose states each say `on` which beat they're reached: what it lays out, next
+//! to the same states written one per beat, and what it says when a state names the wrong beat.
+
+use pencil_core::frame::{Inputs, Label, prepare};
+use pencil_core::{Figure, build};
+
+const HEAD: &str = "viewport { x: 0..400, y: 0..400 } style figure { width: 400px; height: 400px }
+pause 0.5
+beat write for 1
+beat wait for 1
+pause 0.5
+beat move for 1
+beat gone for 0.5
+place left = (100, 200)
+place right = (300, 200)
+";
+
+const NAMED: &str = "expression e {
+  on write: \"a + b\" at left
+  on move: \"a\" at left, \"+ b\" at right
+  on gone: empty
+}";
+
+/// The same, a state for each beat, with the hold through `wait` written again.
+const ROWS: &str = "expression e by beat {
+  \"a + b\" at left
+  \"a + b\" at left
+  \"a\" at left, \"+ b\" at right
+  empty
+}";
+
+fn labels(figure: &Figure, time: f64) -> Vec<Label> {
+    prepare(figure, &Inputs::at(time), 400, 400, 1.0)
+        .unwrap()
+        .labels
+}
+
+/// Every label of both at every sampled time: which are drawn, where, and how strongly.
+fn assert_same(a: &Figure, b: &Figure, duration: f64) {
+    let frames = (duration * 120.0).round() as usize;
+    for k in 0..=frames {
+        let time = k as f64 / 120.0;
+        let (la, lb) = (labels(a, time), labels(b, time));
+        let seen = |l: &[Label]| -> Vec<(String, f64, f64, f64)> {
+            l.iter()
+                .map(|l| (l.id.clone(), l.x, l.y, l.opacity))
+                .collect()
+        };
+        assert_eq!(seen(&la), seen(&lb), "at {time} s");
+    }
+}
+
+#[test]
+fn a_state_on_a_beat_is_reached_as_that_beat_ends_and_held() {
+    let f = build(&format!("{HEAD}{NAMED}"), &[]).unwrap();
+    let x = |time: f64, id: &str| {
+        labels(&f, time)
+            .iter()
+            .find(|l| l.id == id)
+            .map(|l| (l.x, l.opacity))
+    };
+    // Empty until `write` starts, at 0.5 s, and whole when it ends, at 1.5 s.
+    assert_eq!(x(0.5, "e.a"), None);
+    let (written, strength) = x(1.5, "e.b").unwrap();
+    assert_eq!(strength, 1.0);
+    assert!(x(1.0, "e.b").unwrap().1 < 1.0);
+    // `wait` isn't named, so nothing moves through it or the pause after it.
+    for time in [1.75, 2.0, 2.5, 2.9, 3.0] {
+        assert_eq!(x(time, "e.b"), Some((written, 1.0)), "at {time} s");
+    }
+    // `move` takes it from where it was to the other place, solid all the way.
+    let (moving, strength) = x(3.5, "e.b").unwrap();
+    assert!(written < moving && moving < x(4.0, "e.b").unwrap().0);
+    assert_eq!(strength, 1.0);
+    // And `gone` leaves nothing.
+    assert!(labels(&f, 4.5).is_empty());
+}
+
+#[test]
+fn it_lays_out_what_a_state_for_each_beat_does() {
+    let named = build(&format!("{HEAD}{NAMED}"), &[]).unwrap();
+    let rows = build(&format!("{HEAD}{ROWS}"), &[]).unwrap();
+    assert_same(&named, &rows, 4.5);
+}
+
+#[test]
+fn its_beats_can_be_written_after_it() {
+    let beats = "pause 0.5\nbeat write for 1\nbeat wait for 1\npause 0.5\nbeat move for 1\nbeat gone for 0.5\n";
+    let rest = HEAD.replace(beats, "");
+    assert_ne!(rest, HEAD);
+    let after = build(&format!("{rest}{NAMED}\n{beats}"), &[]).unwrap();
+    let before = build(&format!("{HEAD}{NAMED}"), &[]).unwrap();
+    assert_same(&after, &before, 4.5);
+}
+
+/// The square's `work`, with the state each of its beats holds written out for that beat.
+#[test]
+fn the_square_lays_out_what_a_state_for_each_of_its_beats_does() {
+    let root = concat!(env!("CARGO_MANIFEST_DIR"), "/../../corpus/");
+    let read = |path: &str| std::fs::read_to_string(format!("{root}{path}")).unwrap();
+    let pen = read("006-square/square.pen");
+    let sheets = [read("theme.style"), read("006-square/plain.style")];
+    let sheets: Vec<&str> = sheets.iter().map(String::as_str).collect();
+
+    let open = "expression work {\n";
+    let start = pen.find(open).expect("the square's `work`");
+    let end = start + pen[start..].find("\n}").unwrap();
+    let states: Vec<(&str, &str)> = pen[start + open.len()..end]
+        .lines()
+        .map(|line| {
+            let (on, state) = line.trim().split_once(": ").unwrap();
+            (on.strip_prefix("on ").unwrap(), state)
+        })
+        .collect();
+    let beats: Vec<&str> = pen
+        .lines()
+        .filter_map(|line| line.strip_prefix("beat ")?.split(' ').next())
+        .collect();
+    assert!(states.iter().all(|(on, _)| beats.contains(on)));
+    let mut holds = "empty";
+    let mut rows = String::from("expression work by beat {\n");
+    for beat in &beats {
+        if let Some((_, state)) = states.iter().find(|(on, _)| on == beat) {
+            holds = state;
+        }
+        rows.push_str(&format!("  {holds}\n"));
+    }
+    // More beats than states, or this compares a figure with itself.
+    assert!(beats.len() > states.len(), "{} beats", beats.len());
+    let by_beat = format!("{}{rows}{}", &pen[..start], &pen[end + 1..]);
+
+    let named = build(&pen, &sheets).unwrap();
+    let rows = build(&by_beat, &sheets).unwrap();
+    let duration = named.scene.duration.unwrap();
+    assert_eq!(rows.scene.duration, Some(duration));
+    let frames = (duration * 60.0).round() as usize;
+    for k in 0..=frames {
+        let time = k as f64 / 60.0;
+        let seen = |f: &Figure| -> Vec<(String, f64, f64, f64)> {
+            prepare(f, &Inputs::at(time), 680, 470, 2.0)
+                .unwrap()
+                .labels
+                .iter()
+                .map(|l| (l.id.clone(), l.x, l.y, l.opacity))
+                .collect()
+        };
+        assert_eq!(seen(&named), seen(&rows), "at {time} s");
+    }
+}
+
+fn error(expression: &str) -> pencil_core::Error {
+    build(&format!("{HEAD}{expression}"), &[]).unwrap_err()
+}
+
+/// The line a state is on, counting from the expression's own first line.
+fn line(of_expression: usize) -> usize {
+    HEAD.lines().count() + of_expression
+}
+
+#[test]
+fn a_state_on_a_beat_that_is_not_one_is_an_error_at_that_state() {
+    let err = error("expression e {\n  on write: \"a\" at left\n  on mvoe: \"a\" at right\n}");
+    assert_eq!(
+        err.message,
+        "`e` reaches a state on `mvoe`, and no beat is named that: did you mean `move`?"
+    );
+    assert_eq!(err.line, line(3));
+
+    let err = error("expression e {\n  on nothing: \"a\" at left\n}");
+    assert!(
+        err.message
+            .starts_with("`e` reaches a state on `nothing`, and no beat is named that."),
+        "{err}"
+    );
+    assert_eq!(err.line, line(2));
+
+    // A value moves as a beat's name does, but it has no place in the timeline.
+    let err = error("let half = write / 2\nexpression e {\n  on half: \"a\" at left\n}");
+    assert!(
+        err.message
+            .contains("`half`, which is a value and not a beat"),
+        "{err}"
+    );
+    assert_eq!(err.line, line(3));
+}
+
+#[test]
+fn a_beat_named_twice_is_an_error_at_the_second_state() {
+    let err = error(
+        "expression e {\n  on write: \"a\" at left\n  on move: \"a\" at right\n  on write: empty\n}",
+    );
+    assert_eq!(
+        err.message,
+        format!(
+            "`write` brings `e` to a state twice, here and on line {}. A beat is one move, so it ends in one state",
+            line(2)
+        )
+    );
+    assert_eq!(err.line, line(4));
+}
+
+#[test]
+fn states_out_of_the_timelines_order_are_an_error_at_the_one_that_runs_first() {
+    let err = error(
+        "expression e {\n  on write: \"a\" at left\n  on gone: empty\n  on move: \"a\" at right\n}",
+    );
+    assert_eq!(
+        err.message,
+        "`move` comes before `gone` in the timeline, but follows it in `e`. Its states are written in the order their beats run"
+    );
+    assert_eq!(err.line, line(4));
+}
+
+#[test]
+fn a_figure_whose_beats_have_no_lengths_has_none_to_name() {
+    let err = build(
+        "place p = (0, 0)\nlet P = (0, 0)\nlet Q = (1, 0)\nbeat \"One.\" {\n  dot P\n}\nbeat \"Two.\" {\n  dot Q\n}\nexpression e {\n  on two: \"a\" at p\n}",
+        &[],
+    )
+    .unwrap_err();
+    assert!(
+        err.message.contains("this figure's beats have no names")
+            && err.message.contains("`expression e by beat`"),
+        "{err}"
+    );
+    assert_eq!(err.line, 11);
+}
+
+#[test]
+fn a_state_says_on_or_the_expression_says_by_and_not_both() {
+    let err = error("expression e by beat {\n  on write: \"a\" at left\n}");
+    assert!(err.message.contains("don't say `on`"), "{err}");
+    assert_eq!(err.line, line(2));
+    let err = error("expression e {\n  \"a\" at left\n}");
+    assert!(err.message.contains("`e` has no `by`"), "{err}");
+    assert_eq!(err.line, line(2));
+    let err = error("expression e \"a\" at left");
+    assert!(err.message.contains("expected `by`"), "{err}");
+}
+
+/// The reference's two examples, one for each way to drive an expression, as they're written.
+#[test]
+fn the_references_examples_compile() {
+    let doc = include_str!("../../../docs/language.md");
+    let start = doc.find("### Expressions that move").unwrap();
+    let end = start + doc[start..].find("### Mathematics in labels").unwrap();
+    let blocks: Vec<&str> = doc[start..end].split("```").skip(1).step_by(2).collect();
+    assert_eq!(blocks.len(), 2, "{blocks:?}");
+    let view = "viewport { x: -2..2, y: -2..2 }\n";
+    let named = build(&format!("{view}{}", blocks[0]), &[]).unwrap();
+    assert_eq!(named.scene.expressions[0].states.len(), 3);
+    assert!((named.scene.duration.unwrap() - 6.2).abs() < 1e-9);
+    let by = build(&format!("{view}{}", blocks[1]), &[]).unwrap();
+    assert_eq!(by.scene.expressions[0].states.len(), 4);
+    // The series starts on its first term, and a reader's `n` takes it to the fourth.
+    assert_eq!(labels(&by, 0.0).len(), 1);
+}
