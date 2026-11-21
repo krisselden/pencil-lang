@@ -445,6 +445,13 @@ each one changes the language or the frame's order, so they come before more fig
      The driver is the sum of the named beats' progress, which the explainer's roulette already wrote by hand as
      `by said`, so the IR has nothing new, and only the square's golden changed: its `by`, and three states fewer.
      `by` a number stays, for a param a reader scrubs.
+   - **The square's `shorten` beat is a pause, 2026-11-21.** The cleanup the note proposed, as its own change, since
+     it changes what a reader sees: `shorten` did nothing but shorten the equation, so the beat is gone, the 1.6 s
+     after `name` is one pause, and `z = a + b i` becomes `z` on `measure`, as its angle and length are written. The
+     terms `= a + b i` now leave from 5.7 to 6.2 s where they left from 5.0 to 5.5 s, so the long form is read for
+     1.6 s and not 0.9 s. Nothing else moved: over the same 4,561 frames no stroke, region or arrow differs at all,
+     and no other label by more than 1e-11 px. The figure is 19 s as before, with 15 beats where it had 16, so a reader
+     stepping through has one stop fewer, and the fifth step shows the short form and the measurements together.
    - **Copies drawn early, fixed the same day.** On a whole step an expression was drawn as the start of its next move:
      the state it holds, plus the next state's copies at full strength on what they copy. So `z` was drawn twice, and
      darker, through the two pauses before `scale_a` and `scale_b` (7.5 to 7.8 s and 8.9 to 9.2 s), and nowhere else:
