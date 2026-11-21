@@ -773,6 +773,17 @@ draft and a real recording can give the same timing data, so the words can be ed
 - **Not checked:** a take in Kris's voice, and whether a vowel's onset is where an arrival should land. The lab's docstring renders
   a draft to judge that by.
 
+**`retime` stops on a length it can't read, 2026-11-21.** `retime` finds the story by pattern: a pause with a number, or a
+beat that says `for` and a number. A named beat can now leave `for` out, and such a beat matched nothing, so it was
+invisible: anchored, it was "no beat named …", and unanchored, every beat after it landed a second early with nothing
+said. A length that's an expression, `for duration / 3` or `pause 1/2`, had the same hole before today, and `pause 1/2`
+was read as a pause of 1. Any beat or pause whose length isn't a plain number on its line now stops the run, before a
+take or any audio is read, with the file and line it's on and what to write. The script doesn't learn the compiler's
+rule, a second or a share of the `duration`: that arithmetic would then be kept twice. The older `beat "caption" { … }`
+step is left alone, and a beat with a length and no name, which the pattern also missed, is now counted. No beat in the
+explainer is written any of these ways, and retiming it from the draft take writes the same `.pen`, audio and prompt
+timings as before, to the byte.
+
 ## The playground
 
 `web/playground.html`, built on 2026-11-11 so Kris can react to the syntax while narration waits for a take. A figure's `.pen` and

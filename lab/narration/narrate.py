@@ -17,6 +17,14 @@ and the next line's first word waits for it.
     pixi run python narrate.py align out/draft.wav limacon.txt out/draft.json
     pixi run python narrate.py retime ../explainer/limacon.pen out/draft.json out/limacon.pen
 
+`retime` reads the story from the `.pen` as it's written: each `pause 0.4`, and each beat that
+says `for` and a number of seconds. It doesn't work a length out. A named beat that leaves `for`
+out takes a second in the figure, or a share of its `duration`, and a length can be an expression,
+and both are the compiler's arithmetic, which isn't kept a second time here. So a beat or a pause
+whose length isn't a plain number stops `retime`, with the line and what to write, before anything
+is read or written. A `beat "caption" { … }` step has no name and no length, and isn't part of a
+story that's timed.
+
 `retime` writes the narration as it's placed in the story to `out/limacon.wav`. To watch it, from
 the repo's root:
 
@@ -274,21 +282,26 @@ NUMBERS = {"zero": "0", "one": "1", "two": "2", "three": "3"}
 USE = re.compile(r'^\s*use\s+"([^"]+)"\s*(?://.*)?$')
 
 
-def flat(pen, seen=None):
-    """A `.pen` as the lines the figure reads: each `use "file"` line replaced by that file's
-    lines, once, found from the file that says it. The retimed copy is written this way, as one
-    file, so it stands alone in `out/`."""
+def flat_from(pen, seen=None):
+    """A `.pen` as the lines the figure reads, each with the file it's in and its line there: each
+    `use "file"` line replaced by that file's lines, once, found from the file that says it."""
     pen = Path(pen)
     seen = {pen.resolve()} if seen is None else seen
     lines = []
-    for line in pen.read_text().splitlines():
+    for number, line in enumerate(pen.read_text().splitlines(), 1):
         used = USE.match(line)
         if not used:
-            lines.append(line)
+            lines.append((line, pen, number))
         elif (pen.parent / used[1]).resolve() not in seen:
             seen.add((pen.parent / used[1]).resolve())
-            lines += flat(pen.parent / used[1], seen)
+            lines += flat_from(pen.parent / used[1], seen)
     return lines
+
+
+def flat(pen):
+    """A `.pen` as the lines the figure reads. The retimed copy is written this way, as one file,
+    so it stands alone in `out/`."""
+    return [line for line, _, _ in flat_from(pen)]
 
 
 def unlabeled(pen, script):
@@ -329,12 +342,68 @@ def labels(pen, script):
     return not missing
 
 
-ITEM = re.compile(r"^(pause|beat)\s+(?:(\w+)\s+(?:\"[^\"]*\"\s+)?for\s+([\d.]+)|([\d.]+))")
+# A pause, or a beat with a length: `pause 0.4`, `beat spin "A point goes round." for 2`. The name
+# and the caption can each be left out.
+ITEM = re.compile(r"^(pause|beat)\s+(?:(?:(?!for\b)(\w+)\s+)?(?:\"[^\"]*\"\s+)?for\s+([\d.]+)|([\d.]+))")
+# The older step, which has no name and no length: `beat "caption" tag t {`.
+STEP = re.compile(r"^beat\s+\"[^\"]*\"(?!\s+for\b)")
+# What can follow a beat's length on its line.
+AFTER_LENGTH = ("show", "drop", "focus", "tag", "{")
+
+
+def story(pen):
+    """The figure's lines, and its pauses and beats in order as `(line of the figure, kind, name,
+    seconds)`. Lengths are read as written. A beat or a pause whose length isn't a plain number
+    of seconds on its line can't be timed here, and silently leaving it out would move every beat
+    after it, so it stops the run with each such line and what to write."""
+    lines = flat_from(pen)
+    items, wrong = [], []
+    for i, (line, file, number) in enumerate(lines):
+        if not re.match(r"^(pause|beat)\b", line) or STEP.match(line):
+            continue
+        kind = line.split()[0]
+        written = line.split("//")[0].strip()
+        seconds = None
+        m = ITEM.match(line)
+        if m:
+            # The number has to end where it's read, and what follows it has to be a clause or
+            # nothing, or it was the start of an expression, such as `1/2`, `2·π` or `0.5 + extra`.
+            after = line[m.end():].split("//")[0]
+            words = after.split()
+            ends = after[:1] in ("", " ", "\t", "{")
+            clause = not words or (kind == "beat" and words[0].startswith(AFTER_LENGTH))
+            if ends and clause:
+                try:
+                    seconds = float(m[3] or m[4])
+                except ValueError:
+                    pass
+        if seconds is not None:
+            items.append((i, m[1], m[2], seconds))
+            continue
+        named = re.match(r"^beat\s+(?!for\b)(\w+)", line)
+        if kind == "pause":
+            what, example = "this pause", "`pause 1`"
+        elif named:
+            what, example = f"`beat {named[1]}`", f"`beat {named[1]} for 1`"
+        else:
+            what, example = "this beat", "`for 1`"
+        # A caption can say "for", so it's looked for outside one.
+        says_for = re.search(r"\bfor\b", re.sub(r'"[^"]*"', "", written))
+        why = "has no length written" if kind == "beat" and not says_for else \
+            "has a length that isn't a plain number"
+        wrong.append(f"{file}:{number}: {what} {why}: `{written}`. Write a number of seconds, as in {example}")
+    if wrong:
+        sys.exit("\n".join(wrong) + "\n`retime` reads each beat's and pause's length as it's written, and "
+                 "doesn't work one out: a beat with no `for` takes a second in the figure, or a share of "
+                 "its `duration`, and that's the compiler's to say.")
+    return [line for line, _, _ in lines], items
 
 
 def retime(pen, timing, out):
     """Places each line of a take in the story, and works out the waits that put each anchored
     beat on its word. Beat lengths stay as written, since they're how fast a move reads."""
+    # The story first, since a beat it can't time stops everything, and needs nothing else to find.
+    text, items = story(pen)
     import numpy as np
     import soundfile
 
@@ -346,13 +415,7 @@ def retime(pen, timing, out):
     cuts = [0.0] + [(spans[i][1] + spans[i + 1][0]) / 2 for i in range(count - 1)]
     cuts.append(take["duration"])
 
-    text = flat(pen)
-    items = []  # (line of the figure, kind, name, seconds)
-    for i, line in enumerate(text):
-        m = ITEM.match(line)
-        if m:
-            items.append((i, m[1], m[2], float(m[3] or m[4])))
-    index = {it[2]: k for k, it in enumerate(items) if it[1] == "beat"}
+    index = {it[2]: k for k, it in enumerate(items) if it[1] == "beat" and it[2]}
     missing = [a["beat"] for a in anchors if a["beat"] not in index]
     if missing:
         sys.exit(f"no beat named {', '.join(missing)}")
