@@ -176,7 +176,9 @@ beat gone for 0.5 drop c, P
   moves: 1.5 is halfway through the second beat. Time drives it, and a reader stepping through
   or a `bind beat` can drive it instead, and everything below follows.
 - **A beat's name is its progress,** 0 until it starts, 1 once it's done, and moving evenly in
-  between. So `let r = grow` grows with that beat, and `snap(grow)` eases it.
+  between. So `let r = grow` grows with that beat, and `snap(grow)` eases it. It's a number like any other, so when
+  two things follow one beat, ease it once and have both read that: with `let swept = smoothstep(0, 1, sweep)`, a point
+  at angle `2·π·swept` and a count `floor(24·swept)` of the marks it has passed stay together, however the easing changes.
 - **`show` and `drop` say when marks are there,** by name or `.tag`, and a beat's block shows
   what it declares. A mark that's ever shown isn't there before it, a dropped one isn't there
   after, and while it isn't there it isn't drawn at all. A mark no beat names is always there.

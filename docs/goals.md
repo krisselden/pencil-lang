@@ -458,6 +458,12 @@ each one changes the language or the frame's order, so they come before more fig
      `b` fade in where they end, their strengths adding to 1, and nothing travels. A test holds both to that, and
      `web/terms.html` plays them on one clock. They're in the lab and not the corpus, since no figure of the site's
      needs them: they show a rule of the language, which `language.md` now says next to it.
+   - **A beat's progress, eased once, 2026-11-21.** In the explainer's limaçon (`lab/explainer/limacon/circles.pen`;
+     the corpus's `012-limacon` has no beats) the angle C is at and the count of copies it leaves each wrote
+     `smoothstep(0, 1, sweep)`. They agreed, and only because the two were typed alike. `let swept` says it once and
+     both read it. Nothing drawn changed: 661 frames as SVG over the whole 65.6 s, and 81 rendered through the sweep,
+     are the same bytes before and after. A test now holds what the name is for: at every sample of the sweep the
+     count of copies is how many 24ths of the turn C has come, so each appears as the moving circle reaches it.
    - **Copies drawn early, fixed the same day.** On a whole step an expression was drawn as the start of its next move:
      the state it holds, plus the next state's copies at full strength on what they copy. So `z` was drawn twice, and
      darker, through the two pauses before `scale_a` and `scale_b` (7.5 to 7.8 s and 8.9 to 9.2 s), and nowhere else:

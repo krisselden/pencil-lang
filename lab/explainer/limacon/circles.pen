@@ -10,12 +10,15 @@ pause 0.8
 // a faint copy every 24th of the way. Then it moves on, and goes round once more as E traces.
 let start = atan2(B.y, B.x - A.x)
 let phi0 = 320·π / 180
-let phi = start + 2·π·smoothstep(0, 1, sweep) + (phi0 - start)·smoothstep(0, 1, place) + 2·π·smoothstep(0, 1, trace) + 2·π·smoothstep(0, 1, pedal_round) + 2·π·smoothstep(0, 1, conchoid_round) + 2·π·smoothstep(0, 1, roll)
+// How far round the sweep has come, eased, said once: the angle C is at and the count of copies
+// both read it, so a copy appears as the moving circle reaches it, however the easing changes.
+let swept = smoothstep(0, 1, sweep)
+let phi = start + 2·π·swept + (phi0 - start)·smoothstep(0, 1, place) + 2·π·smoothstep(0, 1, trace) + 2·π·smoothstep(0, 1, pedal_round) + 2·π·smoothstep(0, 1, conchoid_round) + 2·π·smoothstep(0, 1, roll)
 let n = (cos(phi), sin(phi))
 let C = A + R·n
 // Drawn from 1, as a compass would.
 curve through_one = parametric (u): C + (one - C)·exp(i·u) for u in 0..2·π
 dot C
 label name_C = "C" at C away C - A
-let passed = min(floor(24·smoothstep(0, 1, sweep)), 23)
+let passed = min(floor(24·swept), 23)
 circles trail = circle(A + R·(cos(start + 2·π·k / 24), sin(start + 2·π·k / 24)), one) for k in 0..passed tag trail
