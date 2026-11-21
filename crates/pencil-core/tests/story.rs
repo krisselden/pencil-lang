@@ -121,3 +121,48 @@ fn captions_are_drawn_only_when_a_sheet_asks() {
     // Centered along the bottom, 28 px up by default.
     assert_eq!((caption.x, caption.y, caption.size), (100.0, 172.0, 12.0));
 }
+
+/// A beat's progress read by ordinary math, in the explainer's limaçon: `swept` eases the sweep
+/// once, and both the angle C is at and the count of copies left behind read it. So a copy is
+/// there from the moment the moving circle reaches it, and not before.
+#[test]
+fn the_limacons_copies_appear_as_the_moving_circle_reaches_them() {
+    use pencil_core::{Source, Sources};
+    let name = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../lab/explainer/limacon.pen"
+    );
+    let text = std::fs::read_to_string(name).unwrap();
+    let read = |file: &str| std::fs::read_to_string(file).ok();
+    let sources = Sources::read(Source { name, text: &text }, &[], &read).unwrap();
+    let composition = sources.compose().unwrap();
+    let figure = &composition.panels[0].figure;
+    let value = |time: f64, id: &str| {
+        eval::frame_env(figure, &at(time))
+            .unwrap()
+            .get(id)
+            .unwrap_or_else(|| panic!("no `{id}` at {time} s"))
+    };
+    // Every sample while the sweep is under way, found from `sweep` itself.
+    let duration = figure.scene.duration.unwrap();
+    let during: Vec<f64> = (0..=4000)
+        .map(|k| duration * k as f64 / 4000.0)
+        .filter(|t| (1e-6..1.0 - 1e-6).contains(&value(*t, "sweep")))
+        .collect();
+    assert!(during.len() > 200, "{} samples in the sweep", during.len());
+    let step = 2.0 * std::f64::consts::PI / 24.0;
+    let mut counts = std::collections::BTreeSet::new();
+    for time in during {
+        // Copy k sits k 24ths of the way round from where C starts.
+        let reached = (value(time, "phi") - value(time, "start")) / step;
+        // A sample that lands on a copy could round either way.
+        if (reached - reached.round()).abs() < 1e-6 {
+            continue;
+        }
+        let passed = value(time, "passed");
+        assert_eq!(passed, reached.floor().min(23.0), "at {time} s");
+        counts.insert(passed as i64);
+    }
+    // Every count was seen on the way, from none passed to all of them.
+    assert_eq!(counts.len(), 24, "{counts:?}");
+}

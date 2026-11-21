@@ -18,18 +18,30 @@ pub struct Document {
     pub items: Vec<Item>,
 }
 
-/// A beat with a length, as written.
+/// A move, as written: a beat with a name, a length, or both.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Move {
     pub name: Option<String>,
     pub caption: Option<String>,
-    pub length: Expr,
+    /// How long it takes. A named beat can leave it out, and takes a second, or its share of
+    /// what a stated `duration` has left after the lengths and pauses that are written.
+    pub length: Option<Expr>,
     pub show: Vec<String>,
     pub drop: Vec<String>,
     pub focus: Vec<Focus>,
     pub tags: Vec<String>,
     /// Whether it has a block, closed by an `EndBeat`.
     pub block: bool,
+    pub line: usize,
+}
+
+/// One state of an expression, as written.
+#[derive(Clone, Debug, PartialEq)]
+pub struct State {
+    /// The beat that brings the expression to this state, in `on factor: …`.
+    pub on: Option<String>,
+    /// Each written expression and the place it sits at, and none for `empty`.
+    pub pieces: Vec<(String, String)>,
     pub line: usize,
 }
 
@@ -203,11 +215,12 @@ pub enum Item {
         hang: Option<String>,
         line: usize,
     },
-    /// A list of states, each a list of written expressions and where they sit.
+    /// A list of states, each a list of written expressions and where they sit. With `by`, a
+    /// number says which state it's in. Without, each state says `on` which beat it's reached.
     Expression {
         name: String,
-        by: Expr,
-        states: Vec<Vec<(String, String)>>,
+        by: Option<Expr>,
+        states: Vec<State>,
         line: usize,
     },
     Arrow {
@@ -699,13 +712,14 @@ pub const MINUS_PLUS: &str = "MinusPlus";
 const MOVE_WORDS: [&str; 5] = ["for", "show", "drop", "focus", "tag"];
 
 impl Parser {
-    /// Whether the `beat` just read has a length: `beat name "caption" for 2`, with the name
-    /// and caption optional. The older `beat "caption" { … }` is a step with no length.
+    /// Whether the `beat` just read is a move: `beat name "caption" for 2`, with the name and
+    /// caption optional, or one with a name and no length, `beat name show P`. The older
+    /// `beat "caption" { … }` is a step with no length and no name.
     fn is_move(&self) -> bool {
         let mut at = self.pos;
         let tok = |i: usize| self.toks.get(i).map(|t| &t.tok);
         if matches!(tok(at), Some(Tok::Ident(w)) if !MOVE_WORDS.contains(&w.as_str())) {
-            at += 1;
+            return true;
         }
         if matches!(tok(at), Some(Tok::Str(_))) {
             at += 1;
@@ -1051,14 +1065,51 @@ impl Parser {
             }
             "expression" => {
                 let name = self.ident("an expression's name")?;
-                self.keyword("by")?;
-                let by = self.expr()?;
+                // A number drives it through its states, or each state names its beat.
+                let by = if self.at_word("by") {
+                    self.bump();
+                    Some(self.expr()?)
+                } else if matches!(self.peek(), Tok::Punct(p) if *p == "{") {
+                    None
+                } else {
+                    return Err(self.error(format!(
+                        "expected `by` and what drives `{name}`, or `{{` and states that each say `on` a beat, found {}",
+                        self.peek()
+                    )));
+                };
                 self.expect("{")?;
                 let mut states = Vec::new();
                 while !self.eat("}") {
+                    let line = self.line();
+                    let on = match &by {
+                        None => {
+                            if !self.at_word("on") {
+                                return Err(self.error(format!(
+                                    "`{name}` has no `by`, so each of its states says which beat brings it, as in `on factor: \"z\" at place`. Found {}",
+                                    self.peek()
+                                )));
+                            }
+                            self.bump();
+                            let beat = self.ident("a beat's name")?;
+                            self.expect(":")?;
+                            Some(beat)
+                        }
+                        Some(_) => {
+                            if self.at_word("on") {
+                                return Err(self.error(format!(
+                                    "`{name}` is driven `by` a number, so its states come in order and don't say `on`. Leave out `by` to name a beat for each"
+                                )));
+                            }
+                            None
+                        }
+                    };
                     if self.at_word("empty") {
                         self.bump();
-                        states.push(Vec::new());
+                        states.push(State {
+                            on,
+                            pieces: Vec::new(),
+                            line,
+                        });
                         continue;
                     }
                     let mut pieces = Vec::new();
@@ -1077,7 +1128,7 @@ impl Parser {
                             break;
                         }
                     }
-                    states.push(pieces);
+                    states.push(State { on, pieces, line });
                 }
                 items.push(Item::Expression {
                     name,
@@ -1142,8 +1193,12 @@ impl Parser {
                     _ => None,
                 };
                 let caption = self.optional_string();
-                self.keyword("for")?;
-                let length = self.expr()?;
+                let length = if self.at_word("for") {
+                    self.bump();
+                    Some(self.expr()?)
+                } else {
+                    None
+                };
                 let (mut show, mut drop, mut focus, mut tags) = (vec![], vec![], vec![], vec![]);
                 loop {
                     if self.at_word("focus") {

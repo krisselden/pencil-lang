@@ -1,0 +1,5 @@
+// Both term figures, under corpus/theme.style.
+style figure { width: 300px; height: 100px }
+style term { size: 1.6em }
+// The factor that parts, so an eye can follow it.
+style term.b { fill: green }

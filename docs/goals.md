@@ -163,6 +163,35 @@ Proposed by Claude on 2026-11-09, not yet agreed:
 - **Should a span take TeX too?** A label's mathematics is Pencil's own notation in `$…$` (`language.md`, Mathematics in
   labels). Kris is on the fence about TeX inside the span, which a LaTeX or manim user types from memory. Its braces collide
   with `{expr}`, and it would be a second notation.
+- **Should a reader's step play the move?** Open since 2026-11-21, and Kris's to decide. A reader's step never plays a
+  move, whatever the beat: the element seeks to the end of the next beat and pauses (in the square, six steps land at
+  1.2, 2.2, 3.2, 4.1, 6.2 and 7.5 s). So a reader who steps through the square sees 15 stills, and no term travels,
+  copies off `z`, or factors, though every one of those moves has a length.
+
+  What's settled around it. The question began as how a state should arrive on a beat with no length, which had no
+  "during" at all. Kris: "If a beat has no length and there is no duration maybe just make it 1 second by default?"
+  Tried and kept the same day, for named beats (`decisions.md`): a named beat that leaves `for` out is a move of a
+  second, or of its share of what a stated `duration` has left, so it has progress and a state `on` it plays. The
+  square with every length taken off compiles as it is: 15 beats of a second and its 8.4 s of pauses, 23.4 s where its
+  author's lengths made 18.8, with the algebra playing through each second exactly as if every beat said `for 1`
+  (`tests/transitions.rs`). That gives every named beat a move to play. It doesn't play it on a step.
+
+  Recommended, not built: the element's forward step goes to where the next beat starts (its end, less its length),
+  plays, and pauses at its end, for a figure whose beats time drives, and a step back still jumps. `web/stepped.html`
+  does that in page script on the square with no lengths: each press of Next plays one second and stops (0.4 to 1.4 s,
+  then 1.7 to 2.7 s), and the same page jumps, as now, for comparison. It changes how every figure with moves steps,
+  the explainer included, so it wants watching there, and its keys and what it says to a screen reader want their
+  tests run. The other way is to leave the element seeking, and a stepping reader keeps seeing stills.
+
+  Not done, and a bigger change: making the older steps moves too, so that the two kinds mix and bounds' ten steps
+  become moves of their 3 s share. Measured on a copy of bounds rewritten that way: `beat` runs 0 to 10 where it ran 0
+  to 9 and follows a timeline where it was a floor, 54 of its 55 marks change in the IR (each gets a `life`, or its
+  `focus` shifts by a beat), and 116 of 121 frames at four a second render differently. Its sheet reads
+  `reveal(self.age, now, later)`, which turns over at an age of a half, so every mark would go to its `later` look
+  halfway through its own 3 s. Bounds' sheet would have to be rewritten on `self.life` and `self.focus` first. Steps
+  are as they were, so bounds and its golden are too. A second way to give steps a clock, a second each when no
+  `duration` is stated while they stay whole steps, would change no figure here or on the blog, since the only one with
+  steps states its `duration`. It isn't built either.
 - **How should a moving loop's dashes behave?** A loop gets a whole number of dashes, so they jump as it grows: about 25 times a
   cycle on the breathing circle, by arithmetic, not watched. The blog's hysteresis depends on history, which breaks seeking. A
   related one: dashes on a moving range ride with its start, and a real string's would stay put as it unwinds.
@@ -237,8 +266,6 @@ Proposed by Claude on 2026-11-09, not yet agreed:
 
 Built, and wrong or short in a known way. None has blocked a figure.
 
-- **Copies drawn early:** in `006-square`, a copy of `z` was drawn on top of `z` a state early, so it was darker. A bug in how
-  copies are drawn, not fixed.
 - **Roots can swap** if a construction reverses its line's direction, as `line(A, B)` does when A passes through B. Branch labels and
   a tracker would fix it.
 - **Marks pop in and out:** no `:appearing`, `:vanishing` or `on appear: fade`. Rim-only disks also pop a half-plane on as a circle
@@ -437,6 +464,87 @@ each one changes the language or the frame's order, so they come before more fig
      `corpus/006-square` and `web/square.html` as the figure. Its test checks the math itself: F.O. + I.L. is z², and
      its triangle is the first one scaled by |z| and turned. GPU matches the oracle within 1/255 at six times.
      Not built: statements like `zbi = zb · i` that would drive an arrow and its label from one line.
+   - **States on named beats, 2026-11-21.** Kris's note: in the square nothing read `shorten` by name, and its job was
+     to be the fifth beat, so that `work by beat` reached its fifth row. Making it a pause would have moved every later
+     row onto the wrong beat. An expression's states can now each say the beat that brings them, `on factor: …`
+     (`language.md`, Expressions that move; `decisions.md`), and a beat no state names is a hold that isn't written.
+     The square's `work` went from 16 rows to 13 states with nothing else changed. Checked by number: every label of
+     the figure, 22,400 of them over 4,561 frames at 240 a second, is in the same place at the same strength as with
+     the rows, to the bit, and a test keeps that, writing the rows back out from the states (`tests/transitions.rs`).
+     The driver is the sum of the named beats' progress, which the explainer's roulette already wrote by hand as
+     `by said`, so the IR has nothing new, and only the square's golden changed: its `by`, and three states fewer.
+     `by` a number stays, for a param a reader scrubs.
+   - **A state writes the places it changes, 2026-11-21.** Kris, on seeing naming beats alone: the note's examples have
+     one place and the square has six, so most of the repetition he wanted gone was inside the states. Its 16 rows wrote
+     `"z" at at_z` eleven times, and whole states on named beats still wrote it eight. Now a state `on` a beat sets the
+     places it names and leaves the rest, a term written at a new place leaves its old one, and `empty` clears them all
+     (`language.md`; `decisions.md`). The square's `work` is 13 lines of one piece each, and `"z" at at_z` is written
+     once. Checked as the first stage was: the sketch Kris approved, with `shorten` still a beat, compiles to the
+     IR of that stage exactly, and lays out as main's 16 rows do at all 4,561 frames, every difference 0. No state of
+     it differs from the rows, so neither the sketch nor the rule needed a correction. With the cleanup on top, the
+     square's golden didn't change at all. A test works the states out a second time, on its own from the rule, and
+     holds the figure to them. `by` a number still writes whole states.
+     What it costs, as found. What `work` holds on `slide` is on no line of the source: it's `z` from `measure`,
+     `z.1 a` from `scale_a` and what `slide` writes. `pencil ir` lists every state whole, and that's where to read it.
+     And a term written at the wrong place, when that place exists, is no error: `on factor: … at at_z` in the square
+     would put the factored sum in `z`'s place, with `z` gone, and leave a lone `z.2` at the old sum. Nothing can know which place was
+     meant. A place that doesn't exist was already an error, and now says the nearest name. Two checks that would
+     catch slips near this one, neither built: a state that changes nothing (a hold written by habit), and a place
+     that's written and never cleared or written again before the end, which is usually right, as `z` is.
+   - **The roulette on named beats, 2026-11-21.** `lab/explainer/limacon/roulette.pen` drove its two expressions
+     `by said`, with `let said = name_hub + name_slow + name_fast + squaring + quiet`: the sum `on` works out, written by
+     hand, with which beat goes with which row left to their order. A sum with a beat more or a beat fewer than the rows
+     compiles without a word. Both expressions now say their beats, and `said` is gone, since nothing else read it.
+     `defs` was five rows, three of them `empty` only to stay in step with `work`, and is two states: `on squaring` and
+     `on quiet: empty`. `work` is five states as before: it's one line that grows, so each state still writes the
+     whole line, and writing per place saves it nothing. Nothing drawn changed: 661 frames as SVG over the whole 65.6 s
+     and 142 rendered from 39 to 58.5 s are the same bytes. In the IR, `said` is gone, each `by` is its sum, `defs` has
+     two states, and one state of `work` lists its two places in the other order, the one already there first.
+   - **After review, 2026-11-21: an expression above its beats.** A state's beat was looked up where the expression
+     was written, so its beats were brought early, as for a value that reads a beat's name. A beat with a block can't
+     come early, so an expression above one was an error, with no line, and a wrong name was only checked against the
+     beats read so far, so `on mvoe` above `beat move` got no "did you mean". The beats are now looked up once all are
+     read. An expression can be written anywhere, its terms drawn where it's written, and a wrong name is checked
+     against every beat. The ordering errors that printed no line (a label or any other mark reading what can't come
+     early) now say the line of the statement that needed it.
+   - **After review: nothing written at a place.** `on b: "" at p` emptied `p`, by accident of how an empty place is
+     dropped, while the reference said one place can't be cleared. It's an error now, so how to clear one place is
+     still to be chosen and not settled by a side effect. No figure wrote it. The square's 16 rows as main wrote them
+     are typed out in a test, compiled `by beat`, and the per-place states are held to them state by state: the check
+     that doesn't go through the rule.
+   - **After review: lengths past the `duration`.** With a second for a named beat that writes no length, `duration 1`, `beat a for 2`, `beat b`
+     said the lengths "leave nothing" for `b`. They run past the duration by themselves, and now say that.
+   - **A named beat with no length is kept, 2026-11-21.** Asked whether to keep the trial where a named beat with no
+     length takes one second, Kris: "Keep it". So it's the rule (`decisions.md`; `language.md`, Beats), and what still
+     said that only a beat with a length has a name is corrected: three errors about a state's beat, the one for a
+     figure with no `duration` to read, and the one for mixing the two kinds, which now says a figure's beats are all
+     moves or all steps and that a name makes a move. Each is pinned by a test. What's open is whether a reader's step
+     plays the move (Questions).
+   - **The square's `shorten` beat is a pause, 2026-11-21.** The cleanup the note proposed, as its own change, since
+     it changes what a reader sees: `shorten` did nothing but shorten the equation, so the beat is gone, the 1.6 s
+     after `name` is one pause, and `z = a + b i` becomes `z` on `measure`, as its angle and length are written. The
+     terms `= a + b i` now leave from 5.7 to 6.2 s where they left from 5.0 to 5.5 s, so the long form is read for
+     1.6 s and not 0.9 s. Nothing else moved: over the same 4,561 frames no stroke, region or arrow differs at all,
+     and no other label by more than 1e-11 px. The figure is 19 s as before, with 15 beats where it had 16, so a reader
+     stepping through has one stop fewer, and the fifth step shows the short form and the measurements together.
+   - **A term is what's between spaces, shown, 2026-11-21.** Two figures in `lab/expressions`, `joined.pen` and
+     `spaced.pen`, with the same two states, written `2ab` and `2 a b`, where the second state writes `b` at another
+     place. Spaced, `2` and `a` don't move at all and `b` travels solid. Joined, `2ab` fades where it is while `2a` and
+     `b` fade in where they end, their strengths adding to 1, and nothing travels. A test holds both to that, and
+     `web/terms.html` plays them on one clock. They're in the lab and not the corpus, since no figure of the site's
+     needs them: they show a rule of the language, which `language.md` now says next to it.
+   - **A beat's progress, eased once, 2026-11-21.** In the explainer's limaçon (`lab/explainer/limacon/circles.pen`;
+     the corpus's `012-limacon` has no beats) the angle C is at and the count of copies it leaves each wrote
+     `smoothstep(0, 1, sweep)`. They agreed, and only because the two were typed alike. `let swept` says it once and
+     both read it. Nothing drawn changed: 661 frames as SVG over the whole 65.6 s, and 81 rendered through the sweep,
+     are the same bytes before and after. A test now holds what the name is for: at every sample of the sweep the
+     count of copies is how many 24ths of the turn C has come, so each appears as the moving circle reaches it.
+   - **Copies drawn early, fixed the same day.** On a whole step an expression was drawn as the start of its next move:
+     the state it holds, plus the next state's copies at full strength on what they copy. So `z` was drawn twice, and
+     darker, through the two pauses before `scale_a` and `scale_b` (7.5 to 7.8 s and 8.9 to 9.2 s), and nowhere else:
+     of 381 frames written as SVG by the command before and after, those 14 differ, each by one doubled `z`. A whole
+     step now draws the state it holds alone. This had to go first, since with states on named beats the square holds
+     on a whole step through `measure` and `unmeasure` too.
    - **What these transitions are for:** making the math feel physical, at a middle school level. `SquareZ` is F.O.I.L.
      on z²: F.O. is z·a and I.L. is z·bi, which build a right triangle similar to the one of a and bi, scaled by |z|
      and turned. Numbers have length, negative turns 180°, and i turns 90°, which gives lateral space, any direction,
@@ -664,6 +772,17 @@ draft and a real recording can give the same timing data, so the words can be ed
 - **A number before a letter is a coefficient,** as in "two t", so the `labels` check doesn't ask for a point called 2.
 - **Not checked:** a take in Kris's voice, and whether a vowel's onset is where an arrival should land. The lab's docstring renders
   a draft to judge that by.
+
+**`retime` stops on a length it can't read, 2026-11-21.** `retime` finds the story by pattern: a pause with a number, or a
+beat that says `for` and a number. A named beat can now leave `for` out, and such a beat matched nothing, so it was
+invisible: anchored, it was "no beat named …", and unanchored, every beat after it landed a second early with nothing
+said. A length that's an expression, `for duration / 3` or `pause 1/2`, had the same hole before today, and `pause 1/2`
+was read as a pause of 1. Any beat or pause whose length isn't a plain number on its line now stops the run, before a
+take or any audio is read, with the file and line it's on and what to write. The script doesn't learn the compiler's
+rule, a second or a share of the `duration`: that arithmetic would then be kept twice. The older `beat "caption" { … }`
+step is left alone, and a beat with a length and no name, which the pattern also missed, is now counted. No beat in the
+explainer is written any of these ways, and retiming it from the draft take writes the same `.pen`, audio and prompt
+timings as before, to the byte.
 
 ## The playground
 
@@ -1264,6 +1383,13 @@ follows time, both in one poster, is an error (`decisions.md`). No figure here o
 stood in for the `let`, which the language lets nothing but the document set. A name's subscript can be written any of a
 document's ways (`r1` for `r_1`). The check is the command's, in `held_params`, and the core still takes whatever inputs
 it's handed, so the page's `set_param` is as it was.
+
+**`duration` from the beats, 2026-11-21.** Kris wants `duration` readable wherever the figure has one. It was an error
+without a `duration` statement, even where beats with lengths added up to the number a video and the page's clock already
+used. Now it reads that sum (`language.md`, Expressions; `decisions.md`), above the beats or below. A beat's length or a pause
+that reads it, itself or through a `let`, would be part of the sum, and gets an error saying so at the line that reads it.
+The explainer's limaçon, which has no statement, can now read its own 65.6 s. No golden changed, and the IR lost the flag that
+said whether a duration was stated, which only this refusal read.
 
 ## Distance to a curve
 

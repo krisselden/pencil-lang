@@ -123,7 +123,7 @@ export const STATEMENTS = [
 /** Words that come inside a statement. */
 export const CLAUSES = [
   'in', 'for', 'at', 'tag', 'away', 'with', 'offset', 'step', 'from', 'through', 'as', 'show', 'drop', 'focus',
-  'sets', 'if', 'by', 'hang', 'end', 'size', 'implicit', 'parametric', 'sdf', 'fit', 'pad', 'yaw', 'empty',
+  'sets', 'if', 'by', 'on', 'hang', 'end', 'size', 'implicit', 'parametric', 'sdf', 'fit', 'pad', 'yaw', 'empty',
 ];
 
 /** Names that are always there. */

@@ -8,7 +8,9 @@
 
 use std::collections::HashMap;
 
-use crate::compile::{BEAT_PARAM, CONSTANTS, DURATION, SIGNALS, constant_value, written_constant};
+use crate::compile::{
+    BEAT_PARAM, CONSTANTS, DURATION, NO_DURATION, SIGNALS, constant_value, written_constant,
+};
 use crate::error::Error;
 use crate::frame::VIEW_WIDTH;
 use crate::ir::{Expr, Form, Scene, Shape};
@@ -487,12 +489,7 @@ fn constants(e: &Expr, names: &[&str], duration: Option<f64>) -> Result<Expr, St
     Ok(match e {
         Expr::Sym(s) if s == DURATION && !names.contains(&DURATION) => match duration {
             Some(d) => Expr::Num(d),
-            None => {
-                return Err(
-                    "this figure has no `duration` statement, so there's no `duration` to read"
-                        .into(),
-                );
-            }
+            None => return Err(NO_DURATION.into()),
         },
         Expr::Sym(s) if !names.contains(&s.as_str()) => {
             match written_constant(s).filter(|c| constant_value(c).is_some()) {
@@ -720,8 +717,8 @@ pub fn resolve_keeping(
         ..Styled::default()
     };
     let names: Vec<&str> = scene.bindings.iter().map(|b| b.id.as_str()).collect();
-    // What `duration` reads, when the document says it.
-    let duration = scene.duration.filter(|_| scene.duration_stated);
+    // What `duration` reads: what the document says, or what its moves and pauses add up to.
+    let duration = scene.duration;
     // The document comes last, and its own `let`s are bindings.
     let sheet_names = sheet_names(&sheets[..sheets.len().saturating_sub(1)])?;
     let functions = sheet_functions(&sheets[..sheets.len().saturating_sub(1)]);
@@ -1560,15 +1557,19 @@ mod tests {
             vec![Expr::Num(9.0), Expr::app("Pixels", vec![Expr::Num(1.0)])],
         );
         assert_eq!(f.styles.marks[0].width.clone().unwrap(), nine);
-        // With no statement there's nothing to read, even where beats add up to a duration.
-        for doc in [DOC.to_string(), format!("beat a for 2\n{DOC}")] {
-            let err = build(&doc, &["style c { width: duration·1px }"]).unwrap_err();
-            assert!(
-                err.message
-                    .contains("this figure has no `duration` statement"),
-                "{err}"
-            );
-        }
+        // With no statement it's what beats with lengths add up to, and nothing without them.
+        let f = build(
+            &format!("beat a for 2\npause 0.5\n{DOC}"),
+            &["style c { stroke: black; width: duration·1px }"],
+        )
+        .unwrap();
+        let sum = Expr::app(
+            "Multiply",
+            vec![Expr::Num(2.5), Expr::app("Pixels", vec![Expr::Num(1.0)])],
+        );
+        assert_eq!(f.styles.marks[0].width.clone().unwrap(), sum);
+        let err = build(DOC, &["style c { width: duration·1px }"]).unwrap_err();
+        assert!(err.message.contains(crate::compile::NO_DURATION), "{err}");
     }
 
     /// `none` takes back what an earlier rule set, so one ray can be solid among dashed ones.
