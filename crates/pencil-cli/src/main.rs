@@ -13,7 +13,9 @@ use pencil_core::compiled;
 use pencil_core::frame::{self, Inputs};
 use pencil_core::ir::Form;
 use pencil_core::terms::{Estimate, TextWidths};
-use pencil_core::{Composition, PanelFrame, Source, Sources, eval::Frame, place, wgsl};
+use pencil_core::{
+    Composition, PanelFrame, Source, Sources, clock, eval::Frame, parse, place, wgsl,
+};
 use pencil_render::{FigurePipeline, Offscreen};
 
 const USAGE: &str = "\
@@ -25,7 +27,7 @@ usage:
   pencil render DOC.pen [--style FILE]... [--t SECONDS] [--param NAME=VALUE]... [--size WIDTH] [--cpu] --out FRAME.png
   pencil svg    DOC.pen [--style FILE]... [--t SECONDS] [--param NAME=VALUE]... [--size WIDTH] --out FIGURE.svg
   pencil check  DOC.pen [--style FILE]... [--t SECONDS]... [--param NAME=VALUE]... [--size WIDTH] [--out DIR]
-  pencil video  DOC.pen [--style FILE]... [--size WIDTH] [--fps N] [--seconds S] [--font FILE] --out MOVIE.mp4
+  pencil video  DOC.pen [--style FILE]... [--param NAME=VALUE]... [--size WIDTH] [--fps N] [--seconds S] [--font FILE] --out MOVIE.mp4
   pencil latex  FILE.tex...
   pencil help
 
@@ -35,6 +37,9 @@ its sheets in it) in place of DOC.pen.
 build writes what a page needs for one figure under one set of sheets: the compiled figure, a
 poster at its design size and at twice it, and a .json that says what they are and what the figure
 is. The poster is the moment the document's `poster` names, unless --t or --param say another.
+
+--param NAME=VALUE sets one of the figure's params, and a name that isn't one is an error. A video
+holds it there for every frame, so it can't be a param that follows time: that one is the video.
 
 Labels are set in the fonts built into this command, the ones a page draws with. --font FILE, on
 any command that draws, sets their words in another font. Their mathematics keeps the built-in one.
@@ -181,6 +186,37 @@ fn load_listing(
                 format!("{}:{e}", file.display()).into()
             }
         })
+}
+
+/// What `--param` sets, each under its param's own name. A name can be written with its subscript
+/// another way, as in a document: `r1` is `r_1`. One that isn't a param is an error. It would
+/// change nothing, or stand in for a `let`, which is the document's to say.
+fn held_params(
+    composition: &Composition,
+    args: &Args,
+) -> Result<Vec<(String, f64)>, Box<dyn Error>> {
+    let scene = &composition.panels[0].figure.scene;
+    let mut held: Vec<(String, f64)> = Vec::new();
+    for (name, value) in &args.params {
+        let id = parse::subscripted(name);
+        if !scene.params.iter().any(|p| p.id == id) {
+            let params: Vec<String> = scene.params.iter().map(|p| format!("`{}`", p.id)).collect();
+            let has = match params.is_empty() {
+                true => "the figure has no params".to_string(),
+                false => format!("the figure's params: {}", params.join(", ")),
+            };
+            return Err(match scene.bindings.iter().any(|b| b.id == id) {
+                true => format!(
+                    "--param {name}: `{name}` isn't a param, and only a `param` can be set ({has})"
+                ),
+                false => format!("--param {name}: no param named `{name}` ({has})"),
+            }
+            .into());
+        }
+        held.retain(|(other, _)| *other != id);
+        held.push((id, *value));
+    }
+    Ok(held)
 }
 
 /// The frame's height for a width, following the figure's shape. Even, because video
@@ -340,7 +376,7 @@ fn render(args: &Args) -> Result<(), Box<dyn Error>> {
     let out = args.out.as_ref().ok_or("render needs --out")?;
     let inputs = Inputs {
         time,
-        params: args.params.clone(),
+        params: held_params(&composition, args)?,
     };
     let gpu = match args.cpu {
         true => None,
@@ -357,16 +393,16 @@ fn render(args: &Args) -> Result<(), Box<dyn Error>> {
 }
 
 /// The moment a still shows: the document's poster, and a flag can say another.
-fn still_moment(composition: &Composition, args: &Args) -> Inputs {
+fn still_moment(composition: &Composition, args: &Args) -> Result<Inputs, Box<dyn Error>> {
     let mut inputs = composition.poster();
     if let Some(time) = args.times.first() {
         inputs.time = *time;
     }
-    for (name, value) in &args.params {
-        inputs.params.retain(|(held, _)| held != name);
-        inputs.params.push((name.clone(), *value));
+    for (name, value) in held_params(composition, args)? {
+        inputs.params.retain(|(held, _)| *held != name);
+        inputs.params.push((name, value));
     }
-    inputs
+    Ok(inputs)
 }
 
 /// How wide a still is. A figure with a design width is drawn at it. One without is as wide as
@@ -388,7 +424,7 @@ fn still_width(composition: &Composition, args: &Args) -> u32 {
 fn svg(args: &Args) -> Result<(), Box<dyn Error>> {
     let composition = load(args)?;
     let out = args.out.as_ref().ok_or("svg needs --out")?;
-    let inputs = still_moment(&composition, args);
+    let inputs = still_moment(&composition, args)?;
     let width = still_width(&composition, args);
     let height = height_for(&composition, width);
     // Text is written as text, so a font is only for where labels settle and where a leader
@@ -438,6 +474,8 @@ fn build(args: &Args) -> Result<(), Box<dyn Error>> {
     let dir = args.out.as_ref().ok_or("build needs --out, a folder")?;
     let read_files = RefCell::new(Vec::new());
     let composition = load_listing(args, &read_files)?;
+    // Before anything is written, since a `--param` that names no param is an error.
+    let inputs = still_moment(&composition, args)?;
     let mut sources = read_files.into_inner();
     sources.dedup();
     fs::create_dir_all(dir)?;
@@ -457,7 +495,6 @@ fn build(args: &Args) -> Result<(), Box<dyn Error>> {
     let figure = format!("{stem}.pfig");
     write(&figure, &bytes)?;
 
-    let inputs = still_moment(&composition, args);
     let width = still_width(&composition, args);
     let gpu = Offscreen::new()?;
     let mut posters = Vec::new();
@@ -562,6 +599,18 @@ fn fnv(bytes: &[u8]) -> u64 {
 fn video(args: &Args) -> Result<(), Box<dyn Error>> {
     let composition = load(args)?;
     let out = args.out.as_ref().ok_or("video needs --out")?;
+    // A video is the figure with time running, so a param is held for all of it. One that follows
+    // time, itself or through what it reads or the range it's kept in, has a value in each frame
+    // already, and holding it would be another figure. That's said, and not done or ignored.
+    let params = held_params(&composition, args)?;
+    let driven = clock::time_driven(&composition.panels[0].figure.scene);
+    if let Some((name, _)) = params.iter().find(|(name, _)| driven.contains(name)) {
+        return Err(format!(
+            "--param {name}: `{name}` follows time in this figure, so a video can't hold it at \
+             one value. `render` and `svg` take it, for one frame"
+        )
+        .into());
+    }
     if let Some(parent) = out.parent() {
         fs::create_dir_all(parent)?;
     }
@@ -609,7 +658,8 @@ fn video(args: &Args) -> Result<(), Box<dyn Error>> {
     let mut pipe = encoder.stdin.take().ok_or("no pipe to ffmpeg")?;
 
     let start = std::time::Instant::now();
-    // Only a shortcut: what's in it depends only on the time, so it can't change a frame.
+    // Only a shortcut: what's in it depends only on the time and the params, which are held,
+    // so it can't change a frame.
     let mut springs: Vec<_> = composition
         .panels
         .iter()
@@ -618,7 +668,10 @@ fn video(args: &Args) -> Result<(), Box<dyn Error>> {
     for n in 0..frames {
         // Every frame is computed from its own time alone, so frames could be rendered
         // in any order. Nothing carries over from the frame before.
-        let inputs = Inputs::at(n as f64 / args.fps as f64);
+        let inputs = Inputs {
+            time: n as f64 / args.fps as f64,
+            params: params.clone(),
+        };
         let mut panels = composition.prepare(&inputs, width, height, 1.0, None, &fonts)?;
         spring_all(&composition, &mut panels, &inputs, &mut springs)?;
         let mut rgba = gpu.render_panels(
@@ -721,6 +774,7 @@ fn crop(image: &[u8], canvas_width: u32, frame: &PanelFrame) -> Vec<u8> {
 /// The GPU's canvas against the oracle, a panel at a time, so where panels sit is tested too.
 fn check(args: &Args) -> Result<(), Box<dyn Error>> {
     let composition = load(args)?;
+    let params = held_params(&composition, args)?;
     let gpu = Offscreen::new()?;
     println!("gpu: {}", gpu.adapter_name);
     let mut pipelines = pipelines(&gpu, &composition)?;
@@ -734,7 +788,7 @@ fn check(args: &Args) -> Result<(), Box<dyn Error>> {
     for time in times {
         let inputs = Inputs {
             time,
-            params: args.params.clone(),
+            params: params.clone(),
         };
         let frames = composition.prepare(&inputs, width, height, 1.0, None, &Estimate)?;
         let canvas = gpu.render_panels(

@@ -1252,6 +1252,15 @@ built, and so are the element as a package and the component, tried on `pencil-l
 (`migration.md`, Order): the component is tried there on a figure that's already done, `SquareZ` in the shader post or
 `LatticeMapping` and `RollTube` in the period post.
 
+**`--param` names a param, and a video holds it, 2026-11-21.** Kris took it that `pencil video` set a param time doesn't
+drive, and it didn't: the flag was read and dropped, so every video was the figure with its params where the document left
+them. A video now holds each for all its frames (`pencil video … --param n=5`). One that follows time, itself, through what
+it reads or through the range it's kept in, is an error there, since each frame already has its value: a still takes it, as a
+reader's hand does. On every command a name that is no param is an error too. It used to change nothing, and a `let`'s name
+stood in for the `let`, which the language lets nothing but the document set. A name's subscript can be written any of a
+document's ways (`r1` for `r_1`). The check is the command's, in `held_params`, and the core still takes whatever inputs
+it's handed, so the page's `set_param` is as it was.
+
 ## Distance to a curve
 
 Fixed on 2026-11-11, after Kris drew the heart `(x² + y² − 1)³ − x²y³ = 0` with `bands.style` in the playground and found

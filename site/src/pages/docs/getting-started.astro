@@ -73,6 +73,13 @@ cd pencil-lang</code></pre>
   </p>
   <pre><code>cargo run --release -p pencil-cli -- video corpus/003-unroll/unroll.pen \
   --style corpus/003-unroll/blog.style --size 1280 --out out/unroll.mp4</code></pre>
+  <p>
+    <code>--param NAME=VALUE</code> sets one of the figure’s params for the whole video. A param that
+    follows time can’t be set this way, because time gives it a value in every frame, and the command
+    says so. <code>render</code> and <code>svg</code> take either kind, for one frame.
+  </p>
+  <pre><code>cargo run --release -p pencil-cli -- video corpus/009-squaring/squaring.pen \
+  --style corpus/theme.style --style corpus/009-squaring/plain.style --param n=5 --out out/squaring.mp4</code></pre>
 
   <h2 id="browser">Figures in a browser</h2>
   <p>
@@ -128,7 +135,7 @@ pencil wgsl   DOC.pen [--style FILE]...
 pencil render DOC.pen [--style FILE]... [--t SECONDS] [--param NAME=VALUE]... [--size WIDTH] [--cpu] --out FRAME.png
 pencil svg    DOC.pen [--style FILE]... [--t SECONDS] [--param NAME=VALUE]... [--size WIDTH] --out FIGURE.svg
 pencil check  DOC.pen [--style FILE]... [--t SECONDS]... [--param NAME=VALUE]... [--size WIDTH] [--out DIR]
-pencil video  DOC.pen [--style FILE]... [--size WIDTH] [--fps N] [--seconds S] [--font FILE] --out MOVIE.mp4
+pencil video  DOC.pen [--style FILE]... [--param NAME=VALUE]... [--size WIDTH] [--fps N] [--seconds S] [--font FILE] --out MOVIE.mp4
 pencil latex  FILE.tex...
 pencil help</code></pre>
   <p>
