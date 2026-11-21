@@ -1392,6 +1392,10 @@ impl Story {
             Step::Pause(length) => now + length,
         });
         let left = duration - written;
+        // What's written already runs past the `duration`: that's the overrun's to say, below.
+        if left < -1e-9 {
+            return Ok(0.0);
+        }
         if open > 0 && left <= 1e-9 {
             let beats = if open == 1 {
                 "the beat".to_string()

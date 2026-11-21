@@ -776,3 +776,20 @@ fn an_expression_can_be_written_above_its_beats_whatever_they_hold() {
         assert_eq!(err.line, line, "{src}");
     }
 }
+
+#[test]
+fn lengths_that_run_past_the_duration_say_so_and_not_that_nothing_is_left() {
+    // The written lengths alone are too long: an overrun, whatever else has no length.
+    let err = build("duration 1\nbeat a for 2\nbeat b", &[]).unwrap_err();
+    assert_eq!(
+        err.message,
+        "the beats and pauses take 2 seconds, more than the `duration` of 1"
+    );
+    // They fit exactly, and that leaves the beat with no length nothing.
+    let err = build("duration 2\nbeat a for 2\nbeat b", &[]).unwrap_err();
+    assert_eq!(
+        err.message,
+        "the beats with lengths and the pauses take 2 seconds, which leaves nothing of the `duration` of 2 for the beat with no length"
+    );
+    assert_eq!(err.line, 3);
+}

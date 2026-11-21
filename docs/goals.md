@@ -522,6 +522,8 @@ each one changes the language or the frame's order, so they come before more fig
      still to be chosen and not settled by a side effect. No figure wrote it. The square's 16 rows as main wrote them
      are typed out in a test, compiled `by beat`, and the per-place states are held to them state by state: the check
      that doesn't go through the rule.
+   - **After review: lengths past the `duration`.** With the one-second trial, `duration 1`, `beat a for 2`, `beat b`
+     said the lengths "leave nothing" for `b`. They run past the duration by themselves, and now say that.
    - **The square's `shorten` beat is a pause, 2026-11-21.** The cleanup the note proposed, as its own change, since
      it changes what a reader sees: `shorten` did nothing but shorten the equation, so the beat is gone, the 1.6 s
      after `name` is one pause, and `z = a + b i` becomes `z` on `measure`, as its angle and length are written. The
