@@ -4452,6 +4452,10 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
                 line,
             } => {
                 claim(name, *line)?;
+                // With `by`, each state is written whole. On named beats, a state writes what
+                // its beat changes, and `board` is what the expression holds as they add up.
+                let on_beats_states = by.is_none();
+                let mut board: Vec<Piece> = Vec::new();
                 let by = match by {
                     Some(by) => lowerer.scalar(by, &none).map_err(at_line(*line))?,
                     None => on_beats(name, states, &story, &scene)?,
@@ -4468,10 +4472,21 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
                     let mut in_state: Vec<String> = Vec::new();
                     for (text, place) in &state.pieces {
                         let Some(spot) = scene.spots.iter().position(|s| s.id == *place) else {
+                            let places = scene.spots.iter().map(|s| s.id.as_str());
+                            let hint = match crate::suggest::suggestion(place, places) {
+                                Some(hint) => format!(": did you mean {hint}?"),
+                                None => ". Places come first".to_string(),
+                            };
                             return Err(fail(Error::new(format!(
-                                "no place named `{place}`. Places come first"
+                                "no place named `{place}`{hint}"
                             ))));
                         };
+                        // Two texts at one place would be laid out on top of each other.
+                        if pieces.iter().any(|p: &Piece| p.spot == spot) {
+                            return Err(fail(Error::new(format!(
+                                "`{place}` is written twice in one state of `{name}`. A place holds one line of terms, so write them together"
+                            ))));
+                        }
                         let mut keys: Vec<String> = Vec::new();
                         for word in text.split_whitespace() {
                             let (key, shown) = match word.split_once(':') {
@@ -4522,7 +4537,28 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
                         }
                         pieces.push(Piece { spot, keys });
                     }
-                    written.push(pieces);
+                    if !on_beats_states {
+                        written.push(pieces);
+                        continue;
+                    }
+                    // `empty` clears every place.
+                    if pieces.is_empty() {
+                        board.clear();
+                    }
+                    for piece in pieces {
+                        // A term is in one place, so written at another it leaves where it was.
+                        for other in board.iter_mut().filter(|p| p.spot != piece.spot) {
+                            other.keys.retain(|key| !piece.keys.contains(key));
+                        }
+                        // A place that's named is set to what's written, where it already is in
+                        // the list, and one that isn't named keeps what it has.
+                        match board.iter_mut().find(|p| p.spot == piece.spot) {
+                            Some(place) => place.keys = piece.keys,
+                            None => board.push(piece),
+                        }
+                    }
+                    board.retain(|p| !p.keys.is_empty());
+                    written.push(board.clone());
                 }
                 scene.expressions.push(Expression {
                     id: name.clone(),

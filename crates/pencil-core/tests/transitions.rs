@@ -17,11 +17,12 @@ place right = (300, 200)
 
 const NAMED: &str = "expression e {
   on write: \"a + b\" at left
-  on move: \"a\" at left, \"+ b\" at right
+  on move: \"+ b\" at right
   on gone: empty
 }";
 
-/// The same, a state for each beat, with the hold through `wait` written again.
+/// The same, whole, a state for each beat: the hold through `wait` written again, and what
+/// `move` leaves at `left` written out.
 const ROWS: &str = "expression e by beat {
   \"a + b\" at left
   \"a + b\" at left
@@ -93,7 +94,48 @@ fn its_beats_can_be_written_after_it() {
     assert_same(&after, &before, 4.5);
 }
 
-/// The square's `work`, with the state each of its beats holds written out for that beat.
+/// What an expression holds after each state, worked out here on its own from the rule and
+/// not by the compiler: a place that's written is set, where it already is in the list, a term
+/// written at a new place leaves its old one, a place left with nothing goes, and `empty` clears
+/// them all. A state is `"terms" at place, …`, as written.
+fn boards(states: &[&str]) -> Vec<String> {
+    let mut board: Vec<(String, Vec<String>)> = Vec::new();
+    let mut out = Vec::new();
+    for state in states {
+        if *state == "empty" {
+            board.clear();
+        } else {
+            for piece in state.split(", ") {
+                let (text, place) = piece.rsplit_once(" at ").unwrap();
+                let terms: Vec<String> = (text.trim().trim_matches('"').split_whitespace())
+                    .map(str::to_string)
+                    .collect();
+                for (other, held) in &mut board {
+                    if other != place {
+                        held.retain(|term| !terms.contains(term));
+                    }
+                }
+                match board.iter_mut().find(|(other, _)| other == place) {
+                    Some((_, held)) => *held = terms,
+                    None => board.push((place.to_string(), terms)),
+                }
+            }
+            board.retain(|(_, held)| !held.is_empty());
+        }
+        out.push(if board.is_empty() {
+            "empty".to_string()
+        } else {
+            let pieces: Vec<String> = board
+                .iter()
+                .map(|(place, held)| format!("\"{}\" at {place}", held.join(" ")))
+                .collect();
+            pieces.join(", ")
+        });
+    }
+    out
+}
+
+/// The square's `work`, with what it holds on each of its beats written out whole for that beat.
 #[test]
 fn the_square_lays_out_what_a_state_for_each_of_its_beats_does() {
     let root = concat!(env!("CARGO_MANIFEST_DIR"), "/../../corpus/");
@@ -117,11 +159,19 @@ fn the_square_lays_out_what_a_state_for_each_of_its_beats_does() {
         .filter_map(|line| line.strip_prefix("beat ")?.split(' ').next())
         .collect();
     assert!(states.iter().all(|(on, _)| beats.contains(on)));
+    let written: Vec<&str> = states.iter().map(|(_, state)| *state).collect();
+    let whole = boards(&written);
+    // `z` is written once and held at its place through eight later states.
+    assert_eq!(written.iter().filter(|s| s.contains("at_z")).count(), 3);
+    assert_eq!(
+        whole.iter().filter(|s| s.contains("\"z\" at at_z")).count(),
+        8
+    );
     let mut holds = "empty";
     let mut rows = String::from("expression work by beat {\n");
     for beat in &beats {
-        if let Some((_, state)) = states.iter().find(|(on, _)| on == beat) {
-            holds = state;
+        if let Some(at) = states.iter().position(|(on, _)| on == beat) {
+            holds = &whole[at];
         }
         rows.push_str(&format!("  {holds}\n"));
     }
@@ -248,8 +298,17 @@ fn the_references_examples_compile() {
     assert_eq!(blocks.len(), 2, "{blocks:?}");
     let view = "viewport { x: -2..2, y: -2..2 }\n";
     let named = build(&format!("{view}{}", blocks[0]), &[]).unwrap();
-    assert_eq!(named.scene.expressions[0].states.len(), 3);
-    assert!((named.scene.duration.unwrap() - 6.2).abs() < 1e-9);
+    assert!((named.scene.duration.unwrap() - 8.0).abs() < 1e-9);
+    // `answer` writes at `result` alone, and the equation is still above it.
+    assert_eq!(
+        held(&named),
+        [
+            "z ( a + b ) at equation",
+            "z a + z.1 b at equation",
+            "z ( a + b ) at equation",
+            "z ( a + b ) at equation, = c at result",
+        ]
+    );
     let by = build(&format!("{view}{}", blocks[1]), &[]).unwrap();
     assert_eq!(by.scene.expressions[0].states.len(), 4);
     // The series starts on its first term, and a reader's `n` takes it to the fourth.
@@ -442,4 +501,87 @@ fn the_square_with_no_lengths_plays_a_second_a_beat() {
         gone > 5.0 && left > 0.5,
         "{gone} px from z, {left} px to go"
     );
+}
+
+/// What an `on` expression holds after each of its states, as the compiler built it.
+fn held(figure: &Figure) -> Vec<String> {
+    let spots = &figure.scene.spots;
+    (figure.scene.expressions[0].states.iter())
+        .map(|state| {
+            let pieces: Vec<String> = state
+                .iter()
+                .map(|p| format!("{} at {}", p.keys.join(" "), spots[p.spot].id))
+                .collect();
+            pieces.join(", ")
+        })
+        .collect()
+}
+
+const PLACES: &str = "beat one for 1\nbeat two for 1\nbeat three for 1\nbeat four for 1
+place p = (0, 0)\nplace q = (1, 0)\nplace r = (2, 0)\n";
+
+#[test]
+fn a_state_on_a_beat_writes_only_the_places_it_changes() {
+    let states = |expression: &str| {
+        held(&build(&format!("{PLACES}expression e {{\n{expression}\n}}"), &[]).unwrap())
+    };
+    // A place that isn't named keeps what it has, and one that is named is set to what's written:
+    // `c` goes from `p`, since the second state names `p` without it.
+    assert_eq!(
+        states("on one: \"a b c\" at p\non two: \"x\" at q\non three: \"a b\" at p"),
+        ["a b c at p", "a b c at p, x at q", "a b at p, x at q"]
+    );
+    // A term is in one place: written at another, it leaves where it was, and a place left with
+    // nothing is gone. So `p` empties without being named.
+    assert_eq!(
+        states("on one: \"a\" at p\non two: \"+ b\" at q\non three: \"a + b\" at r"),
+        ["a at p", "a at p, + b at q", "a + b at r"]
+    );
+    // One term moving out leaves the rest where they are, in their order.
+    assert_eq!(
+        states("on one: \"a b c\" at p\non two: \"b\" at q"),
+        ["a b c at p", "a c at p, b at q"]
+    );
+    // `empty` clears every place, and what's written after it starts again.
+    assert_eq!(
+        states("on one: \"a\" at p\non two: \"b\" at q\non three: empty\non four: \"c\" at r"),
+        ["a at p", "a at p, b at q", "", "c at r"]
+    );
+    // A copy is its own term: `z.1` written elsewhere leaves `z` where it is.
+    assert_eq!(
+        states("on one: \"z\" at p\non two: \"z.1 a\" at q"),
+        ["z at p", "z at p, z.1 a at q"]
+    );
+    // With `by`, a state is whole, as it always was: what isn't written isn't there.
+    let by = build(
+        &format!("{PLACES}expression e by beat {{\n\"a\" at p\n\"b\" at q\n}}"),
+        &[],
+    )
+    .unwrap();
+    assert_eq!(held(&by), ["a at p", "b at q"]);
+}
+
+#[test]
+fn a_place_is_written_once_in_a_state_and_a_wrong_name_says_what_is_close() {
+    let err = build(
+        &format!("{PLACES}expression e {{\non one: \"a\" at p, \"b\" at p\n}}"),
+        &[],
+    )
+    .unwrap_err();
+    assert!(
+        err.message
+            .starts_with("`p` is written twice in one state of `e`"),
+        "{err}"
+    );
+    assert_eq!(err.line, 9);
+    let err = build(
+        "place at_sum = (0, 0)\nbeat one for 1\nexpression e {\non one: \"a\" at at_sun\n}",
+        &[],
+    )
+    .unwrap_err();
+    assert_eq!(
+        err.message,
+        "no place named `at_sun`: did you mean `at_sum`?"
+    );
+    assert_eq!(err.line, 4);
 }

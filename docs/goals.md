@@ -484,6 +484,23 @@ each one changes the language or the frame's order, so they come before more fig
      The driver is the sum of the named beats' progress, which the explainer's roulette already wrote by hand as
      `by said`, so the IR has nothing new, and only the square's golden changed: its `by`, and three states fewer.
      `by` a number stays, for a param a reader scrubs.
+   - **A state writes the places it changes, 2026-11-21.** Kris, on seeing naming beats alone: the note's examples have
+     one place and the square has six, so most of the repetition he wanted gone was inside the states. Its 16 rows wrote
+     `"z" at at_z` eleven times, and whole states on named beats still wrote it eight. Now a state `on` a beat sets the
+     places it names and leaves the rest, a term written at a new place leaves its old one, and `empty` clears them all
+     (`language.md`; `decisions.md`). The square's `work` is 13 lines of one piece each, and `"z" at at_z` is written
+     once. Checked as the first stage was: the sketch Kris approved, with `shorten` still a beat, compiles to the
+     IR of that stage exactly, and lays out as main's 16 rows do at all 4,561 frames, every difference 0. No state of
+     it differs from the rows, so neither the sketch nor the rule needed a correction. With the cleanup on top, the
+     square's golden didn't change at all. A test works the states out a second time, on its own from the rule, and
+     holds the figure to them. `by` a number still writes whole states.
+     What it costs, as found. What `work` holds on `slide` is on no line of the source: it's `z` from `measure`,
+     `z.1 a` from `scale_a` and what `slide` writes. `pencil ir` lists every state whole, and that's where to read it.
+     And a term written at the wrong place, when that place exists, is no error: `on factor: … at at_z` in the square
+     would put the factored sum in `z`'s place, with `z` gone, and leave a lone `z.2` at the old sum. Nothing can know which place was
+     meant. A place that doesn't exist was already an error, and now says the nearest name. Two checks that would
+     catch slips near this one, neither built: a state that changes nothing (a hold written by habit), and a place
+     that's written and never cleared or written again before the end, which is usually right, as `z` is.
    - **The square's `shorten` beat is a pause, 2026-11-21.** The cleanup the note proposed, as its own change, since
      it changes what a reader sees: `shorten` did nothing but shorten the equation, so the beat is gone, the 1.6 s
      after `name` is one pause, and `z = a + b i` becomes `z` on `measure`, as its angle and length are written. The

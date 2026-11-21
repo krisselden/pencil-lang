@@ -326,7 +326,8 @@ styles panel titles. `fit` can name parametric curves and `curves` collections a
 An expression is a list of states, and what's written the same in two of them moves from one to the other. There
 are two ways to say when, and a figure picks by what drives it.
 
-**Named beats, for a derivation that's told.** Each state says `on` the beat that brings it:
+**Named beats, for a derivation that's told.** Each state says `on` the beat that brings it, and writes what that
+beat changes:
 
 ```
 pause 0.5
@@ -337,19 +338,29 @@ pause 1
 beat expand for 0.8
 pause 1
 beat factor for 0.6
+pause 1
+beat answer for 0.8
 
 place equation = (0, 1)
+place result = (0, 0)
 
 expression work {
   on write: "z ( a + b )" at equation
   on expand: "z a + z.1 b" at equation
   on factor: "z ( a + b )" at equation
+  on answer: "= c" at result
 }
 ```
 
-- **A state is where its beat ends.** The expression starts from the state before, moves through the beat, is the
-  written state as the beat ends, and holds it until the next beat a state names. Before the first, it's empty, and
-  `on clear: empty` empties it again.
+- **A state is where its beat ends.** The expression starts from what it held, moves through the beat, holds what's
+  written as the beat ends, and keeps it until the next beat a state names. Before the first, it's empty.
+- **A state writes the places it changes.** A place it names is set to what's written there, so a term that was at
+  that place and isn't written now goes, as `z.1` does on `factor`. A place it doesn't name keeps what it has: `answer`
+  writes at `result`, and the equation stays above it without being written again.
+- **A term is in one place,** so a term written at a new place moves there and leaves the place it was at, which is
+  then empty if that was all it held. `on join: "a + b" at sum` takes `a` and `b` from wherever they were.
+- **`empty` clears every place:** `on clear: empty`. There's no way yet to clear one place and keep the rest, since no
+  figure has needed it.
 - **A beat no state names changes nothing,** so a hold isn't written: `measure` above can show an angle, and take as
   long as it likes, while the algebra stays put. Making a beat longer, or putting a pause or another beat between two
   states, retimes the story and leaves which terms move alone.
@@ -377,8 +388,10 @@ expression series by n {
 }
 ```
 
-`by beat` is a state for every beat, in order, with a state that holds written again, and `by` a sum of beats' names
-is what `on` works out: how many of those beats are done, and how far the one that's moving has come.
+With `by`, each state is written whole: what a state doesn't write isn't there. `by beat` is a state for every beat,
+in order, with a state that holds written again. `by` a sum of beats' names is what `on` works out, how many of those
+beats are done and how far the one that's moving has come, and `on` builds the same whole states, each from the one
+before and what its beat writes. `pencil ir` lists them, which is where to read what an expression holds on a beat.
 
 Terms are separated by spaces. Nothing is diffed: identity is what's written. So `2ab` is one term and `2 a b` is
 three. If the next state writes `b` somewhere else, the spaced `b` moves there and the rest stays, and the joined `2ab`
