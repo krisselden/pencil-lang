@@ -408,6 +408,9 @@ has nothing in the next state, so it fades out while `2a` and `b` fade in (`web/
 
 - The same term in the next state moves to its new spot, and stays solid.
 - A new term fades in, and a term that's gone fades out, riding along with its neighbors.
+- A new term beside one that travels is solid within the first few frames of the move, so it's seen riding along: the
+  `a` of `z.1 a` goes out with the copy of `z`. A fade as long as the move would show it only once it had arrived. A new
+  term that stays where it is, as when `2ab` gives way to `2a` in the same place, fades in with the step.
 - A copy is written `z.1`, and prints as `z`. When it's new, it starts on `z`.
 - A term is in one place, so a state can't write the same one twice: `a + b +.1 c` has two plus signs. A number can't have a copy yet, since `2.1` is a number.
 - **A term can have a name:** `slow:2ab` prints `2ab`, and is the term `slow`. The name is what moves between states and what a copy is written from, `slow.1:2ab`, and it's a tag, so `style .slow { … }` and `focus .slow` reach the term together with an arrow tagged `slow`. One name ties a symbol to its geometry. A name prints one text, so `slow:2ba` in another state is an error.

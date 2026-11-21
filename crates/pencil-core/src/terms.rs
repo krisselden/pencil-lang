@@ -3,7 +3,9 @@
 //! state moves to its new spot, and nothing is diffed or searched for.
 //!
 //! - A new term fades in, and a term that's gone fades out, riding along with its
-//!   neighbors so it isn't left behind.
+//!   neighbors so it isn't left behind. A new one that rides a neighbor that's travelling is
+//!   solid within the first few frames, so it's seen riding: a fade as long as the move would
+//!   hide the move. One that stays where it is fades in with the step.
 //! - A copy is written `z.1`. It prints as `z`, and when it's new it starts on `z`.
 //! - When a copy goes, it moves into a term of the same name at the same place: factoring.
 //!
@@ -179,11 +181,28 @@ fn ride(term: &Laid, travel: impl Fn(&str) -> Option<[f64; 2]>) -> [f64; 2] {
     [0.0, 0.0]
 }
 
-/// Where each term is between two states, `s` of the way: `(key, position, strength)`.
+/// How many times faster than its move a new term that rides one becomes solid. The move runs
+/// on `snap`, which is most of the way in the first third, so a term that took the whole move to
+/// appear would be seen only once it had arrived. At 8 it's nine tenths there a twentieth of the
+/// way in, which softens the cut and no more.
+const ARRIVAL: f64 = 8.0;
+
+/// How solid a new term that's riding is, `moved` of the way through the move, from 0 to 1.
+fn arrived(moved: f64) -> f64 {
+    snap(ARRIVAL * moved, None)
+}
+
+/// Less travel than this, in device pixels, is a term that stays where it is.
+const STILL: f64 = 1e-6;
+
+/// Where each term is between two states, `s` of the way: `(key, position, strength)`. `new`
+/// is the strength of a term the second state adds beside a neighbor that travels. With nothing
+/// to ride it's a fade and nothing else, and it takes the step's `s`, as a term that goes does.
 fn between(
     was: &HashMap<String, Laid>,
     now: &HashMap<String, Laid>,
     s: f64,
+    new: f64,
 ) -> HashMap<String, ([f64; 2], f64)> {
     let lerp = |a: [f64; 2], b: [f64; 2]| [a[0] + (b[0] - a[0]) * s, a[1] + (b[1] - a[1]) * s];
     let source = |key: &str| {
@@ -210,14 +229,17 @@ fn between(
         if let Some(from) = source(key) {
             out.insert(key.clone(), (lerp(from.at, to.at), 1.0));
         } else {
-            let moved = ride(to, |other| {
+            // How far behind its place the neighbor it rides starts.
+            let behind = ride(to, |other| {
                 let (o, t) = (source(other)?, now.get(other)?);
-                Some([
-                    (o.at[0] - t.at[0]) * (1.0 - s),
-                    (o.at[1] - t.at[1]) * (1.0 - s),
-                ])
+                Some([o.at[0] - t.at[0], o.at[1] - t.at[1]])
             });
-            out.insert(key.clone(), ([to.at[0] + moved[0], to.at[1] + moved[1]], s));
+            let rides = behind[0].hypot(behind[1]) > STILL;
+            let at = [
+                to.at[0] + behind[0] * (1.0 - s),
+                to.at[1] + behind[1] * (1.0 - s),
+            ];
+            out.insert(key.clone(), (at, if rides { new } else { s }));
         }
     }
     for (key, from) in was {
@@ -346,10 +368,10 @@ fn frame_terms(
     // start on what they copy, at full strength, so they'd be drawn over it for the whole hold.
     let moved = step - k as f64;
     if k == last || moved == 0.0 {
-        return Ok(between(&was, &was, 1.0));
+        return Ok(between(&was, &was, 1.0, 1.0));
     }
     let now = scope.layout(state(k + 1))?;
-    Ok(between(&was, &now, snap(moved, None)))
+    Ok(between(&was, &now, snap(moved, None), arrived(moved)))
 }
 
 #[cfg(test)]
@@ -447,6 +469,7 @@ mod tests {
 
     #[test]
     fn only_what_does_not_match_fades() {
+        // `a` stays where it is, so what joins it only fades, and takes the step to do it.
         let mid = at(1.5);
         let s = snap(0.5, None);
         assert_eq!(find(&mid, "e.a").opacity, 1.0);
@@ -455,6 +478,22 @@ mod tests {
         // Nothing left over at either end.
         assert!(!has(&at(1.0), "e.b"));
         assert!(!has(&at(0.0), "e.a"));
+    }
+
+    /// A new term beside one that travels is solid while the move is still young, so it's seen
+    /// riding. Faded in as long as the move takes, it would show only once it had arrived.
+    #[test]
+    fn a_new_term_that_rides_a_move_is_solid_early() {
+        // From `a + b` to `z.1 a + z.2 b`: `a` makes room, and the first `z` rides it.
+        let (from, to) = (find(&at(3.0), "e.a").x, find(&at(4.0), "e.a").x);
+        assert!(to - from > 1.0, "{from} to {to}");
+        let early = at(3.05);
+        let (travelled, solid) = (snap(0.05, None), snap(8.0 * 0.05, None));
+        assert!(travelled < 0.23 && solid > 0.92, "{travelled} {solid}");
+        assert!((find(&early, "e.a").x - (from + (to - from) * travelled)).abs() < 1e-9);
+        assert!((find(&early, "e.z.1").opacity - solid).abs() < 1e-9);
+        assert_eq!(find(&at(3.2), "e.z.1").opacity, 1.0);
+        assert!(!has(&at(3.0), "e.z.1"));
     }
 
     /// A term fading in travels with the rest, not ahead of it at its final spot.
