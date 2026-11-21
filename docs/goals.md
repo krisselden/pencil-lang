@@ -163,6 +163,25 @@ Proposed by Claude on 2026-11-09, not yet agreed:
 - **Should a span take TeX too?** A label's mathematics is Pencil's own notation in `$…$` (`language.md`, Mathematics in
   labels). Kris is on the fence about TeX inside the span, which a LaTeX or manim user types from memory. Its braces collide
   with `{expr}`, and it would be a second notation.
+- **How should a state arrive on a beat a reader steps to?** Open since 2026-11-21, with states on named beats, and Kris's
+  to decide. Two facts first. A beat with no length (`beat "…" { … }`) has no name and no "during": `beat` is a whole
+  number there, so `on` can't name one, the error says so, and such a figure writes `by beat` and its states switch at
+  once. And a reader's step never plays a move, whatever the beat: the element seeks to the end of the next beat and
+  pauses (in the square, six steps land at 1.2, 2.2, 3.2, 4.1, 6.2 and 7.5 s), so a reader who steps through the
+  square sees 15 stills, and no term travels, copies off `z`, or factors. The ways to go:
+  1. **It arrives at once.** A beat with no length gets a name, and a state `on` it switches as the reader steps. The
+     square stepped this way is what stepping shows today: `z = a + b i` is replaced by `z` between two frames. It's the
+     least to build, and a figure's spaces, copies and names then do nothing a reader can see.
+  2. **A move has a length, and a step plays it** (recommended). `on` keeps needing a beat with a length, as built, and
+     the element's forward step plays from where it is to the end of the next beat and stops, where it now jumps. The
+     square needs no change, and each press shows one move at the length its author gave it: 0.5 s for the equation to
+     shorten, 1.1 s for the copy to leave `z`. A step back still jumps. A figure made only for stepping writes a length
+     on each beat, which is the one place the time a move takes is said. It changes how every figure with lengths
+     steps, the explainer included, so it wants watching there before it's kept. The bounds' beats have no lengths
+     and would step as they do.
+  3. **A length nobody wrote.** A beat with no length that a state names takes a default, from the language or a sheet.
+     Time appears in a figure that didn't say any, a video's length moves with a default, and the rule that beats with
+     lengths and without don't mix would have to go.
 - **How should a moving loop's dashes behave?** A loop gets a whole number of dashes, so they jump as it grows: about 25 times a
   cycle on the breathing circle, by arithmetic, not watched. The blog's hysteresis depends on history, which breaks seeking. A
   related one: dashes on a moving range ride with its start, and a real string's would stay put as it unwinds.
