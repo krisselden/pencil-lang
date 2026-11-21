@@ -224,19 +224,17 @@ fn a_state_on_a_beat_that_is_not_one_is_an_error_at_that_state() {
     assert_eq!(err.line, line(3));
 
     let err = error("expression e {\n  on nothing: \"a\" at left\n}");
-    assert!(
-        err.message
-            .starts_with("`e` reaches a state on `nothing`, and no beat is named that."),
-        "{err}"
+    assert_eq!(
+        err.message,
+        "`e` reaches a state on `nothing`, and no beat is named that. A beat is named where it's written: `beat nothing`, or `beat nothing for 0.5` to say how long it takes"
     );
     assert_eq!(err.line, line(2));
 
     // A value moves as a beat's name does, but it has no place in the timeline.
     let err = error("let half = write / 2\nexpression e {\n  on half: \"a\" at left\n}");
-    assert!(
-        err.message
-            .contains("`half`, which is a value and not a beat"),
-        "{err}"
+    assert_eq!(
+        err.message,
+        "`e` reaches a state on `half`, which is a value and not a beat. A state is reached on a beat's name, which a beat has where it's written: `beat half`, or `beat half for 0.5` to say how long it takes"
     );
     assert_eq!(err.line, line(3));
 }
@@ -269,16 +267,15 @@ fn states_out_of_the_timelines_order_are_an_error_at_the_one_that_runs_first() {
 }
 
 #[test]
-fn a_figure_whose_beats_have_no_lengths_has_none_to_name() {
+fn a_figure_of_steps_has_no_beat_to_name() {
     let err = build(
         "place p = (0, 0)\nlet P = (0, 0)\nlet Q = (1, 0)\nbeat \"One.\" {\n  dot P\n}\nbeat \"Two.\" {\n  dot Q\n}\nexpression e {\n  on two: \"a\" at p\n}",
         &[],
     )
     .unwrap_err();
-    assert!(
-        err.message.contains("this figure's beats have no names")
-            && err.message.contains("`expression e by beat`"),
-        "{err}"
+    assert_eq!(
+        err.message,
+        "`e` reaches a state on `two`, and this figure's beats have no names: each is a step, written `beat \"caption\" { … }`. A beat with a name is written `beat two`, and takes a second or the length it says, and `expression e by beat` takes a state for each step"
     );
     assert_eq!(err.line, 11);
 }
@@ -387,8 +384,9 @@ fn written_together_a_product_fades_and_spaced_its_last_factor_moves() {
     );
 }
 
-/// A trial, from Kris's "maybe just make it 1 second by default": a named beat can leave out its
-/// length. With no `duration` it takes a second, so it has a during, and a state `on` it plays.
+/// A named beat can leave out its length, since Kris's "maybe just make it 1 second by default",
+/// kept on 2026-11-21. With no `duration` it takes a second, so it has a during, and a state `on`
+/// it plays.
 const OPEN: &str = "viewport { x: 0..400, y: 0..400 } style figure { width: 400px; height: 400px }
 beat write
 pause 0.5
@@ -467,7 +465,7 @@ fn under_a_stated_duration_beats_with_no_length_share_what_is_left() {
 }
 
 /// The square with every length taken out, and its `duration` and `poster` with them: what the
-/// trial does to a real figure. Each of its 15 beats is a second, and its algebra still plays.
+/// default does to a real figure. Each of its 15 beats is a second, and its algebra still plays.
 #[test]
 fn the_square_with_no_lengths_plays_a_second_a_beat() {
     let root = concat!(env!("CARGO_MANIFEST_DIR"), "/../../corpus/");
@@ -792,4 +790,44 @@ fn lengths_that_run_past_the_duration_say_so_and_not_that_nothing_is_left() {
         "the beats with lengths and the pauses take 2 seconds, which leaves nothing of the `duration` of 2 for the beat with no length"
     );
     assert_eq!(err.line, 3);
+}
+
+/// A name is enough to make a beat a move, so two of them with no length are a figure with a
+/// clock: 2 s, which `duration` reads. A figure with no move has none, and says what would.
+#[test]
+fn named_beats_with_no_length_give_a_figure_its_duration() {
+    let f = build("beat a\nbeat b\nlet d = duration\n", &[]).unwrap();
+    assert_eq!(f.scene.duration, Some(2.0));
+    assert_eq!(f.scene.beat_lengths, [1.0, 1.0]);
+    let d = f.scene.bindings.iter().find(|b| b.id == "d").unwrap();
+    assert_eq!(d.expr, pencil_core::ir::Expr::Num(2.0));
+    let none = "this figure has no `duration` statement, and no beat with a name or a length to add up to one, so there's no `duration` to read";
+    for src in [
+        "let d = duration",
+        "pause 2\nlet d = duration",
+        "let P = (0, 0)\nbeat \"One.\" {\n  dot P\n}\nlet d = duration",
+    ] {
+        assert_eq!(build(src, &[]).unwrap_err().message, none, "{src}");
+    }
+}
+
+/// A figure's beats are all moves or all steps, and a name alone makes a move.
+#[test]
+fn a_step_and_a_named_beat_do_not_mix() {
+    let step = "let P = (0, 0)\nbeat \"One.\" {\n  dot P\n}\n";
+    for named in ["beat a", "beat a for 1"] {
+        let err = build(&format!("{step}{named}"), &[]).unwrap_err();
+        assert_eq!(
+            err.message,
+            "a beat with a name or a length can't follow a `beat \"caption\" { … }` step: a figure's beats are all one kind or all the other. Give the steps names",
+            "{named}"
+        );
+        assert_eq!(err.line, 5, "{named}");
+        let err = build(&format!("{named}\n{step}"), &[]).unwrap_err();
+        assert_eq!(
+            err.message,
+            "a `beat \"caption\" { … }` step can't follow a beat with a name or a length: a figure's beats are all one kind or all the other. Give this one a name",
+            "{named}"
+        );
+    }
 }

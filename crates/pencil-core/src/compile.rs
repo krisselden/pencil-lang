@@ -235,7 +235,7 @@ pub const DURATION: &str = "duration";
 /// What the figure's length is, for an expression that reads `duration`.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 enum Length {
-    /// The figure has no `duration` statement, and no beats with lengths to add up to one.
+    /// The figure has no `duration` statement, and no moves to add up to one.
     #[default]
     Unstated,
     /// The statement's own value is being worked out.
@@ -247,7 +247,7 @@ enum Length {
 }
 
 /// A figure with nothing to say how long it is.
-pub const NO_DURATION: &str = "this figure has no `duration` statement, and no beats with lengths to add up to one, so there's no `duration` to read";
+pub const NO_DURATION: &str = "this figure has no `duration` statement, and no beat with a name or a length to add up to one, so there's no `duration` to read";
 
 /// A length that would be part of the sum it reads.
 const DURATION_FROM_ITSELF: &str = "this figure has no `duration` statement, so `duration` is what its beats and pauses add up to, and a beat's length or a pause that reads it, itself or through a `let`, is working it out from itself";
@@ -1345,7 +1345,8 @@ impl Lowerer {
     }
 }
 
-/// The beats with lengths, and the pauses between them, as the document tells them.
+/// The moves, which are the beats with a name or a length, and the pauses between them, as the
+/// document tells them.
 #[derive(Default)]
 struct Story {
     steps: Vec<Step>,
@@ -1410,8 +1411,8 @@ impl Story {
     }
 }
 
-/// The last beat or pause of a figure whose length is what they add up to: one with beats that
-/// have lengths and no `duration` statement. `duration` is known once that one is read.
+/// The last beat or pause of a figure whose length is what they add up to: one whose beats are
+/// moves, with no `duration` statement. `duration` is known once that one is read.
 fn adds_up_at(items: &[Item]) -> Option<usize> {
     let stated = items
         .iter()
@@ -3497,11 +3498,11 @@ fn on_beats(
             let reaches = format!("`{name}` reaches a state on `{beat}`");
             return Err(fail(if scene.bindings.iter().any(|b| b.id == beat) {
                 format!(
-                    "{reaches}, which is a value and not a beat. Only a beat with a length has a name to reach it on, as in `beat {beat} for 0.5`"
+                    "{reaches}, which is a value and not a beat. A state is reached on a beat's name, which a beat has where it's written: `beat {beat}`, or `beat {beat} for 0.5` to say how long it takes"
                 )
             } else if beats.is_empty() && !scene.beats.is_empty() {
                 format!(
-                    "{reaches}, and this figure's beats have no names. A beat has one when it has a length, as in `beat {beat} for 0.5`, and `expression {name} by beat` takes a state for each beat that has none"
+                    "{reaches}, and this figure's beats have no names: each is a step, written `beat \"caption\" {{ … }}`. A beat with a name is written `beat {beat}`, and takes a second or the length it says, and `expression {name} by beat` takes a state for each step"
                 )
             } else {
                 match crate::suggest::suggestion(beat, beats.iter().copied()) {
@@ -3509,7 +3510,7 @@ fn on_beats(
                         format!("{reaches}, and no beat is named that: did you mean {hint}?")
                     }
                     None => format!(
-                        "{reaches}, and no beat is named that. A beat is named with its length, as in `beat {beat} for 0.5`"
+                        "{reaches}, and no beat is named that. A beat is named where it's written: `beat {beat}`, or `beat {beat} for 0.5` to say how long it takes"
                     ),
                 }
             }));
@@ -3645,7 +3646,7 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
                     return Err(Error::at(
                         written.line,
                         1,
-                        "a beat with a length can't follow one without: give them all lengths",
+                        "a beat with a name or a length can't follow a `beat \"caption\" { … }` step: a figure's beats are all one kind or all the other. Give the steps names",
                     ));
                 }
                 if scene.beats.is_empty() {
@@ -3715,7 +3716,7 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
             } => {
                 if !story.moves.is_empty() {
                     return Err(Error::new(
-                        "a beat without a length can't follow one with: give them all lengths",
+                        "a `beat \"caption\" { … }` step can't follow a beat with a name or a length: a figure's beats are all one kind or all the other. Give this one a name",
                     ));
                 }
                 if scene.beats.is_empty() {
@@ -5136,7 +5137,7 @@ mod tests {
         for src in [
             "let a = duration",
             "param a in 0..1\nbind a = time / duration",
-            // A pause alone, and beats with no lengths, add up to nothing.
+            // A pause alone, and steps, add up to nothing.
             "pause 2\nlet a = duration",
             "let P = (0, 0)\nbeat \"One.\" {\n  dot P\n}\nlet a = duration",
         ] {
@@ -7253,8 +7254,11 @@ mod tests {
             ("beat a for -1", "less than no time"),
             ("beat a for time", "uses `time`"),
             ("beat a for 1 tag t", "has none"),
-            ("beat \"old\" { }\nbeat a for 1", "give them all lengths"),
-            ("beat a for 1\nbeat \"old\" { }", "give them all lengths"),
+            ("beat \"old\" { }\nbeat a for 1", "Give the steps names"),
+            ("beat a for 1\nbeat \"old\" { }", "Give this one a name"),
+            // A name is enough to make a beat a move, with no length written.
+            ("beat \"old\" { }\nbeat a", "Give the steps names"),
+            ("beat a\nbeat \"old\" { }", "Give this one a name"),
             ("let a = 1\nbeat a for 1", "already defined"),
         ];
         for (src, want) in cases {

@@ -410,7 +410,8 @@ pub struct Scene {
     /// How long one pass of the time bindings takes, for looping and video.
     pub duration: Option<f64>,
     pub beats: Vec<String>,
-    /// Each beat's move in seconds, when beats have lengths, and empty when they don't.
+    /// How long each beat takes in seconds, written or not, when the beats are moves, and empty
+    /// when they're steps.
     pub beat_lengths: Vec<f64>,
     pub handles: Vec<Handle>,
     pub spots: Vec<Spot>,

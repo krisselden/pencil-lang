@@ -51,7 +51,7 @@ that names them. `lab/explainer/limacon.pen` is the example: a file to each part
 | `solve (x, y) from 0, 1: f(x, y) = 0, g(x, y) = 2` | Unknowns defined by equations (see below). |
 | `bind a = expr` | What drives a param when no reader has taken it over. A param with a binding has two drivers, the binding and the reader, and the reader's last action picks. Setting it, with a drag, a key, a control or a page's `hold`, takes it over. Setting a param its binding reads, directly, through other bindings, a choice's options or a range, hands it back: in `bind theta = case`, where the case's options read `q`, setting `q` or the case brings θ back to its binding. Params set together, as in the element's `params="q: 8; theta: 1"`, keep each other. Time is the same: setting it, or playing, hands back what it drives. A page reads which params each binding reads in `info.params` (`reads`), and needs no script of its own for this. |
 | `beat "caption" tag t { … }` | A discrete step of a construction (see below). |
-| `beat spin "caption" for 2 show P drop c focus P, .arms` | One move of a figure's story, with a length (see below). On trial: a named one can leave `for 2` out. |
+| `beat spin "caption" for 2 show P drop c focus P, .arms` | One move of a figure's story (see below). A named one can leave `for 2` out, and takes a second. |
 | `pause 0.4` | A hold between moves, in seconds, a constant (see Constants). |
 | `curve c = …` | A drawn curve, in one of the forms below. |
 | `segment s = A, B` | A straight line between points. |
@@ -134,7 +134,7 @@ the document says:
 - **A param that follows time is held, or `time` is said, and not both.** Time and a reader take turns on such a param, and a
   poster is one moment: `time` gives the param the value it has there, so holding it as well is an error. A param time doesn't
   drive goes with a `time`, as `roll` does above.
-- **Without one,** the poster is the end of the story for a figure whose beats have lengths, where everything has arrived,
+- **Without one,** the poster is the end of the story for a figure whose beats are moves, where everything has arrived,
   and the start of the clock for any other.
 - **It changes nothing about the figure as it runs.** A page that wants the figure to start where its poster is holds those
   params itself, from what the build wrote down.
@@ -148,19 +148,24 @@ went into it (`sources`), so a build knows when to make it again. `--card` adds 
 
 ### Beats
 
-A `beat` block groups marks into a discrete step. Any `beat` block declares the param `beat`,
-ranging over the beats, and its marks get the block's tags. A `self.age` in a style is that
-mark's own `beat − index`, so one rule can fade every earlier beat. In a figure with a `duration`, beats
-with no lengths share it evenly and `beat` follows time, so the timing is said once: ten beats in
-`duration 30` are 3 s each. With no duration, a reader steps through them. `bind beat = …` can
-still drive them by something else.
+There are two kinds of beat, and a figure's are all one kind. A **step** is `beat "caption" { … }`: a block with a
+caption, and no name and no length. A **move** is a beat with a name, a length, or both: `beat grow`, `beat grow for 1`,
+`beat "A circle." for 1`.
 
-**A beat can say what it's about,** with or without a length: `focus P, .arms`, and `self.focus` is 1
+**A step** groups marks into a discrete stage of a construction. Any `beat` declares the param `beat`,
+ranging over the beats, and a step's marks get the block's tags. A `self.age` in a style is that
+mark's own `beat − index`, so one rule can fade every earlier step. In a figure with a `duration`, steps
+share it evenly and `beat` follows time, so the timing is said once: ten steps in
+`duration 30` are 3 s each. With no duration, a reader steps through them. `bind beat = …` can
+still drive them by something else. A step has no progress: `beat` is a whole number, and what a step shows is there all
+at once.
+
+**A beat can say what it's about,** a move or a step: `focus P, .arms`, and `self.focus` is 1
 on those during that beat and 0 on the rest, until a beat names others. An entry can follow a choice,
 so the beat is about what a reader picked: `focus level, .boundary if case = "p = 0", .middle if case
-= "q = 2p"`. On a beat with no length, `focus` comes after its tags: `beat "…" tag t focus … {`.
+= "q = 2p"`. On a step, `focus` comes after its tags: `beat "…" tag t focus … {`.
 
-**A beat can have a length,** which makes it one move of a figure's story. Beats and pauses run in
+**A move is one move of a figure's story,** and takes time. Beats and pauses run in
 the order they're written, and their lengths add up to the `duration`, so making one longer moves
 everything after it instead of everything having to be retimed. A length is a constant (see Constants):
 
@@ -187,12 +192,12 @@ beat gone for 0.5 drop c, P
   something else, and before any does, everything is in focus. A sheet reads it as `self.focus`.
 - **A caption holds until a beat has another,** and `""` clears it. Captions are drawn in the
   figure only when a sheet asks, with `style caption { … }`, since a page can show them as text.
-- **A named beat can leave its length out,** on trial since 2026-11-21 and not settled: `beat grow show c`. With no
-  `duration` statement it takes a second. Under a stated `duration`, the beats with no length share evenly what the
-  written lengths and pauses leave of it, and it's an error if they leave nothing. Either way it's a move like any
-  other: its name is its progress, and `duration` counts it.
-- The older `beat "caption" { … }`, with no name, is a step with no progress, and it can't be mixed with moves in one
-  figure.
+- **A named beat can leave its length out:** `beat grow show c`. With no `duration` statement it takes a second.
+  Under a stated `duration`, the beats that wrote no length share evenly what the written lengths and pauses leave of
+  it, and it's an error if they leave nothing. Either way it's a move like any other: its name is its progress, and
+  `duration` counts it. A second is a first guess that nobody wrote, so say `for` once a move's timing matters.
+- **Moves and steps can't be mixed in one figure.** A name makes a beat a move, so giving each step one is how a
+  figure of steps becomes a figure of moves.
 
 ### Equations
 
@@ -368,8 +373,8 @@ expression work {
   named twice, and a name that isn't a beat's are errors at that state's line: `` `factor` comes before `expand` in the
   timeline, but follows it in `work` ``. The beats can be written above the expression or below it, a beat with a block
   too: its terms are drawn where the expression is written.
-- **Only a move has a name,** so that's what `on` takes. A figure of the older steps, `beat "caption" { … }`, which a
-  reader steps through, drives its expression `by beat`, as below.
+- **`on` takes a beat's name,** which a move has when it's written with one, with a length or without. A step,
+  `beat "caption" { … }`, has none, so a figure of steps drives its expression `by beat`, as below.
 
 **A number, for scrubbing.** `by` takes any number, and a state is written for each whole value from 1: at 3.4 the
 expression is on its way from state 3 to state 4. State 0 is the empty one before the first that's written, and
@@ -461,7 +466,7 @@ such as `for`, `in`, `step` or `tag`. A function's name before `(` is a call. An
 `a (b + c)` are products, and a power after them is the parentheses' own: `a(b + c)²` is a·(b + c)². Letters together are one name, so `ab` is a name and `a b` is a product. The
 constants' own glyphs `π`, `ℯ`, `ⅈ` and `ⅇ` never join a name, so `2πi`, `2πr` and `iπ` are products, and `π_1` is still a name. `(a, b)` is a
 point, which is also a complex number (see below), and `P.x` and `P.y` read one. Names can be Unicode. A subscript is part of a name, and
-`x1`, `x_1`, `x₁` and `x_{1}` are all the name `x_1`, as in Desmos and LaTeX; digits inside a name, as in `p2q`, aren't one. `time` is always available. `duration` is the number the figure's `duration` statement says, so `bind theta = mod(time, duration) / duration·2·π` turns once a pass and the length is written once. In a figure with no statement whose beats have lengths, it's what the beats and pauses add up to, which is how long the figure runs: `pause 0.5`, `beat grow for 1` and `beat spin for 2` make `duration` 3.5, read above them or below. It reads the same in a `let`, a `bind`, a mark and a style, and it's a constant, but not in its own statement, and not in a beat's length or a pause of a figure whose beats add up to it, directly or through a `let`: that length would be part of the sum it reads, and the error says so. A figure with no statement and no beats with lengths has no `duration`, and reading it is an error. One whose beats have blocks reads it after them, or says its `duration`. A figure says its `duration` once, and once it does, nothing else at its top level can take the name: a second statement, or a `let`, `param`, choice, `fn`, `solve` unknown or beat called `duration`, is an error. A parameter is local as always, so a `fn` or group whose parameter is called `duration` reads its own argument, and a sheet's own `let duration` is the sheet's. A figure with no `duration` statement can take the name for its own value, as with `pi`. `pi` and `π` are π, and `e`
+`x1`, `x_1`, `x₁` and `x_{1}` are all the name `x_1`, as in Desmos and LaTeX; digits inside a name, as in `p2q`, aren't one. `time` is always available. `duration` is the number the figure's `duration` statement says, so `bind theta = mod(time, duration) / duration·2·π` turns once a pass and the length is written once. In a figure with no statement whose beats are moves (see Beats), it's what the beats and pauses add up to, which is how long the figure runs: `pause 0.5`, `beat grow for 1` and `beat spin for 2` make `duration` 3.5, read above them or below, and a named beat that wrote no length counts its second. It reads the same in a `let`, a `bind`, a mark and a style, and it's a constant, but not in its own statement, and not in a beat's length or a pause of a figure whose beats add up to it, directly or through a `let`: that length would be part of the sum it reads, and the error says so. A figure with no statement and no moves, which has no beats, pauses alone, or steps, has no `duration`, and reading it is an error. One whose beats have blocks reads it after them, or says its `duration`. A figure says its `duration` once, and once it does, nothing else at its top level can take the name: a second statement, or a `let`, `param`, choice, `fn`, `solve` unknown or beat called `duration`, is an error. A parameter is local as always, so a `fn` or group whose parameter is called `duration` reads its own argument, and a sheet's own `let duration` is the sheet's. A figure with no `duration` statement can take the name for its own value, as with `pi`. `pi` and `π` are π, and `e`
 and `ℯ` are Euler's number, unless the figure takes the name for something of its own, as bounds does with its curve `e`; then
 every `e` in the figure is that, and `exp` is Euler's. In the IR they're MathJSON's `Pi` and `ExponentialE`. `2e` is 2·e, while
 `2e3` is 2000. Coordinates only exist inside the curve that names them.

@@ -717,7 +717,7 @@ pub fn resolve_keeping(
         ..Styled::default()
     };
     let names: Vec<&str> = scene.bindings.iter().map(|b| b.id.as_str()).collect();
-    // What `duration` reads: what the document says, or what its beats with lengths add up to.
+    // What `duration` reads: what the document says, or what its moves and pauses add up to.
     let duration = scene.duration;
     // The document comes last, and its own `let`s are bindings.
     let sheet_names = sheet_names(&sheets[..sheets.len().saturating_sub(1)])?;

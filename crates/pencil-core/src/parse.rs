@@ -18,13 +18,13 @@ pub struct Document {
     pub items: Vec<Item>,
 }
 
-/// A beat with a length, as written.
+/// A move, as written: a beat with a name, a length, or both.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Move {
     pub name: Option<String>,
     pub caption: Option<String>,
     /// How long it takes. A named beat can leave it out, and takes a second, or its share of
-    /// what a stated `duration` has left.
+    /// what a stated `duration` has left after the lengths and pauses that are written.
     pub length: Option<Expr>,
     pub show: Vec<String>,
     pub drop: Vec<String>,

@@ -163,45 +163,35 @@ Proposed by Claude on 2026-11-09, not yet agreed:
 - **Should a span take TeX too?** A label's mathematics is Pencil's own notation in `$…$` (`language.md`, Mathematics in
   labels). Kris is on the fence about TeX inside the span, which a LaTeX or manim user types from memory. Its braces collide
   with `{expr}`, and it would be a second notation.
-- **How should a state arrive on a beat a reader steps to?** Open since 2026-11-21, with states on named beats, and Kris's
-  to decide. Two facts first. The older step, `beat "…" { … }`, has no name and no "during": `beat` is a whole number
-  there, so `on` can't name one, and such a figure writes `by beat` and its states switch at once. And a reader's step
-  never plays a move, whatever the beat: the element seeks to the end of the next beat and pauses (in the square, six
-  steps land at 1.2, 2.2, 3.2, 4.1, 6.2 and 7.5 s), so a reader who steps through the square sees 15 stills, and no term
-  travels, copies off `z`, or factors.
+- **Should a reader's step play the move?** Open since 2026-11-21, and Kris's to decide. A reader's step never plays a
+  move, whatever the beat: the element seeks to the end of the next beat and pauses (in the square, six steps land at
+  1.2, 2.2, 3.2, 4.1, 6.2 and 7.5 s). So a reader who steps through the square sees 15 stills, and no term travels,
+  copies off `z`, or factors, though every one of those moves has a length.
 
-  Kris's suggestion, the same day: "If a beat has no length and there is no duration maybe just make it 1 second by
-  default?" It can mean two things, and only the second makes anything play:
-  1. **Steps get a clock.** With no `duration`, the older steps take a second each, so the figure has a length, a
-     `duration` to read and a video. Each is still a step: `beat` stays whole, and a state arrives at once, in a video
-     too. No figure here or on the blog has steps and no `duration` (bounds states 30), so it would change none of
-     them. Not built.
-  2. **A beat with no length is a move of a second** (tried, in its own commit, to take or leave). A named beat can
-     leave `for` out, and is then a move like any other, with progress. The square with every length taken off
-     compiles as it is: 15 beats of a second and its 8.4 s of pauses, 23.4 s where its author's lengths made 18.8, and
-     the algebra plays through each second, exactly as if every beat said `for 1` (`tests/transitions.rs`). Under a
-     stated `duration` such beats share what the written lengths and pauses leave, which is what Kris took to be true
-     already.
+  What's settled around it. The question began as how a state should arrive on a beat with no length, which had no
+  "during" at all. Kris: "If a beat has no length and there is no duration maybe just make it 1 second by default?"
+  Tried and kept the same day, for named beats (`decisions.md`): a named beat that leaves `for` out is a move of a
+  second, or of its share of what a stated `duration` has left, so it has progress and a state `on` it plays. The
+  square with every length taken off compiles as it is: 15 beats of a second and its 8.4 s of pauses, 23.4 s where its
+  author's lengths made 18.8, with the algebra playing through each second exactly as if every beat said `for 1`
+  (`tests/transitions.rs`). That gives every named beat a move to play. It doesn't play it on a step.
 
-  The second is needed for a step to play, and it isn't enough: the element still seeks. `web/stepped.html` shows what
-  it would do in its place, in page script, on that square: go to where the beat starts (its end, less its length), play,
-  and pause at its end. Each press of Next then plays one second and stops (0.4 to 1.4 s, then 1.7 to 2.7 s), and the
-  same page jumps, as now, for comparison. In the element that's `step` going forward, for a figure whose beats time
-  drives, and a step back would still jump. It changes how every figure with moves steps, the explainer included, so it
-  wants watching there, and its keys and what it says to a screen reader want their tests run.
+  Recommended, not built: the element's forward step goes to where the next beat starts (its end, less its length),
+  plays, and pauses at its end, for a figure whose beats time drives, and a step back still jumps. `web/stepped.html`
+  does that in page script on the square with no lengths: each press of Next plays one second and stops (0.4 to 1.4 s,
+  then 1.7 to 2.7 s), and the same page jumps, as now, for comparison. It changes how every figure with moves steps,
+  the explainer included, so it wants watching there, and its keys and what it says to a screen reader want their
+  tests run. The other way is to leave the element seeking, and a stepping reader keeps seeing stills.
 
-  Not tried, and a bigger change: making the older steps moves too, so that the two kinds mix and bounds' ten steps
+  Not done, and a bigger change: making the older steps moves too, so that the two kinds mix and bounds' ten steps
   become moves of their 3 s share. Measured on a copy of bounds rewritten that way: `beat` runs 0 to 10 where it ran 0
   to 9 and follows a timeline where it was a floor, 54 of its 55 marks change in the IR (each gets a `life`, or its
   `focus` shifts by a beat), and 116 of 121 frames at four a second render differently. Its sheet reads
   `reveal(self.age, now, later)`, which turns over at an age of a half, so every mark would go to its `later` look
-  halfway through its own 3 s. Bounds' sheet would have to be rewritten on `self.life` and `self.focus` first. The
-  trial leaves that form alone, so bounds and its golden are as they were.
-
-  Recommended: the second, for named beats as tried, and then the element's step playing the move. Against it: a
-  second nobody wrote is an implicit rule in a language that prefers things declared, and the alternative that keeps
-  it declared is to leave `for` required and change only the element. The square's own lengths run from 0.4 to 1.1 s,
-  so a second is a fair first guess and rarely the last word.
+  halfway through its own 3 s. Bounds' sheet would have to be rewritten on `self.life` and `self.focus` first. Steps
+  are as they were, so bounds and its golden are too. A second way to give steps a clock, a second each when no
+  `duration` is stated while they stay whole steps, would change no figure here or on the blog, since the only one with
+  steps states its `duration`. It isn't built either.
 - **How should a moving loop's dashes behave?** A loop gets a whole number of dashes, so they jump as it grows: about 25 times a
   cycle on the breathing circle, by arithmetic, not watched. The blog's hysteresis depends on history, which breaks seeking. A
   related one: dashes on a moving range ride with its start, and a real string's would stay put as it unwinds.
@@ -522,8 +512,14 @@ each one changes the language or the frame's order, so they come before more fig
      still to be chosen and not settled by a side effect. No figure wrote it. The square's 16 rows as main wrote them
      are typed out in a test, compiled `by beat`, and the per-place states are held to them state by state: the check
      that doesn't go through the rule.
-   - **After review: lengths past the `duration`.** With the one-second trial, `duration 1`, `beat a for 2`, `beat b`
+   - **After review: lengths past the `duration`.** With a second for a named beat that writes no length, `duration 1`, `beat a for 2`, `beat b`
      said the lengths "leave nothing" for `b`. They run past the duration by themselves, and now say that.
+   - **A named beat with no length is kept, 2026-11-21.** Asked whether to keep the trial where a named beat with no
+     length takes one second, Kris: "Keep it". So it's the rule (`decisions.md`; `language.md`, Beats), and what still
+     said that only a beat with a length has a name is corrected: three errors about a state's beat, the one for a
+     figure with no `duration` to read, and the one for mixing the two kinds, which now says a figure's beats are all
+     moves or all steps and that a name makes a move. Each is pinned by a test. What's open is whether a reader's step
+     plays the move (Questions).
    - **The square's `shorten` beat is a pause, 2026-11-21.** The cleanup the note proposed, as its own change, since
      it changes what a reader sees: `shorten` did nothing but shorten the equation, so the beat is gone, the 1.6 s
      after `name` is one pause, and `z = a + b i` becomes `z` on `measure`, as its angle and length are written. The
