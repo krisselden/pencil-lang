@@ -179,7 +179,10 @@ beat gone for 0.5 drop c, P
 - **`show` and `drop` say when marks are there,** by name or `.tag`, and a beat's block shows
   what it declares. A mark that's ever shown isn't there before it, a dropped one isn't there
   after, and while it isn't there it isn't drawn at all. A mark no beat names is always there.
-  How it arrives and leaves is the sheet's, with `self.life`.
+  How it arrives and leaves is the sheet's, with `self.life`. A mark that moves during the beat that shows it
+  shouldn't fade in for the whole beat, since the fade hides the move: with `snap` on the move and
+  `opacity: smoothstep(0, 1, self.life)`, the mark is half there when 97% of the move is over. Make it solid in the
+  first few frames, `opacity: snap(8·self.life)`, or show it in a beat of its own before it moves.
 - **`focus` says what a beat is about,** by name or `.tag`. It holds until a later beat names
   something else, and before any does, everything is in focus. A sheet reads it as `self.focus`.
 - **A caption holds until a beat has another,** and `""` clears it. Captions are drawn in the
