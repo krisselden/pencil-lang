@@ -311,8 +311,18 @@ fn the_references_examples_compile() {
     );
     let by = build(&format!("{view}{}", blocks[1]), &[]).unwrap();
     assert_eq!(by.scene.expressions[0].states.len(), 4);
-    // The series starts on its first term, and a reader's `n` takes it to the fourth.
+    // The series starts on its first term, and a reader's `n` takes it to all seven of the fourth.
+    let terms = |n: f64| {
+        let inputs = Inputs {
+            time: 0.0,
+            params: vec![("n".to_string(), n)],
+        };
+        let all = prepare(&by, &inputs, 400, 400, 1.0).unwrap().labels;
+        all.iter().map(|l| l.words()).collect::<Vec<_>>()
+    };
     assert_eq!(labels(&by, 0.0).len(), 1);
+    assert_eq!(terms(1.0), ["1"]);
+    assert_eq!(terms(4.0), ["1", "+", "x", "+", "x²/2", "+", "x³/6"]);
 }
 
 /// `lab/expressions/joined.pen` and `spaced.pen`: the same two states, written `2ab` and
@@ -584,4 +594,41 @@ fn a_place_is_written_once_in_a_state_and_a_wrong_name_says_what_is_close() {
         "no place named `at_sun`: did you mean `at_sum`?"
     );
     assert_eq!(err.line, 4);
+}
+
+/// An expression's beats are found once every beat is read, so it can be written above them,
+/// a beat with a block included, and a wrong name is checked against all of them either way.
+#[test]
+fn an_expression_can_be_written_above_its_beats_whatever_they_hold() {
+    let places = "let P = (100, 100)\nplace p = (100, 200)\nplace q = (300, 200)\n";
+    let view = "viewport { x: 0..400, y: 0..400 } style figure { width: 400px; height: 400px }\n";
+    let beats = "beat a for 1 {\n  dot P\n}\nbeat b for 1\n";
+    let expression = "expression e {\n  on a: \"x\" at p\n  on b: \"x\" at q\n}\n";
+    let above = build(&format!("{view}{places}{expression}{beats}"), &[]).unwrap();
+    let below = build(&format!("{view}{places}{beats}{expression}"), &[]).unwrap();
+    assert_same(&above, &below, 2.0);
+    // The term is drawn where it's written: under the dot above the beats, over it below.
+    let order =
+        |f: &Figure| -> Vec<String> { f.scene.marks.iter().map(|m| m.id.clone()).collect() };
+    assert_eq!(order(&above), ["e.x", "P"]);
+    assert_eq!(order(&below), ["P", "e.x"]);
+
+    for (src, line) in [
+        (
+            "place p = (0, 0)\nexpression e {\n  on write: \"x\" at p\n  on mvoe: \"y\" at p\n}\nbeat write for 1\nbeat move for 1",
+            4,
+        ),
+        (
+            "place p = (0, 0)\nbeat write for 1\nbeat move for 1\nexpression e {\n  on write: \"x\" at p\n  on mvoe: \"y\" at p\n}",
+            6,
+        ),
+    ] {
+        let err = build(src, &[]).unwrap_err();
+        assert_eq!(
+            err.message,
+            "`e` reaches a state on `mvoe`, and no beat is named that: did you mean `move`?",
+            "{src}"
+        );
+        assert_eq!(err.line, line, "{src}");
+    }
 }

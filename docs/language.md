@@ -366,7 +366,8 @@ expression work {
   states, retimes the story and leaves which terms move alone.
 - **States are written in the order their beats run,** and each beat brings one state. A state out of order, a beat
   named twice, and a name that isn't a beat's are errors at that state's line: `` `factor` comes before `expand` in the
-  timeline, but follows it in `work` ``.
+  timeline, but follows it in `work` ``. The beats can be written above the expression or below it, a beat with a block
+  too: its terms are drawn where the expression is written.
 - **Only a move has a name,** so that's what `on` takes. A figure of the older steps, `beat "caption" { … }`, which a
   reader steps through, drives its expression `by beat`, as below.
 

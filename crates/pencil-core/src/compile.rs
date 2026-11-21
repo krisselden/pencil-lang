@@ -2887,11 +2887,9 @@ fn needs(item: &Item) -> Vec<String> {
             );
         }
         Item::Place { at, offset, .. } => all(&mut [at].into_iter().chain(offset), &mut out),
-        // A state's beat is read as a value is, so a beat written after the expression comes early.
-        Item::Expression { by, states, .. } => {
-            by.iter().for_each(|by| refers(by, &mut out));
-            out.extend(states.iter().filter_map(|state| state.on.clone()));
-        }
+        // The beats its states are `on` are looked up once every beat is read, so it needs none
+        // of them early.
+        Item::Expression { by, .. } => by.iter().for_each(|by| refers(by, &mut out)),
         Item::Arrow { from, to, .. } => all(&mut [from, to].into_iter(), &mut out),
         Item::Move(m) => {
             m.length.iter().for_each(|length| refers(length, &mut out));
@@ -3116,8 +3114,11 @@ fn in_order(items: Vec<Item>) -> Result<Vec<Item>, Error> {
         added,
         visiting: Vec::new(),
     };
-    for i in 0..items.len() {
-        order.visit(i, false, false)?;
+    for (i, item) in items.iter().enumerate() {
+        // Whatever went wrong on the way, it's this statement that needed it.
+        order
+            .visit(i, false, false)
+            .map_err(at_line(reader_line(item)))?;
     }
     let order = order.order;
     let mut slots: Vec<Option<Item>> = items.into_iter().map(Some).collect();
@@ -3134,7 +3135,28 @@ fn line_of(item: &Item) -> usize {
         | Item::Param { line, .. }
         | Item::Choice { line, .. }
         | Item::Solve { line, .. }
-        | Item::Duration { line, .. } => *line,
+        | Item::Duration { line, .. }
+        | Item::Bind { line, .. }
+        | Item::Poster { line, .. }
+        | Item::Curve { line, .. }
+        | Item::Segment { line, .. }
+        | Item::RightAngle { line, .. }
+        | Item::Region { line, .. }
+        | Item::Dots { line, .. }
+        | Item::Label { line, .. }
+        | Item::Text { line, .. }
+        | Item::DotAt { line, .. }
+        | Item::ArcSegment { line, .. }
+        | Item::Many { line, .. }
+        | Item::Outline { line, .. }
+        | Item::Place { line, .. }
+        | Item::Expression { line, .. }
+        | Item::Arrow { line, .. }
+        | Item::Handle { line, .. }
+        | Item::Viewport { line, .. } => *line,
+        Item::Style(rule) => rule.line,
+        // A beat or a pause on the way to another leaves the line to what read it: see
+        // `reader_line` for one that's the reader itself.
         _ => 0,
     }
 }
@@ -3596,6 +3618,8 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
         }};
     }
 
+    // Expressions whose states are `on` beats: which, its name, and its states as written.
+    let mut on_beats_later: Vec<(usize, &str, &[crate::parse::State])> = Vec::new();
     // With no `duration` statement, the beats and pauses add up to it, and until the last of them
     // is read there's no sum to hand out.
     let adds_up_at = adds_up_at(items);
@@ -4456,11 +4480,15 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
                 // its beat changes, and `board` is what the expression holds as they add up.
                 let on_beats_states = by.is_none();
                 let mut board: Vec<Piece> = Vec::new();
+                let index = scene.expressions.len();
                 let by = match by {
                     Some(by) => lowerer.scalar(by, &none).map_err(at_line(*line))?,
-                    None => on_beats(name, states, &story, &scene)?,
+                    // Its beats can be written after it, so they're found at the end.
+                    None => {
+                        on_beats_later.push((index, name.as_str(), states.as_slice()));
+                        num(0.0)
+                    }
                 };
-                let index = scene.expressions.len();
                 let mut written = Vec::with_capacity(states.len());
                 let mut seen: Vec<String> = Vec::new();
                 // `slow:2ab` is a term named `slow` that prints `2ab`. The name is what it is,
@@ -4749,6 +4777,10 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
             }
         };
         scene.viewport.fit.push(entry);
+    }
+    // Every beat is read now, wherever it was written, so each state's beat can be found.
+    for (index, name, states) in on_beats_later {
+        scene.expressions[index].by = on_beats(name, states, &story, &scene)?;
     }
     if !story.moves.is_empty() {
         finish_story(&mut scene, &story)?;
@@ -5184,6 +5216,17 @@ mod tests {
             "{err}"
         );
         assert_eq!(err.line, 2);
+        // A mark that reads it says where it is, as a `let` does.
+        let err = scene(
+            "let P = (0, 0)\nbeat a for 1 {\n  label c = \"x\" at (duration, 0)\n}\nbeat b for 1 {\n  dot P\n}",
+        )
+        .unwrap_err();
+        assert!(
+            err.message
+                .contains("Say the figure's `duration`, or read it after its beats"),
+            "{err}"
+        );
+        assert_eq!(err.line, 3);
         // Read after the block, it's the sum.
         let s = scene("let P = (0, 0)\nbeat a for 1 {\n  dot P\n}\nlet d = duration").unwrap();
         assert_eq!(s.duration, Some(1.0));

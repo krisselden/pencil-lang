@@ -510,6 +510,13 @@ each one changes the language or the frame's order, so they come before more fig
      whole line, and writing per place saves it nothing. Nothing drawn changed: 661 frames as SVG over the whole 65.6 s
      and 142 rendered from 39 to 58.5 s are the same bytes. In the IR, `said` is gone, each `by` is its sum, `defs` has
      two states, and one state of `work` lists its two places in the other order, the one already there first.
+   - **After review, 2026-11-21: an expression above its beats.** A state's beat was looked up where the expression
+     was written, so its beats were brought early, as for a value that reads a beat's name. A beat with a block can't
+     come early, so an expression above one was an error, with no line, and a wrong name was only checked against the
+     beats read so far, so `on mvoe` above `beat move` got no "did you mean". The beats are now looked up once all are
+     read. An expression can be written anywhere, its terms drawn where it's written, and a wrong name is checked
+     against every beat. The ordering errors that printed no line (a label or any other mark reading what can't come
+     early) now say the line of the statement that needed it.
    - **The square's `shorten` beat is a pause, 2026-11-21.** The cleanup the note proposed, as its own change, since
      it changes what a reader sees: `shorten` did nothing but shorten the equation, so the beat is gone, the 1.6 s
      after `name` is one pause, and `z = a + b i` becomes `z` on `measure`, as its angle and length are written. The
