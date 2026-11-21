@@ -360,7 +360,7 @@ expression work {
 - **A term is in one place,** so a term written at a new place moves there and leaves the place it was at, which is
   then empty if that was all it held. `on join: "a + b" at sum` takes `a` and `b` from wherever they were.
 - **`empty` clears every place:** `on clear: empty`. There's no way yet to clear one place and keep the rest, since no
-  figure has needed it.
+  figure has needed it, and writing nothing at a place, `"" at p`, is an error and not a way to do it.
 - **A beat no state names changes nothing,** so a hold isn't written: `measure` above can show an angle, and take as
   long as it likes, while the algebra stays put. Making a beat longer, or putting a pause or another beat between two
   states, retimes the story and leaves which terms move alone.

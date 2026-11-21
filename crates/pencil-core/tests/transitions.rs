@@ -94,10 +94,14 @@ fn its_beats_can_be_written_after_it() {
     assert_same(&after, &before, 4.5);
 }
 
-/// What an expression holds after each state, worked out here on its own from the rule and
-/// not by the compiler: a place that's written is set, where it already is in the list, a term
-/// written at a new place leaves its old one, a place left with nothing goes, and `empty` clears
-/// them all. A state is `"terms" at place, …`, as written.
+/// What an expression holds after each state, as text a `by beat` expression can be written
+/// from: a place that's written is set, where it already is in the list, a term written at a new
+/// place leaves its old one, a place left with nothing goes, and `empty` clears them all. A state
+/// is `"terms" at place, …`, as written.
+///
+/// This is the compiler's rule written a second time, in its order, so it turns a figure's states
+/// into whole rows to compare layouts with, and it can't catch a misreading of the rule. The
+/// rows typed out in `the_squares_states_are_the_sixteen_rows_it_was_written_as` are what do.
 fn boards(states: &[&str]) -> Vec<String> {
     let mut board: Vec<(String, Vec<String>)> = Vec::new();
     let mut out = Vec::new();
@@ -161,12 +165,15 @@ fn the_square_lays_out_what_a_state_for_each_of_its_beats_does() {
     assert!(states.iter().all(|(on, _)| beats.contains(on)));
     let written: Vec<&str> = states.iter().map(|(_, state)| *state).collect();
     let whole = boards(&written);
-    // `z` is written once and held at its place through eight later states.
-    assert_eq!(written.iter().filter(|s| s.contains("at_z")).count(), 3);
-    assert_eq!(
-        whole.iter().filter(|s| s.contains("\"z\" at at_z")).count(),
-        8
-    );
+    // `z` alone is written at its place once, and is there in eight of the whole states.
+    let z_alone = |states: &[String]| {
+        states
+            .iter()
+            .filter(|s| s.contains("\"z\" at at_z"))
+            .count()
+    };
+    let as_written: Vec<String> = written.iter().map(|s| s.to_string()).collect();
+    assert_eq!((z_alone(&as_written), z_alone(&whole)), (1, 8));
     let mut holds = "empty";
     let mut rows = String::from("expression work by beat {\n");
     for beat in &beats {
@@ -594,6 +601,143 @@ fn a_place_is_written_once_in_a_state_and_a_wrong_name_says_what_is_close() {
         "no place named `at_sun`: did you mean `at_sum`?"
     );
     assert_eq!(err.line, 4);
+}
+
+/// The square's sixteen rows as they were written before states could name beats, one for each
+/// beat with `shorten` still a beat, typed out here. They're the independent statement of what
+/// the figure holds: a `by beat` state is whole, so nothing in them goes through the rule.
+const SQUARE_ROWS: [&str; 16] = [
+    r#""a" at at_a"#,
+    r#""a" at at_a, "+ b i" at at_b"#,
+    r#""a + b i" at at_z"#,
+    r#""z = a + b i" at at_z"#,
+    r#""z" at at_z"#,
+    r#""z" at at_z"#,
+    r#""z" at at_z"#,
+    r#""z" at at_z, "z.1 a" at at_tip_a"#,
+    r#""z" at at_z, "z.1 a" at at_tip_a, "z.2 b" at at_tip_b"#,
+    r#""z" at at_z, "z.1 a" at at_tip_a, "z.2 b i" at at_tip_b"#,
+    r#""z" at at_z, "z.1 a" at at_tip_a, "+ z.2 b i" at beside_b"#,
+    r#""z" at at_z, "z.1 a + z.2 b i" at at_sum"#,
+    r#""z" at at_z, "z.1 ( a + b i )" at at_sum"#,
+    r#""z" at at_z, "z.1 ²" at at_sum"#,
+    r#""z" at at_z, "z.1 ²" at at_sum"#,
+    "empty",
+];
+
+/// The same figure, each beat writing the places it changes.
+const SQUARE_ON: [(&str, &str); 13] = [
+    ("build_a", r#""a" at at_a"#),
+    ("build_b", r#""+ b i" at at_b"#),
+    ("join", r#""a + b i" at at_z"#),
+    ("name", r#""z = a + b i" at at_z"#),
+    ("shorten", r#""z" at at_z"#),
+    ("scale_a", r#""z.1 a" at at_tip_a"#),
+    ("scale_b", r#""z.2 b" at at_tip_b"#),
+    ("rotate", r#""z.2 b i" at at_tip_b"#),
+    ("slide", r#""+ z.2 b i" at beside_b"#),
+    ("add", r#""z.1 a + z.2 b i" at at_sum"#),
+    ("factor", r#""z.1 ( a + b i )" at at_sum"#),
+    ("squared", r#""z.1 ²" at at_sum"#),
+    ("clear", "empty"),
+];
+
+#[test]
+fn the_squares_states_are_the_sixteen_rows_it_was_written_as() {
+    let beats = [
+        "build_a",
+        "build_b",
+        "join",
+        "name",
+        "shorten",
+        "measure",
+        "unmeasure",
+        "scale_a",
+        "scale_b",
+        "rotate",
+        "slide",
+        "add",
+        "factor",
+        "squared",
+        "result",
+        "clear",
+    ];
+    let mut head = String::new();
+    for beat in beats {
+        head.push_str(&format!("beat {beat} for 1\n"));
+    }
+    for (k, place) in [
+        "at_a", "at_b", "at_z", "at_tip_a", "at_tip_b", "beside_b", "at_sum",
+    ]
+    .iter()
+    .enumerate()
+    {
+        head.push_str(&format!("place {place} = ({k}, 0)\n"));
+    }
+    let rows = build(
+        &format!(
+            "{head}expression work by beat {{\n{}\n}}",
+            SQUARE_ROWS.join("\n")
+        ),
+        &[],
+    )
+    .unwrap();
+    let states: Vec<String> = (SQUARE_ON.iter())
+        .map(|(beat, state)| format!("on {beat}: {state}"))
+        .collect();
+    let on = build(
+        &format!("{head}expression work {{\n{}\n}}", states.join("\n")),
+        &[],
+    )
+    .unwrap();
+    // What the figure holds as each of the sixteen beats ends: its row, and the state of the
+    // last beat named at or before it.
+    let (rows, on) = (held(&rows), held(&on));
+    assert_eq!((rows.len(), on.len()), (16, 13));
+    let mut holds = "";
+    for (k, beat) in beats.iter().enumerate() {
+        if let Some(at) = SQUARE_ON.iter().position(|(named, _)| named == beat) {
+            holds = &on[at];
+        }
+        assert_eq!(holds, rows[k], "on `{beat}`");
+    }
+    // And the corpus's square is those states, with `measure` doing what `shorten` did.
+    let pen = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../corpus/006-square/square.pen"
+    ))
+    .unwrap();
+    for (beat, state) in SQUARE_ON {
+        let beat = if beat == "shorten" { "measure" } else { beat };
+        assert!(
+            pen.contains(&format!("  on {beat}: {state}\n")),
+            "on `{beat}`"
+        );
+    }
+}
+
+#[test]
+fn nothing_written_at_a_place_is_an_error_and_not_a_way_to_clear_it() {
+    let err = build(
+        &format!("{PLACES}expression e {{\non one: \"x\" at p, \"y\" at q\non two: \"\" at p\n}}"),
+        &[],
+    )
+    .unwrap_err();
+    assert_eq!(
+        err.message,
+        "nothing is written at `p`, and a place can't be cleared on its own yet. A term written at another place leaves this one, and `empty` clears every place of `e`"
+    );
+    assert_eq!(err.line, 10);
+    // Spaces alone are nothing too.
+    let err = build(
+        &format!("{PLACES}expression e {{\non one: \"  \" at p\n}}"),
+        &[],
+    )
+    .unwrap_err();
+    assert!(
+        err.message.starts_with("nothing is written at `p`"),
+        "{err}"
+    );
 }
 
 /// An expression's beats are found once every beat is read, so it can be written above them,

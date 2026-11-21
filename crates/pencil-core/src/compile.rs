@@ -4509,6 +4509,13 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
                                 "no place named `{place}`{hint}"
                             ))));
                         };
+                        // Nothing written at a place would empty it, and how one place is cleared
+                        // isn't decided, so it isn't spelled this way by accident.
+                        if on_beats_states && text.split_whitespace().next().is_none() {
+                            return Err(fail(Error::new(format!(
+                                "nothing is written at `{place}`, and a place can't be cleared on its own yet. A term written at another place leaves this one, and `empty` clears every place of `{name}`"
+                            ))));
+                        }
                         // Two texts at one place would be laid out on top of each other.
                         if pieces.iter().any(|p: &Piece| p.spot == spot) {
                             return Err(fail(Error::new(format!(

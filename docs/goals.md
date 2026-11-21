@@ -517,6 +517,11 @@ each one changes the language or the frame's order, so they come before more fig
      read. An expression can be written anywhere, its terms drawn where it's written, and a wrong name is checked
      against every beat. The ordering errors that printed no line (a label or any other mark reading what can't come
      early) now say the line of the statement that needed it.
+   - **After review: nothing written at a place.** `on b: "" at p` emptied `p`, by accident of how an empty place is
+     dropped, while the reference said one place can't be cleared. It's an error now, so how to clear one place is
+     still to be chosen and not settled by a side effect. No figure wrote it. The square's 16 rows as main wrote them
+     are typed out in a test, compiled `by beat`, and the per-place states are held to them state by state: the check
+     that doesn't go through the rule.
    - **The square's `shorten` beat is a pause, 2026-11-21.** The cleanup the note proposed, as its own change, since
      it changes what a reader sees: `shorten` did nothing but shorten the equation, so the beat is gone, the 1.6 s
      after `name` is one pause, and `z = a + b i` becomes `z` on `measure`, as its angle and length are written. The
