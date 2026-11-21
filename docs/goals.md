@@ -1256,7 +1256,11 @@ built, and so are the element as a package and the component, tried on `pencil-l
 drive, and it didn't: the flag was read and dropped, so every video was the figure with its params where the document left
 them. A video now holds each for all its frames (`pencil video … --param n=5`). One that follows time, itself, through what
 it reads or through the range it's kept in, is an error there, since each frame already has its value: a still takes it, as a
-reader's hand does. On every command a name that is no param is an error too. It used to change nothing, and a `let`'s name
+reader's hand does. Kris, the same day: time and a hand take turns driving a param, so a still that's given `--t` is time's
+turn, and `--t` with a `--param` that follows time is an error on `render`, `svg`, `build` and `check` as well. Either
+alone is taken. For the same reason `--t` hands back a time-driven param the document's `poster` holds, which used to stay
+held, so the time changed nothing it drew. A document's `poster` has the rule too, in the core: `time` and a param that
+follows time, both in one poster, is an error (`decisions.md`). No figure here or on the blog had one. On every command a name that is no param is an error too. It used to change nothing, and a `let`'s name
 stood in for the `let`, which the language lets nothing but the document set. A name's subscript can be written any of a
 document's ways (`r1` for `r_1`). The check is the command's, in `held_params`, and the core still takes whatever inputs
 it's handed, so the page's `set_param` is as it was.

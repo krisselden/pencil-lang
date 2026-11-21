@@ -113,7 +113,7 @@ fn a_video_refuses_a_param_that_follows_time() {
     assert_eq!(
         said,
         "error: --param p: `p` follows time in this figure, so a video can't hold it at one value. \
-         `render` and `svg` take it, for one frame\n"
+         `render` and `svg` take it for one frame, without --t\n"
     );
     assert!(!to.parent().unwrap().exists(), "nothing is written");
     // A still takes it: that's a reader's hand on it, for one frame.
@@ -128,6 +128,62 @@ fn a_video_refuses_a_param_that_follows_time() {
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
+}
+
+/// `--t` asks for the frame at a time, and a param that follows time has its value there. So the
+/// two together are refused, on each command that draws a still, and either alone is taken.
+#[test]
+fn a_still_at_a_time_refuses_a_param_that_follows_time() {
+    for command in ["render", "svg", "build", "check"] {
+        let to = out("at-a-time").join(command);
+        let said = error(&squaring(command, &["--t", "1", "--param", "p=1.5"], &to));
+        assert_eq!(
+            said,
+            "error: --param p: `p` follows time in this figure, and --t says the time, which gives \
+             it its value. Leave one of the two out\n",
+            "{command}"
+        );
+        assert!(!to.exists(), "{command} wrote something");
+    }
+    // A param time doesn't drive goes with a time.
+    let to = out("at-a-time.svg");
+    let output = squaring("svg", &["--t", "1", "--param", "n=5"], &to);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+/// A document's poster can hold a param that follows time. `--t` asks for another moment, and
+/// the param follows it there: left held, the time would change nothing the param draws.
+#[test]
+fn a_time_releases_a_param_the_poster_holds() {
+    let figure = |poster: &str| {
+        format!(
+            "doc d\nduration 4\nviewport {{ x: -2..2, y: -2..2 }}\nparam r in 0.5..1.5\n\
+             bind r = 0.5 + time / 4\n{poster}curve c = implicit (x, y): x² + y² = r²\n"
+        )
+    };
+    let draw = |name: &str, poster: &str, more: &[&str]| {
+        let (doc, to) = (out(&format!("{name}.pen")), out(&format!("{name}.svg")));
+        std::fs::write(&doc, figure(poster)).unwrap();
+        let args = ["svg", doc.to_str().unwrap(), "--size", "200"];
+        let output = pencil(&[&args[..], more, &["--out", to.to_str().unwrap()]].concat());
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        std::fs::read_to_string(&to).unwrap()
+    };
+    let held = "poster { r: 1.5 }\n";
+    // With no time said, the poster's `r`, which is the circle at the end of the figure's time.
+    assert_eq!(draw("poster", held, &[]), draw("end", "", &["--t", "4"]));
+    // At a time, the circle of that time, as with no poster.
+    let at = draw("poster-at", held, &["--t", "1"]);
+    assert_eq!(at, draw("plain-at", "", &["--t", "1"]));
+    assert_ne!(at, draw("poster", held, &[]));
 }
 
 /// A file's frame as RGB, by ffmpeg, which is what wrote the video.

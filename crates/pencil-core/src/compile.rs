@@ -4595,6 +4595,22 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
         }
     }
     in_dependency_order(&mut scene)?;
+    // Time and a reader's hand take turns on a param, and a still is one moment, so it has one
+    // of them. Checked here, where the bindings are in order and a `bind` is in its param.
+    if let Some(poster) = &scene.poster
+        && poster.time.is_some()
+    {
+        let driven = crate::clock::time_driven(&scene);
+        if let Some((name, _)) = poster.params.iter().find(|(n, _)| driven.contains(n)) {
+            return Err(Error::at(
+                poster_line,
+                1,
+                format!(
+                    "a poster says `time` or holds `{name}`, and not both: `{name}` follows time, which gives it its value there"
+                ),
+            ));
+        }
+    }
     Ok(scene)
 }
 
@@ -4602,6 +4618,28 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
 mod tests {
     use super::*;
     use crate::parse::parse;
+
+    /// A poster is one moment, so a param that follows time is held or left to the time.
+    #[test]
+    fn a_poster_holds_a_param_that_follows_time_or_says_the_time() {
+        let figure = |poster: &str| {
+            let src = format!(
+                "param a in 0..1\nparam n = 2 in 1..3\nlet half = time / 2\nbind a = half\nposter {{ {poster} }}"
+            );
+            parse(&src).and_then(|doc| compile(&doc))
+        };
+        // Through a `let`, and with the `bind` written after its param.
+        let err = figure("time: 1, a: 0.5").unwrap_err();
+        assert_eq!(
+            err.message,
+            "a poster says `time` or holds `a`, and not both: `a` follows time, which gives it its value there"
+        );
+        assert_eq!(err.line, 5);
+        // Either alone, and a time with a param that time doesn't drive.
+        for poster in ["time: 1", "a: 0.5", "time: 1, n: 3", "a: 0.5, n: 3"] {
+            assert!(figure(poster).is_ok(), "{poster}");
+        }
+    }
 
     fn scene(src: &str) -> Result<Scene, Error> {
         compile(&parse(src)?)

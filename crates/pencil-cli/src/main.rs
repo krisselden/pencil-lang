@@ -38,8 +38,10 @@ build writes what a page needs for one figure under one set of sheets: the compi
 poster at its design size and at twice it, and a .json that says what they are and what the figure
 is. The poster is the moment the document's `poster` names, unless --t or --param say another.
 
---param NAME=VALUE sets one of the figure's params, and a name that isn't one is an error. A video
-holds it there for every frame, so it can't be a param that follows time: that one is the video.
+--param NAME=VALUE sets one of the figure's params, and a name that isn't one is an error. A param
+that follows time is set for a frame in place of a time, and not with one: with --t it's an error,
+since the time gives it its value, and so it is in a video, which holds a param for every frame.
+With --t, a param the document's `poster` holds follows the time too, if time drives it.
 
 Labels are set in the fonts built into this command, the ones a page draws with. --font FILE, on
 any command that draws, sets their words in another font. Their mathematics keeps the built-in one.
@@ -219,6 +221,41 @@ fn held_params(
     Ok(held)
 }
 
+/// What `--param` sets where the time is said too, by `--t` or by a video's frames. A param that
+/// follows time, itself, through what it reads or through the range it's kept in, has its value
+/// from that time, so setting it as well asks for two frames at once. `clash` is the rest of the
+/// sentence, after "`a` follows time in this figure, ".
+fn params_beside_time(
+    composition: &Composition,
+    args: &Args,
+    clash: &str,
+) -> Result<Vec<(String, f64)>, Box<dyn Error>> {
+    let params = held_params(composition, args)?;
+    let driven = clock::time_driven(&composition.panels[0].figure.scene);
+    match params.iter().find(|(name, _)| driven.contains(name)) {
+        Some((name, _)) => {
+            Err(format!("--param {name}: `{name}` follows time in this figure, {clash}").into())
+        }
+        None => Ok(params),
+    }
+}
+
+/// What `--param` sets for a still. With no `--t`, a param that follows time can be set, as a
+/// reader's hand sets it. With one, the frame asked for is the figure at that time.
+fn still_params(
+    composition: &Composition,
+    args: &Args,
+) -> Result<Vec<(String, f64)>, Box<dyn Error>> {
+    match args.times.is_empty() {
+        true => held_params(composition, args),
+        false => params_beside_time(
+            composition,
+            args,
+            "and --t says the time, which gives it its value. Leave one of the two out",
+        ),
+    }
+}
+
 /// The frame's height for a width, following the figure's shape. Even, because video
 /// encoders need that.
 fn height_for(composition: &Composition, width: u32) -> u32 {
@@ -376,7 +413,7 @@ fn render(args: &Args) -> Result<(), Box<dyn Error>> {
     let out = args.out.as_ref().ok_or("render needs --out")?;
     let inputs = Inputs {
         time,
-        params: held_params(&composition, args)?,
+        params: still_params(&composition, args)?,
     };
     let gpu = match args.cpu {
         true => None,
@@ -397,8 +434,12 @@ fn still_moment(composition: &Composition, args: &Args) -> Result<Inputs, Box<dy
     let mut inputs = composition.poster();
     if let Some(time) = args.times.first() {
         inputs.time = *time;
+        // The frame at that time is what's asked for, so a param the poster holds follows it
+        // where time drives it. Left held, `--t` would change nothing the param draws.
+        let driven = clock::time_driven(&composition.panels[0].figure.scene);
+        inputs.params.retain(|(held, _)| !driven.contains(held));
     }
-    for (name, value) in held_params(composition, args)? {
+    for (name, value) in still_params(composition, args)? {
         inputs.params.retain(|(held, _)| *held != name);
         inputs.params.push((name, value));
     }
@@ -600,17 +641,14 @@ fn video(args: &Args) -> Result<(), Box<dyn Error>> {
     let composition = load(args)?;
     let out = args.out.as_ref().ok_or("video needs --out")?;
     // A video is the figure with time running, so a param is held for all of it. One that follows
-    // time, itself or through what it reads or the range it's kept in, has a value in each frame
-    // already, and holding it would be another figure. That's said, and not done or ignored.
-    let params = held_params(&composition, args)?;
-    let driven = clock::time_driven(&composition.panels[0].figure.scene);
-    if let Some((name, _)) = params.iter().find(|(name, _)| driven.contains(name)) {
-        return Err(format!(
-            "--param {name}: `{name}` follows time in this figure, so a video can't hold it at \
-             one value. `render` and `svg` take it, for one frame"
-        )
-        .into());
-    }
+    // time has a value in each frame already, and holding it would be another figure. That's
+    // said, and not done or ignored.
+    let params = params_beside_time(
+        &composition,
+        args,
+        "so a video can't hold it at one value. `render` and `svg` take it for one frame, \
+         without --t",
+    )?;
     if let Some(parent) = out.parent() {
         fs::create_dir_all(parent)?;
     }
@@ -774,7 +812,7 @@ fn crop(image: &[u8], canvas_width: u32, frame: &PanelFrame) -> Vec<u8> {
 /// The GPU's canvas against the oracle, a panel at a time, so where panels sit is tested too.
 fn check(args: &Args) -> Result<(), Box<dyn Error>> {
     let composition = load(args)?;
-    let params = held_params(&composition, args)?;
+    let params = still_params(&composition, args)?;
     let gpu = Offscreen::new()?;
     println!("gpu: {}", gpu.adapter_name);
     let mut pipelines = pipelines(&gpu, &composition)?;

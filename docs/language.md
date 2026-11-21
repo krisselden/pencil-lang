@@ -130,6 +130,9 @@ the document says:
 `poster { time: 3.5, roll: 0.6 }`
 
 - **`time`** is a moment of the clock, and anything else is a param, held there as if a reader had set it. Each is a constant (see Constants), so `time: duration / 5` is a fifth of the way through.
+- **A param that follows time is held, or `time` is said, and not both.** Time and a reader take turns on such a param, and a
+  poster is one moment: `time` gives the param the value it has there, so holding it as well is an error. A param time doesn't
+  drive goes with a `time`, as `roll` does above.
 - **Without one,** the poster is the end of the story for a figure whose beats have lengths, where everything has arrived,
   and the start of the clock for any other.
 - **It changes nothing about the figure as it runs.** A page that wants the figure to start where its poster is holds those
@@ -729,6 +732,8 @@ default paint, in the default ink:
 
 `pencil svg DOC.pen --style … --out FIGURE.svg` writes one frame as vector graphics, for a paper, a slide or a drawing
 program. It's the poster's moment unless `--t` or `--param` say another, at the figure's design size unless `--size` does.
+A param that follows time is set by one or the other: `--param` holds it, `--t` gives it the value it has at that time, and
+both for the same param is an error.
 It is written from the lines, regions and label places a frame prepares for the renderers, so it matches `pencil render` of
 the same frame. Each mark is an element, or a group of them, with the mark's name as its `id`, and a label is text.
 
