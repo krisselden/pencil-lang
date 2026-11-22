@@ -6,11 +6,17 @@ video.
 
 Read in this order, with earlier files winning where they disagree:
 
-1. `docs/goals.md`: current goals, everything still open (one list, under "Open"), the changes from
-   the July design, and how each figure went.
+1. `docs/goals.md`: current goals, the notes behind what's open, the changes from the July design, and how
+   each figure went.
 2. `docs/spec/`: the July plan and specs, unmodified. Their TypeScript, Three.js and TSL
    references are superseded as `goals.md` describes.
 3. `docs/design-notes.md`: background, including the overlap with the site.
+
+**What's open is in the repo's issues, not in a document** (`gh issue list`; `gh issue list --label decision` for what
+waits on Kris). Start a piece of work from its issue, and close it with the commit that finishes it (`Fixes #12`). When
+work leaves something open, add it to the issue it belongs to, or file one, instead of writing it into a doc. An issue
+says what's left, what's next and what done looks like, and the docs keep the background it points to. The repo is
+public and so are its issues: nothing from the blog's drafts, no recordings and nothing about an account goes in one.
 
 `docs/language.md` is the reference for the syntax and built-ins. Add to it when the language changes: a
 test fails if a built-in, property or statement goes undocumented. `docs/decisions.md` has a row for each

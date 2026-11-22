@@ -37,53 +37,20 @@ Blog figures are where this starts, and they must not foreclose on animation or 
 
 ## Open
 
-Everything still open, from every doc, gathered on 2026-11-09. The sections below are the record of how each figure went,
-and this is the one list to read for what's left. When something here is settled, remove it and write the decision where it
-belongs: `language.md` for the language, the section below for a figure.
+What's open, and whose move it is, is in the repo's [issues](https://github.com/krisselden/pencil-lang/issues), since 2026-11-21:
+one for each thread of work and each decision that's waiting, labeled by area. An issue says what's left, what comes next
+and what done looks like, and points here for the background. This section was that list until then, and it had grown
+past what anyone could read at a glance.
 
-### Now
-
-- **The explainer, phases 5 and 6** (`plan-explainer.md`): narration over the drafted cut, then a write-up here and in the
-  language reference. `lab/narration` times beats from a script, drafted with a synthesized voice ("Narration timing" below).
-  The whole script is drafted, with the glow left silent. Next: a take in Kris's voice.
-- **Names and notation**, agreed with Kris on 2026-11-12, in this order. `web/ast.html` shows how text reads at each step.
-  Subscripts, implicit products, constants a figure can take the name of, and pasting LaTeX are done (`language.md`,
-  decisions of 2026-11-12). Next:
-  1. **Files and libraries.** What Kris wants from it (2026-11-13), which is four things with one mechanism under them:
-     - **Split a long figure.** The limaçon explainer is 223 lines and 32 beats in seven numbered sections, and it's the
-       figure that shapes this.
-     - **Helpers written once.** The corpus defines 25 functions, some twice (`dir`), and two different things are both
-       called `turned`. Sheets want effects the same way: glows, blurs.
-     - **Libraries by area of mathematics,** as TypeScript's `"lib": ["ES2022", "WebWorker"]` names an environment: which
-       built-ins and constants a figure can expect. Written in Pencil. A letter can be a variable in one field and a
-       constant in another, and Desmos gives `r`, `θ`, `t` and `τ` meanings that a figure loses once it assigns them.
-     - **Animated constructions** to import, such as a perpendicular bisector that draws its two arcs and then its line:
-       useful, and too specific to be global. A `group` with arguments can't hold beats yet, so this needs that too.
-
-     **Built 2026-11-14: `use "file"`,** which is the first two. A used file's statements join the figure where the line
-     is, once, in the figure's one set of names (`language.md`, Documents). The core says which files it needs and a host
-     reads them: the CLI from disk, and `<pencil-figure>` and the playground by fetching, where each used file gets a tab.
-     The explainer is now `lab/explainer/limacon.pen` and a file to each of its seven parts, and its frames are the same
-     as before. A sheet can use a file too, which is where shared effects would go. Still to do:
-     - **Share the corpus's helpers.** `dir` is the only function two corpus figures both define (`004-bounds` and
-       `005-tangents`). Nothing was moved, since a corpus figure and its golden IR are one file each today.
-     - **Named libraries:** `lib complex, hyperbolic`, shipped with Pencil and written in it, whose names are defaults a
-       figure can take. A figure that names its libraries gets only those, so `lib geometry` leaves `i` and `e` free.
-     - **Groups that hold beats,** for constructions that animate.
-  2. **Labels from expressions:** a label that shows its own expression, as ggplot2 takes axis titles from the unevaluated
-     arguments R passes it. The IR keeps expressions symbolic, so the text is there. A style's `text: expr = value` (2026-11-13) writes the
-     expression as typed and its value as a number; what's left is writing it as math (`σ(2)` set as notation, not code) and
-     an exact value, `−½ − (√3/2)i`, where one exists.
-- **The playground's keys on real phones** ("The playground", Its keys on a touch screen). Kris has used the lab on his
-  iPhone, unframed. Not yet tried: Android at all, and the site's framed page on a real phone, where the frame is held to
-  what's visible. Not yet reported: the selection handles, Copy and Paste from a long press, and the **system** key, on
-  either. Only a device can settle: a phone held sideways, the system keyboard over a small phone, a key pressed while
-  Gboard composes, an iPad's hardware keyboard closing the keys, and a pinch while they're up.
-- **A figure after its GPU is lost, on Kris's devices** ("The element", A lost GPU). Built and tested headless on
-  2026-11-18. Still to see: Chrome on the Mac after sleep or a GPU switch, which is how Kris met it, and Safari on the
-  iPhone after the phone has locked, which no test can lose a GPU in.
+What stays here is the notes an issue points to: how the move to the blog was planned, questions nobody has set out to
+settle, known limits, and what isn't built or checked. One of them becomes an issue when someone means to do it. When
+something is settled, write the decision where it belongs: `language.md` and `decisions.md` for the language, the section
+below for a figure.
 
 ### The blog on Pencil
+
+The order, what's done and what's next are in [issue 7](https://github.com/krisselden/pencil-lang/issues/7) and the issues it
+lists. This is how it was planned.
 
 Planned with Kris on 2026-11-14. The goal is the site's figures drawn by Pencil, and `pencil-lang.dev` as the project's own
 site. The site has 33 figure placements from 31 sources: 20 interactive, 9 animated, 1 still and 3 in 3D. All but the five
@@ -139,20 +106,6 @@ GLSL shaders draw through one SVG system (`src/lib/plot.ts`), and nothing is mad
    and not in it: arrow keys (12 figures), dragging a point in two dimensions (5, built 2026-11-18: a handle that sets two
    params), Newton's steps as values (4) and panels of different sizes (4).
 
-### Proposed order after that
-
-Proposed by Claude on 2026-11-09, not yet agreed:
-
-1. **A custom element:** built as `<pencil-figure src sheets>` ("The element" below), and the playground and every figure
-   page in `web/` draw through it. Next: the site.
-2. **A highlighting grammar** for `.pen` and `.style`. Cheap, and it doesn't fix the syntax in place.
-3. **A playground with an editor:** the element, an editor, and the WASM check, for people who want to try it. A first one for
-   Kris is built ("The playground" below), ahead of the element and the grammar, so he can react to the syntax now.
-4. **A syntax pass,** before anything hardens the syntax. Split `compile_flat` first (below).
-5. **A language server,** diagnostics first, since errors already carry a line and column. Hover and completion once the syntax
-   settles.
-6. **MCP:** not until someone needs it. The CLI already renders and checks.
-
 ### Questions
 
 - **Is WebGPU needed?** Not for strokes or fields: both ran the same on WebGL2. Text is the untested part. Vello relies on compute
@@ -163,7 +116,7 @@ Proposed by Claude on 2026-11-09, not yet agreed:
 - **Should a span take TeX too?** A label's mathematics is Pencil's own notation in `$…$` (`language.md`, Mathematics in
   labels). Kris is on the fence about TeX inside the span, which a LaTeX or manim user types from memory. Its braces collide
   with `{expr}`, and it would be a second notation.
-- **Should a reader's step play the move?** Open since 2026-11-21, and Kris's to decide. A reader's step never plays a
+- **Should a reader's step play the move?** Open since 2026-11-21, and Kris's to decide ([issue 8](https://github.com/krisselden/pencil-lang/issues/8)). A reader's step never plays a
   move, whatever the beat: the element seeks to the end of the next beat and pauses (in the square, six steps land at
   1.2, 2.2, 3.2, 4.1, 6.2 and 7.5 s). So a reader who steps through the square sees 15 stills, and no term travels,
   copies off `z`, or factors, though every one of those moves has a length.
@@ -219,7 +172,7 @@ Proposed by Claude on 2026-11-09, not yet agreed:
   static assets take the file: the site sets how long a browser keeps each kind of file in one (`site/public/_headers`,
   2026-11-17). The header an embed from another origin needs hasn't been tried (`design-notes.md`, "Hosting").
 - **Where is `SPEC/18`?** The July 9 chat mentions it, and the plan's list stops at 17.
-- **A consistency pass on ranges (Kris, 2026-11-18).** He wants it done once more of the language is filled in, and
+- **A consistency pass on ranges (Kris, 2026-11-18;** [issue 12](https://github.com/krisselden/pencil-lang/issues/12)**).** He wants it done once more of the language is filled in, and
   raised these as questions while two-dimensional dragging was decided. Nothing here is answered yet:
   - A range sometimes means every value between its ends and sometimes only whole numbers, even with no `step`: a family
     seems to need whole numbers. Should they read the same?
@@ -307,6 +260,7 @@ What a figure has pointed at but not needed yet. `decisions.md` lists what the s
 - Lists as general values (39% of Kris's Desmos graphs), and piecewise values beyond `where` and `otherwise` (26%).
 - `polar` and function graphs as forms. Both reduce to parametric.
 - Dashes anchored at a range's far end.
+- MCP: not until someone needs it. The CLI already renders and checks.
 
 ### Not checked
 
@@ -322,7 +276,7 @@ What a figure has pointed at but not needed yet. `decisions.md` lists what the s
 ### Code
 
 - **`compile.rs` is 4,257 lines, and `compile_flat` alone is 889.** Every language feature has gone through it. It's the one place
-  where changes cost more than they should, so split it before the syntax pass. The parser's `statement` (360 lines) is next.
+  where changes cost more than they should, so split it before the syntax pass ([issue 14](https://github.com/krisselden/pencil-lang/issues/14)). The parser's `statement` (360 lines) is next.
 - The pairs that must agree are each held by tests: `eval` and the WGSL emitter, stroke coverage and its shader, and `eval` and
   `fast.rs`, to the bit.
 

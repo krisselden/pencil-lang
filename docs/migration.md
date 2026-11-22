@@ -10,6 +10,9 @@ nothing else in the inventory has been reread.
 
 ## Order
 
+Where the move stands, and which step is next, is in [issue 7](https://github.com/krisselden/pencil-lang/issues/7) and the
+issues it lists, since 2026-11-21. The steps below are the plan, and the record of what each found.
+
 Set with Kris on 2026-11-14. **The Doyle series goes first:** it's the furthest along and likely the first to be
 published. Its four posts are worked in the series' order: `doyle-spiral-shader`, `doyle-spiral-period`, `doyle-spiral-touch`,
 `doyle-spiral-solve`.
