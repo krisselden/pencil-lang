@@ -17,6 +17,9 @@ waits on Kris). Start a piece of work from its issue, and close it with the comm
 work leaves something open, add it to the issue it belongs to, or file one, instead of writing it into a doc. An issue
 says what's left, what's next and what done looks like, and the docs keep the background it points to. The repo is
 public and so are its issues: nothing from the blog's drafts, no recordings and nothing about an account goes in one.
+Those are draft items on Kris's private board, which also says where each issue stands
+(`gh project item-list 1 --owner krisselden`): its Status is Now, Next, Waiting on Kris, Later or Done. Move an item
+when that changes, add a new issue to the board when it's filed, and keep Now to two.
 
 `docs/language.md` is the reference for the syntax and built-ins. Add to it when the language changes: a
 test fails if a built-in, property or statement goes undocumented. `docs/decisions.md` has a row for each
