@@ -748,27 +748,50 @@ take hard, and the test was a reader who likes sections one and three recording 
   isn't one. Marking sections in the script, as blank lines, was the other way, and would be kept in step with the parts by
   hand.
 - **The prompter picks one.** With a section picked only its lines show, the first waiting below until it's due, and a take
-  starts 1.5 s before its first word and stops just before the next section's first line comes up. Takes lists every take
-  that holds the section, recorded as it or as part of a longer take, each with Play and a radio button for the one kept,
-  or no take and the draft voice. Play puts a take on the `.pen` and prompt it was read with, which the server copies beside
-  each take, so a take from before the last retime still plays in step. With the whole script picked, Takes shows what's
-  kept for each section. On a phone it's one bar: the section, Start, Takes, and the rest behind ⋯.
-- **The server keeps which take.** `out/takes/<figure>.kept.json`, a take per section by name, written whole and moved into
-  place. `GET /takes` lists the takes and it, and `POST /kept` changes it.
+  starts 1.5 s before its first word. **A recording never ends on its own:** at the section's end, before the next one's first
+  line, or at the figure's end with the whole script, the figure waits, the page says it's still recording, and the microphone
+  runs until the reader stops it. A reader slower than the draft, who is who the feature is for, isn't cut off, and playing
+  the take back holds the figure there while the rest of it plays. A take holds a section if it was running from before the
+  section's first word until its last was due, so one stopped partway, or started from a tapped word inside it, is kept as a
+  take but not offered for the section, and the page says why.
+- **Takes** lists every take that holds the section, recorded as it or as part of a longer take, each with Play, which says
+  Stop while it plays, and a radio button for the one kept, or no take and the draft voice. Opening it takes focus to the one
+  kept, and Escape closes it. Play puts a take on the `.pen` and prompt it was read with, which the server copies beside each
+  take, so a take from before the last retime still plays in step; the figure follows the recording's clock while it plays.
+  With the whole script picked, Takes shows what's kept for each section. On a phone it's one bar: the section, Start,
+  Takes, and the rest behind ⋯. Space starts and stops only when nothing that takes Space has focus; on a radio, a button or
+  the section menu it does what it does there.
+- **The guide, with a section take,** comes in halfway through the pause before the section's first word, so the end of the
+  section before isn't played through speakers into the lead-in, where trimming would keep it as loud. It isn't kept out of
+  the section itself: through speakers, the microphone hears it, so it's for headphones, which the control's title says.
+- **The server keeps which take.** `out/takes/<figure>.kept.json`, a take per section by name. `GET /takes` lists the
+  figure's takes (by their `figure`, so `limacon-short`'s aren't `limacon`'s) and it, and `POST /kept` changes it, for a
+  section the figure's prompt has and a take of that figure that holds it. Writes take a lock, since each request has a
+  thread, and a take gets a name no other has. A take's start and end must be finite numbers, and a take that can't be
+  described in JSON is left out of the listing. The page sends one choice at a time, in the order they were made, and draws
+  the menu again once none is waiting. A failed listing says so, and a take saved later brings the Takes button back.
 - **`join` makes one take of them,** and `align` and `retime` run on it as on any other. A take recorded as its section is
-  used whole, less the silence past 0.3 s at each end, so a slow reading isn't cut where the figure's section ended. A section
-  from a longer take is cut halfway through the silences around it, as the prompt it was read with timed them. A section with
-  none kept comes from the draft, cut by its own alignment. A kept take that doesn't hold its section, or read other words
-  for it, stops `join`.
+  used whole, less the silence past 0.3 s at each end. A section from a longer take is cut in the pauses around it as the
+  prompt it was read with timed them, at their quietest 100 ms, and if that's not 30 dB under the take's loudest, the reader
+  had fallen behind and a word would be split, so `join` stops and names the take and the section. A section with none kept
+  comes from the draft, cut by its own alignment, after checking the draft says the prompter's words. A kept take that
+  doesn't hold its section, read other words for it, or whose files are gone or incomplete stops `join` with a sentence, as
+  does a prompt with no lines. A section's name is its file's stem with anything but letters, digits, `_` and `-` made `-`.
 - **`scripts/serve.py` didn't answer a range request,** and a browser won't seek in audio it can't fetch part of. The guide,
-  started anywhere but the top, had been playing from its beginning, out of step. It answers them now. `--narration DIR`
-  serves a folder in place of `lab/narration/out`, so a check never touches real recordings.
+  started anywhere but the top, had been playing from its beginning, out of step. It answers them now, and says so on every
+  file. `--narration DIR` serves a folder in place of `lab/narration/out`, comparing paths without case, since a Mac's disk
+  doesn't, so the real folder can't be reached as `Out/`.
 - **Checked with the draft voice standing in:** Kokoro's `af_heart` at 0.8 speed for the narrator. In Playwright's Chromium,
   with the page's microphone fed a file, sections one and three were recorded once, two twice (the draft's voice, then the
   slow one), and two's second kept by arrow keys alone, at 375×812 and 1633×919. A reload showed the same three. Joined and
   retimed, the three sections run 5.71, 7.31 and 17.56 s where the draft ran 5.2, 6.69 and 15.85, the pauses around them
-  grew, and sections four to six kept the draft's lengths. A take played back with the figure was within 20 ms of it, and
-  the guide after the retime about 40 ms from it. Retiming from the draft writes the same `.pen` and audio as before, to the byte.
+  grew, and sections four to six kept the draft's lengths. Retiming from the draft writes the same `.pen` and audio as
+  before, to the byte. Also checked, after a review: a reading 5 s slower than the draft (6 s of silence in section two)
+  held the figure at the section's end and kept every word through `join` and the aligner; a take stopped halfway and one
+  from a tapped word weren't offered; a take lagging 0.85 s across a 0.55 s pause stopped `join`; Space on each control at
+  both sizes; a current take played straight after an earlier timing's, and a count-in after one; 60 takes and 60 choices
+  posted at once (60 names, every choice answered, six sections kept); `nan`, `inf` and a take naming another figure
+  refused; ranges.
 - **Not checked:** a real voice, a phone's microphone, and Safari's recording. Chromium's own fake microphone hung
   headless on macOS, so the check stood a stream from a file in for `getUserMedia`.
 

@@ -17,10 +17,12 @@ runs.
 import functools
 import http.server
 import json
+import math
 import os
 import pathlib
 import re
 import sys
+import threading
 import time
 import urllib.parse
 
@@ -28,6 +30,14 @@ import urllib.parse
 NARRATION = "lab/narration/out"
 TAKE_BYTES = 64 << 20
 NAME = re.compile(r"[\w-]{1,80}")
+# Takes and the record of which is kept are each read, changed and written by one request at a
+# time, since the server answers each request on a thread of its own.
+WRITING = threading.Lock()
+
+
+def finite(value):
+    """JSON with no NaN or Infinity in it, which a browser's JSON.parse refuses."""
+    return json.dumps(value, allow_nan=False)
 
 
 class NoCache(http.server.SimpleHTTPRequestHandler):
@@ -42,17 +52,22 @@ class NoCache(http.server.SimpleHTTPRequestHandler):
 
     def end_headers(self):
         self.send_header("Cache-Control", "no-cache")
+        if self.command in ("GET", "HEAD"):
+            self.send_header("Accept-Ranges", "bytes")
         super().end_headers()
 
     def translate_path(self, path):
-        found = pathlib.Path(super().translate_path(path))
-        served = pathlib.Path(self.directory, NARRATION)
-        if found == served or served in found.parents:
-            return str(self.narration / found.relative_to(served))
-        return str(found)
+        """A path under lab/narration/out is found in the narration folder. The comparison
+        ignores case, since a Mac's disk does, so `Out/` can't reach the repo's own folder when
+        another is served in its place."""
+        found = super().translate_path(path)
+        served = os.path.join(self.directory, NARRATION)
+        if found.casefold() == served.casefold() or found.casefold().startswith(served.casefold() + os.sep):
+            return str(self.narration / found[len(served) + 1 :]) if len(found) > len(served) else str(self.narration)
+        return found
 
     def reply(self, value, status=200):
-        body = json.dumps(value).encode()
+        body = finite(value).encode()
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
@@ -61,6 +76,30 @@ class NoCache(http.server.SimpleHTTPRequestHandler):
 
     def figure(self, query):
         return re.sub(r"[^\w-]", "", query.get("take", "take"))[:40] or "take"
+
+    def about(self, figure, name):
+        """A take of the figure, as its `.json` describes it, or None if there's no such take or
+        it can't be described: it isn't JSON, it's another figure's, or a time isn't a number."""
+        if not NAME.fullmatch(name):
+            return None
+        try:
+            take = json.loads((self.narration / "takes" / f"{name}.json").read_text(),
+                              parse_constant=lambda c: (_ for _ in ()).throw(ValueError(c)))
+            finite(take)
+        except (OSError, ValueError):
+            return None
+        times = [take.get(key) for key in ("start", "end")]
+        if take.get("figure") != figure or not all(isinstance(t, (int, float)) for t in times):
+            return None
+        return take
+
+    def section_names(self, figure):
+        """The sections the figure's prompt has now."""
+        try:
+            prompt = json.loads((self.narration / f"{figure}.prompt.json").read_text())
+            return {s["name"] for s in prompt.get("sections", [])}
+        except (OSError, ValueError, KeyError, TypeError):
+            return set()
 
     def do_GET(self):
         """`GET /takes?take=figure` lists the figure's takes, newest last, and which is kept for
@@ -76,9 +115,8 @@ class NoCache(http.server.SimpleHTTPRequestHandler):
         for about in sorted(takes.glob(f"{figure}-*.json")):
             if about.name.endswith((".prompt.json", ".kept.json")):
                 continue
-            try:
-                take = json.loads(about.read_text())
-            except ValueError:
+            take = self.about(figure, about.stem)
+            if take is None:
                 continue
             pen = about.with_suffix(".pen")
             # Whether it was read with the figure as it's timed now, and so plays back on it.
@@ -96,6 +134,9 @@ class NoCache(http.server.SimpleHTTPRequestHandler):
             return False
         size = path.stat().st_size
         first, last = found[1], found[2]
+        # A range that ends before it starts isn't one, and the whole file is sent (RFC 9110).
+        if first and last and int(last) < int(first):
+            return False
         start = int(first) if first else max(0, size - int(last))
         end = min(int(last), size - 1) if first and last else size - 1
         if start > end:
@@ -118,8 +159,9 @@ class NoCache(http.server.SimpleHTTPRequestHandler):
     def kept(self, figure):
         path = self.narration / "takes" / f"{figure}.kept.json"
         try:
-            return json.loads(path.read_text())
-        except (OSError, ValueError):
+            kept = json.loads(path.read_text())
+            return {k: v for k, v in kept.items() if isinstance(k, str) and isinstance(v, str)}
+        except (OSError, ValueError, AttributeError):
             return {}
 
     def do_POST(self):
@@ -136,22 +178,26 @@ class NoCache(http.server.SimpleHTTPRequestHandler):
         an empty `keep` goes back to the draft's voice for it."""
         figure, section, keep = self.figure(query), query.get("section", ""), query.get("keep", "")
         takes = self.narration / "takes"
-        if not NAME.fullmatch(section) or keep and (
-                not NAME.fullmatch(keep) or not keep.startswith(f"{figure}-")
-                or not (takes / f"{keep}.json").exists()):
-            self.send_error(400)
+        # Only a section the figure has now, and only a take of this figure that holds it.
+        if section not in self.section_names(figure):
+            self.send_error(400, "no such section")
             return
-        kept = self.kept(figure)
-        if keep:
-            kept[section] = keep
-        else:
-            kept.pop(section, None)
-        takes.mkdir(parents=True, exist_ok=True)
-        # Written whole and then moved into place, so a reload never reads half of it.
-        path = takes / f"{figure}.kept.json"
-        partial = path.with_suffix(".partial")
-        partial.write_text(json.dumps(kept, indent=1, sort_keys=True) + "\n")
-        os.replace(partial, path)
+        about = self.about(figure, keep) if keep else None
+        if keep and (about is None or section not in about.get("sections", [])):
+            self.send_error(400, "no take of this figure holds that section")
+            return
+        with WRITING:
+            kept = self.kept(figure)
+            if keep:
+                kept[section] = keep
+            else:
+                kept.pop(section, None)
+            takes.mkdir(parents=True, exist_ok=True)
+            # Written whole and then moved into place, so a reload never reads half of it.
+            path = takes / f"{figure}.kept.json"
+            partial = path.with_suffix(".partial")
+            partial.write_text(json.dumps(kept, indent=1, sort_keys=True) + "\n")
+            os.replace(partial, path)
         self.reply({"kept": kept})
 
     def take(self, query):
@@ -160,37 +206,41 @@ class NoCache(http.server.SimpleHTTPRequestHandler):
         starts and ends and the sections it holds, from the query string, with the figure and the
         prompter's timings as they were when it was read."""
         length = int(self.headers.get("Content-Length") or 0)
-        if not 0 < length <= TAKE_BYTES:
+        try:
+            start, end = float(query["start"]), float(query["end"])
+        except (KeyError, ValueError):
+            start = end = math.nan
+        if not 0 < length <= TAKE_BYTES or not (math.isfinite(start) and math.isfinite(end) and 0 <= start < end):
             self.send_error(400)
             return
         extension = {"audio/mp4": "m4a", "audio/webm": "webm", "audio/ogg": "ogg",
                      "audio/wav": "wav"}.get(self.headers.get("Content-Type", "").split(";")[0], "audio")
         figure = self.figure(query)
-        takes = self.narration / "takes"
-        takes.mkdir(parents=True, exist_ok=True)
-        name, k = f"{figure}-{time.strftime('%Y%m%d-%H%M%S')}", 1
-        while (takes / f"{name}.json").exists():
-            k += 1
-            name = f"{figure}-{time.strftime('%Y%m%d-%H%M%S')}-{k}"
-        (takes / f"{name}.{extension}").write_bytes(self.rfile.read(length))
-        # The figure and its prompt as they were timed when this was read, since a later retime
-        # would move them.
-        for suffix in (".pen", ".prompt.json"):
-            timed = self.narration / f"{figure}{suffix}"
-            if timed.exists():
-                (takes / f"{name}{suffix}").write_text(timed.read_text())
-        about = {"figure": figure, "recording": f"{name}.{extension}"}
-        for key in ("start", "end"):
-            try:
-                about[key] = float(query[key])
-            except (KeyError, ValueError):
-                pass
-        about["sheets"] = query.get("sheets", "")
-        # The section it was recorded as, if one was picked, and every section it holds whole.
-        if NAME.fullmatch(query.get("section", "")):
+        body = self.rfile.read(length)
+        about = {"figure": figure, "start": start, "end": end, "sheets": query.get("sheets", "")}
+        # The section it was recorded as, if it holds it, and every section it holds whole, of
+        # those the figure has.
+        names = self.section_names(figure)
+        about["sections"] = [s for s in query.get("sections", "").split(",") if s in names]
+        if query.get("section") in about["sections"]:
             about["section"] = query["section"]
-        about["sections"] = [s for s in query.get("sections", "").split(",") if NAME.fullmatch(s)]
-        (takes / f"{name}.json").write_text(json.dumps(about, indent=1) + "\n")
+        takes = self.narration / "takes"
+        with WRITING:
+            takes.mkdir(parents=True, exist_ok=True)
+            stamp = f"{figure}-{time.strftime('%Y%m%d-%H%M%S')}"
+            name, k = stamp, 1
+            while (takes / f"{name}.json").exists():
+                k += 1
+                name = f"{stamp}-{k}"
+            about["recording"] = f"{name}.{extension}"
+            (takes / about["recording"]).write_bytes(body)
+            # The figure and its prompt as they were timed when this was read, since a later
+            # retime would move them.
+            for suffix in (".pen", ".prompt.json"):
+                timed = self.narration / f"{figure}{suffix}"
+                if timed.exists():
+                    (takes / f"{name}{suffix}").write_text(timed.read_text())
+            (takes / f"{name}.json").write_text(json.dumps(about, indent=1) + "\n")
         self.reply({"saved": f"{NARRATION}/takes/{name}.{extension}", "take": {**about, "name": name,
                                                                                 "current": True}})
 

@@ -112,7 +112,7 @@
     <div class="options" id="options" popover>
       <button id="restart" type="button">From the top</button>
       <label><input id="record" type="checkbox" checked> Record</label>
-      <label><input id="guide" type="checkbox"> Hear the guide</label>
+      <label title="On headphones: the microphone hears speakers."><input id="guide" type="checkbox"> Hear the guide</label>
       <button id="playback" type="button" hidden>Play back</button>
     </div>
   </div>
@@ -120,7 +120,7 @@
     <output id="clock">0.0 s</output>
     <span id="recording" hidden>● Recording</span>
     <span id="take" aria-live="polite"></span>
-    <span class="keys">Space starts and stops. Tap a word to start just before it.</span>
+    <span class="keys">Space starts and stops, when no control has focus. Tap a word to start just before it.</span>
     <span id="error" role="alert"></span>
   </div>
 </div>
@@ -136,9 +136,13 @@
   // take goes to `scripts/serve.py`, with the figure's time it started at. A take is in step with
   // the figure by construction, so `narrate.py video` puts it on the rendered figure as it is.
   //
+  // A recording never ends on its own: at the figure's end, or the end of the section picked, the
+  // figure waits and the microphone runs on until the reader stops it, so a reader slower than the
+  // draft isn't cut off.
+  //
   // A script comes in sections, a part of the figure each, as `retime` lists them in the prompt.
-  // Picking one shows only its lines, and a take of it starts just before its first word and stops
-  // before the next section's. Takes shows the takes that hold the section picked, each played
+  // Picking one shows only its lines, and a take of it starts just before its first word and the
+  // figure waits before the next section's. Takes shows the takes that hold the section picked, each played
   // back on the figure it was read with, and which one is kept for it, which the server keeps
   // beside the takes and `narrate.py join` reads.
   import '@pencil-lang/figure';
@@ -220,13 +224,17 @@
     shown = null;
   }
 
-  /** Shows a figure and its prompt, and resolves when the figure has loaded. */
+  /** Shows a figure and its prompt, and resolves when that figure has loaded. `ready` is the
+   * latest such promise, which a take waits for before it starts. */
+  let ready = Promise.resolve();
   function showFigure(src, p) {
     if (prompt !== p) build(p);
-    if (shownPen === src) return Promise.resolve();
+    if (shownPen === src) return ready;
     shownPen = src;
-    return new Promise((resolve) => {
+    ready = new Promise((resolve) => {
       const done = () => {
+        // A figure asked for before this one can finish loading after it was replaced.
+        if (figure.getAttribute('src') !== src) return;
         figure.removeEventListener('load', done);
         figure.removeEventListener('error', done);
         resolve();
@@ -235,6 +243,7 @@
       figure.addEventListener('error', done);
       figure.setAttribute('src', src);
     });
+    return ready;
   }
 
   const words = (i) => prompt.lines[i];
@@ -269,19 +278,33 @@
     $('clock').textContent = `${t.toFixed(1)} s`;
   };
 
-  // The figure's clock loops, and a take shouldn't: it stops at the figure's end instead, which
-  // can come after the last word, or where a section or a take being played back ends.
+  // The figure's clock loops, and a take shouldn't: the figure stops at its end instead, which
+  // can come after the last word, or where a section or a take being played back ends. While a
+  // take is being recorded, or played back with more of it to come, it waits there instead, and
+  // the sound runs on.
   const end = () => figure.duration;
-  let last = 0, stopAt = Infinity;
+  let last = 0, stopAt = Infinity, holdOn = false, held = null, guideFrom = null, following = null;
   figure.addEventListener('draw', () => {
     const t = figure.time;
     const at = Math.min(end(), stopAt);
     if (!figure.paused && (t < last - 1 || t >= at - 0.02)) {
-      stop(at);
       figure.time = at;
       last = at;
       show(at);
+      if (recording() || holdOn) hold(at);
+      else stop(at);
       return;
+    }
+    // A take being played back sets the time: a figure slow to draw after loading would drift.
+    if (following !== null && !heard.paused && Math.abs(following + heard.currentTime - t) > 0.08) {
+      place(following + heard.currentTime);
+      return;
+    }
+    // The guide, held back through a section take's lead-in, comes in where its section does.
+    if (guideFrom !== null && !figure.paused && t >= guideFrom) {
+      guideFrom = null;
+      guide.currentTime = t;
+      guide.play().catch(() => {});
     }
     last = t;
     show(t);
@@ -296,6 +319,9 @@
   // Safari records MP4, the others WebM.
   const type = ['audio/mp4', 'audio/webm;codecs=opus', 'audio/webm']
     .find((t) => window.MediaRecorder?.isTypeSupported(t)) ?? '';
+  const recording = () => recorder?.state === 'recording';
+  const say = (text) => { $('take').textContent = text; };
+  const fail = (text) => { $('error').textContent = text; };
 
   /** The microphone, asked for once. Its processing is off: the aligner wants the voice as said. */
   async function microphone() {
@@ -315,6 +341,7 @@
     take.addEventListener('start', () => {
       take.began = figure.time;
       figure.play();
+      $('recording').textContent = '● Recording';
       $('recording').hidden = false;
     }, { once: true });
     take.addEventListener('stop', () => {
@@ -326,32 +353,40 @@
     take.start();
   }
 
+  /** The sections a take holds whole: it was running from before a section's first word until
+   * its last was due. A take started from a word inside a section, or stopped before its end,
+   * doesn't hold it. */
+  const holding = (start, finish) => sectionsOf(current)
+    .filter((s) => start <= firstWord(current, s) - 0.1 && finish >= lastWord(current, s));
+
   /** Sends a take to the server, which keeps it, and keeps it here to play back. It names the
-   * section it was recorded as, if one was picked, and each section it holds whole. */
+   * section it was recorded as, if it holds it, and each section it holds. `finish` is the
+   * figure's time it ended or waited at; the recording can run on past it. */
   async function keep(blob, start, finish, section) {
     if (!(finish - start >= SHORTEST)) return;
     lastTake = { url: URL.createObjectURL(blob), start, finish };
     $('playback').hidden = false;
     const range = `${start.toFixed(1)}–${finish.toFixed(1)} s`;
-    $('take').textContent = `Saving the take, ${range}…`;
-    const holds = sectionsOf(current)
-      .filter((s) => s.name === section || (start <= firstWord(current, s) - 0.1 && finish >= lastWord(current, s)))
-      .map((s) => s.name);
+    say(`Saving the take, ${range}…`);
+    const holds = holding(start, finish).map((s) => s.name);
     const query = new URLSearchParams({
       take: narration, start: start.toFixed(3), end: finish.toFixed(3), sheets, sections: holds.join(','),
     });
-    if (section) query.set('section', section);
+    const s = sectionsOf(current).find((s) => s.name === section);
+    if (s && holds.includes(s.name)) query.set('section', section);
     try {
       const saved = await fetch(`/takes?${query}`, {
         method: 'POST', headers: { 'Content-Type': blob.type }, body: blob,
       });
       if (!saved.ok) throw new Error(`${saved.status}`);
       const { take } = await saved.json();
+      if (!served) return await loadTakes();
       if (take) takes.push(take);
-      const s = sectionsOf(current).find((s) => s.name === section);
-      $('take').textContent = s
-        ? `Saved take ${takesOf(s).length} of “${s.title}”, ${range}.`
-        : `Saved the take, ${range}.`;
+      const why = s && start > firstWord(current, s) - 0.1
+        ? 'it started after its first word' : 'it stopped before its last word was due';
+      say(!s ? `Saved the take, ${range}.`
+        : holds.includes(s.name) ? `Saved take ${takesOf(s).length} of “${s.title}”, ${range}.`
+        : `Saved, but not as a take of “${s.title}”: ${why}.`);
       render();
     } catch (e) {
       // A server that doesn't keep takes: the take can still be saved by hand.
@@ -365,39 +400,80 @@
 
   // ---- Playing ----
 
-  let counting = 0, borrowed = false;
+  // `generation` counts what the reader set going, so a figure coming back from a take's
+  // playback doesn't move one started since.
+  let counting = 0, borrowed = false, generation = 0;
   const guide = $('audio'), heard = $('heard');
+
+  /** Where a section's own words begin: halfway through the silence before them. */
+  function sectionFrom(p, s) {
+    const before = sectionsOf(p)[sectionsOf(p).indexOf(s) - 1];
+    return before ? (lastWord(p, before) + firstWord(p, s)) / 2 : 0;
+  }
 
   function go() {
     const s = pickedIn(current);
     stopAt = s ? until(current, s) : Infinity;
     if ($('record').checked && stream) record();
     else figure.play();
+    // A section take's lead-in holds the end of the section before, which the microphone would
+    // hear from speakers, so the guide comes in with the section.
     if ($('guide').checked) {
-      guide.currentTime = figure.time;
-      guide.play().catch(() => {});
+      const from = s && recording() ? sectionFrom(current, s) : 0;
+      if (figure.time >= from) {
+        guide.currentTime = figure.time;
+        guide.play().catch(() => {});
+      } else {
+        guideFrom = from;
+      }
     }
     $('start').textContent = 'Stop';
   }
 
-  /** Stops everything, and ends a take at `at`, the figure's time. After a take read with an
-   * earlier timing plays back, the figure as timed now comes back. */
+  /** The figure waits at `at` while the sound runs on: a take still being recorded, or the rest
+   * of one being played back. */
+  function hold(at) {
+    following = null;
+    figure.pause();
+    guide.pause();
+    guideFrom = null;
+    held = at;
+    if (recording()) {
+      $('recording').textContent = '● Still recording. The figure waits here: stop when you’ve finished.';
+    }
+  }
+
+  /** Puts the figure at `t` without stopping anything. */
+  function place(t) {
+    figure.time = Math.max(0, t);
+    last = figure.time;
+    show(figure.time);
+  }
+
+  /** Stops everything, and ends a take at `at`, the figure's time, or where the figure waited.
+   * After a take read with an earlier timing plays back, the figure as timed now comes back. */
   function stop(at = figure.time) {
     clearInterval(counting);
     counting = 0;
     $('count').hidden = true;
-    if (recorder?.state === 'recording') {
-      recorder.finished = at;
+    if (recording()) {
+      recorder.finished = held ?? at;
       recorder.stop();
     }
     figure.pause();
     guide.pause();
     heard.pause();
     stopAt = Infinity;
+    holdOn = false;
+    held = null;
+    guideFrom = null;
+    following = null;
+    if (playing) playingIs(null);
     $('start').textContent = 'Start';
     if (borrowed) {
       borrowed = false;
-      showFigure(pen, current).then(() => seek(startOf()));
+      const g = ++generation;
+      showFigure(pen, current).then(() => { if (g === generation) place(startOf()); });
     }
   }
 
@@ -414,26 +490,31 @@
   // Counts in, then plays from where it is, or from the start of the section picked if it's
   // outside it.
   async function start() {
+    const g = ++generation;
     stayAwake();
+    fail('');
     // The script comes back in place of the takes, to be read.
     if (open) {
       open = false;
       render();
     }
+    $('start').textContent = 'Stop';
+    await ready;
+    if (g !== generation) return;
     const s = pickedIn(current), t = figure.time;
-    if (s ? t < from(current, s) - 0.01 || t >= until(current, s) - 0.05 : t >= end() - 0.05) seek(startOf());
+    if (s ? t < from(current, s) - 0.01 || t >= until(current, s) - 0.05 : t >= end() - 0.05) place(startOf());
     if ($('record').checked) {
       try {
         await microphone();
       } catch (e) {
-        $('error').textContent = `No microphone: ${e.message}`;
+        fail(`No microphone: ${e.message}`);
         $('record').checked = false;
       }
+      if (g !== generation) return;
     }
     let n = COUNT;
     $('count').textContent = n;
     $('count').hidden = false;
-    $('start').textContent = 'Stop';
     counting = setInterval(() => {
       n -= 1;
       if (n > 0) { $('count').textContent = n; return; }
@@ -444,57 +525,85 @@
     }, 1000);
   }
 
-  const busy = () => counting || !figure.paused;
-  const toggle = () => (busy() ? stop() : start());
+  const busy = () => counting || !figure.paused || recording() || !heard.paused;
+  const toggle = () => {
+    if (busy()) {
+      generation += 1;
+      stop();
+    } else {
+      start();
+    }
+  };
 
   function seek(t) {
     stop();
-    figure.time = Math.max(0, t);
-    last = figure.time;
-    show(figure.time);
+    place(t);
   }
 
   /** Plays a recording with the figure from `begin` to `finish`, the figure's times, where the
-   * recording starts at `start`. */
-  async function playWith(url, start, begin, finish) {
-    seek(begin);
+   * recording starts at `start`. With `rest`, the figure waits at `finish` while the recording
+   * plays to its end, as a take recorded past the figure's waiting point was. */
+  async function playWith(url, start, begin, finish, rest = false) {
+    place(begin);
     heard.src = url;
     heard.currentTime = Math.max(0, begin - start);
     heard.onended = () => stop();
     stopAt = finish;
+    holdOn = rest;
     $('start').textContent = 'Stop';
     try {
       await heard.play();
       // The recording can be under way by the time it says so, more so after a seek: the figure
       // starts where it is.
-      figure.time = start + heard.currentTime;
+      place(start + heard.currentTime);
+      following = start;
       figure.play();
     } catch (e) {
-      $('error').textContent = e.message;
+      fail(e.message);
       stop();
     }
   }
 
   /** The last take, with the figure from where it started. */
   function playBack() {
-    if (lastTake) playWith(lastTake.url, lastTake.start, lastTake.start, lastTake.finish);
+    if (!lastTake) return;
+    generation += 1;
+    stop();
+    playWith(lastTake.url, lastTake.start, lastTake.start, lastTake.finish, true);
   }
 
-  /** A take's part of a section, on the figure and prompt it was read with. */
+  /** A take's part of a section, on the figure and prompt it was read with. Its Play button
+   * says Stop while it plays, and stops it. */
+  let playing = null;
+  function playingIs(name) {
+    for (const button of document.querySelectorAll('#takes [data-key^="play "]')) {
+      const on = button.dataset.key === `play ${name}`;
+      button.textContent = on ? 'Stop' : 'Play';
+      button.setAttribute('aria-label', `${on ? 'Stop' : 'Play'} ${button.dataset.take}${on ? '' : ' with the figure'}`);
+    }
+    playing = name;
+  }
   async function playTake(take, section) {
+    const again = playing === take.name && busy();
     stop();
+    if (again) return;
+    const g = ++generation;
+    playingIs(take.name);
+    fail('');
     try {
       const p = take.current ? current : await fetchPrompt(`${dir}/takes/${take.name}.prompt.json`);
+      if (g !== generation) return;
+      borrowed = !take.current;
       await showFigure(take.current ? pen : `${dir}/takes/${take.name}.pen`, p);
+      if (g !== generation) return;
       const theirs = sectionsOf(p).find((s) => s.name === section.name);
       const whole = !theirs || take.section === section.name;
       const begin = whole ? take.start : Math.max(take.start, from(p, theirs));
       const finish = whole ? take.end : Math.min(take.end, until(p, theirs));
-      await playWith(`${dir}/takes/${take.recording}`, take.start, begin, finish);
-      borrowed = !take.current;
+      await playWith(`${dir}/takes/${take.recording}`, take.start, begin, finish, whole);
     } catch (e) {
-      $('error').textContent = `Can't play that take: ${e.message}`;
-      if (shownPen !== pen) showFigure(pen, current);
+      fail(`Can't play that take: ${e.message}`);
+      stop();
     }
   }
 
@@ -511,25 +620,35 @@
       if (!response.ok) throw new Error(`${response.status}`);
       ({ takes, kept } = await response.json());
       served = true;
-    } catch {
+    } catch (e) {
       served = false;
+      say(`This server doesn't list takes (${e.message}), so they can't be played back or kept here. `
+        + 'scripts/serve.py keeps them.');
     }
     render();
   }
 
-  async function setKept(section, name) {
-    try {
-      const query = new URLSearchParams({ take: narration, section: section.name, keep: name });
-      const response = await fetch(`/kept?${query}`, { method: 'POST' });
-      if (!response.ok) throw new Error(`${response.status}`);
-      ({ kept } = await response.json());
-      const k = takesOf(section).findIndex((t) => t.name === name);
-      $('take').textContent = name ? `Keeping take ${k + 1} for “${section.title}”.`
-        : `The draft voice for “${section.title}”.`;
-    } catch (e) {
-      $('error').textContent = `The server didn't keep that (${e.message}).`;
-    }
-    render();
+  // Each choice is sent once the one before is answered, so the server takes them in the order
+  // they were made, and the last answer is what it keeps. The menu is drawn again once none is
+  // waiting, so an earlier answer never shows over a later choice.
+  let keeping = Promise.resolve(), waiting = 0;
+  function setKept(section, name) {
+    fail('');
+    waiting += 1;
+    keeping = keeping.then(async () => {
+      try {
+        const query = new URLSearchParams({ take: narration, section: section.name, keep: name });
+        const response = await fetch(`/kept?${query}`, { method: 'POST' });
+        if (!response.ok) throw new Error(`${response.status}`);
+        ({ kept } = await response.json());
+        const k = takesOf(section).findIndex((t) => t.name === name);
+        say(name ? `Keeping take ${k + 1} for “${section.title}”.` : `The draft voice for “${section.title}”.`);
+      } catch (e) {
+        fail(`The server didn't keep that (${e.message}).`);
+      }
+      waiting -= 1;
+      if (!waiting) render();
+    });
   }
 
   const el = (tag, props = {}, ...children) => {
@@ -569,9 +688,10 @@
         const row = el('div', { className: 'choice' + (input.checked && value ? ' kept' : '') },
           el('label', {}, input, label, el('span', { className: 'note', textContent: note })));
         if (take) {
-          const play = el('button', { type: 'button', textContent: 'Play' });
+          const play = el('button', { type: 'button', textContent: playing === take.name ? 'Stop' : 'Play' });
           play.dataset.key = `play ${key}`;
-          play.setAttribute('aria-label', `Play ${label.toLowerCase()} with the figure`);
+          play.dataset.take = label.toLowerCase();
+          play.setAttribute('aria-label', playing === take.name ? `Stop ${play.dataset.take}` : `Play ${play.dataset.take} with the figure`);
           play.addEventListener('click', () => playTake(take, s));
           row.append(play);
         }
@@ -612,24 +732,35 @@
   }
 
   $('section').addEventListener('change', (e) => pick(e.target.value));
+  // Opening the takes takes focus to them, on the one kept, since they're drawn above the bar;
+  // Escape closes them and gives focus back to the button.
   $('show-takes').addEventListener('click', () => {
     open = !open;
     render();
+    if (open) ($('takes').querySelector('input:checked') ?? $('takes').querySelector('button'))?.focus();
+  });
+  $('takes').addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    open = false;
+    render();
+    $('show-takes').focus();
   });
   $('start').addEventListener('click', toggle);
-  $('restart').addEventListener('click', () => seek(startOf()));
+  $('restart').addEventListener('click', () => { generation += 1; seek(startOf()); });
   $('playback').addEventListener('click', playBack);
   $('guide').addEventListener('change', () => {
     if (!$('guide').checked) guide.pause();
     else if (!figure.paused) { guide.currentTime = figure.time; guide.play().catch(() => {}); }
   });
-  // Space is always start and stop, even on a focused button, which would otherwise click it too.
+  // Space starts and stops when nothing that takes it has focus. On a button, a radio or the
+  // section menu it does what it does there; on Start, that's starting and stopping too.
+  const takesSpace = (target) => target instanceof Element
+    && target.closest('button, input, select, textarea, a[href], summary, [contenteditable], [tabindex], pencil-figure');
   addEventListener('keydown', (e) => {
-    if (e.key !== ' ') return;
+    if (e.key !== ' ' || takesSpace(e.target)) return;
     e.preventDefault();
     if (!e.repeat) toggle();
-  }, true);
-  addEventListener('keyup', (e) => { if (e.key === ' ') e.preventDefault(); }, true);
+  });
   addEventListener('resize', () => { shown = null; show(figure.time); });
 
   // A narrow window keeps the rest behind ⋯: opened, it sits over its button, its first control

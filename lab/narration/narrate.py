@@ -48,8 +48,9 @@ A script comes in sections, so a reader can record one again and keep the takes 
 is a part of the figure, a file the `.pen` brings in with `use`, and the lines whose anchors name
 its beats; `retime` lists them in the prompt, and `sections` prints them. A part with no words, as
 the limaçon's glow, isn't one, and a figure in one file is one section. In the prompter a reader
-picks a section, records it, plays each take back on the figure it was read with, and keeps one,
-and the server notes which in `out/takes/limacon.kept.json`. `join` makes one take of the whole
+picks a section and records it; at the section's end the figure waits, and the microphone runs
+until they stop it, so a slow reading isn't cut off. They play each take back on the figure it was
+read with and keep one, and the server notes which in `out/takes/limacon.kept.json`. `join` makes one take of the whole
 script from those, with the draft's own lines where none is kept, and it goes through the same
 steps as any take:
 
@@ -344,10 +345,12 @@ def sections(pen, text):
     names = set()
     for s in out:
         file = s.pop("file")
-        name, k = file.stem, 1
+        # A name is letters, digits, `_` and `-`, which the server takes as one.
+        stem = re.sub(r"[^\w-]+", "-", file.stem).strip("-")[:70] or "part"
+        name, k = stem, 1
         while name in names:  # A part the script comes back to.
             k += 1
-            name = f"{file.stem}-{k}"
+            name = f"{stem}-{k}"
         names.add(name)
         comment = []
         for line in file.read_text().splitlines():
@@ -599,6 +602,14 @@ def between(first, second):
     return (first + second) / 2
 
 
+def loudness(clip, window):
+    """Each `window` samples' loudness, as RMS."""
+    import numpy as np
+
+    n = len(clip) // window
+    return np.sqrt((clip[: n * window].reshape(n, window) ** 2).mean(axis=1))
+
+
 def trimmed(clip, margin=0.3, floor=-35):
     """A section recorded on its own, without the silence a take starts and ends with past
     `margin` seconds: what's quieter than `floor` dB under its loudest 20 ms. Left whole if nothing
@@ -607,15 +618,42 @@ def trimmed(clip, margin=0.3, floor=-35):
     import numpy as np
 
     window = RATE // 50
-    n = len(clip) // window
-    if n == 0:
+    level = loudness(clip, window)
+    if not len(level):
         return clip
-    loudness = np.sqrt((clip[: n * window].reshape(n, window) ** 2).mean(axis=1))
-    loud = np.nonzero(loudness > loudness.max() * 10 ** (floor / 20))[0]
+    loud = np.nonzero(level > level.max() * 10 ** (floor / 20))[0]
     if not len(loud):
         return clip
     pad = int(margin * RATE)
     return clip[max(0, loud[0] * window - pad) : min(len(clip), (loud[-1] + 1) * window + pad)]
+
+
+# Where a longer take is cut, 100 ms has to be this many dB under its loudest 100 ms.
+QUIET = -30
+
+
+def quiet_cut(audio, gap, name, section, side):
+    """Where to cut a longer take at a section's edge: the quietest 100 ms of `gap`, the silence
+    the prompt it was read with put there, as samples of the recording. A reader who lagged past
+    half a pause has a word there, and cutting would split it between two sections, so that
+    stops `join`, naming the take."""
+    import numpy as np
+
+    window, step = RATE // 10, RATE // 100
+    first, last = max(0, gap[0]), min(len(audio), gap[1])
+    peak = loudness(audio, window).max() if len(audio) >= window else 0.0
+    if last - first < window:
+        last = min(len(audio), first + window)
+    levels = [np.sqrt((audio[k : k + window] ** 2).mean()) for k in range(first, max(first, last - window) + 1, step)]
+    if not levels:
+        return first
+    k = int(np.argmin(levels))
+    if not peak or levels[k] > peak * 10 ** (QUIET / 20):
+        sys.exit(f"{name}: there's no silence where section {section!r} {side}, between "
+                 f"{gap[0] / RATE:.2f} and {gap[1] / RATE:.2f} s into it, so cutting it there would split "
+                 "words. The reader was likely behind the prompter: keep a take recorded as the section "
+                 "instead.")
+    return first + k * step + window // 2
 
 
 def join(kept, draft, out):
@@ -626,21 +664,28 @@ def join(kept, draft, out):
     `out/<figure>.prompt.json`; `draft` is the draft's alignment, as `align` wrote it.
 
     A take recorded as one section is used whole, less the silence it starts and ends with. A
-    longer take is cut halfway through the silences around the section, as the prompter timed
-    them when it was read, which is the figure's time it was recorded in."""
+    section from a longer take is cut in the silences around it, as the prompter timed them when it
+    was read, at their quietest; if one isn't quiet there, the reader fell behind, and `join`
+    stops rather than split a word."""
     import numpy as np
     import soundfile
 
     kept = Path(kept)
     takes, figure = kept.parent, kept.name.removesuffix(".kept.json")
-    choice = json.loads(kept.read_text()) if kept.exists() else {}
-    now = json.loads((takes.parent / f"{figure}.prompt.json").read_text())
-    if "sections" not in now:
-        sys.exit(f"{takes.parent / figure}.prompt.json has no sections: run `retime` again")
-    timing = json.loads(Path(draft).read_text())
-    draft_audio, spans = decoded(timing["audio"]), timing["lines"]
-    if len(spans) != len(now["lines"]):
-        sys.exit(f"the draft has {len(spans)} lines and the prompter {len(now['lines'])}")
+    try:
+        choice = json.loads(kept.read_text()) if kept.exists() else {}
+        now = json.loads((takes.parent / f"{figure}.prompt.json").read_text())
+        timing = json.loads(Path(draft).read_text())
+    except (OSError, ValueError) as e:
+        sys.exit(f"can't read what to join: {e}")
+    if not now.get("sections") or not now.get("lines"):
+        sys.exit(f"{takes.parent / figure}.prompt.json has no lines or no sections: run `retime` again")
+    spans = timing["lines"]
+    words = [normal(token) for line in now["lines"] for token, _, _ in line]
+    if [w[2] for w in timing["words"]] != [w for w in words if w] or len(spans) != len(now["lines"]):
+        sys.exit(f"the draft {draft} says other words, or other lines, than the prompter's script: "
+                 "align the draft again")
+    draft_audio = decoded(timing["audio"])
     said = lambda prompt, s: [w[0] for line in prompt["lines"][slice(*s["lines"])] for w in line]
 
     clips, report = [], []
@@ -653,23 +698,35 @@ def join(kept, draft, out):
             clips.append(draft_audio[int(begin * RATE) : int(end * RATE)])
             report.append((s, "the draft", begin, end))
             continue
-        about = json.loads((takes / f"{name}.json").read_text())
-        read = takes / f"{name}.prompt.json"
-        if s["name"] not in about.get("sections", []) or not read.exists():
+        try:
+            about = json.loads((takes / f"{name}.json").read_text())
+            then = json.loads((takes / f"{name}.prompt.json").read_text())
+            start, finish = float(about["start"]), float(about["end"])
+            recording = takes / about["recording"]
+        except KeyError as e:
+            sys.exit(f"the take kept for section {s['name']!r}, {name}, has no {e.args[0]} in its .json")
+        except (OSError, ValueError, TypeError) as e:
+            sys.exit(f"the take kept for section {s['name']!r}, {name}, can't be read from {takes}: {e}")
+        if not recording.exists():
+            sys.exit(f"the take kept for section {s['name']!r}, {name}, has no recording: {recording} is gone")
+        if s["name"] not in about.get("sections", []):
             sys.exit(f"{name} doesn't hold all of section {s['name']!r}")
-        then = json.loads(read.read_text())
         theirs = next((t for t in then.get("sections", []) if t["name"] == s["name"]), None)
         if theirs is None or said(then, theirs) != said(now, s):
             sys.exit(f"{name} read different words for section {s['name']!r} than the script has now")
-        audio = decoded(takes / about["recording"])
+        audio = decoded(recording)
         if about.get("section") == s["name"]:
-            clip, begin, end = trimmed(audio), about["start"], about["end"]
+            clip, begin, end = trimmed(audio), start, finish
         else:
             lines, (a, b) = then["lines"], theirs["lines"]
-            begin = 0.0 if a == 0 else between(lines[a - 1][-1][2], lines[a][0][1])
-            end = then["duration"] if b == len(lines) else between(lines[b - 1][-1][2], lines[b][0][1])
-            at = lambda t: int(min(max(t - about["start"], 0.0), len(audio) / RATE) * RATE)
-            clip = audio[at(begin) : at(end)]
+            at = lambda t: int(min(max(t - start, 0.0), len(audio) / RATE) * RATE)
+            # Each edge is cut in the silence the prompt put there, if the take was running then.
+            cut_from, cut_to = 0, len(audio)
+            if a > 0 and lines[a - 1][-1][2] > start:
+                cut_from = quiet_cut(audio, (at(lines[a - 1][-1][2]), at(lines[a][0][1])), name, s["name"], "starts")
+            if b < len(lines) and lines[b][0][1] < finish:
+                cut_to = quiet_cut(audio, (at(lines[b - 1][-1][2]), at(lines[b][0][1])), name, s["name"], "ends")
+            clip, begin, end = audio[cut_from:cut_to], start + cut_from / RATE, start + cut_to / RATE
         clips.append(clip)
         report.append((s, name, begin, end))
     joined = np.concatenate(clips)
