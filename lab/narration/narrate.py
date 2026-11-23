@@ -44,6 +44,21 @@ it started at and the `.pen` it was read with, so it's in step with the figure a
 
     pixi run python narrate.py video out/takes/limacon-20261112-091500.json
 
+A script comes in sections, so a reader can record one again and keep the takes they like. A section
+is a part of the figure, a file the `.pen` brings in with `use`, and the lines whose anchors name
+its beats; `retime` lists them in the prompt, and `sections` prints them. A part with no words, as
+the limaçon's glow, isn't one, and a figure in one file is one section. In the prompter a reader
+picks a section, records it, plays each take back on the figure it was read with, and keeps one,
+and the server notes which in `out/takes/limacon.kept.json`. `join` makes one take of the whole
+script from those, with the draft's own lines where none is kept, and it goes through the same
+steps as any take:
+
+    pixi run python narrate.py join out/takes/limacon.kept.json out/draft.json out/joined.wav
+    pixi run python narrate.py align out/joined.wav limacon.txt out/joined.json
+    pixi run python narrate.py retime ../explainer/limacon.pen out/joined.json out/limacon.pen
+
+Then the prompter's guide is the kept takes, placed in the figure as it's now timed.
+
 `labels` holds a figure to Kris's rule that any point a caption or the narration names is labeled in
 the figure, which is how a reader knows which letter was meant.
 
@@ -109,7 +124,7 @@ def say(script, wav, voice="am_michael", speed=1.0):
         for word, arpa in own_words().items():
             text = re.sub(rf"\b{re.escape(word)}\b", f"[{word}](/{kokoro_phonemes(arpa)}/)", text,
                           flags=re.IGNORECASE)
-        for result in pipeline(text, voice=voice, speed=speed):
+        for result in pipeline(text, voice=voice, speed=float(speed)):
             chunk = result.audio.numpy()
             for token in result.tokens or []:
                 if normal(token.text) and token.start_ts is not None:
@@ -302,6 +317,47 @@ def flat(pen):
     """A `.pen` as the lines the figure reads. The retimed copy is written this way, as one file,
     so it stands alone in `out/`."""
     return [line for line, _, _ in flat_from(pen)]
+
+
+def sections(pen, text):
+    """The script's sections, for recording one at a time: each a run of lines whose anchors name
+    beats in the same part of the figure, a part being a file the `.pen` brings in with `use`. A
+    line that anchors nothing goes with the line before it. A figure in one file is one section.
+    Each is `{"name", "title", "lines": [first, past the last]}`, named for its part's file and
+    titled with the first sentence of the comment the file starts with."""
+    part_of = {}
+    for line, file, _ in flat_from(pen):
+        named = re.match(r"^beat\s+(?!for\b)(\w+)", line)
+        if named:
+            part_of.setdefault(named[1], file)
+    parts = [None] * len(lines_of(text))
+    for anchor in anchors_of(text):
+        if parts[anchor["line"]] is None:
+            parts[anchor["line"]] = part_of.get(anchor["beat"])
+    out, part = [], next((p for p in parts if p), Path(pen))
+    for i, found in enumerate(parts):
+        part = found or part
+        if out and out[-1]["file"] == part:
+            out[-1]["lines"][1] = i + 1
+        else:
+            out.append({"file": part, "lines": [i, i + 1]})
+    names = set()
+    for s in out:
+        file = s.pop("file")
+        name, k = file.stem, 1
+        while name in names:  # A part the script comes back to.
+            k += 1
+            name = f"{file.stem}-{k}"
+        names.add(name)
+        comment = []
+        for line in file.read_text().splitlines():
+            if not line.startswith("//"):
+                break
+            comment.append(line[2:].strip())
+        first = re.match(r"(.+?[.!?])(?:\s|$)", " ".join(comment))
+        s.update(name=name, title=first[1] if first else file.stem)
+        s["lines"] = s.pop("lines")
+    return out
 
 
 def unlabeled(pen, script):
@@ -517,10 +573,112 @@ def retime(pen, timing, out):
             elif row:
                 row[-1][0] += " " + token  # A dash or the like goes with the word before it.
         prompt.append(row)
-    Path(out).with_suffix(".prompt.json").write_text(
-        json.dumps({"duration": round(len(track) / rate, 3), "lines": prompt}))
+    Path(out).with_suffix(".prompt.json").write_text(json.dumps(
+        {"duration": round(len(track) / rate, 3), "lines": prompt,
+         "sections": sections(pen, take["script"])}))
     print(f"\nwrote {out}, {Path(out).with_suffix('.wav')} ({len(track) / rate:.1f} s) and "
           f"{Path(out).with_suffix('.prompt.json')}")
+
+
+RATE = 48000  # What `join` decodes every source to.
+
+
+def decoded(path):
+    """Any audio ffmpeg reads, as mono samples at `RATE`."""
+    import io
+
+    import soundfile
+
+    wav = subprocess.run(["ffmpeg", "-loglevel", "error", "-i", str(path), "-ac", "1", "-ar", str(RATE),
+                          "-f", "wav", "-"], check=True, capture_output=True).stdout
+    return soundfile.read(io.BytesIO(wav), dtype="float32")[0]
+
+
+def between(first, second):
+    """Halfway through the silence from one span's end to the next one's start."""
+    return (first + second) / 2
+
+
+def trimmed(clip, margin=0.3, floor=-35):
+    """A section recorded on its own, without the silence a take starts and ends with past
+    `margin` seconds: what's quieter than `floor` dB under its loudest 20 ms. Left whole if nothing
+    is that quiet, as in a noisy room, where the figure then waits a little longer between
+    sections."""
+    import numpy as np
+
+    window = RATE // 50
+    n = len(clip) // window
+    if n == 0:
+        return clip
+    loudness = np.sqrt((clip[: n * window].reshape(n, window) ** 2).mean(axis=1))
+    loud = np.nonzero(loudness > loudness.max() * 10 ** (floor / 20))[0]
+    if not len(loud):
+        return clip
+    pad = int(margin * RATE)
+    return clip[max(0, loud[0] * window - pad) : min(len(clip), (loud[-1] + 1) * window + pad)]
+
+
+def join(kept, draft, out):
+    """The takes kept for each section, as one take of the whole script for `align` and `retime`,
+    with the draft's own lines for a section with none kept. `kept` is the record
+    `scripts/serve.py` keeps beside the takes, `out/takes/<figure>.kept.json`, of the take kept for
+    each section by name. The sections are the ones the prompter shows now, from
+    `out/<figure>.prompt.json`; `draft` is the draft's alignment, as `align` wrote it.
+
+    A take recorded as one section is used whole, less the silence it starts and ends with. A
+    longer take is cut halfway through the silences around the section, as the prompter timed
+    them when it was read, which is the figure's time it was recorded in."""
+    import numpy as np
+    import soundfile
+
+    kept = Path(kept)
+    takes, figure = kept.parent, kept.name.removesuffix(".kept.json")
+    choice = json.loads(kept.read_text()) if kept.exists() else {}
+    now = json.loads((takes.parent / f"{figure}.prompt.json").read_text())
+    if "sections" not in now:
+        sys.exit(f"{takes.parent / figure}.prompt.json has no sections: run `retime` again")
+    timing = json.loads(Path(draft).read_text())
+    draft_audio, spans = decoded(timing["audio"]), timing["lines"]
+    if len(spans) != len(now["lines"]):
+        sys.exit(f"the draft has {len(spans)} lines and the prompter {len(now['lines'])}")
+    said = lambda prompt, s: [w[0] for line in prompt["lines"][slice(*s["lines"])] for w in line]
+
+    clips, report = [], []
+    for s in now["sections"]:
+        a, b = s["lines"]
+        name = choice.get(s["name"])
+        if not name:
+            begin = 0.0 if a == 0 else between(spans[a - 1][1], spans[a][0])
+            end = timing["duration"] if b == len(spans) else between(spans[b - 1][1], spans[b][0])
+            clips.append(draft_audio[int(begin * RATE) : int(end * RATE)])
+            report.append((s, "the draft", begin, end))
+            continue
+        about = json.loads((takes / f"{name}.json").read_text())
+        read = takes / f"{name}.prompt.json"
+        if s["name"] not in about.get("sections", []) or not read.exists():
+            sys.exit(f"{name} doesn't hold all of section {s['name']!r}")
+        then = json.loads(read.read_text())
+        theirs = next((t for t in then.get("sections", []) if t["name"] == s["name"]), None)
+        if theirs is None or said(then, theirs) != said(now, s):
+            sys.exit(f"{name} read different words for section {s['name']!r} than the script has now")
+        audio = decoded(takes / about["recording"])
+        if about.get("section") == s["name"]:
+            clip, begin, end = trimmed(audio), about["start"], about["end"]
+        else:
+            lines, (a, b) = then["lines"], theirs["lines"]
+            begin = 0.0 if a == 0 else between(lines[a - 1][-1][2], lines[a][0][1])
+            end = then["duration"] if b == len(lines) else between(lines[b - 1][-1][2], lines[b][0][1])
+            at = lambda t: int(min(max(t - about["start"], 0.0), len(audio) / RATE) * RATE)
+            clip = audio[at(begin) : at(end)]
+        clips.append(clip)
+        report.append((s, name, begin, end))
+    joined = np.concatenate(clips)
+    Path(out).parent.mkdir(parents=True, exist_ok=True)
+    soundfile.write(out, joined, RATE)
+    print(f"{'section':>10} {'from':>7} {'to':>7}  source, whose own time these are")
+    for (s, source, begin, end), clip in zip(report, clips):
+        print(f"{s['name']:>10} {begin:7.2f} {end:7.2f}  {source}, {len(clip) / RATE:.2f} s used")
+    print(f"wrote {out}, {len(joined) / RATE:.1f} s")
 
 
 REPO = Path(__file__).resolve().parents[2]
@@ -570,6 +728,15 @@ def video(*abouts):
     print(f"wrote {out}, with the takes at {spans} in the figure")
 
 
+def show_sections(pen, script):
+    """The sections the prompter offers to record one at a time."""
+    text = Path(script).read_text()
+    lines = lines_of(text)
+    for s in sections(pen, text):
+        a, b = s["lines"]
+        print(f"{s['name']:>10}  lines {a + 1}-{b}  {s['title']}  ({' '.join(ANCHOR.sub('', lines[a]).split())} …)")
+
+
 def lines_of_script(take):
     """Each line's first few words, from the aligned words, to name it."""
     out, words = [], take["words"]
@@ -582,6 +749,6 @@ def lines_of_script(take):
 if __name__ == "__main__":
     command, *args = sys.argv[1:]
     run = {"say": say, "hear": hear, "align": align, "retime": retime, "labels": labels,
-           "video": video}[command]
+           "video": video, "join": join, "sections": show_sections}[command]
     if run(*args) is False:
         sys.exit(1)

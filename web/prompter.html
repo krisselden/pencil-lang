@@ -8,22 +8,26 @@
 <style>
   /* The figure is drawn on the dark sheet, so the page is dark too. */
   :root { color-scheme: dark; --ink: #f3f0ea; --paper: #171614; --muted: #8f8a81; --dim: #4d4a45;
-          --lit: #f6c453; --rec: #e5534b; --bad: #e58a80; }
+          --rule: #3a3833; --lit: #f6c453; --rec: #e5534b; --bad: #e58a80; }
   html, body { height: 100%; }
   body { margin: 0; background: var(--paper); color: var(--ink);
          font: 0.9375rem/1.45 ui-sans-serif, system-ui, sans-serif;
-         display: grid; grid-template-rows: auto 1fr auto; }
+         display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto; }
+  :focus-visible { outline: 2px solid var(--lit); outline-offset: 2px; }
   .stage { width: min(100%, calc(52vh * 16 / 9)); margin: 0 auto; }
   /* The script, with the line being said held at the middle. */
   .prompt { position: relative; overflow: hidden; min-height: 9em;
             -webkit-mask-image: linear-gradient(transparent, #000 22%, #000 78%, transparent);
                     mask-image: linear-gradient(transparent, #000 22%, #000 78%, transparent); }
+  .prompt[hidden] { display: none; }
   .lines { position: absolute; left: 0; right: 0; top: 50%; padding: 0 16px; text-align: center;
            transition: transform 0.45s ease; }
   .line { margin: 0 auto; max-width: 30em; font-size: clamp(1.25rem, 3.6vw, 2.125rem); line-height: 1.3;
           padding: 0.25em 0; color: var(--dim); transition: color 0.3s; }
   .line.next { color: var(--muted); }
   .line.now { color: var(--ink); }
+  /* With a section picked, only its lines are there to read. */
+  .line.out { display: none; }
   .word { cursor: pointer; }
   /* A word fills from the left as it's said, as far as --fill says. */
   .line.now .word { color: transparent; -webkit-background-clip: text; background-clip: text;
@@ -33,19 +37,61 @@
            font-size: 22vh; font-weight: 600; color: var(--lit); text-shadow: 0 0 24px #000; }
   /* `display: grid` above would otherwise outrank the `hidden` attribute. */
   .count[hidden] { display: none; }
-  .controls { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; justify-content: center;
+  /* The takes of the section picked, in the script's place while they're open. */
+  .takes { overflow-y: auto; padding: 8px 16px; }
+  .takes[hidden] { display: none; }
+  .takes fieldset { margin: 0 auto; max-width: 34rem; border: 0; padding: 0; }
+  .takes legend { padding: 0; margin-bottom: 6px; color: var(--muted); }
+  .takes legend strong { color: var(--ink); font-weight: 600; }
+  .choice { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-top: 1px solid var(--rule); }
+  .choice label { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 8px; cursor: pointer; }
+  .choice input { flex: none; accent-color: var(--lit); }
+  .choice .note { color: var(--muted); font-size: 0.8125rem; }
+  .choice.kept label { color: var(--lit); }
+  .choice button { flex: none; }
+  .takes .hint { color: var(--muted); font-size: 0.8125rem; margin: 10px auto 0; max-width: 34rem; }
+  .sections { margin: 0 auto; padding: 0; max-width: 34rem; list-style: none; }
+  .sections button { width: 100%; display: flex; gap: 10px; align-items: baseline; text-align: left;
+                     padding: 6px 4px; border: 0; border-top: 1px solid var(--rule); border-radius: 0;
+                     background: none; color: var(--ink); cursor: pointer; }
+  .sections .note { margin-left: auto; color: var(--muted); font-size: 0.8125rem; white-space: nowrap; }
+  .sections .kept .note { color: var(--lit); }
+
+  .controls { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; justify-content: center;
               padding: 10px 16px 14px; color: var(--muted); }
-  button { font: inherit; padding: 4px 12px; }
+  .bar { display: flex; gap: 8px; align-items: center; min-width: 0; }
+  button, select { font: inherit; padding: 4px 12px; }
+  #section { max-width: 18rem; text-overflow: ellipsis; }
+  /* A popover that a wide window shows in place, in the bar. */
+  .options { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; color: inherit;
+             position: static; inset: auto; margin: 0; padding: 0; border: 0; background: none;
+             width: auto; height: auto; overflow: visible; }
+  .more { display: none; }
+  .status { display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: center; justify-content: center; }
   output { font-variant-numeric: tabular-nums; }
   #recording { color: var(--rec); font-weight: 600; }
   #take { color: var(--ink); }
   #error { color: var(--bad); white-space: pre-wrap; font-family: ui-monospace, monospace; font-size: 0.8125rem; }
+  #error:empty { display: none; }
   @media (hover: none) { .keys { display: none; } }
+  /* A narrow window keeps one bar: what to read, Start, the takes, and the rest behind a button. */
+  @media (max-width: 640px) {
+    .controls { flex-direction: column; flex-wrap: nowrap; gap: 4px; padding: 6px 8px 8px; }
+    .bar { width: 100%; }
+    #section { flex: 1; min-width: 0; max-width: none; padding: 4px 6px; }
+    .bar button { padding: 4px 10px; }
+    .more { display: block; }
+    .options:not(:popover-open) { display: none; }
+    .options:popover-open { position: fixed; inset: auto; margin: 0; flex-direction: column; align-items: stretch;
+                            gap: 8px; padding: 10px; border: 1px solid var(--rule); border-radius: 6px;
+                            background: var(--paper); color: var(--ink); box-shadow: 0 6px 24px rgb(0 0 0 / 0.5); }
+    .status { font-size: 0.8125rem; }
+  }
   /* A phone on its side: the figure and the words side by side. */
   @media (orientation: landscape) and (max-height: 520px) {
-    body { grid-template-columns: 1.15fr 1fr; grid-template-rows: 1fr auto; }
+    body { grid-template-columns: 1.15fr 1fr; grid-template-rows: minmax(0, 1fr) auto; }
     .stage { width: 100%; align-self: center; }
-    .prompt { grid-column: 2; grid-row: 1; }
+    .prompt, .takes { grid-column: 2; grid-row: 1; }
     .line { font-size: clamp(1.125rem, 3vw, 1.625rem); }
     .controls { grid-column: 1 / -1; padding: 4px 12px 8px; }
   }
@@ -56,17 +102,27 @@
   <pencil-figure id="figure" paused aria-label="The figure the narration is read along with."></pencil-figure>
 </div>
 <div class="prompt" id="prompt"><div class="lines" id="lines"></div></div>
+<section class="takes" id="takes" hidden aria-label="Takes"></section>
 <div class="controls">
-  <button id="start" type="button">Start</button>
-  <button id="restart" type="button">From the top</button>
-  <label><input id="record" type="checkbox" checked> Record</label>
-  <label><input id="guide" type="checkbox"> Hear the guide</label>
-  <button id="playback" type="button" hidden>Play back</button>
-  <output id="clock">0.0 s</output>
-  <span id="recording" hidden>● Recording</span>
-  <span id="take" aria-live="polite"></span>
-  <span class="keys">Space starts and stops. Tap a word to start just before it.</span>
-  <span id="error" role="alert"></span>
+  <div class="bar">
+    <select id="section" aria-label="What to read" hidden></select>
+    <button id="start" type="button">Start</button>
+    <button id="show-takes" type="button" aria-expanded="false" aria-controls="takes" hidden>Takes</button>
+    <button class="more" id="more" type="button" popovertarget="options" aria-label="More: from the top, record, the guide">⋯</button>
+    <div class="options" id="options" popover>
+      <button id="restart" type="button">From the top</button>
+      <label><input id="record" type="checkbox" checked> Record</label>
+      <label><input id="guide" type="checkbox"> Hear the guide</label>
+      <button id="playback" type="button" hidden>Play back</button>
+    </div>
+  </div>
+  <div class="status">
+    <output id="clock">0.0 s</output>
+    <span id="recording" hidden>● Recording</span>
+    <span id="take" aria-live="polite"></span>
+    <span class="keys">Space starts and stops. Tap a word to start just before it.</span>
+    <span id="error" role="alert"></span>
+  </div>
 </div>
 <div class="count" id="count" hidden></div>
 <audio id="audio" preload="auto"></audio>
@@ -79,63 +135,131 @@
   // With Record on, the microphone runs from the moment the figure starts until it stops, and the
   // take goes to `scripts/serve.py`, with the figure's time it started at. A take is in step with
   // the figure by construction, so `narrate.py video` puts it on the rendered figure as it is.
+  //
+  // A script comes in sections, a part of the figure each, as `retime` lists them in the prompt.
+  // Picking one shows only its lines, and a take of it starts just before its first word and stops
+  // before the next section's. Takes shows the takes that hold the section picked, each played
+  // back on the figure it was read with, and which one is kept for it, which the server keeps
+  // beside the takes and `narrate.py join` reads.
   import '@pencil-lang/figure';
 
   const $ = (id) => document.getElementById(id);
   const search = new URLSearchParams(location.search);
-  const take = search.get('take') ?? 'limacon';
-  const out = `../lab/narration/out/${take}`;
+  const narration = search.get('take') ?? 'limacon';
+  const dir = '../lab/narration/out';
+  const out = `${dir}/${narration}`;
+  const pen = `${out}.pen`;
   const sheets = search.get('sheets')
     ?? '../corpus/theme.style ../corpus/dark.style ../lab/explainer/limacon.style ../lab/explainer/caption.style';
   // Seconds of count-in, how far before a tapped word to start, and the shortest take worth keeping.
   const COUNT = 3, BEFORE = 1.5, SHORTEST = 1;
-
-  const figure = $('figure');
-  if (search.has('gl')) figure.setAttribute('gl', '');
-  figure.setAttribute('sheets', sheets);
-  figure.setAttribute('src', `${out}.pen`);
-  $('audio').src = `${out}.wav`;
-
-  const response = await fetch(`${out}.prompt.json`, { cache: 'no-store' });
-  if (!response.ok) {
-    $('error').textContent = `${out}.prompt.json: ${response.status}. Run narrate.py retime first.`;
-    throw new Error('no prompt');
-  }
-  const prompt = await response.json();
-
-  // The script, a line a row and a word a span.
-  const rows = prompt.lines.map((words) => {
-    const row = document.createElement('p');
-    row.className = 'line';
-    for (const [text, start] of words) {
-      const span = document.createElement('span');
-      span.className = 'word';
-      span.textContent = text;
-      span.addEventListener('click', () => seek(start - BEFORE));
-      row.append(span, ' ');
-    }
-    return row;
-  });
-  $('lines').append(...rows);
-  const words = (i) => prompt.lines[i];
   // A line becomes the one to read only just before its first word is due. Until then it waits
   // dimmed below the line just said, so a reader holds through the figure's pauses instead of
   // starting early. Words light a little early too, since reading one takes a moment.
   const LINE_LEAD = 0.6, WORD_LEAD = 0.25;
+  // The least a take of a section runs past its last word.
+  const TAIL = 0.5;
+
+  const figure = $('figure');
+  if (search.has('gl')) figure.setAttribute('gl', '');
+  figure.setAttribute('sheets', sheets);
+  $('audio').src = `${out}.wav`;
+
+  async function fetchPrompt(url) {
+    const response = await fetch(url, { cache: 'no-store' });
+    if (!response.ok) throw new Error(`${url}: ${response.status}`);
+    return response.json();
+  }
+  let current;
+  try {
+    current = await fetchPrompt(`${out}.prompt.json`);
+  } catch (e) {
+    $('error').textContent = `${e.message}. Run narrate.py retime first.`;
+    throw e;
+  }
+
+  // ---- Sections ----
+
+  // Each holds the lines from `lines[0]` up to `lines[1]`. A prompt from before sections has one
+  // way to read: all of it.
+  const sectionsOf = (p) => p.sections ?? [];
+  const firstWord = (p, s) => p.lines[s.lines[0]][0][1];
+  const lastWord = (p, s) => p.lines[s.lines[1] - 1].at(-1)[2];
+  /** Where a take of a section starts: a little before its first word, as from a tapped word. */
+  const from = (p, s) => Math.max(0, firstWord(p, s) - BEFORE);
+  /** Where it stops: before the next section's first line comes up, or at the figure's end. */
+  function until(p, s) {
+    const next = sectionsOf(p)[sectionsOf(p).indexOf(s) + 1];
+    return next ? Math.max(lastWord(p, s) + TAIL, firstWord(p, next) - LINE_LEAD) : Infinity;
+  }
+  let picked = null;
+  const pickedIn = (p) => sectionsOf(p).find((s) => s.name === picked);
+
+  // ---- The script and the figure ----
+
+  // The prompt and the figure on show: the figure as timed now, or the one a take was read with,
+  // while that take plays back.
+  let prompt = null, rows = [], shownPen = null, shown = null;
+
+  /** The script, a line a row and a word a span. */
+  function build(p) {
+    prompt = p;
+    rows = p.lines.map((words) => {
+      const row = document.createElement('p');
+      row.className = 'line';
+      for (const [text, start] of words) {
+        const span = document.createElement('span');
+        span.className = 'word';
+        span.textContent = text;
+        span.addEventListener('click', () => seek(start - BEFORE));
+        row.append(span, ' ');
+      }
+      return row;
+    });
+    $('lines').replaceChildren(...rows);
+    shown = null;
+  }
+
+  /** Shows a figure and its prompt, and resolves when the figure has loaded. */
+  function showFigure(src, p) {
+    if (prompt !== p) build(p);
+    if (shownPen === src) return Promise.resolve();
+    shownPen = src;
+    return new Promise((resolve) => {
+      const done = () => {
+        figure.removeEventListener('load', done);
+        figure.removeEventListener('error', done);
+        resolve();
+      };
+      figure.addEventListener('load', done);
+      figure.addEventListener('error', done);
+      figure.setAttribute('src', src);
+    });
+  }
+
+  const words = (i) => prompt.lines[i];
   const lineAt = (t) => {
     let i = 0;
     while (i + 1 < rows.length && t >= words(i + 1)[0][1] - LINE_LEAD) i += 1;
     return i;
   };
 
-  let shown = -1;
   const show = (t) => {
-    const i = lineAt(t);
-    if (i !== shown) {
-      rows.forEach((row, k) => row.className = 'line' + (k === i ? ' now' : k === i + 1 ? ' next' : ''));
+    let i = lineAt(t), waiting = false;
+    const s = pickedIn(prompt);
+    const [a, b] = s ? s.lines : [0, rows.length];
+    // A section's first line waits below until it's due, and its last stays once said.
+    if (i < a) [i, waiting] = [a, true];
+    else if (i >= b) i = b - 1;
+    const key = `${picked} ${i} ${waiting}`;
+    if (key !== shown) {
+      rows.forEach((row, k) => {
+        const state = k < a || k >= b ? ' out' : k === i ? (waiting ? ' next' : ' now') : k === i + 1 ? ' next' : '';
+        row.className = 'line' + state;
+      });
       const row = rows[i];
       $('lines').style.transform = `translateY(${-(row.offsetTop + row.offsetHeight / 2)}px)`;
-      shown = i;
+      shown = key;
     }
     rows[i].querySelectorAll('.word').forEach((span, k) => {
       const [, start, end] = words(i)[k];
@@ -146,16 +270,17 @@
   };
 
   // The figure's clock loops, and a take shouldn't: it stops at the figure's end instead, which
-  // can come after the last word.
+  // can come after the last word, or where a section or a take being played back ends.
   const end = () => figure.duration;
-  let last = 0;
+  let last = 0, stopAt = Infinity;
   figure.addEventListener('draw', () => {
     const t = figure.time;
-    if (!figure.paused && (t < last - 1 || t >= end() - 0.02)) {
-      stop(end());
-      figure.time = end();
-      last = end();
-      show(end());
+    const at = Math.min(end(), stopAt);
+    if (!figure.paused && (t < last - 1 || t >= at - 0.02)) {
+      stop(at);
+      figure.time = at;
+      last = at;
+      show(at);
       return;
     }
     last = t;
@@ -163,6 +288,7 @@
   });
   figure.addEventListener('load', () => show(figure.time));
   figure.addEventListener('error', (e) => { $('error').textContent = String(e.detail.error?.message ?? e.detail.error); });
+  showFigure(pen, current);
 
   // ---- Recording ----
 
@@ -180,10 +306,11 @@
   }
 
   /** Starts the figure and the microphone together, and notes the figure's time the take
-   * starts at. */
+   * starts at and the section it's of. */
   function record() {
     const chunks = [];
     const take = new MediaRecorder(stream, type ? { mimeType: type } : {});
+    take.section = picked;
     take.addEventListener('dataavailable', (e) => e.data.size && chunks.push(e.data));
     take.addEventListener('start', () => {
       take.began = figure.time;
@@ -193,31 +320,44 @@
     take.addEventListener('stop', () => {
       $('recording').hidden = true;
       const blob = new Blob(chunks, { type: take.mimeType || type || 'audio/webm' });
-      keep(blob, take.began, take.finished);
+      keep(blob, take.began, take.finished, take.section);
     }, { once: true });
     recorder = take;
     take.start();
   }
 
-  /** Sends a take to the server, which keeps it, and keeps it here to play back. */
-  async function keep(blob, start, finish) {
+  /** Sends a take to the server, which keeps it, and keeps it here to play back. It names the
+   * section it was recorded as, if one was picked, and each section it holds whole. */
+  async function keep(blob, start, finish, section) {
     if (!(finish - start >= SHORTEST)) return;
-    lastTake = { url: URL.createObjectURL(blob), start };
+    lastTake = { url: URL.createObjectURL(blob), start, finish };
     $('playback').hidden = false;
     const range = `${start.toFixed(1)}–${finish.toFixed(1)} s`;
     $('take').textContent = `Saving the take, ${range}…`;
-    const query = new URLSearchParams({ take, start: start.toFixed(3), end: finish.toFixed(3), sheets });
+    const holds = sectionsOf(current)
+      .filter((s) => s.name === section || (start <= firstWord(current, s) - 0.1 && finish >= lastWord(current, s)))
+      .map((s) => s.name);
+    const query = new URLSearchParams({
+      take: narration, start: start.toFixed(3), end: finish.toFixed(3), sheets, sections: holds.join(','),
+    });
+    if (section) query.set('section', section);
     try {
       const saved = await fetch(`/takes?${query}`, {
         method: 'POST', headers: { 'Content-Type': blob.type }, body: blob,
       });
       if (!saved.ok) throw new Error(`${saved.status}`);
-      $('take').textContent = `Saved the take, ${range}.`;
+      const { take } = await saved.json();
+      if (take) takes.push(take);
+      const s = sectionsOf(current).find((s) => s.name === section);
+      $('take').textContent = s
+        ? `Saved take ${takesOf(s).length} of “${s.title}”, ${range}.`
+        : `Saved the take, ${range}.`;
+      render();
     } catch (e) {
       // A server that doesn't keep takes: the take can still be saved by hand.
       const link = document.createElement('a');
       link.href = lastTake.url;
-      link.download = `${take}-at-${start.toFixed(2)}s.${blob.type.includes('mp4') ? 'm4a' : 'webm'}`;
+      link.download = `${narration}-at-${start.toFixed(2)}s.${blob.type.includes('mp4') ? 'm4a' : 'webm'}`;
       link.textContent = 'Save it';
       $('take').replaceChildren(`The server didn't keep the take (${e.message}). `, link);
     }
@@ -225,10 +365,12 @@
 
   // ---- Playing ----
 
-  let counting = 0;
+  let counting = 0, borrowed = false;
   const guide = $('audio'), heard = $('heard');
 
   function go() {
+    const s = pickedIn(current);
+    stopAt = s ? until(current, s) : Infinity;
     if ($('record').checked && stream) record();
     else figure.play();
     if ($('guide').checked) {
@@ -238,7 +380,8 @@
     $('start').textContent = 'Stop';
   }
 
-  /** Stops everything, and ends a take at `at`, the figure's time. */
+  /** Stops everything, and ends a take at `at`, the figure's time. After a take read with an
+   * earlier timing plays back, the figure as timed now comes back. */
   function stop(at = figure.time) {
     clearInterval(counting);
     counting = 0;
@@ -250,7 +393,12 @@
     figure.pause();
     guide.pause();
     heard.pause();
+    stopAt = Infinity;
     $('start').textContent = 'Start';
+    if (borrowed) {
+      borrowed = false;
+      showFigure(pen, current).then(() => seek(startOf()));
+    }
   }
 
   // A phone would lock its screen partway through a take, so it's kept awake once she starts.
@@ -260,10 +408,20 @@
   };
   document.addEventListener('visibilitychange', () => { if (awake && !document.hidden) stayAwake(); });
 
-  // Counts in, then plays from where it is.
+  /** Where reading starts: the section picked, or the top. */
+  const startOf = () => (pickedIn(current) ? from(current, pickedIn(current)) : 0);
+
+  // Counts in, then plays from where it is, or from the start of the section picked if it's
+  // outside it.
   async function start() {
     stayAwake();
-    if (figure.time >= end() - 0.05) seek(0);
+    // The script comes back in place of the takes, to be read.
+    if (open) {
+      open = false;
+      render();
+    }
+    const s = pickedIn(current), t = figure.time;
+    if (s ? t < from(current, s) - 0.01 || t >= until(current, s) - 0.05 : t >= end() - 0.05) seek(startOf());
     if ($('record').checked) {
       try {
         await microphone();
@@ -296,18 +454,170 @@
     show(figure.time);
   }
 
-  /** The last take, with the figure from where it started. */
-  function playBack() {
-    if (!lastTake) return;
-    seek(lastTake.start);
-    heard.src = lastTake.url;
+  /** Plays a recording with the figure from `begin` to `finish`, the figure's times, where the
+   * recording starts at `start`. */
+  async function playWith(url, start, begin, finish) {
+    seek(begin);
+    heard.src = url;
+    heard.currentTime = Math.max(0, begin - start);
     heard.onended = () => stop();
-    heard.play().then(() => figure.play()).catch((e) => { $('error').textContent = e.message; });
+    stopAt = finish;
     $('start').textContent = 'Stop';
+    try {
+      await heard.play();
+      // The recording can be under way by the time it says so, more so after a seek: the figure
+      // starts where it is.
+      figure.time = start + heard.currentTime;
+      figure.play();
+    } catch (e) {
+      $('error').textContent = e.message;
+      stop();
+    }
   }
 
+  /** The last take, with the figure from where it started. */
+  function playBack() {
+    if (lastTake) playWith(lastTake.url, lastTake.start, lastTake.start, lastTake.finish);
+  }
+
+  /** A take's part of a section, on the figure and prompt it was read with. */
+  async function playTake(take, section) {
+    stop();
+    try {
+      const p = take.current ? current : await fetchPrompt(`${dir}/takes/${take.name}.prompt.json`);
+      await showFigure(take.current ? pen : `${dir}/takes/${take.name}.pen`, p);
+      const theirs = sectionsOf(p).find((s) => s.name === section.name);
+      const whole = !theirs || take.section === section.name;
+      const begin = whole ? take.start : Math.max(take.start, from(p, theirs));
+      const finish = whole ? take.end : Math.min(take.end, until(p, theirs));
+      await playWith(`${dir}/takes/${take.recording}`, take.start, begin, finish);
+      borrowed = !take.current;
+    } catch (e) {
+      $('error').textContent = `Can't play that take: ${e.message}`;
+      if (shownPen !== pen) showFigure(pen, current);
+    }
+  }
+
+  // ---- Takes, and which is kept for each section ----
+
+  let takes = [], kept = {}, served = false, open = false;
+  const takesOf = (s) => takes.filter((t) => t.sections?.includes(s.name));
+  const titled = (s) => `${sectionsOf(current).indexOf(s) + 1}. ${s.title}`;
+  const recordedAt = (t) => t.name.match(/-\d{8}-(\d\d)(\d\d)(\d\d)/)?.slice(1).join(':') ?? t.name;
+
+  async function loadTakes() {
+    try {
+      const response = await fetch(`/takes?take=${encodeURIComponent(narration)}`, { cache: 'no-store' });
+      if (!response.ok) throw new Error(`${response.status}`);
+      ({ takes, kept } = await response.json());
+      served = true;
+    } catch {
+      served = false;
+    }
+    render();
+  }
+
+  async function setKept(section, name) {
+    try {
+      const query = new URLSearchParams({ take: narration, section: section.name, keep: name });
+      const response = await fetch(`/kept?${query}`, { method: 'POST' });
+      if (!response.ok) throw new Error(`${response.status}`);
+      ({ kept } = await response.json());
+      const k = takesOf(section).findIndex((t) => t.name === name);
+      $('take').textContent = name ? `Keeping take ${k + 1} for “${section.title}”.`
+        : `The draft voice for “${section.title}”.`;
+    } catch (e) {
+      $('error').textContent = `The server didn't keep that (${e.message}).`;
+    }
+    render();
+  }
+
+  const el = (tag, props = {}, ...children) => {
+    const made = Object.assign(document.createElement(tag), props);
+    made.append(...children);
+    return made;
+  };
+
+  /** The section menu, the Takes button, and the panel: the takes of the section picked, or,
+   * with the whole script, what's kept for each section. Focus stays on what it was on. */
+  function render() {
+    const sections = sectionsOf(current);
+    const select = $('section');
+    select.hidden = sections.length < 2;
+    select.replaceChildren(
+      el('option', { value: '', textContent: 'Whole script' }),
+      ...sections.map((s) => el('option', { value: s.name, textContent: titled(s) + (kept[s.name] ? ' · take kept' : '') })),
+    );
+    select.value = picked ?? '';
+    const button = $('show-takes');
+    button.hidden = !served || !sections.length;
+    const s = pickedIn(current);
+    button.textContent = s ? `Takes (${takesOf(s).length})` : 'Takes';
+    button.setAttribute('aria-expanded', String(open));
+    $('takes').hidden = !open;
+    $('prompt').hidden = open;
+    if (!open) return;
+
+    const focused = document.activeElement?.dataset?.key;
+    const panel = $('takes');
+    if (s) {
+      const legend = el('legend', {}, 'Takes of ', el('strong', { textContent: titled(s) }));
+      const choice = (key, value, label, note, take) => {
+        const input = el('input', { type: 'radio', name: 'kept', value, checked: (kept[s.name] ?? '') === value });
+        input.dataset.key = key;
+        input.addEventListener('change', () => input.checked && setKept(s, value));
+        const row = el('div', { className: 'choice' + (input.checked && value ? ' kept' : '') },
+          el('label', {}, input, label, el('span', { className: 'note', textContent: note })));
+        if (take) {
+          const play = el('button', { type: 'button', textContent: 'Play' });
+          play.dataset.key = `play ${key}`;
+          play.setAttribute('aria-label', `Play ${label.toLowerCase()} with the figure`);
+          play.addEventListener('click', () => playTake(take, s));
+          row.append(play);
+        }
+        return row;
+      };
+      const rows = takesOf(s).map((t, k) => choice(t.name, t.name, `Take ${k + 1}`,
+        [recordedAt(t), `${(t.end - t.start).toFixed(1)} s`, t.section === s.name ? '' : 'part of a longer take',
+         t.current ? '' : 'read with an earlier timing'].filter(Boolean).join(' · '), t));
+      panel.replaceChildren(
+        el('fieldset', {}, legend, choice('draft', '', 'No take', 'the draft voice'), ...rows),
+        el('p', { className: 'hint', textContent: rows.length
+          ? 'The take picked is kept for this section, in place of the draft voice when the takes are joined.'
+          : 'No take holds this section yet. Start records one.' }),
+      );
+    } else {
+      panel.replaceChildren(
+        el('fieldset', {}, el('legend', { textContent: 'What’s kept for each section' }),
+          el('ul', { className: 'sections' }, ...sections.map((s) => {
+            const k = takesOf(s).findIndex((t) => t.name === kept[s.name]);
+            const go = el('button', { type: 'button' }, el('span', { textContent: titled(s) }),
+              el('span', { className: 'note', textContent: k >= 0 ? `take ${k + 1} of ${takesOf(s).length}`
+                : `draft voice${takesOf(s).length ? `, ${takesOf(s).length} taken` : ''}` }));
+            go.dataset.key = `section ${s.name}`;
+            go.addEventListener('click', () => pick(s.name));
+            return el('li', { className: k >= 0 ? 'kept' : '' }, go);
+          }))),
+      );
+    }
+    if (focused) panel.querySelector(`[data-key="${CSS.escape(focused)}"]`)?.focus();
+  }
+
+  /** Picks a section to read, or the whole script with none, and goes to where it starts. */
+  function pick(name) {
+    picked = name || null;
+    shown = null;
+    seek(startOf());
+    render();
+  }
+
+  $('section').addEventListener('change', (e) => pick(e.target.value));
+  $('show-takes').addEventListener('click', () => {
+    open = !open;
+    render();
+  });
   $('start').addEventListener('click', toggle);
-  $('restart').addEventListener('click', () => seek(0));
+  $('restart').addEventListener('click', () => seek(startOf()));
   $('playback').addEventListener('click', playBack);
   $('guide').addEventListener('change', () => {
     if (!$('guide').checked) guide.pause();
@@ -320,7 +630,26 @@
     if (!e.repeat) toggle();
   }, true);
   addEventListener('keyup', (e) => { if (e.key === ' ') e.preventDefault(); }, true);
-  addEventListener('resize', () => { shown = -1; show(figure.time); });
+  addEventListener('resize', () => { shown = null; show(figure.time); });
+
+  // A narrow window keeps the rest behind ⋯: opened, it sits over its button, its first control
+  // takes focus, and closing it gives focus back to the button.
+  const options = $('options');
+  options.addEventListener('beforetoggle', (e) => {
+    if (e.newState !== 'open') {
+      if (options.contains(document.activeElement)) $('more').focus();
+      return;
+    }
+    const at = $('more').getBoundingClientRect();
+    options.style.bottom = `${innerHeight - at.top + 4}px`;
+    options.style.right = `${Math.max(8, innerWidth - at.right)}px`;
+  });
+  options.addEventListener('toggle', (e) => {
+    if (e.newState === 'open') options.querySelector('button:not([hidden]), input')?.focus();
+  });
+
+  render();
+  loadTakes();
 </script>
 </body>
 </html>

@@ -738,6 +738,40 @@ step is left alone, and a beat with a length and no name, which the pattern also
 explainer is written any of these ways, and retiming it from the draft take writes the same `.pen`, audio and prompt
 timings as before, to the byte.
 
+**A section recorded again, and the takes that are liked kept, 2026-11-22 (#19).** A narrator found every section in one
+take hard, and the test was a reader who likes sections one and three recording just section two again.
+
+- **A section is a part of the figure.** The explainer is already a part to a file through `use`, so a section is a part and
+  the script's lines whose anchors name its beats, with a line that anchors nothing going with the line before. A second
+  figure split into parts gets sections with nothing added, and a figure in one file is one. `retime` lists them in the
+  prompt, titled from the first sentence of each file's opening comment. The limaçon has six: the glow says nothing, so it
+  isn't one. Marking sections in the script, as blank lines, was the other way, and would be kept in step with the parts by
+  hand.
+- **The prompter picks one.** With a section picked only its lines show, the first waiting below until it's due, and a take
+  starts 1.5 s before its first word and stops just before the next section's first line comes up. Takes lists every take
+  that holds the section, recorded as it or as part of a longer take, each with Play and a radio button for the one kept,
+  or no take and the draft voice. Play puts a take on the `.pen` and prompt it was read with, which the server copies beside
+  each take, so a take from before the last retime still plays in step. With the whole script picked, Takes shows what's
+  kept for each section. On a phone it's one bar: the section, Start, Takes, and the rest behind ⋯.
+- **The server keeps which take.** `out/takes/<figure>.kept.json`, a take per section by name, written whole and moved into
+  place. `GET /takes` lists the takes and it, and `POST /kept` changes it.
+- **`join` makes one take of them,** and `align` and `retime` run on it as on any other. A take recorded as its section is
+  used whole, less the silence past 0.3 s at each end, so a slow reading isn't cut where the figure's section ended. A section
+  from a longer take is cut halfway through the silences around it, as the prompt it was read with timed them. A section with
+  none kept comes from the draft, cut by its own alignment. A kept take that doesn't hold its section, or read other words
+  for it, stops `join`.
+- **`scripts/serve.py` didn't answer a range request,** and a browser won't seek in audio it can't fetch part of. The guide,
+  started anywhere but the top, had been playing from its beginning, out of step. It answers them now. `--narration DIR`
+  serves a folder in place of `lab/narration/out`, so a check never touches real recordings.
+- **Checked with the draft voice standing in:** Kokoro's `af_heart` at 0.8 speed for the narrator. In Playwright's Chromium,
+  with the page's microphone fed a file, sections one and three were recorded once, two twice (the draft's voice, then the
+  slow one), and two's second kept by arrow keys alone, at 375×812 and 1633×919. A reload showed the same three. Joined and
+  retimed, the three sections run 5.71, 7.31 and 17.56 s where the draft ran 5.2, 6.69 and 15.85, the pauses around them
+  grew, and sections four to six kept the draft's lengths. A take played back with the figure was within 20 ms of it, and
+  the guide after the retime about 40 ms from it. Retiming from the draft writes the same `.pen` and audio as before, to the byte.
+- **Not checked:** a real voice, a phone's microphone, and Safari's recording. Chromium's own fake microphone hung
+  headless on macOS, so the check stood a stream from a file in for `getUserMedia`.
+
 ## The playground
 
 `web/playground.html`, built on 2026-11-11 so Kris can react to the syntax while narration waits for a take. A figure's `.pen` and
