@@ -55,6 +55,25 @@ def said(prompt):
     return out
 
 
+def holding(prompt, start, end):
+    """The sections a take from `start` to `end`, the figure's times, holds whole, as the page
+    works them out: it was running from before a section's first word until its last was due, or
+    until the figure's end if that comes first, where the figure waits while the reader finishes.
+    A section's own end needs nothing more, since the figure waits there after its last word.
+    `end` in the prompt is where `retime` worked out the story ends."""
+    figure_end = prompt.get("end", math.inf) if isinstance(prompt.get("end"), (int, float)) else math.inf
+    held = []
+    try:
+        for s in prompt.get("sections", []):
+            a, b = s["lines"]
+            first, last = prompt["lines"][a][0][1], prompt["lines"][b - 1][-1][2]
+            if start <= first - 0.1 and end >= min(last, figure_end - 0.05):
+                held.append(s["name"])
+    except (KeyError, IndexError, TypeError, ValueError):
+        return []
+    return held
+
+
 class NoCache(http.server.SimpleHTTPRequestHandler):
     # Pencil's own files are text, so a browser shows them rather than downloading them.
     extensions_map = {
@@ -294,8 +313,9 @@ class NoCache(http.server.SimpleHTTPRequestHandler):
     def take(self, query):
         """Keeps a take the prompter recorded, so a reader on a phone never handles a file. The
         server names the files: the recording, and beside it a `.json` of where in the figure it
-        starts and ends and the sections it holds, from the query string, with the figure and the
-        prompter's timings as they were when it was read."""
+        starts and ends, from the query string, and the sections it holds, which the server works
+        out from the prompt, with the figure and the prompter's timings as they were when it was
+        read."""
         try:
             length = int(self.headers.get("Content-Length") or 0)
         except ValueError:
@@ -314,10 +334,10 @@ class NoCache(http.server.SimpleHTTPRequestHandler):
             return
         body = self.rfile.read(length)
         about = {"figure": figure, "start": start, "end": end, "sheets": query.get("sheets", "")}
-        # The section it was recorded as, if it holds it, and every section it holds whole, of
-        # those the figure has.
-        names = self.section_names(figure)
-        about["sections"] = [s for s in query.get("sections", "").split(",") if s in names]
+        # Every section it holds whole, by the same rule as the page, and the one it was recorded
+        # as, if it holds it. A take reaches the server through a tunnel too, so it doesn't take
+        # the page's word for which.
+        about["sections"] = holding(self.prompt(self.narration / f"{figure}.prompt.json"), start, end)
         if query.get("section") in about["sections"]:
             about["section"] = query["section"]
         takes = self.narration / "takes"

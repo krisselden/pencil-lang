@@ -414,18 +414,17 @@
     $('playback').hidden = false;
     const range = `${start.toFixed(1)}–${finish.toFixed(1)} s`;
     say(`${why}Saving the take, ${range}…`);
-    const holds = holding(start, finish).map((s) => s.name);
-    const query = new URLSearchParams({
-      take: narration, start: start.toFixed(3), end: finish.toFixed(3), sheets, sections: holds.join(','),
-    });
+    const query = new URLSearchParams({ take: narration, start: start.toFixed(3), end: finish.toFixed(3), sheets });
     const s = sectionsOf(current).find((s) => s.name === section);
-    if (s && holds.includes(s.name)) query.set('section', section);
+    if (s) query.set('section', section);
     try {
       const saved = await fetch(`/takes?${query}`, {
         method: 'POST', headers: { 'Content-Type': blob.type }, body: blob,
       });
       if (!saved.ok) throw new Error(`${saved.status}`);
       const { take } = await saved.json();
+      // Which sections it holds is the server's to say, by the same rule as `holding` here.
+      const holds = take?.sections ?? holding(start, finish).map((s) => s.name);
       if (!served) return await loadTakes();
       if (take) takes.push(take);
       const short = s && start > firstWord(current, s) - 0.1
@@ -448,7 +447,8 @@
 
   // `generation` counts what the reader set going, so a figure coming back from a take's
   // playback doesn't move one started since.
-  let counting = 0, starting = false, borrowed = false, generation = 0;
+  // `pausing` is set while the page pauses the figure itself, which it then doesn't follow.
+  let counting = 0, starting = false, pausing = false, borrowed = false, generation = 0;
   const guide = $('audio'), heard = $('heard');
 
   /** Where a section's own words begin: halfway through the silence before them. */
@@ -504,7 +504,9 @@
    * of one being played back. */
   function hold(at) {
     following = null;
+    pausing = true;
     figure.pause();
+    pausing = false;
     // Pausing reads the figure's clock, which has wrapped to 0 at the figure's end, so the time is
     // set again once it's paused.
     figure.time = at;
@@ -535,7 +537,9 @@
       recorder.stop();
     }
     $('recording').hidden = true;
+    pausing = true;
     figure.pause();
+    pausing = false;
     figure.time = at;
     guide.pause();
     heard.pause();
@@ -894,11 +898,27 @@
   // does what it does there; on Start, that's starting and stopping too.
   const takesSpace = (target) => target instanceof Element
     && target.closest('button, input, select, textarea, a[href], summary, [contenteditable]');
-  // While a take is read or played back, the figure's own keys would step it out of step with the
-  // sound, so they're held back.
+  // While the prompter runs, a take or a read-through with Record off, the figure's own keys and
+  // drags would pause it, or move it, out of step with the page and the sound, so they don't reach
+  // it: its beat keys, and its points' keys and drags. Stopped, they work as they do anywhere.
+  const FIGURE_KEYS = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown'];
   addEventListener('keydown', (e) => {
-    if (busy() && e.target === figure && ['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) e.preventDefault();
+    if (busy() && e.target === figure && FIGURE_KEYS.includes(e.key)) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
   }, true);
+  addEventListener('pointerdown', (e) => {
+    if (busy() && e.target === figure) e.stopPropagation();
+  }, true);
+  // Anything else that pauses the figure while the page has it running, the page follows: it
+  // stops there, a take ending where the figure did, rather than show Stop over a still figure.
+  figure.addEventListener('pause', () => {
+    if (pausing || held !== null || counting || starting || $('start').textContent !== 'Stop') return;
+    generation += 1;
+    stop();
+    fail('The figure was paused from the figure itself, so reading stopped there.');
+  });
   addEventListener('keydown', (e) => {
     if (e.key !== ' ' || takesSpace(e.target)) return;
     e.preventDefault();

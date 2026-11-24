@@ -779,8 +779,10 @@ take hard, and the test was a reader who likes sections one and three recording 
   Takes, and the rest behind ⋯. Space starts and stops when focus is on nothing or on the figure; on a radio, a button, a
   checkbox or the section menu it does what it does there. A section chosen from the menu's list, or Record or the guide
   ticked with a pointer, leaves focus on Start, so the next Space reads rather than reopening the menu or ticking the box
-  again; the menu's arrows keep focus on the menu. While a take is read or played back, the figure's own keys, the arrows,
-  Home and End, are held back, since they'd pause it out of step with the sound; paused, they step it. With Record off,
+  again; the menu's arrows keep focus on the menu. While the prompter runs, a take, a playback or a read-through with
+  Record off, the figure's own keys and drags don't reach it, its points' included, since they'd pause or move it out of
+  step with the page and the sound; stopped, they work as anywhere. Anything else that pauses the figure while the page
+  has it running, the page follows: it stops there and says so, rather than show Stop over a still figure. With Record off,
   the count-in says "Not recording: Record is off" under its number, and the bar says it while the figure plays. Stop
   during the figure's loading or the microphone's prompt cancels, with no count-in after. A word tapped while a take read
   with an earlier timing plays goes to that word on the figure as timed now.
@@ -792,6 +794,10 @@ take hard, and the test was a reader who likes sections one and three recording 
 - **The guide, with a section take,** comes in halfway through the pause before the section's first word, so the end of the
   section before isn't played through speakers into the lead-in, where trimming would keep it as loud. It isn't kept out of
   the section itself: through speakers, the microphone hears it, so it's for headphones, which the control's title says.
+- **The server works out which sections a take holds,** from the prompt and the take's start and end, by the page's rule,
+  rather than take the page's word, since a take can reach it through a tunnel; the page reports the server's answer. For
+  a figure that ends before its last word, it uses where the story ends, which `retime` writes into the prompt as `end`
+  and which matched the compiler's duration on the limaçon, the one-file figure and a shortened copy.
 - **The server keeps which take.** `out/takes/<figure>.kept.json` has an entry per section, under its name when it was
   kept, of the take and the section as the take's own prompt names it. `GET /takes` lists the figure's takes (by their
   `figure`, so `limacon-short`'s aren't `limacon`'s), what's kept by the sections' names now, and what's kept for words
@@ -841,7 +847,12 @@ take hard, and the test was a reader who likes sections one and three recording 
   first anchor, its kept take still kept on the page, the server and `join`, and kept again under its new name; three kept
   takes left reading gone words by an edited script, listed, cleared by Space, then joined; the limaçon and the one-file
   figure kept again by the page from their original takes, joined, aligned and retimed to the same `.pen` and audio as
-  before; and the draft retimed to the same `.pen` and audio as main to the byte.
+  before; and the draft retimed to the same `.pen` and audio as main to the byte. After a recheck: the figure's arrows,
+  End and Home during a read-through with Record off, at both sizes and in the desktop app's browser, left it playing; a
+  key and a pointer-down raised inside the figure, where its points listen, didn't reach them while it ran and did when
+  stopped; a pause from outside the page stopped the page with a message; and a take posted straight to the server
+  ending 2.5 s before its section's last word held nothing and couldn't be kept, while the shortened one-file figure's last
+  section, read to the figure's end, held.
 - **Not checked:** a real voice, a phone's microphone, and Safari's recording. Chromium's own fake microphone hung
   headless on macOS, so the check stood a stream from a file in for `getUserMedia`.
 

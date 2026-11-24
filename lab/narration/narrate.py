@@ -34,8 +34,9 @@ the repo's root:
     ffmpeg -i out/narrated.mp4 -i lab/narration/out/limacon.wav -map 0:v -map 1:a -af apad -shortest \\
         -c:v copy -c:a aac out/narrated-audio.mp4
 
-It also writes `out/limacon.prompt.json`, each word's time in the story, for a teleprompter that
-plays the figure and lights the words as they're due, to read a take along with it:
+It also writes `out/limacon.prompt.json`, each word's time in the story, and where the story ends,
+for a teleprompter that plays the figure and lights the words as they're due, to read a take along
+with it:
 
     http://localhost:8741/web/prompter.html?take=limacon
 
@@ -496,7 +497,7 @@ def retime(pen, timing, out):
 
     def play(starts):
         """The story with the lines placed so far: each anchored beat's wait, how late each line's
-        beats are, and when each beat ends."""
+        beats are, when each beat ends, and when the story does."""
         waits, late, ends, clock = {}, [0.0] * count, {}, 0.0
         for k, (_, kind, name, seconds) in enumerate(items):
             anchored = lambda it: it[1] == "beat" and it[2] in by_beat and \
@@ -517,7 +518,7 @@ def retime(pen, timing, out):
                 clock += waits[k]
             clock += seconds
             ends[name] = clock
-        return waits, late, ends
+        return waits, late, ends, clock
 
     starts = []
     for line in range(count):
@@ -525,19 +526,19 @@ def retime(pen, timing, out):
         if line > 0:
             # The figure holds each landing of the line before for as long as the `.pen` says,
             # before this line's first word.
-            _, _, ends = play(starts)
+            _, _, ends, _ = play(starts)
             first_word = spans[line][0] - cuts[line]
             for a in anchors:
                 if a["line"] == line - 1:
                     start = max(start, ends[a["beat"]] + hold(a["beat"]) - first_word)
         for _ in range(50):
-            _, late, _ = play(starts + [start])
+            _, late, _, _ = play(starts + [start])
             if late[line] < 1e-6:
                 break
             start += late[line]
         starts.append(start)
 
-    waits, _, ends = play(starts)
+    waits, _, ends, story_end = play(starts)
     natural = [cuts[i] for i in range(count)]
     print(f"{'line':>4} {'starts':>7} {'held':>6}  first words")
     lines = lines_of_script(take)
@@ -588,7 +589,10 @@ def retime(pen, timing, out):
         prompt.append(row)
     Path(out).with_suffix(".prompt.json").write_text(json.dumps(
         {"duration": round(len(track) / rate, 3), "lines": prompt,
-         "sections": sections(take["script"])}))
+         "sections": sections(take["script"]),
+         # Where the story ends, which the server needs to tell whether a take of the last section
+         # ran to the end of a figure that ends before its last word.
+         "end": round(story_end, 3)}))
     print(f"\nwrote {out}, {Path(out).with_suffix('.wav')} ({len(track) / rate:.1f} s) and "
           f"{Path(out).with_suffix('.prompt.json')}")
 
