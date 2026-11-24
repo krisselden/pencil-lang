@@ -49,12 +49,13 @@ is a paragraph, the lines between two blank lines, and a script with no blank li
 Blank lines change nothing else, since every other step reads only the lines that aren't blank. A
 section is named for the beat its first anchor names, or its first words if it anchors none, and
 titled with its first sentence or words; `retime` lists them in the prompt, and
-`sections limacon.txt` prints them. In the prompter a reader picks a section and records it; at the
+`sections limacon.txt` prints them. A line of only an anchor or punctuation stops every step, since
+it would be a clip with no words. In the prompter a reader picks a section and records it; at the
 section's end the figure waits, and the microphone runs until they stop it, so a slow reading isn't
 cut off. They play each take back on the figure it was read with and keep one, and the server notes
-which in `out/takes/limacon.kept.json`. A take holds a section only while the section says what it
-said when the take was read, so a kept take whose section has changed since, by a word or a blank
-line, is out of date. `join` makes one take of the whole script from those, with the draft's own
+which in `out/takes/limacon.kept.json`. A kept take follows the words it read, not the section's
+name: it stays with a section renamed, and one whose section has changed since, by a word or a blank
+line, is kept for words the script no longer has, which the prompter lists to clear. `join` makes one take of the whole script from those, with the draft's own
 lines where none is kept, and it goes through the same steps as any take:
 
     pixi run python narrate.py join out/takes/limacon.kept.json out/draft.json out/joined.wav
@@ -84,7 +85,14 @@ GAP = 0.3  # Seconds of silence between a draft's lines, which `retime` can stre
 
 
 def lines_of(text):
-    return [line for line in text.splitlines() if line.strip()]
+    """The script's lines, less the blank ones. A line of only an anchor or punctuation would be a
+    clip with no words, which nothing can time, so it stops every step with what to do."""
+    lines = [line for line in text.splitlines() if line.strip()]
+    for line in lines:
+        if not words_of(line):
+            sys.exit(f"the script's line {line.strip()!r} says no words: put what's on it on a word of the "
+                     "line before or after, or take it out")
+    return lines
 
 
 def words_of(text):
@@ -114,13 +122,14 @@ def anchors_of(text):
 def say(script, wav, voice="am_michael", speed=1.0):
     """Synthesizes a draft with Kokoro, a line at a time, and keeps Kokoro's own word times to
     compare."""
+    lines = lines_of(Path(script).read_text())  # Before the voice loads, which takes a while.
     import numpy as np
     import soundfile
     from kokoro import KPipeline
 
     pipeline = KPipeline(lang_code="a", repo_id="hexgrad/Kokoro-82M")
     rate, audio, words, offset = 24000, [], [], 0.0
-    for line in lines_of(Path(script).read_text()):
+    for line in lines:
         # Two spaces where an anchor was make Kokoro say the next spelled-out word twice.
         text = " ".join(ANCHOR.sub("", line).split())
         # Kokoro's own guesses read `sinh` as "sin", so the words the narrator has said how to
@@ -194,6 +203,7 @@ def align(take, script, out):
     import soundfile
 
     text = Path(script).read_text()
+    lines_of(text)  # A line with no words stops it before the aligner runs.
     out = Path(out)
     out.parent.mkdir(parents=True, exist_ok=True)
     # The take as a WAV, which both the aligner and `retime` read. A phone's m4a, or anything
@@ -330,10 +340,9 @@ def sections(text):
     lines without them.
 
     Each is `{"name", "title", "lines": [first, past the last]}`, counting the lines that aren't
-    blank. The name is the beat its first anchor names, so a section added before it, or a word
-    changed in it, leaves it the name the server keeps its take under; one that anchors nothing is
-    named for its first words, which a take of it has to read anyway. The title is its first
-    sentence, or its first few words."""
+    blank. The name is the beat its first anchor names, or its first words if it anchors none; it's
+    a label, and a kept take follows the section's words, so a section renamed keeps its take. The
+    title is its first sentence if that's eight words or fewer, or else its first six words."""
     runs, number, gap = [], 0, True
     for line in text.splitlines():
         if not line.strip():
@@ -587,6 +596,14 @@ def retime(pen, timing, out):
 RATE = 48000  # What `join` decodes every source to.
 
 
+def wordless(prompt, where):
+    """Stops on a prompt with a line that says no words, which is older than the check `lines_of`
+    makes, so it was timed from a script with a line of only an anchor or punctuation."""
+    for i, line in enumerate(prompt.get("lines", [])):
+        if not line:
+            sys.exit(f"line {i + 1} of {where} says no words: fix the script, then `align` and `retime` again")
+
+
 def decoded(path):
     """Any audio ffmpeg reads, as mono samples at `RATE`."""
     import io
@@ -661,8 +678,10 @@ def join(kept, draft, out):
     """The takes kept for each section, as one take of the whole script for `align` and `retime`,
     with the draft's own lines for a section with none kept. `kept` is the record
     `scripts/serve.py` keeps beside the takes, `out/takes/<figure>.kept.json`, of the take kept for
-    each section by name. The sections are the ones the prompter shows now, from
-    `out/<figure>.prompt.json`; `draft` is the draft's alignment, as `align` wrote it.
+    each section. The sections are the ones the prompter shows now, from
+    `out/<figure>.prompt.json`; `draft` is the draft's alignment, as `align` wrote it. A kept take
+    belongs to the section that has now the words it read, whatever that section is called now; one
+    whose words the script no longer has stops `join`, which names it.
 
     A take recorded as one section is used whole, less the silence it starts and ends with. A
     section from a longer take is cut in the silences around it, as the prompter timed them when it
@@ -681,6 +700,9 @@ def join(kept, draft, out):
         sys.exit(f"can't read what to join: {e}")
     if not now.get("sections") or not now.get("lines"):
         sys.exit(f"{takes.parent / figure}.prompt.json has no lines or no sections: run `retime` again")
+    if not isinstance(choice, dict):
+        sys.exit(f"{kept} isn't a record of takes by section")
+    wordless(now, f"{takes.parent / figure}.prompt.json")
     spans = timing["lines"]
     words = [normal(token) for line in now["lines"] for token, _, _ in line]
     if [w[2] for w in timing["words"]] != [w for w in words if w] or len(spans) != len(now["lines"]):
@@ -690,40 +712,51 @@ def join(kept, draft, out):
     # What a section says, as the aligner hears it, so a comma moved changes nothing.
     said = lambda prompt, s: [w for line in prompt["lines"][slice(*s["lines"])] for token, _, _ in line
                               if (w := normal(token))]
-    gone = sorted(set(choice) - {s["name"] for s in now["sections"]})
-    if gone:
-        print(f"the script has no section {', '.join(map(repr, gone))} now, so what's kept for it is left out")
-
-    clips, report = [], []
-    for s in now["sections"]:
-        a, b = s["lines"]
-        name = choice.get(s["name"])
-        if not name:
-            begin = 0.0 if a == 0 else between(spans[a - 1][1], spans[a][0])
-            end = timing["duration"] if b == len(spans) else between(spans[b - 1][1], spans[b][0])
-            clips.append(draft_audio[int(begin * RATE) : int(end * RATE)])
-            report.append((s, "the draft", begin, end))
-            continue
+    # Each kept take, by the section that has now the words it read for the one it was kept for.
+    ours = {s["name"]: said(now, s) for s in now["sections"]}
+    entries, unmatched = {}, []
+    for key, entry in sorted(choice.items(), key=lambda e: e[0] not in ours):
+        # Each entry is the take, and the section as the take's own prompt names it.
+        if not (isinstance(entry, dict) and isinstance(entry.get("take"), str) and isinstance(entry.get("section"), str)):
+            sys.exit(f"what {kept} keeps for section {key!r} isn't a take and the section it read: keep it again")
+        name, as_read = entry["take"], entry["section"]
         try:
             about = json.loads((takes / f"{name}.json").read_text())
             then = json.loads((takes / f"{name}.prompt.json").read_text())
             start, finish = float(about["start"]), float(about["end"])
             recording = takes / about["recording"]
         except KeyError as e:
-            sys.exit(f"the take kept for section {s['name']!r}, {name}, has no {e.args[0]} in its .json")
+            sys.exit(f"the take kept for section {key!r}, {name}, has no {e.args[0]} in its .json")
         except (OSError, ValueError, TypeError) as e:
-            sys.exit(f"the take kept for section {s['name']!r}, {name}, can't be read from {takes}: {e}")
+            sys.exit(f"the take kept for section {key!r}, {name}, can't be read from {takes}: {e}")
+        wordless(then, takes / f"{name}.prompt.json")
+        theirs = next((t for t in then.get("sections", []) if t["name"] == as_read), None)
+        found = [n for n, w in ours.items() if theirs and w == said(then, theirs)]
+        if found:
+            entries.setdefault(found[0], (as_read, name, about, then, theirs, start, finish, recording))
+        else:
+            unmatched.append(f"{name}, kept for section {key!r}")
+    if unmatched:
+        sys.exit(f"kept takes read words the script no longer has: {'; '.join(unmatched)}. A blank line added "
+                 "or taken out in a section, or a word changed, does that: record those sections again, or clear "
+                 "what's kept for them in the prompter's Takes, with the whole script picked")
+
+    clips, report = [], []
+    for s in now["sections"]:
+        a, b = s["lines"]
+        if s["name"] not in entries:
+            begin = 0.0 if a == 0 else between(spans[a - 1][1], spans[a][0])
+            end = timing["duration"] if b == len(spans) else between(spans[b - 1][1], spans[b][0])
+            clips.append(draft_audio[int(begin * RATE) : int(end * RATE)])
+            report.append((s, "the draft", begin, end))
+            continue
+        key, name, about, then, theirs, start, finish, recording = entries[s["name"]]
         if not recording.exists():
             sys.exit(f"the take kept for section {s['name']!r}, {name}, has no recording: {recording} is gone")
-        if s["name"] not in about.get("sections", []):
+        if key not in about.get("sections", []):
             sys.exit(f"{name} doesn't hold all of section {s['name']!r}")
-        theirs = next((t for t in then.get("sections", []) if t["name"] == s["name"]), None)
-        if theirs is None or said(then, theirs) != said(now, s):
-            sys.exit(f"{name}, the take kept for section {s['name']!r}, read other words than the section "
-                     "has now, as when a blank line is added or taken out in it: record the section again, "
-                     "or keep another take or the draft voice for it in the prompter")
         audio = decoded(recording)
-        if about.get("section") == s["name"]:
+        if about.get("section") == key:
             clip, begin, end = trimmed(audio), start, finish
         else:
             lines, (a, b) = then["lines"], theirs["lines"]

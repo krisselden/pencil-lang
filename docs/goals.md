@@ -747,23 +747,28 @@ take hard, and the test was a reader who likes sections one and three recording 
   script in paragraphs, and a rule written in the script is better than one implied by how the figure happens to be split.
   There's one rule, with no fallback to the parts. Blank lines change nothing else: `say`, `hear`, `labels`, `align` and
   `retime` read only the lines that aren't blank, and retiming the draft of the limaçon's script, now in six paragraphs,
-  writes the same `.pen` and audio as main to the byte. A section's name, which the server keeps its take under, is the
-  beat its first anchor names, so adding a section before it doesn't change the name; a section that anchors nothing is
-  named for its first words. A beat already used as a name is skipped, since `[trace:start]` and `[trace]` can fall in
-  different sections. A section's title is its first sentence, or its first six words. There's no heading syntax.
-- **A script changed after a take was kept.** A take holds a section only while the section says the words it said when
-  the take was read, as the aligner hears them, so moving a comma changes nothing. A blank line added inside a kept
-  section splits it: the first half keeps the name, but the kept take read more words than the section has now, so it's
-  out of date, and the second half is new, with nothing kept. Taking a blank line out joins two sections under the first
-  one's name: its kept take is out of date too, and what was kept for the second is set aside, which `join` reports. The
-  prompter says a kept take is out of date in the menu, the overview and the section's takes. `join` stops on one and
-  names the take and the section, so it can't join the wrong words. A section take could be cut at the new blank line's
-  pause to keep both halves, but nothing needs that yet.
+  writes the same `.pen` and audio as main to the byte. A section's name is the beat its first anchor names, or its first
+  words if it anchors nothing; a beat already used as a name is skipped, since `[trace:start]` and `[trace]` can fall in
+  different sections. The name is a label: a kept take follows the section's words (next). A section's title is its first
+  sentence if that's eight words or fewer, or else its first six words. There's no heading syntax. A line of only an anchor
+  or punctuation would be a clip with no words, so it stops `say`, `align`, `labels`, `sections` and `retime` with a
+  sentence before anything runs, and a prompt timed from one before that check stops the page and `join`.
+- **A kept take follows its words, not its section's name** (after a second review, 2026-11-23). A take holds a section
+  that says the words it read for one it held when it was read, as the aligner hears them, so moving a comma changes
+  nothing. A kept take belongs to the section with those words now, whatever it's called: an anchor added before a
+  section's first, or its first anchor taken out, renames the section and it keeps its take. Matching by name had dropped
+  the take in silence there, and couldn't keep it again, so the reader would have recorded the same words twice. A blank
+  line added or taken out in a section, or a word changed, leaves its kept take reading words no section has: the page
+  says so on load, the overview lists those under "Kept for words the script no longer has" by their first words, each
+  with a Clear button, and `join` stops on them, naming each, so it can't join the wrong words or leave a liked take out
+  without a word. A section that takes the name of one that's gone isn't said to have anything kept. A section take could
+  be cut at a new blank line's pause to keep both halves, but nothing needs that yet.
 - **The prompter picks one.** With a section picked only its lines show, the first waiting below until it's due, and a take
   starts 1.5 s before its first word. **A recording never ends on its own:** at the section's end, before the next one's first
   line, or at the figure's end with the whole script, the figure waits, the page says it's still recording, and the microphone
   runs until the reader stops it. A reader slower than the draft, who is who the feature is for, isn't cut off, and playing
-  the take back holds the figure there while the rest of it plays. A take holds a section if it was running from before the
+  the take back holds the figure there while the rest of it plays. In a phone's landscape the stage takes the figure's
+  shape in the height the bar leaves. A take holds a section if it was running from before the
   section's first word until its last was due, so one stopped partway, or started from a tapped word inside it, is kept as a
   take but not offered for the section, and the page says why.
 - **Takes** lists every take that holds the section, recorded as it or as part of a longer take, each with Play, which says
@@ -771,14 +776,30 @@ take hard, and the test was a reader who likes sections one and three recording 
   kept, and Escape closes it. Play puts a take on the `.pen` and prompt it was read with, which the server copies beside each
   take, so a take from before the last retime still plays in step; the figure follows the recording's clock while it plays.
   With the whole script picked, Takes shows what's kept for each section. On a phone it's one bar: the section, Start,
-  Takes, and the rest behind ⋯. Space starts and stops only when nothing that takes Space has focus; on a radio, a button or
-  the section menu it does what it does there.
+  Takes, and the rest behind ⋯. Space starts and stops when focus is on nothing or on the figure; on a radio, a button, a
+  checkbox or the section menu it does what it does there. A section chosen from the menu's list, or Record or the guide
+  ticked with a pointer, leaves focus on Start, so the next Space reads rather than reopening the menu or ticking the box
+  again; the menu's arrows keep focus on the menu. While a take is read or played back, the figure's own keys, the arrows,
+  Home and End, are held back, since they'd pause it out of step with the sound; paused, they step it. With Record off,
+  the count-in says "Not recording: Record is off" under its number, and the bar says it while the figure plays. Stop
+  during the figure's loading or the microphone's prompt cancels, with no count-in after. A word tapped while a take read
+  with an earlier timing plays goes to that word on the figure as timed now.
+- **A recording the microphone ends,** as when a phone locks, the page goes to the background or the permission is taken
+  back, is saved where the figure was or waited, and the page says the microphone stopped. The next take asks for the
+  microphone again, as does a count-in whose microphone ended under it, rather than leave the page half started. A take
+  under a second says it wasn't kept. The last section of a figure that ends before its last word is due holds a take
+  that reached the figure's end, where the figure waits while the reader finishes.
 - **The guide, with a section take,** comes in halfway through the pause before the section's first word, so the end of the
   section before isn't played through speakers into the lead-in, where trimming would keep it as loud. It isn't kept out of
   the section itself: through speakers, the microphone hears it, so it's for headphones, which the control's title says.
-- **The server keeps which take.** `out/takes/<figure>.kept.json`, a take per section by name. `GET /takes` lists the
-  figure's takes (by their `figure`, so `limacon-short`'s aren't `limacon`'s) and it, and `POST /kept` changes it, for a
-  section the figure's prompt has and a take of that figure that holds it. Writes take a lock, since each request has a
+- **The server keeps which take.** `out/takes/<figure>.kept.json` has an entry per section, under its name when it was
+  kept, of the take and the section as the take's own prompt names it. `GET /takes` lists the figure's takes (by their
+  `figure`, so `limacon-short`'s aren't `limacon`'s), what's kept by the sections' names now, and what's kept for words
+  the script no longer has. `POST /kept` keeps a take of that figure for a section it holds, replacing whatever was kept
+  for that section's words under any name, and an empty `keep` clears a section or an entry whose words are gone. A
+  figure's name is letters, digits, `_` and `-`, up to 40, on the page and the server alike: the page says so for any
+  other, and the server answers 400 rather than read another figure's files, as it does a `Content-Length` that isn't a
+  number. Writes take a lock, since each request has a
   thread, and a take gets a name no other has. A take's start and end must be finite numbers, and a take that can't be
   described in JSON is left out of the listing. The page sends one choice at a time, in the order they were made, and draws
   the menu again once none is waiting. A failed listing says so, and a take saved later brings the Takes button back.
@@ -815,6 +836,12 @@ take hard, and the test was a reader who likes sections one and three recording 
   for both, `join` ran. Two things the one-file figure found are fixed: the stage assumed a 16:9 figure, so a square one
   pushed the script under the controls (the stage now takes the figure's own shape), and at the figure's end the figure
   waited on its first frame, since pausing read a clock that had wrapped to 0 (the time is set again once it's paused).
+- **Checked after the second review, 2026-11-23,** in Playwright's Chromium at 375×812 and 1633×919, and 812×375 for the
+  landscape: each of its nine findings by itself, by keys and by mouse then keys; a section renamed by taking out its
+  first anchor, its kept take still kept on the page, the server and `join`, and kept again under its new name; three kept
+  takes left reading gone words by an edited script, listed, cleared by Space, then joined; the limaçon and the one-file
+  figure kept again by the page from their original takes, joined, aligned and retimed to the same `.pen` and audio as
+  before; and the draft retimed to the same `.pen` and audio as main to the byte.
 - **Not checked:** a real voice, a phone's microphone, and Safari's recording. Chromium's own fake microphone hung
   headless on macOS, so the check stood a stream from a file in for `getUserMedia`.
 

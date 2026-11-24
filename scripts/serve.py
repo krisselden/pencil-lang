@@ -30,6 +30,8 @@ import urllib.parse
 NARRATION = "lab/narration/out"
 TAKE_BYTES = 64 << 20
 NAME = re.compile(r"[\w-]{1,80}")
+# A figure's name, which the page checks the same way, so both read the same files.
+FIGURE = re.compile(r"[A-Za-z0-9_-]{1,40}")
 # Takes and the record of which is kept are each read, changed and written by one request at a
 # time, since the server answers each request on a thread of its own.
 WRITING = threading.Lock()
@@ -88,7 +90,12 @@ class NoCache(http.server.SimpleHTTPRequestHandler):
         self.wfile.write(body)
 
     def figure(self, query):
-        return re.sub(r"[^\w-]", "", query.get("take", "take"))[:40] or "take"
+        """The figure a request is for, or None, after a 400, for a name the page wouldn't use."""
+        figure = query.get("take", "")
+        if FIGURE.fullmatch(figure):
+            return figure
+        self.send_error(400, "a figure's name is letters, digits, _ and -")
+        return None
 
     def about(self, figure, name):
         """A take of the figure, as its `.json` describes it, or None if there's no such take or
@@ -117,13 +124,57 @@ class NoCache(http.server.SimpleHTTPRequestHandler):
         """The sections the figure's prompt has now."""
         return set(said(self.prompt(self.narration / f"{figure}.prompt.json")))
 
-    def holds(self, take, now):
-        """The sections a take still holds: of those it held when it was read, each the script has
-        now with the same words. A blank line added or taken away in a section, or a word changed,
-        leaves a take of it out of date, since it read other words than the section has."""
+    def held(self, take):
+        """The words of each section a take held when it was read, by the name it had then."""
         then = said(self.prompt(self.narration / "takes" / f"{take['name']}.prompt.json"))
         listed = take.get("sections")
-        return [s for s in listed if s in now and then.get(s) == now[s]] if isinstance(listed, list) else []
+        return {n: then[n] for n in listed if n in then} if isinstance(listed, list) else {}
+
+    def holds(self, take, now):
+        """The sections a take holds now: each with the words of one it held when it was read.
+        A take follows its section's words, not its name, so a section renamed, by an anchor
+        added before its first or a first word changed, keeps its takes. A blank line added or
+        taken away in a section, or a word changed, leaves a take of it holding nothing there."""
+        words = list(self.held(take).values())
+        return [n for n, w in now.items() if w in words]
+
+    def opening(self, take, section):
+        """A section's first words as the take's prompt writes them, to name what was kept."""
+        prompt = self.prompt(self.narration / "takes" / f"{take}.prompt.json")
+        try:
+            a, b = next(s["lines"] for s in prompt["sections"] if s["name"] == section)
+            tokens = [token for line in prompt["lines"][a:b] for token, _, _ in line]
+        except (KeyError, StopIteration, TypeError, ValueError):
+            return ""
+        return " ".join(tokens[:6]) + (" …" if len(tokens) > 6 else "")
+
+    def resolved(self, figure):
+        """What's kept, by the section's name now, and what's kept for words the script no longer
+        has. Each entry of the record is under the section's name when it was kept, which is only
+        a label, and names the take and the section as the take's own prompt names it; it belongs
+        to the section that has now the words the take read there, whatever that's called now."""
+        now = said(self.prompt(self.narration / f"{figure}.prompt.json"))
+        kept, unmatched = {}, []
+        # An entry under a section's own name comes first, then the rest, in order.
+        record = self.kept(figure)
+        for key, entry in sorted(record.items(), key=lambda e: e[0] not in now):
+            words = self.read(figure, entry)
+            found = [n for n, w in now.items() if w == words] if words else []
+            if found:
+                kept.setdefault(found[0], entry["take"])
+            else:
+                unmatched.append({"section": key, "take": entry.get("take", ""),
+                                  "words": self.opening(entry.get("take", ""), entry.get("section", ""))})
+        return {"kept": kept, "unmatched": unmatched}, record, now
+
+    def read(self, figure, entry):
+        """The words a kept take read for the section it was kept for, or None if it can't be
+        read: it's gone, or the entry isn't `{"take", "section"}`."""
+        if not (isinstance(entry, dict) and isinstance(entry.get("take"), str)
+                and isinstance(entry.get("section"), str)):
+            return None
+        about = self.about(figure, entry["take"])
+        return self.held({**about, "name": entry["take"]}).get(entry["section"]) if about else None
 
     def do_GET(self):
         """`GET /takes?take=figure` lists the figure's takes, newest last, and which is kept for
@@ -132,6 +183,8 @@ class NoCache(http.server.SimpleHTTPRequestHandler):
         if url.path != "/takes":
             return self.ranged() or super().do_GET()
         figure = self.figure(dict(urllib.parse.parse_qsl(url.query)))
+        if figure is None:
+            return
         takes = self.narration / "takes"
         timed = self.narration / f"{figure}.pen"
         now = timed.read_text() if timed.exists() else None
@@ -148,7 +201,7 @@ class NoCache(http.server.SimpleHTTPRequestHandler):
             take.update(name=about.stem, current=pen.exists() and pen.read_text() == now)
             take["sections"] = self.holds(take, words)
             listed.append(take)
-        self.reply({"takes": listed, "kept": self.kept(figure)})
+        self.reply({"takes": listed, **self.resolved(figure)[0]})
 
     def ranged(self):
         """Part of a file, for a `Range: bytes=a-b` request. A browser won't seek in audio a
@@ -177,7 +230,6 @@ class NoCache(http.server.SimpleHTTPRequestHandler):
         self.send_header("Content-Type", self.guess_type(str(path)))
         self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
         self.send_header("Content-Length", str(len(body)))
-        self.send_header("Accept-Ranges", "bytes")
         self.end_headers()
         self.wfile.write(body)
         return True
@@ -186,7 +238,7 @@ class NoCache(http.server.SimpleHTTPRequestHandler):
         path = self.narration / "takes" / f"{figure}.kept.json"
         try:
             kept = json.loads(path.read_text())
-            return {k: v for k, v in kept.items() if isinstance(k, str) and isinstance(v, str)}
+            return {k: v for k, v in kept.items() if isinstance(k, str)}
         except (OSError, ValueError, AttributeError):
             return {}
 
@@ -201,38 +253,53 @@ class NoCache(http.server.SimpleHTTPRequestHandler):
 
     def keep(self, query):
         """`POST /kept?take=figure&section=name&keep=take` keeps that take for the section, and
-        an empty `keep` goes back to the draft's voice for it."""
+        an empty `keep` goes back to the draft's voice for it. An empty `keep` also clears an
+        entry kept for words the script no longer has, by the name it was kept under."""
         figure, section, keep = self.figure(query), query.get("section", ""), query.get("keep", "")
+        if figure is None:
+            return
         takes = self.narration / "takes"
-        # Only a section the figure has now, and only a take of this figure that holds it.
-        words = said(self.prompt(self.narration / f"{figure}.prompt.json"))
-        if section not in words:
-            self.send_error(400, "no such section")
-            return
-        about = self.about(figure, keep) if keep else None
-        if keep and (about is None or section not in self.holds({**about, "name": keep}, words)):
-            self.send_error(400, "no take of this figure holds that section")
-            return
         with WRITING:
-            kept = self.kept(figure)
-            if keep:
-                kept[section] = keep
+            _, record, now = self.resolved(figure)
+            # Only a section the figure has now, or an entry to clear, and only a take of this
+            # figure that holds the section.
+            if section not in now and (keep or section not in record):
+                self.send_error(400, "no such section")
+                return
+            about = self.about(figure, keep) if keep else None
+            if keep and (about is None or section not in self.holds({**about, "name": keep}, now)):
+                self.send_error(400, "no take of this figure holds that section")
+                return
+            # Every entry for this section's words goes, whatever it was kept under, so there's
+            # one for it.
+            if section in now:
+                for key, entry in list(record.items()):
+                    if key == section or self.read(figure, entry) == now[section]:
+                        record.pop(key)
             else:
-                kept.pop(section, None)
+                record.pop(section, None)
+            if keep:
+                # Under the section's name now, with the name the take's prompt gives it.
+                then = next(n for n, w in self.held({**about, "name": keep}).items() if w == now[section])
+                record[section] = {"take": keep, "section": then}
             takes.mkdir(parents=True, exist_ok=True)
             # Written whole and then moved into place, so a reload never reads half of it.
             path = takes / f"{figure}.kept.json"
             partial = path.with_suffix(".partial")
-            partial.write_text(json.dumps(kept, indent=1, sort_keys=True) + "\n")
+            partial.write_text(json.dumps(record, indent=1, sort_keys=True) + "\n")
             os.replace(partial, path)
-        self.reply({"kept": kept})
+            answer = self.resolved(figure)[0]
+        self.reply(answer)
 
     def take(self, query):
         """Keeps a take the prompter recorded, so a reader on a phone never handles a file. The
         server names the files: the recording, and beside it a `.json` of where in the figure it
         starts and ends and the sections it holds, from the query string, with the figure and the
         prompter's timings as they were when it was read."""
-        length = int(self.headers.get("Content-Length") or 0)
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            length = 0
         try:
             start, end = float(query["start"]), float(query["end"])
         except (KeyError, ValueError):
@@ -243,6 +310,8 @@ class NoCache(http.server.SimpleHTTPRequestHandler):
         extension = {"audio/mp4": "m4a", "audio/webm": "webm", "audio/ogg": "ogg",
                      "audio/wav": "wav"}.get(self.headers.get("Content-Type", "").split(";")[0], "audio")
         figure = self.figure(query)
+        if figure is None:
+            return
         body = self.rfile.read(length)
         about = {"figure": figure, "start": start, "end": end, "sheets": query.get("sheets", "")}
         # The section it was recorded as, if it holds it, and every section it holds whole, of

@@ -34,10 +34,13 @@
   .line.now .word { color: transparent; -webkit-background-clip: text; background-clip: text;
                     background-image: linear-gradient(90deg, var(--lit) calc(var(--fill, 0) * 100%),
                                                       var(--ink) calc(var(--fill, 0) * 100%)); }
-  .count { position: fixed; inset: 0; display: grid; place-items: center; pointer-events: none;
+  .count { position: fixed; inset: 0; display: grid; place-content: center; place-items: center; pointer-events: none;
            font-size: 22vh; font-weight: 600; color: var(--lit); text-shadow: 0 0 24px #000; }
   /* `display: grid` above would otherwise outrank the `hidden` attribute. */
   .count[hidden] { display: none; }
+  /* Said over the script, so it has its own ground. */
+  .count small { display: block; font-size: clamp(1rem, 4.4vw, 1.75rem); text-align: center; text-shadow: none;
+                 background: var(--paper); border: 1px solid var(--lit); border-radius: 6px; padding: 4px 14px; }
   /* The takes of the section picked, in the script's place while they're open. */
   .takes { overflow-y: auto; padding: 8px 16px; }
   .takes[hidden] { display: none; }
@@ -91,7 +94,8 @@
   /* A phone on its side: the figure and the words side by side. */
   @media (orientation: landscape) and (max-height: 520px) {
     body { grid-template-columns: 1.15fr 1fr; grid-template-rows: minmax(0, 1fr) auto; }
-    .stage { width: 100%; align-self: center; }
+    .stage { width: min(100%, calc((100dvh - var(--bar, 64px) - 8px) * var(--aspect, 16 / 9)));
+             align-self: center; justify-self: center; }
     .prompt, .takes { grid-column: 2; grid-row: 1; }
     .line { font-size: clamp(1.125rem, 3vw, 1.625rem); }
     .controls { grid-column: 1 / -1; padding: 4px 12px 8px; }
@@ -145,14 +149,20 @@
   // Picking one shows only its lines, and a take of it starts just before its first word and the
   // figure waits before the next section's. Takes shows the takes that hold the section picked, each played
   // back on the figure it was read with, and which one is kept for it, which the server keeps
-  // beside the takes and `narrate.py join` reads. A take holds a section only while the section
-  // says what it said when the take was read, so one kept before the script changed there shows as
-  // out of date, and isn't joined.
+  // beside the takes and `narrate.py join` reads. A kept take follows the words it read, so it
+  // stays with a section renamed; one kept for words the script no longer has is listed with the
+  // whole script, to clear.
   import '@pencil-lang/figure';
 
   const $ = (id) => document.getElementById(id);
   const search = new URLSearchParams(location.search);
   const narration = search.get('take') ?? 'limacon';
+  // The server keeps takes for a figure named in letters, digits, `_` and `-`, so the page reads the
+  // same files it does.
+  if (!/^[A-Za-z0-9_-]{1,40}$/.test(narration)) {
+    $('error').textContent = `“${narration}” can’t name a figure here: ?take= is letters, digits, _ and -, up to 40.`;
+    throw new Error('no such figure');
+  }
   const dir = '../lab/narration/out';
   const out = `${dir}/${narration}`;
   const pen = `${out}.pen`;
@@ -176,6 +186,10 @@
     const { width, height } = entry.contentRect;
     if (width && height) figure.parentElement.style.setProperty('--aspect', String(width / height));
   }).observe(figure);
+  // A phone on its side has the figure beside the words, in the height the bar leaves.
+  new ResizeObserver(([entry]) => {
+    document.body.style.setProperty('--bar', `${entry.target.getBoundingClientRect().height}px`);
+  }).observe(document.querySelector('.controls'));
   $('audio').src = `${out}.wav`;
 
   async function fetchPrompt(url) {
@@ -189,6 +203,11 @@
   } catch (e) {
     $('error').textContent = `${e.message}. Run narrate.py retime first.`;
     throw e;
+  }
+  const wordless = current.lines.findIndex((line) => !line.length);
+  if (wordless >= 0) {
+    $('error').textContent = `Line ${wordless + 1} of the prompt says no words: fix the script, then align and retime it again.`;
+    throw new Error('a line with no words');
   }
 
   // ---- Sections ----
@@ -217,17 +236,19 @@
   /** The script, a line a row and a word a span. */
   function build(p) {
     prompt = p;
-    rows = p.lines.map((words) => {
+    rows = [];
+    p.lines.forEach((words) => {
       const row = document.createElement('p');
       row.className = 'line';
-      for (const [text, start] of words) {
+      const i = rows.length;
+      for (const [k, [text]] of words.entries()) {
         const span = document.createElement('span');
         span.className = 'word';
         span.textContent = text;
-        span.addEventListener('click', () => seek(start - BEFORE));
+        span.addEventListener('click', () => tapped(i, k));
         row.append(span, ' ');
       }
-      return row;
+      rows.push(row);
     });
     $('lines').replaceChildren(...rows);
     shown = null;
@@ -334,6 +355,8 @@
 
   /** The microphone, asked for once. Its processing is off: the aligner wants the voice as said. */
   async function microphone() {
+    // One whose track has ended, as when the phone locked, is asked for again.
+    if (stream && !stream.getAudioTracks().some((t) => t.readyState === 'live')) stream = null;
     stream ??= await navigator.mediaDevices.getUserMedia({
       audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
     });
@@ -355,28 +378,42 @@
     }, { once: true });
     take.addEventListener('stop', () => {
       $('recording').hidden = true;
+      // The microphone can end a take itself: the phone locked, the page went to the background,
+      // or the permission was taken back. It ends where the figure is, or waited, and is saved.
+      const ended = take.finished === undefined;
+      if (ended) {
+        take.finished = held ?? figure.time;
+        stream = null;
+        generation += 1;
+        stop(take.finished);
+      }
       const blob = new Blob(chunks, { type: take.mimeType || type || 'audio/webm' });
-      keep(blob, take.began, take.finished, take.section);
+      keep(blob, take.began, take.finished, take.section, ended);
     }, { once: true });
-    recorder = take;
     take.start();
+    recorder = take;
   }
 
   /** The sections a take holds whole: it was running from before a section's first word until
-   * its last was due. A take started from a word inside a section, or stopped before its end,
+   * its last was due, or the figure's end, if that comes first: the figure waits there while the
+   * reader finishes. A take started from a word inside a section, or stopped before its end,
    * doesn't hold it. */
   const holding = (start, finish) => sectionsOf(current)
-    .filter((s) => start <= firstWord(current, s) - 0.1 && finish >= lastWord(current, s));
+    .filter((s) => start <= firstWord(current, s) - 0.1 && finish >= Math.min(lastWord(current, s), end() - 0.05));
 
   /** Sends a take to the server, which keeps it, and keeps it here to play back. It names the
    * section it was recorded as, if it holds it, and each section it holds. `finish` is the
    * figure's time it ended or waited at; the recording can run on past it. */
-  async function keep(blob, start, finish, section) {
-    if (!(finish - start >= SHORTEST)) return;
+  async function keep(blob, start, finish, section, ended = false) {
+    const why = ended ? 'The microphone stopped, so the take ended. ' : '';
+    if (!(finish - start >= SHORTEST)) {
+      say(`${why}It was under ${SHORTEST} s, so it wasn’t kept.`);
+      return;
+    }
     lastTake = { url: URL.createObjectURL(blob), start, finish };
     $('playback').hidden = false;
     const range = `${start.toFixed(1)}–${finish.toFixed(1)} s`;
-    say(`Saving the take, ${range}…`);
+    say(`${why}Saving the take, ${range}…`);
     const holds = holding(start, finish).map((s) => s.name);
     const query = new URLSearchParams({
       take: narration, start: start.toFixed(3), end: finish.toFixed(3), sheets, sections: holds.join(','),
@@ -391,11 +428,11 @@
       const { take } = await saved.json();
       if (!served) return await loadTakes();
       if (take) takes.push(take);
-      const why = s && start > firstWord(current, s) - 0.1
+      const short = s && start > firstWord(current, s) - 0.1
         ? 'it started after its first word' : 'it stopped before its last word was due';
-      say(!s ? `Saved the take, ${range}.`
+      say(why + (!s ? `Saved the take, ${range}.`
         : holds.includes(s.name) ? `Saved take ${takesOf(s).length} of “${s.title}”, ${range}.`
-        : `Saved, but not as a take of “${s.title}”: ${why}.`);
+        : `Saved, but not as a take of “${s.title}”: ${short}.`));
       render();
     } catch (e) {
       // A server that doesn't keep takes: the take can still be saved by hand.
@@ -411,7 +448,7 @@
 
   // `generation` counts what the reader set going, so a figure coming back from a take's
   // playback doesn't move one started since.
-  let counting = 0, borrowed = false, generation = 0;
+  let counting = 0, starting = false, borrowed = false, generation = 0;
   const guide = $('audio'), heard = $('heard');
 
   /** Where a section's own words begin: halfway through the silence before them. */
@@ -420,11 +457,35 @@
     return before ? (lastWord(p, before) + firstWord(p, s)) / 2 : 0;
   }
 
-  function go() {
+  async function go() {
+    const g = generation;
     const s = pickedIn(current);
     stopAt = s ? until(current, s) : Infinity;
-    if ($('record').checked && stream) record();
-    else figure.play();
+    let recorded = false;
+    if ($('record').checked && stream) {
+      // A recorder that won't start on the microphone as it is gets it asked for again, once.
+      try {
+        record();
+        recorded = true;
+      } catch {
+        stream.getTracks().forEach((t) => t.stop());
+        stream = null;
+        try {
+          await microphone();
+          if (g !== generation) return;
+          record();
+          recorded = true;
+        } catch (e) {
+          if (g !== generation) return;
+          fail(`The microphone wouldn’t start (${e.message}), so this one isn’t being recorded.`);
+        }
+      }
+    }
+    if (!recorded) {
+      figure.play();
+      $('recording').textContent = '○ Not recording';
+      $('recording').hidden = false;
+    }
     // A section take's lead-in holds the end of the section before, which the microphone would
     // hear from speakers, so the guide comes in with the section.
     if ($('guide').checked) {
@@ -467,11 +528,13 @@
   function stop(at = figure.time) {
     clearInterval(counting);
     counting = 0;
+    starting = false;
     $('count').hidden = true;
     if (recording()) {
       recorder.finished = held ?? at;
       recorder.stop();
     }
+    $('recording').hidden = true;
     figure.pause();
     figure.time = at;
     guide.pause();
@@ -497,6 +560,13 @@
   };
   document.addEventListener('visibilitychange', () => { if (awake && !document.hidden) stayAwake(); });
 
+  /** The count-in, which says too, where the reader is looking, when this one isn't recorded. */
+  function countIn(n) {
+    $('count').replaceChildren(String(n), ...($('record').checked ? []
+      : [el('small', { textContent: 'Not recording: Record is off' })]));
+    $('count').hidden = false;
+  }
+
   /** Where reading starts: the section picked, or the top. */
   const startOf = () => (pickedIn(current) ? from(current, pickedIn(current)) : 0);
 
@@ -511,6 +581,9 @@
       open = false;
       render();
     }
+    // Stop, from here on, cancels: the figure loading and the microphone being asked for count as
+    // starting.
+    starting = true;
     $('start').textContent = 'Stop';
     await ready;
     if (g !== generation) return;
@@ -525,12 +598,12 @@
       }
       if (g !== generation) return;
     }
+    starting = false;
     let n = COUNT;
-    $('count').textContent = n;
-    $('count').hidden = false;
+    countIn(n);
     counting = setInterval(() => {
       n -= 1;
-      if (n > 0) { $('count').textContent = n; return; }
+      if (n > 0) { countIn(n); return; }
       clearInterval(counting);
       counting = 0;
       $('count').hidden = true;
@@ -538,7 +611,7 @@
     }, 1000);
   }
 
-  const busy = () => counting || !figure.paused || recording() || !heard.paused;
+  const busy = () => starting || counting || !figure.paused || recording() || !heard.paused;
   const toggle = () => {
     if (busy()) {
       generation += 1;
@@ -548,9 +621,23 @@
     }
   };
 
+  /** Stops, and puts the figure at `t`, on the figure as timed now: one coming back from a take's
+   * playback is placed again once it's loaded. */
   function seek(t) {
     stop();
+    const g = ++generation;
     place(t);
+    ready.then(() => { if (g === generation) place(t); });
+  }
+
+  /** A word tapped, the `k`th of line `i`: reading starts just before it, as the figure is timed
+   * now. While a take read with an earlier timing plays, the script on show is that take's, and
+   * the word is found in the script as it is now, or the section's start if it isn't there. */
+  function tapped(i, k) {
+    const word = prompt.lines[i]?.[k];
+    stop();
+    const now = current.lines[i]?.[k];
+    seek(now && now[0] === word?.[0] ? now[1] - BEFORE : startOf());
   }
 
   /** Plays a recording with the figure from `begin` to `finish`, the figure's times, where the
@@ -622,10 +709,8 @@
 
   // ---- Takes, and which is kept for each section ----
 
-  let takes = [], kept = {}, served = false, open = false;
+  let takes = [], kept = {}, unmatched = [], served = false, open = false;
   const takesOf = (s) => takes.filter((t) => t.sections?.includes(s.name));
-  /** A take is kept for the section, but it read other words than the section has now. */
-  const stale = (s) => Boolean(kept[s.name]) && !takesOf(s).some((t) => t.name === kept[s.name]);
   const titled = (s) => `${sectionsOf(current).indexOf(s) + 1}. ${s.title}`;
   const recordedAt = (t) => t.name.match(/-\d{8}-(\d\d)(\d\d)(\d\d)/)?.slice(1).join(':') ?? t.name;
 
@@ -633,8 +718,12 @@
     try {
       const response = await fetch(`/takes?take=${encodeURIComponent(narration)}`, { cache: 'no-store' });
       if (!response.ok) throw new Error(`${response.status}`);
-      ({ takes, kept } = await response.json());
+      ({ takes, kept, unmatched = [] } = await response.json());
       served = true;
+      if (unmatched.length) {
+        say(`${unmatched.length === 1 ? 'A take is' : `${unmatched.length} takes are`} kept for words the script no `
+          + 'longer has. Takes, with the whole script picked, lists them to clear.');
+      }
     } catch (e) {
       served = false;
       say(`This server doesn't list takes (${e.message}), so they can't be played back or kept here. `
@@ -655,9 +744,10 @@
         const query = new URLSearchParams({ take: narration, section: section.name, keep: name });
         const response = await fetch(`/kept?${query}`, { method: 'POST' });
         if (!response.ok) throw new Error(`${response.status}`);
-        ({ kept } = await response.json());
+        ({ kept, unmatched = [] } = await response.json());
         const k = takesOf(section).findIndex((t) => t.name === name);
-        say(name ? `Keeping take ${k + 1} for “${section.title}”.` : `The draft voice for “${section.title}”.`);
+        say(section.gone ? 'Cleared.' : name ? `Keeping take ${k + 1} for “${section.title}”.`
+          : `The draft voice for “${section.title}”.`);
       } catch (e) {
         fail(`The server didn't keep that (${e.message}).`);
       }
@@ -680,7 +770,7 @@
     select.hidden = sections.length < 2;
     select.replaceChildren(
       el('option', { value: '', textContent: 'Whole script' }),
-      ...sections.map((s) => el('option', { value: s.name, textContent: titled(s) + (stale(s) ? ' · kept take out of date' : kept[s.name] ? ' · take kept' : '') })),
+      ...sections.map((s) => el('option', { value: s.name, textContent: titled(s) + (kept[s.name] ? ' · take kept' : '') })),
     );
     select.value = picked ?? '';
     const button = $('show-takes');
@@ -717,10 +807,8 @@
          t.current ? '' : 'read with an earlier timing'].filter(Boolean).join(' · '), t));
       panel.replaceChildren(
         el('fieldset', {}, legend, choice('draft', '', 'No take', 'the draft voice'), ...rows),
-        el('p', { className: 'hint', textContent: stale(s)
-          ? 'The take kept for this section read other words than it has now, so it isn’t joined: '
-            + (rows.length ? 'pick another, or the draft voice.' : 'record the section again, or pick the draft voice.')
-          : rows.length ? 'The take picked is kept for this section, in place of the draft voice when the takes are joined.'
+        el('p', { className: 'hint', textContent: rows.length
+          ? 'The take picked is kept for this section, in place of the draft voice when the takes are joined.'
           : 'No take holds this section yet. Start records one.' }),
       );
     } else {
@@ -730,15 +818,30 @@
             const k = takesOf(s).findIndex((t) => t.name === kept[s.name]);
             const go = el('button', { type: 'button' }, el('span', { textContent: titled(s) }),
               el('span', { className: 'note', textContent: k >= 0 ? `take ${k + 1} of ${takesOf(s).length}`
-                : stale(s) ? 'kept take out of date'
                 : `draft voice${takesOf(s).length ? `, ${takesOf(s).length} taken` : ''}` }));
             go.dataset.key = `section ${s.name}`;
             go.addEventListener('click', () => pick(s.name));
             return el('li', { className: k >= 0 ? 'kept' : '' }, go);
           }))),
+        ...(unmatched.length ? [el('fieldset', {}, el('legend', { textContent: 'Kept for words the script no longer has' }),
+          el('ul', { className: 'sections' }, ...unmatched.map((u) => {
+            const clear = el('button', { type: 'button' }, el('span', { textContent: u.words ? `“${u.words}”` : u.section }),
+              el('span', { className: 'note', textContent: 'Clear' }));
+            clear.dataset.key = `clear ${u.section}`;
+            clear.setAttribute('aria-label', `Clear the take kept for “${u.words || u.section}”`);
+            clear.addEventListener('click', () => setKept({ name: u.section, gone: true }, ''));
+            return el('li', {}, clear);
+          })),
+          el('p', { className: 'hint', textContent: 'A blank line added or taken out, or a word changed, leaves a kept take '
+            + 'reading other words than its section has. Record the section again, or clear it here for the draft voice.' }))] : []),
       );
     }
-    if (focused) panel.querySelector(`[data-key="${CSS.escape(focused)}"]`)?.focus();
+    // A choice that's gone, as a take cleared, leaves focus on the panel's first control.
+    if (focused) {
+      (panel.querySelector(`[data-key="${CSS.escape(focused)}"]`)
+        ?? (focused.startsWith('clear ') ? panel.querySelector('[data-key^="clear "]') : null)
+        ?? panel.querySelector('input, button'))?.focus();
+    }
   }
 
   /** Picks a section to read, or the whole script with none, and goes to where it starts. */
@@ -749,7 +852,23 @@
     render();
   }
 
-  $('section').addEventListener('change', (e) => pick(e.target.value));
+  // A section chosen from the menu's list leaves focus on Start, so Space then reads it; one
+  // chosen with the arrows on the menu leaves it there, to go on choosing.
+  let byKeys = false;
+  $('section').addEventListener('keydown', (e) => { byKeys = e.key.startsWith('Arrow') || e.key === 'Home' || e.key === 'End'; });
+  $('section').addEventListener('pointerdown', () => { byKeys = false; });
+  $('section').addEventListener('change', (e) => {
+    pick(e.target.value);
+    if (!byKeys) $('start').focus();
+    byKeys = false;
+  });
+  // Record and the guide, ticked with a pointer, leave focus on Start too, so the next Space
+  // starts rather than ticks them again. Ticked from the keyboard, focus stays.
+  for (const id of ['record', 'guide']) {
+    $(id).closest('label').addEventListener('click', (e) => {
+      if (e.detail > 0 && !$('start').hidden) setTimeout(() => $('start').focus());
+    });
+  }
   // Opening the takes takes focus to them, on the one kept, since they're drawn above the bar;
   // Escape closes them and gives focus back to the button.
   $('show-takes').addEventListener('click', () => {
@@ -770,10 +889,16 @@
     if (!$('guide').checked) guide.pause();
     else if (!figure.paused) { guide.currentTime = figure.time; guide.play().catch(() => {}); }
   });
-  // Space starts and stops when nothing that takes it has focus. On a button, a radio or the
-  // section menu it does what it does there; on Start, that's starting and stopping too.
+  // Space starts and stops when nothing that takes it has focus, the figure included, whose own
+  // keys are the arrows, Home and End. On a button, a radio, a checkbox or the section menu it
+  // does what it does there; on Start, that's starting and stopping too.
   const takesSpace = (target) => target instanceof Element
-    && target.closest('button, input, select, textarea, a[href], summary, [contenteditable], [tabindex], pencil-figure');
+    && target.closest('button, input, select, textarea, a[href], summary, [contenteditable]');
+  // While a take is read or played back, the figure's own keys would step it out of step with the
+  // sound, so they're held back.
+  addEventListener('keydown', (e) => {
+    if (busy() && e.target === figure && ['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) e.preventDefault();
+  }, true);
   addEventListener('keydown', (e) => {
     if (e.key !== ' ' || takesSpace(e.target)) return;
     e.preventDefault();
