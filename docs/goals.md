@@ -741,12 +741,24 @@ timings as before, to the byte.
 **A section recorded again, and the takes that are liked kept, 2026-11-22 (#19).** A narrator found every section in one
 take hard, and the test was a reader who likes sections one and three recording just section two again.
 
-- **A section is a part of the figure.** The explainer is already a part to a file through `use`, so a section is a part and
-  the script's lines whose anchors name its beats, with a line that anchors nothing going with the line before. A second
-  figure split into parts gets sections with nothing added, and a figure in one file is one. `retime` lists them in the
-  prompt, titled from the first sentence of each file's opening comment. The limaçon has six: the glow says nothing, so it
-  isn't one. Marking sections in the script, as blank lines, was the other way, and would be kept in step with the parts by
-  hand.
+- **A section is a paragraph of the script: Kris's decision, 2026-11-23.** A section is the lines between two blank lines,
+  and a script with no blank line is one section. The first version took sections from the figure's `use` files. Kris
+  chose blank lines because a figure written in one file should get retakes by section too, a narrator already thinks of a
+  script in paragraphs, and a rule written in the script is better than one implied by how the figure happens to be split.
+  There's one rule, with no fallback to the parts. Blank lines change nothing else: `say`, `hear`, `labels`, `align` and
+  `retime` read only the lines that aren't blank, and retiming the draft of the limaçon's script, now in six paragraphs,
+  writes the same `.pen` and audio as main to the byte. A section's name, which the server keeps its take under, is the
+  beat its first anchor names, so adding a section before it doesn't change the name; a section that anchors nothing is
+  named for its first words. A beat already used as a name is skipped, since `[trace:start]` and `[trace]` can fall in
+  different sections. A section's title is its first sentence, or its first six words. There's no heading syntax.
+- **A script changed after a take was kept.** A take holds a section only while the section says the words it said when
+  the take was read, as the aligner hears them, so moving a comma changes nothing. A blank line added inside a kept
+  section splits it: the first half keeps the name, but the kept take read more words than the section has now, so it's
+  out of date, and the second half is new, with nothing kept. Taking a blank line out joins two sections under the first
+  one's name: its kept take is out of date too, and what was kept for the second is set aside, which `join` reports. The
+  prompter says a kept take is out of date in the menu, the overview and the section's takes. `join` stops on one and
+  names the take and the section, so it can't join the wrong words. A section take could be cut at the new blank line's
+  pause to keep both halves, but nothing needs that yet.
 - **The prompter picks one.** With a section picked only its lines show, the first waiting below until it's due, and a take
   starts 1.5 s before its first word. **A recording never ends on its own:** at the section's end, before the next one's first
   line, or at the figure's end with the whole script, the figure waits, the page says it's still recording, and the microphone
@@ -776,7 +788,7 @@ take hard, and the test was a reader who likes sections one and three recording 
   had fallen behind and a word would be split, so `join` stops and names the take and the section. A section with none kept
   comes from the draft, cut by its own alignment, after checking the draft says the prompter's words. A kept take that
   doesn't hold its section, read other words for it, or whose files are gone or incomplete stops `join` with a sentence, as
-  does a prompt with no lines. A section's name is its file's stem with anything but letters, digits, `_` and `-` made `-`.
+  does a prompt with no lines.
 - **`scripts/serve.py` didn't answer a range request,** and a browser won't seek in audio it can't fetch part of. The guide,
   started anywhere but the top, had been playing from its beginning, out of step. It answers them now, and says so on every
   file. `--narration DIR` serves a folder in place of `lab/narration/out`, comparing paths without case, since a Mac's disk
@@ -784,14 +796,25 @@ take hard, and the test was a reader who likes sections one and three recording 
 - **Checked with the draft voice standing in:** Kokoro's `af_heart` at 0.8 speed for the narrator. In Playwright's Chromium,
   with the page's microphone fed a file, sections one and three were recorded once, two twice (the draft's voice, then the
   slow one), and two's second kept by arrow keys alone, at 375×812 and 1633×919. A reload showed the same three. Joined and
-  retimed, the three sections run 5.71, 7.31 and 17.56 s where the draft ran 5.2, 6.69 and 15.85, the pauses around them
-  grew, and sections four to six kept the draft's lengths. Retiming from the draft writes the same `.pen` and audio as
-  before, to the byte. Also checked, after a review: a reading 5 s slower than the draft (6 s of silence in section two)
-  held the figure at the section's end and kept every word through `join` and the aligner; a take stopped halfway and one
-  from a tapped word weren't offered; a take lagging 0.85 s across a 0.55 s pause stopped `join`; Space on each control at
-  both sizes; a current take played straight after an earlier timing's, and a count-in after one; 60 takes and 60 choices
-  posted at once (60 names, every choice answered, six sections kept); `nan`, `inf` and a take naming another figure
-  refused; ranges.
+  retimed, the three sections' words take 5.71, 7.31 and 17.56 s where the draft took 5.2, 6.69 and 15.85, the pauses
+  around them grew, and sections four to six kept the draft's lengths. Also checked, after a review: a take stopped
+  halfway and one from a tapped word weren't offered; a take lagging 0.85 s across a 0.55 s pause stopped `join`; Space on
+  each control at both sizes; a current take played straight after an earlier timing's, and a count-in after one; 60 takes
+  and 60 choices posted at once (60 names, every choice answered, six sections kept); `nan`, `inf` and a take naming
+  another figure refused; ranges.
+- **Checked again with sections as paragraphs, 2026-11-23,** from empty, on the limaçon's six paragraphs and on
+  `lab/explainer/proof.pen`, a figure in one file, with a two-paragraph script in the scratch folder. The limaçon gave the
+  same numbers as above. In the one-file figure, its two sections' words took 7.11 and 8.52 s where the draft took 6.57 and
+  7.73, and its three pauses followed them. On both, the guide stayed within 0.1 s of the retimed figure. A reading with
+  6 s of silence after a section's first line ran on past the figure's wait (20.3 s and 15.6 s recorded), and `join` and
+  the aligner kept every word, the second line after the silence. Retiming the draft gives the same `.pen` and audio as
+  main to the byte, with or without the blank lines, aligned on the same audio: Kokoro's audio isn't the same from one run
+  to the next, so `say` was checked by the lines it's given, which are the same. With a blank line taken out of the
+  limaçon's script and one added inside a kept section, the page showed both kept takes out of date, the server refused to
+  keep either, and `join` noted the section that had gone and stopped on the first take. Once the draft voice was picked
+  for both, `join` ran. Two things the one-file figure found are fixed: the stage assumed a 16:9 figure, so a square one
+  pushed the script under the controls (the stage now takes the figure's own shape), and at the figure's end the figure
+  waited on its first frame, since pausing read a clock that had wrapped to 0 (the time is set again once it's paused).
 - **Not checked:** a real voice, a phone's microphone, and Safari's recording. Chromium's own fake microphone hung
   headless on macOS, so the check stood a stream from a file in for `getUserMedia`.
 

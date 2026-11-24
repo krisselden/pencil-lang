@@ -45,14 +45,17 @@ it started at and the `.pen` it was read with, so it's in step with the figure a
     pixi run python narrate.py video out/takes/limacon-20261112-091500.json
 
 A script comes in sections, so a reader can record one again and keep the takes they like. A section
-is a part of the figure, a file the `.pen` brings in with `use`, and the lines whose anchors name
-its beats; `retime` lists them in the prompt, and `sections` prints them. A part with no words, as
-the limaçon's glow, isn't one, and a figure in one file is one section. In the prompter a reader
-picks a section and records it; at the section's end the figure waits, and the microphone runs
-until they stop it, so a slow reading isn't cut off. They play each take back on the figure it was
-read with and keep one, and the server notes which in `out/takes/limacon.kept.json`. `join` makes one take of the whole
-script from those, with the draft's own lines where none is kept, and it goes through the same
-steps as any take:
+is a paragraph, the lines between two blank lines, and a script with no blank line is one section.
+Blank lines change nothing else, since every other step reads only the lines that aren't blank. A
+section is named for the beat its first anchor names, or its first words if it anchors none, and
+titled with its first sentence or words; `retime` lists them in the prompt, and
+`sections limacon.txt` prints them. In the prompter a reader picks a section and records it; at the
+section's end the figure waits, and the microphone runs until they stop it, so a slow reading isn't
+cut off. They play each take back on the figure it was read with and keep one, and the server notes
+which in `out/takes/limacon.kept.json`. A take holds a section only while the section says what it
+said when the take was read, so a kept take whose section has changed since, by a word or a blank
+line, is out of date. `join` makes one take of the whole script from those, with the draft's own
+lines where none is kept, and it goes through the same steps as any take:
 
     pixi run python narrate.py join out/takes/limacon.kept.json out/draft.json out/joined.wav
     pixi run python narrate.py align out/joined.wav limacon.txt out/joined.json
@@ -320,46 +323,44 @@ def flat(pen):
     return [line for line, _, _ in flat_from(pen)]
 
 
-def sections(pen, text):
-    """The script's sections, for recording one at a time: each a run of lines whose anchors name
-    beats in the same part of the figure, a part being a file the `.pen` brings in with `use`. A
-    line that anchors nothing goes with the line before it. A figure in one file is one section.
-    Each is `{"name", "title", "lines": [first, past the last]}`, named for its part's file and
-    titled with the first sentence of the comment the file starts with."""
-    part_of = {}
-    for line, file, _ in flat_from(pen):
-        named = re.match(r"^beat\s+(?!for\b)(\w+)", line)
-        if named:
-            part_of.setdefault(named[1], file)
-    parts = [None] * len(lines_of(text))
-    for anchor in anchors_of(text):
-        if parts[anchor["line"]] is None:
-            parts[anchor["line"]] = part_of.get(anchor["beat"])
-    out, part = [], next((p for p in parts if p), Path(pen))
-    for i, found in enumerate(parts):
-        part = found or part
-        if out and out[-1]["file"] == part:
-            out[-1]["lines"][1] = i + 1
-        else:
-            out.append({"file": part, "lines": [i, i + 1]})
-    names = set()
-    for s in out:
-        file = s.pop("file")
+def sections(text):
+    """The script's sections, for recording one at a time: each a run of lines with a blank line
+    before and after it, the way a reader already thinks of a script in paragraphs. A script with no
+    blank line is one section. Blank lines change nothing else: every other step reads the same
+    lines without them.
+
+    Each is `{"name", "title", "lines": [first, past the last]}`, counting the lines that aren't
+    blank. The name is the beat its first anchor names, so a section added before it, or a word
+    changed in it, leaves it the name the server keeps its take under; one that anchors nothing is
+    named for its first words, which a take of it has to read anyway. The title is its first
+    sentence, or its first few words."""
+    runs, number, gap = [], 0, True
+    for line in text.splitlines():
+        if not line.strip():
+            gap = True
+            continue
+        if gap:
+            runs.append([number, number])
+            gap = False
+        number += 1
+        runs[-1][1] = number
+    lines, anchors = lines_of(text), anchors_of(text)
+    out, names = [], set()
+    for a, b in runs:
+        said = " ".join(ANCHOR.sub(" ", " ".join(lines[a:b])).split())
+        first = next((x["beat"] for x in anchors if a <= x["line"] < b and x["beat"] not in names), None)
         # A name is letters, digits, `_` and `-`, which the server takes as one.
-        stem = re.sub(r"[^\w-]+", "-", file.stem).strip("-")[:70] or "part"
-        name, k = stem, 1
-        while name in names:  # A part the script comes back to.
+        stem = first or "-".join(w for w in (normal(t) for t in said.split()[:4]) if w).replace("'", "")
+        name, k = stem[:70] or "section", 1
+        while name in names:
             k += 1
-            name = f"{stem}-{k}"
+            name = f"{stem[:70]}-{k}"
         names.add(name)
-        comment = []
-        for line in file.read_text().splitlines():
-            if not line.startswith("//"):
-                break
-            comment.append(line[2:].strip())
-        first = re.match(r"(.+?[.!?])(?:\s|$)", " ".join(comment))
-        s.update(name=name, title=first[1] if first else file.stem)
-        s["lines"] = s.pop("lines")
+        sentence = re.match(r"(.+?[.!?])(?:\s|$)", said)
+        words = said.split()
+        title = (sentence[1] if sentence and len(sentence[1].split()) <= 8
+                 else " ".join(words[:6]).rstrip(",;:.") + (" …" if len(words) > 6 else ""))
+        out.append({"name": name, "title": title, "lines": [a, b]})
     return out
 
 
@@ -578,7 +579,7 @@ def retime(pen, timing, out):
         prompt.append(row)
     Path(out).with_suffix(".prompt.json").write_text(json.dumps(
         {"duration": round(len(track) / rate, 3), "lines": prompt,
-         "sections": sections(pen, take["script"])}))
+         "sections": sections(take["script"])}))
     print(f"\nwrote {out}, {Path(out).with_suffix('.wav')} ({len(track) / rate:.1f} s) and "
           f"{Path(out).with_suffix('.prompt.json')}")
 
@@ -686,7 +687,12 @@ def join(kept, draft, out):
         sys.exit(f"the draft {draft} says other words, or other lines, than the prompter's script: "
                  "align the draft again")
     draft_audio = decoded(timing["audio"])
-    said = lambda prompt, s: [w[0] for line in prompt["lines"][slice(*s["lines"])] for w in line]
+    # What a section says, as the aligner hears it, so a comma moved changes nothing.
+    said = lambda prompt, s: [w for line in prompt["lines"][slice(*s["lines"])] for token, _, _ in line
+                              if (w := normal(token))]
+    gone = sorted(set(choice) - {s["name"] for s in now["sections"]})
+    if gone:
+        print(f"the script has no section {', '.join(map(repr, gone))} now, so what's kept for it is left out")
 
     clips, report = [], []
     for s in now["sections"]:
@@ -713,7 +719,9 @@ def join(kept, draft, out):
             sys.exit(f"{name} doesn't hold all of section {s['name']!r}")
         theirs = next((t for t in then.get("sections", []) if t["name"] == s["name"]), None)
         if theirs is None or said(then, theirs) != said(now, s):
-            sys.exit(f"{name} read different words for section {s['name']!r} than the script has now")
+            sys.exit(f"{name}, the take kept for section {s['name']!r}, read other words than the section "
+                     "has now, as when a blank line is added or taken out in it: record the section again, "
+                     "or keep another take or the draft voice for it in the prompter")
         audio = decoded(recording)
         if about.get("section") == s["name"]:
             clip, begin, end = trimmed(audio), start, finish
@@ -785,13 +793,11 @@ def video(*abouts):
     print(f"wrote {out}, with the takes at {spans} in the figure")
 
 
-def show_sections(pen, script):
+def show_sections(script):
     """The sections the prompter offers to record one at a time."""
-    text = Path(script).read_text()
-    lines = lines_of(text)
-    for s in sections(pen, text):
+    for s in sections(Path(script).read_text()):
         a, b = s["lines"]
-        print(f"{s['name']:>10}  lines {a + 1}-{b}  {s['title']}  ({' '.join(ANCHOR.sub('', lines[a]).split())} …)")
+        print(f"{s['name']:>13}  lines {a + 1}-{b}  {s['title']}")
 
 
 def lines_of_script(take):

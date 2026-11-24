@@ -14,7 +14,8 @@
          font: 0.9375rem/1.45 ui-sans-serif, system-ui, sans-serif;
          display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto; }
   :focus-visible { outline: 2px solid var(--lit); outline-offset: 2px; }
-  .stage { width: min(100%, calc(52vh * 16 / 9)); margin: 0 auto; }
+  /* As wide as lets the figure stand 52vh tall, whatever its shape, which the script sets. */
+  .stage { width: min(100%, calc(52vh * var(--aspect, 16 / 9))); margin: 0 auto; }
   /* The script, with the line being said held at the middle. */
   .prompt { position: relative; overflow: hidden; min-height: 9em;
             -webkit-mask-image: linear-gradient(transparent, #000 22%, #000 78%, transparent);
@@ -140,11 +141,13 @@
   // figure waits and the microphone runs on until the reader stops it, so a reader slower than the
   // draft isn't cut off.
   //
-  // A script comes in sections, a part of the figure each, as `retime` lists them in the prompt.
+  // A script comes in sections, its paragraphs, as `retime` lists them in the prompt.
   // Picking one shows only its lines, and a take of it starts just before its first word and the
   // figure waits before the next section's. Takes shows the takes that hold the section picked, each played
   // back on the figure it was read with, and which one is kept for it, which the server keeps
-  // beside the takes and `narrate.py join` reads.
+  // beside the takes and `narrate.py join` reads. A take holds a section only while the section
+  // says what it said when the take was read, so one kept before the script changed there shows as
+  // out of date, and isn't joined.
   import '@pencil-lang/figure';
 
   const $ = (id) => document.getElementById(id);
@@ -167,6 +170,12 @@
   const figure = $('figure');
   if (search.has('gl')) figure.setAttribute('gl', '');
   figure.setAttribute('sheets', sheets);
+  // The figure's shape, which it takes from its own viewport once it loads, sets the stage's width,
+  // so a square figure leaves the script as much room as a wide one.
+  new ResizeObserver(([entry]) => {
+    const { width, height } = entry.contentRect;
+    if (width && height) figure.parentElement.style.setProperty('--aspect', String(width / height));
+  }).observe(figure);
   $('audio').src = `${out}.wav`;
 
   async function fetchPrompt(url) {
@@ -435,6 +444,9 @@
   function hold(at) {
     following = null;
     figure.pause();
+    // Pausing reads the figure's clock, which has wrapped to 0 at the figure's end, so the time is
+    // set again once it's paused.
+    figure.time = at;
     guide.pause();
     guideFrom = null;
     held = at;
@@ -461,6 +473,7 @@
       recorder.stop();
     }
     figure.pause();
+    figure.time = at;
     guide.pause();
     heard.pause();
     stopAt = Infinity;
@@ -611,6 +624,8 @@
 
   let takes = [], kept = {}, served = false, open = false;
   const takesOf = (s) => takes.filter((t) => t.sections?.includes(s.name));
+  /** A take is kept for the section, but it read other words than the section has now. */
+  const stale = (s) => Boolean(kept[s.name]) && !takesOf(s).some((t) => t.name === kept[s.name]);
   const titled = (s) => `${sectionsOf(current).indexOf(s) + 1}. ${s.title}`;
   const recordedAt = (t) => t.name.match(/-\d{8}-(\d\d)(\d\d)(\d\d)/)?.slice(1).join(':') ?? t.name;
 
@@ -665,7 +680,7 @@
     select.hidden = sections.length < 2;
     select.replaceChildren(
       el('option', { value: '', textContent: 'Whole script' }),
-      ...sections.map((s) => el('option', { value: s.name, textContent: titled(s) + (kept[s.name] ? ' · take kept' : '') })),
+      ...sections.map((s) => el('option', { value: s.name, textContent: titled(s) + (stale(s) ? ' · kept take out of date' : kept[s.name] ? ' · take kept' : '') })),
     );
     select.value = picked ?? '';
     const button = $('show-takes');
@@ -702,8 +717,10 @@
          t.current ? '' : 'read with an earlier timing'].filter(Boolean).join(' · '), t));
       panel.replaceChildren(
         el('fieldset', {}, legend, choice('draft', '', 'No take', 'the draft voice'), ...rows),
-        el('p', { className: 'hint', textContent: rows.length
-          ? 'The take picked is kept for this section, in place of the draft voice when the takes are joined.'
+        el('p', { className: 'hint', textContent: stale(s)
+          ? 'The take kept for this section read other words than it has now, so it isn’t joined: '
+            + (rows.length ? 'pick another, or the draft voice.' : 'record the section again, or pick the draft voice.')
+          : rows.length ? 'The take picked is kept for this section, in place of the draft voice when the takes are joined.'
           : 'No take holds this section yet. Start records one.' }),
       );
     } else {
@@ -713,6 +730,7 @@
             const k = takesOf(s).findIndex((t) => t.name === kept[s.name]);
             const go = el('button', { type: 'button' }, el('span', { textContent: titled(s) }),
               el('span', { className: 'note', textContent: k >= 0 ? `take ${k + 1} of ${takesOf(s).length}`
+                : stale(s) ? 'kept take out of date'
                 : `draft voice${takesOf(s).length ? `, ${takesOf(s).length} taken` : ''}` }));
             go.dataset.key = `section ${s.name}`;
             go.addEventListener('click', () => pick(s.name));
@@ -737,7 +755,7 @@
   $('show-takes').addEventListener('click', () => {
     open = !open;
     render();
-    if (open) ($('takes').querySelector('input:checked') ?? $('takes').querySelector('button'))?.focus();
+    if (open) ($('takes').querySelector('input:checked') ?? $('takes').querySelector('input, button'))?.focus();
   });
   $('takes').addEventListener('keydown', (e) => {
     if (e.key !== 'Escape') return;

@@ -40,6 +40,19 @@ def finite(value):
     return json.dumps(value, allow_nan=False)
 
 
+def said(prompt):
+    """Each section of a prompt, by name, and the words it says, as the aligner would hear them."""
+    out = {}
+    try:
+        for s in prompt.get("sections", []):
+            a, b = s["lines"]
+            out[s["name"]] = [w for line in prompt["lines"][a:b] for token, _, _ in line
+                              if (w := re.sub(r"[^\w']", "", token.lower().replace("’", "'")))]
+    except (KeyError, TypeError, ValueError):
+        return {}
+    return out
+
+
 class NoCache(http.server.SimpleHTTPRequestHandler):
     # Pencil's own files are text, so a browser shows them rather than downloading them.
     extensions_map = {
@@ -93,13 +106,24 @@ class NoCache(http.server.SimpleHTTPRequestHandler):
             return None
         return take
 
+    def prompt(self, path):
+        try:
+            prompt = json.loads(path.read_text())
+            return prompt if isinstance(prompt, dict) else {}
+        except (OSError, ValueError):
+            return {}
+
     def section_names(self, figure):
         """The sections the figure's prompt has now."""
-        try:
-            prompt = json.loads((self.narration / f"{figure}.prompt.json").read_text())
-            return {s["name"] for s in prompt.get("sections", [])}
-        except (OSError, ValueError, KeyError, TypeError):
-            return set()
+        return set(said(self.prompt(self.narration / f"{figure}.prompt.json")))
+
+    def holds(self, take, now):
+        """The sections a take still holds: of those it held when it was read, each the script has
+        now with the same words. A blank line added or taken away in a section, or a word changed,
+        leaves a take of it out of date, since it read other words than the section has."""
+        then = said(self.prompt(self.narration / "takes" / f"{take['name']}.prompt.json"))
+        listed = take.get("sections")
+        return [s for s in listed if s in now and then.get(s) == now[s]] if isinstance(listed, list) else []
 
     def do_GET(self):
         """`GET /takes?take=figure` lists the figure's takes, newest last, and which is kept for
@@ -111,6 +135,7 @@ class NoCache(http.server.SimpleHTTPRequestHandler):
         takes = self.narration / "takes"
         timed = self.narration / f"{figure}.pen"
         now = timed.read_text() if timed.exists() else None
+        words = said(self.prompt(self.narration / f"{figure}.prompt.json"))
         listed = []
         for about in sorted(takes.glob(f"{figure}-*.json")):
             if about.name.endswith((".prompt.json", ".kept.json")):
@@ -121,6 +146,7 @@ class NoCache(http.server.SimpleHTTPRequestHandler):
             pen = about.with_suffix(".pen")
             # Whether it was read with the figure as it's timed now, and so plays back on it.
             take.update(name=about.stem, current=pen.exists() and pen.read_text() == now)
+            take["sections"] = self.holds(take, words)
             listed.append(take)
         self.reply({"takes": listed, "kept": self.kept(figure)})
 
@@ -179,11 +205,12 @@ class NoCache(http.server.SimpleHTTPRequestHandler):
         figure, section, keep = self.figure(query), query.get("section", ""), query.get("keep", "")
         takes = self.narration / "takes"
         # Only a section the figure has now, and only a take of this figure that holds it.
-        if section not in self.section_names(figure):
+        words = said(self.prompt(self.narration / f"{figure}.prompt.json"))
+        if section not in words:
             self.send_error(400, "no such section")
             return
         about = self.about(figure, keep) if keep else None
-        if keep and (about is None or section not in about.get("sections", [])):
+        if keep and (about is None or section not in self.holds({**about, "name": keep}, words)):
             self.send_error(400, "no take of this figure holds that section")
             return
         with WRITING:
