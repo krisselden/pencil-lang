@@ -8,7 +8,8 @@ use crate::Figure;
 use crate::eval::{CONTRAST_LUMINANCE, TANH_LIMIT};
 use crate::eval::{MIN_GRADIENT, SNAP_POWER};
 use crate::frame::{
-    DEFAULT_DOT_RADIUS, DEFAULT_STROKE_WIDTH, GEOMETRY_VEC4S, SIDE_TEXTURE_WIDTH, VALUE_VEC4S,
+    DEFAULT_DOT_RADIUS, DEFAULT_STROKE_WIDTH, GEOMETRY_VEC4S, INK_TEXTURE_WIDTH,
+    SIDE_TEXTURE_WIDTH, VALUE_VEC4S,
 };
 use crate::ir::{Expr, Form};
 use crate::nearest;
@@ -163,6 +164,11 @@ const BOX_COVERAGE: &str = r#"fn box_coverage(t: f32, n: vec2<f32>) -> f32 {
 
 /// Draws stroke segments into a coverage layer, implementing
 /// `stroke::segment_coverage`. Blending by maximum combines overlapping segments.
+///
+/// A stroke whose lines each have their own color (`style::inked`) is drawn by `vs_inked` and
+/// `fs_inked` instead, into a layer of four channels: the coverage, and the segment's row of
+/// colors in the other three, a byte each. Its depth is how little it covers, so a depth test
+/// keeps what covers each pixel most, with its row, as `stroke::rasterize_inked` does.
 pub const COVERAGE_SHADER: &str = concat!(
     r#"struct Uniforms { time: f32, width: f32, height: f32, dpr: f32 }
 @group(0) @binding(0) var<uniform> u: Uniforms;
@@ -172,15 +178,10 @@ struct Varying {
     @location(0) @interpolate(flat) ab: vec4<f32>,
     @location(1) @interpolate(flat) rs: vec4<f32>,
     @location(2) @interpolate(flat) dash: vec4<f32>,
+    @location(3) @interpolate(flat) ink: f32,
 }
 
-@vertex
-fn vs(
-    @builtin(vertex_index) i: u32,
-    @location(0) ab: vec4<f32>,
-    @location(1) rs: vec4<f32>,
-    @location(2) dash: vec4<f32>,
-) -> Varying {
+fn quad(i: u32, ab: vec4<f32>, rs: vec4<f32>, dash: vec4<f32>) -> Varying {
     let a = ab.xy;
     let b = ab.zw;
     let len = length(b - a);
@@ -194,6 +195,30 @@ fn vs(
     out.ab = ab;
     out.rs = rs;
     out.dash = dash;
+    out.ink = 0.0;
+    return out;
+}
+
+@vertex
+fn vs(
+    @builtin(vertex_index) i: u32,
+    @location(0) ab: vec4<f32>,
+    @location(1) rs: vec4<f32>,
+    @location(2) dash: vec4<f32>,
+) -> Varying {
+    return quad(i, ab, rs, dash);
+}
+
+@vertex
+fn vs_inked(
+    @builtin(vertex_index) i: u32,
+    @location(0) ab: vec4<f32>,
+    @location(1) rs: vec4<f32>,
+    @location(2) dash: vec4<f32>,
+    @location(3) ink: f32,
+) -> Varying {
+    var out = quad(i, ab, rs, dash);
+    out.ink = ink;
     return out;
 }
 
@@ -212,8 +237,7 @@ fn vs(
 }
 
 "#,
-    r#"@fragment
-fn fs(in: Varying) -> @location(0) vec4<f32> {
+    r#"fn covered(in: Varying) -> f32 {
     let p = in.position.xy;
     let a = in.ab.xy;
     let d = in.ab.zw - a;
@@ -245,7 +269,35 @@ fn fs(in: Varying) -> @location(0) vec4<f32> {
     }
     // A piece's ink, as in `segment_coverage`.
     c *= 1.0 - in.dash.w;
-    return vec4<f32>(c, 0.0, 0.0, 1.0);
+    return c;
+}
+
+@fragment
+fn fs(in: Varying) -> @location(0) vec4<f32> {
+    return vec4<f32>(covered(in), 0.0, 0.0, 1.0);
+}
+
+struct Inked {
+    @location(0) color: vec4<f32>,
+    @builtin(frag_depth) depth: f32,
+}
+
+@fragment
+fn fs_inked(in: Varying) -> Inked {
+    let c = clamp(covered(in), 0.0, 1.0);
+    if c <= 0.0 {
+        discard;
+    }
+    let row = u32(in.ink + 0.5);
+    var out: Inked;
+    out.color = vec4<f32>(
+        c,
+        f32(row & 255u) / 255.0,
+        f32((row >> 8u) & 255u) / 255.0,
+        f32((row >> 16u) & 255u) / 255.0,
+    );
+    out.depth = 1.0 - c;
+    return out;
 }
 "#
 );
@@ -364,7 +416,9 @@ pub fn emit(figure: &Figure) -> String {
          @group(0) @binding(1) var coverage: texture_2d_array<f32>;\n\
          @group(0) @binding(2) var<uniform> geometry: array<vec4<f32>, {GEOMETRY_VEC4S}>;\n\
          @group(0) @binding(3) var sides: texture_2d<f32>;\n\
-         @group(0) @binding(4) var nearest: texture_2d<f32>;\n\n\
+         @group(0) @binding(4) var nearest: texture_2d<f32>;\n\
+         @group(0) @binding(5) var inked: texture_2d_array<f32>;\n\
+         @group(0) @binding(6) var inks: texture_2d<f32>;\n\n\
          @vertex\n\
          fn vs(@builtin(vertex_index) i: u32) -> @builtin(position) vec4<f32> {{\n    \
              let p = vec2<f32>(f32((i << 1u) & 2u), f32(i & 2u));\n    \
@@ -411,6 +465,7 @@ pub fn emit(figure: &Figure) -> String {
     let slots: std::collections::HashMap<usize, usize> = figure.presence_slots().collect();
     let sided = figure.sided();
     let mut layer = 0;
+    let mut inked_layer = 0;
     let mut region = 0;
     let mut traced = 0;
     for (i, (mark, style)) in figure
@@ -648,7 +703,24 @@ pub fn emit(figure: &Figure) -> String {
             ));
         }
         if let Some(stroke) = &style.stroke {
-            if style.stroke_is_line(&mark.form) {
+            // A collection whose lines each have their own color reads which one covers this
+            // pixel most, and its color, as `eval::Frame::line_ink` does.
+            let inked = crate::style::inked(mark, style);
+            let ink = if inked {
+                into("stroke_ink".to_string())
+            } else {
+                into(emit_expr(stroke))
+            };
+            if inked {
+                out.push_str(&format!(
+                    "        let stroke_texel = textureLoad(inked, vec2<i32>(local), {inked_layer}, 0);\n\
+                     \x20       let stroke_coverage = stroke_texel.r;\n\
+                     \x20       let ink_bytes = round(stroke_texel.gba * 255.0);\n\
+                     \x20       let ink_row = max(i32(ink_bytes.x + ink_bytes.y * 256.0 + ink_bytes.z * 65536.0) - 1, 0);\n\
+                     \x20       let stroke_ink = textureLoad(inks, vec2<i32>(ink_row % {INK_TEXTURE_WIDTH}, ink_row / {INK_TEXTURE_WIDTH}), 0).rgb;\n",
+                ));
+                inked_layer += 1;
+            } else if style.stroke_is_line(&mark.form) {
                 out.push_str(&format!(
                     "        let stroke_coverage = textureLoad(coverage, vec2<i32>(local), {layer}, 0).r;\n",
                 ));
@@ -671,13 +743,13 @@ pub fn emit(figure: &Figure) -> String {
                     format!(
                         "{} + {} * stroke_coverage * opacity",
                         into("color".to_string()),
-                        into(emit_expr(stroke)),
+                        ink,
                     )
                 } else {
                     format!(
                         "mix({}, {}, stroke_coverage * opacity)",
                         into("color".to_string()),
-                        into(emit_expr(stroke)),
+                        ink,
                     )
                 })
             ));

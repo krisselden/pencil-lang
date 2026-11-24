@@ -47,6 +47,10 @@ const FIGURES = [
   ['014 scaled copy', 'corpus/014-scaled-copy/scaled-copy.pen', [['scaled-copy', [THEME, 'corpus/014-scaled-copy/plain.style']]]],
   ['015 log nearest', 'corpus/015-log-nearest/log-nearest.pen', [['log-nearest', [THEME, 'corpus/015-log-nearest/plain.style']]]],
   ['016 unwrap', 'corpus/016-unwrap/unwrap.pen', [['unwrap', [THEME, 'corpus/016-unwrap/plain.style']]]],
+  ['017 arm colors', 'corpus/017-arm-colors/arm-colors.pen', [
+    ['arm-colors', [THEME, 'corpus/017-arm-colors/plain.style']],
+    ['arm-colors-period', [THEME, 'corpus/017-arm-colors/plain.style', 'corpus/017-arm-colors/period.style']]]],
+  ['018 camera log', 'corpus/018-camera-log/camera-log.pen', [['camera-log', [THEME, 'corpus/018-camera-log/plain.style']]]],
   ['Explainer: limaçon', 'lab/explainer/limacon.pen', [
     ['explainer', [THEME, 'corpus/dark.style', 'lab/explainer/limacon.style', 'lab/explainer/caption.style']]]],
 ].map(([name, pen, looks]) => {

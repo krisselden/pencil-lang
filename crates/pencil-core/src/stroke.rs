@@ -323,6 +323,50 @@ pub fn lines(
     }
 }
 
+/// What `build` makes: one segment list per line stroke, in mark order, and for a collection whose
+/// lines each have their own color, which color each of its segments is.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Built {
+    pub strokes: Vec<Vec<f32>>,
+    /// Per line stroke, one number per segment: its row of `colors`, plus one. Empty for a stroke
+    /// in one color, which the shader works out itself.
+    pub inks: Vec<Vec<f32>>,
+    /// The linear color of each instance's line, four floats each, the last unused.
+    pub colors: Vec<f32>,
+}
+
+/// The color of the instance whose segments start at `before`, if it drew any: a row of `colors`,
+/// which those segments name.
+#[allow(clippy::too_many_arguments)]
+fn ink(
+    lets: &[(String, Expr)],
+    shape: &Shape,
+    style: &MarkStyle,
+    env: &mut Env,
+    before: usize,
+    segments: &[f32],
+    inks: &mut Vec<f32>,
+    colors: &mut Vec<f32>,
+) -> Result<(), Error> {
+    let count = segments.len() / FLOATS_PER_SEGMENT;
+    if segments.len() == before {
+        return Ok(());
+    }
+    let Some(stroke) = &style.stroke else {
+        return Ok(());
+    };
+    // Its `with` names, if the color reads one, which the fast way doesn't leave behind.
+    let mut named = false;
+    stroke.visit_syms(&mut |s| named |= lets.iter().any(|(name, _)| name == s));
+    if named {
+        instance(lets, shape, env)?;
+    }
+    let [r, g, b] = eval::color(stroke, env)?;
+    colors.extend_from_slice(&[r as f32, g as f32, b as f32, 0.0]);
+    inks.resize(count, (colors.len() / 4) as f32);
+    Ok(())
+}
+
 /// Builds one segment list per line stroke, in mark order, in device pixels, using a curve's
 /// lines from `traced` where it's already been traced:
 /// `x0 y0 x1 y1  r0 r1 s0 s1  dash_on dash_period line_length 0`. A nonzero length
@@ -338,8 +382,10 @@ pub fn build(
     dpr: f64,
     shown: &[bool],
     traced: &[Option<Vec<Polyline>>],
-) -> Result<Vec<Vec<f32>>, Error> {
+) -> Result<Built, Error> {
     let mut layers = Vec::new();
+    let mut inks = Vec::new();
+    let mut colors = Vec::new();
     for (i, (mark, style)) in figure
         .scene
         .marks
@@ -351,9 +397,12 @@ pub fn build(
             continue;
         }
         let mut segments = Vec::new();
+        let mut layer_inks = Vec::new();
+        let inked = crate::style::inked(mark, style);
         // An absent mark keeps its layer, empty, so the rest stay where the shader expects.
         if !shown[i] {
             layers.push(segments);
+            inks.push(layer_inks);
             continue;
         }
         let to_device = |p: [f64; 2]| {
@@ -384,9 +433,24 @@ pub fn build(
                 let Some(arc) = trimmed(arc, style, env)? else {
                     return Ok(());
                 };
-                push_arc(&arc, style, env, view, width, height, dpr, &mut segments)
+                let before = segments.len();
+                push_arc(&arc, style, env, view, width, height, dpr, &mut segments)?;
+                if inked {
+                    ink(
+                        lets,
+                        shape,
+                        style,
+                        env,
+                        before,
+                        &segments,
+                        &mut layer_inks,
+                        &mut colors,
+                    )?;
+                }
+                Ok(())
             })?;
             layers.push(segments);
+            inks.push(layer_inks);
             continue;
         }
         if let Form::Many { vars, lets, shape } = &mark.form {
@@ -401,6 +465,7 @@ pub fn build(
             let mut run = FastInstances::new(vars, lets, shape, style, &local);
             let mut count = 0;
             for_each(vars, &mut local, &mut count, &mut |env| {
+                let before = segments.len();
                 push_instance(
                     vars,
                     lets,
@@ -410,9 +475,23 @@ pub fn build(
                     &frame,
                     &mut run,
                     &mut segments,
-                )
+                )?;
+                if inked {
+                    ink(
+                        lets,
+                        shape,
+                        style,
+                        env,
+                        before,
+                        &segments,
+                        &mut layer_inks,
+                        &mut colors,
+                    )?;
+                }
+                Ok(())
             })?;
             layers.push(segments);
+            inks.push(layer_inks);
             continue;
         }
         // How much of it to draw, from its start.
@@ -422,6 +501,7 @@ pub fn build(
         };
         if trim <= 0.0 {
             layers.push(segments);
+            inks.push(Vec::new());
             continue;
         }
         if let Form::Arrow { from, to } = &mark.form {
@@ -431,6 +511,7 @@ pub fn build(
             let b = [a[0] + (b[0] - a[0]) * trim, a[1] + (b[1] - a[1]) * trim];
             push_arrow(a, b, style, env, dpr, &mut segments)?;
             layers.push(segments);
+            inks.push(Vec::new());
             continue;
         }
         if let Form::Outline {
@@ -439,6 +520,7 @@ pub fn build(
         {
             push_outline(other, style, env, view, width, height, dpr, &mut segments)?;
             layers.push(segments);
+            inks.push(Vec::new());
             continue;
         }
         // A curve that knows its own path, such as a circle drawn as a line, is trimmed along it.
@@ -454,6 +536,7 @@ pub fn build(
                 push_arc(&arc, style, env, view, width, height, dpr, &mut segments)?;
             }
             layers.push(segments);
+            inks.push(Vec::new());
             continue;
         }
         // Dashes and tapers measure along the line, so they need all of it.
@@ -488,8 +571,13 @@ pub fn build(
             push_line(&line, style, env, dpr, &to_device, None, &mut segments)?;
         }
         layers.push(segments);
+        inks.push(Vec::new());
     }
-    Ok(layers)
+    Ok(Built {
+        strokes: layers,
+        inks,
+        colors,
+    })
 }
 
 /// The part of a curve a style's `trim` draws: from the start of its parameter, that fraction of
@@ -1522,6 +1610,31 @@ pub fn rasterize(segments: &[f32], width: u32, height: u32) -> Vec<f64> {
                 let c = segment_coverage(s, x as f64 + 0.5, y as f64 + 0.5);
                 let slot = &mut out[(y * width + x) as usize];
                 *slot = slot.max(c);
+            }
+        }
+    }
+    out
+}
+
+/// `rasterize` for a stroke whose segments each have their own color: at each pixel, the coverage
+/// of the segment that covers it most, and that segment's ink. The first of equals keeps it, as
+/// the GPU's depth test does, so where lines of two colors cross, one shows, and neither darkens.
+pub fn rasterize_inked(segments: &[f32], inks: &[f32], width: u32, height: u32) -> Vec<(f64, f32)> {
+    let mut out = vec![(0.0f64, 0.0f32); (width * height) as usize];
+    for (s, &ink) in segments.chunks(FLOATS_PER_SEGMENT).zip(inks) {
+        let pad = (s[4].max(s[5]) + 2.0) as f64;
+        let (ax, ay, bx, by) = (s[0] as f64, s[1] as f64, s[2] as f64, s[3] as f64);
+        let x0 = (ax.min(bx) - pad).floor().max(0.0) as u32;
+        let y0 = (ay.min(by) - pad).floor().max(0.0) as u32;
+        let x1 = ((ax.max(bx) + pad).ceil().max(0.0) as u32).min(width);
+        let y1 = ((ay.max(by) + pad).ceil().max(0.0) as u32).min(height);
+        for y in y0..y1 {
+            for x in x0..x1 {
+                let c = segment_coverage(s, x as f64 + 0.5, y as f64 + 0.5).clamp(0.0, 1.0);
+                let slot = &mut out[(y * width + x) as usize];
+                if c > slot.0 {
+                    *slot = (c, ink);
+                }
             }
         }
     }

@@ -387,6 +387,19 @@ fn has_head(e: &Expr, name: &str) -> bool {
     }
 }
 
+/// Whether a collection's stroke reads its instances' own names, so each of its lines has its own
+/// color, worked out where its segments are. A dot of a collection is drawn by its stroke.
+pub fn inked(mark: &crate::ir::Mark, style: &MarkStyle) -> bool {
+    let (Form::Many { vars, lets, .. }, Some(stroke)) = (&mark.form, &style.stroke) else {
+        return false;
+    };
+    let mut found = false;
+    stroke.visit_syms(&mut |s| {
+        found |= vars.iter().any(|(v, _)| v == s) || lets.iter().any(|(v, _)| v == s);
+    });
+    found
+}
+
 fn uses(e: &Expr, name: &str) -> bool {
     let mut found = false;
     e.visit_syms(&mut |s| found |= s == name);
@@ -1360,9 +1373,20 @@ fn apply(
             scope.extend(lets.iter().map(|(name, _)| name.as_str()));
             scope.push(SELF_SCALE);
         }
-        // A side's color and fade are worked out per instance too. Its rim isn't: that's one line.
+        // A side's color and fade are worked out per instance too, and so is the color of each
+        // line: a stroke, and the fill of a dot, which is drawn as one.
         let per_side = (facet.is_some() && prop == "fill") || prop == "fill_opacity";
-        if let (Form::Many { vars, lets, .. }, true) = (form, many_circles && per_side) {
+        let dots = matches!(
+            form,
+            Form::Many {
+                shape: Shape::Dots(_),
+                ..
+            }
+        );
+        let per_line = facet.is_none() && (prop == "stroke" || (dots && prop == "fill"));
+        if let (Form::Many { vars, lets, .. }, true) =
+            (form, (many_circles && per_side) || per_line)
+        {
             scope.extend(vars.iter().map(|(name, _)| name.as_str()));
             scope.extend(lets.iter().map(|(name, _)| name.as_str()));
         }

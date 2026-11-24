@@ -142,6 +142,11 @@ pub struct Prepared {
     pub geometry: Vec<f32>,
     /// One segment list per line stroke, in mark order.
     pub strokes: Vec<Vec<f32>>,
+    /// Per line stroke, which of `colors` each segment is, plus one, for a collection whose lines
+    /// each have their own color (`style::inked`). Empty for every other.
+    pub inks: Vec<Vec<f32>>,
+    /// The linear color of each line those name, four floats each, the last unused.
+    pub colors: Vec<f32>,
     /// The traced curve of each mark whose distance is measured to it, as `nearest::measures`
     /// says, in mark order: segments `x0 y0 x1 y1` in device pixels, empty if it's absent.
     pub traced: Vec<Vec<[f32; 4]>>,
@@ -164,6 +169,10 @@ pub struct Prepared {
 pub const MAX_SIDED_CIRCLES: usize = 256;
 /// The data texture's width, in texels.
 pub const SIDE_TEXTURE_WIDTH: usize = 256;
+/// The width of the texture of lines' own colors, a color to a texel, and how many rows it can
+/// grow to, which WebGL2 guarantees.
+pub const INK_TEXTURE_WIDTH: usize = 256;
+pub const INK_TEXTURE_ROWS: usize = 2048;
 
 /// The data texture's height, at least one, so that there's always a texture to bind.
 pub fn side_rows(sided: &[crate::Sided]) -> usize {
@@ -1070,7 +1079,18 @@ pub fn prepare_with(
         }
         traced.push(segments);
     }
-    let strokes = stroke::build(figure, &env, view, width, height, dpr, &shown, &curves)?;
+    let stroke::Built {
+        strokes,
+        inks,
+        colors,
+    } = stroke::build(figure, &env, view, width, height, dpr, &shown, &curves)?;
+    if colors.len() / 4 > INK_TEXTURE_WIDTH * INK_TEXTURE_ROWS {
+        return Err(Error::new(format!(
+            "lines of their own color number {}, and the limit is {} for now",
+            colors.len() / 4,
+            INK_TEXTURE_WIDTH * INK_TEXTURE_ROWS
+        )));
+    }
     let nearest = {
         let mut last = figure
             .kept
@@ -1180,6 +1200,8 @@ pub fn prepare_with(
         shown,
         geometry,
         strokes,
+        inks,
+        colors,
         traced,
         nearest,
         labels,

@@ -54,7 +54,9 @@ below can ship when it's done.
 2. **`doyle-spiral-shader`.** Of its 12 sources, 3 stay GLSL and `SquareZ` is done. The other 8:
    1. Ports with what exists, done on 2026-11-15: `ScaledCopy` (`014-scaled-copy`), `LogNearest` (`015-log-nearest`) and
       `UnwrapMorph` (`016-unwrap`), whose one circle per period turned out to be a range.
-   2. A color per instance in `curves` and `dots`: `ArmColors`, which the period post places too.
+   2. A color per instance in `curves` and `dots`: `ArmColors`, which the period post places too. **Built 2026-11-24:** a
+      collection's `stroke` and a `dots` fill read its variables and `with` names (`language.md`, `decisions.md`), and
+      `ArmColors` is `017-arm-colors`.
    3. Dragging a point in two dimensions (see below for its shape): `FloorCell`, as two figures. **Built 2026-11-18:**
       `handle z sets a = pointer.x, b = pointer.y`, one handle setting two params (`language.md`, `decisions.md`). It
       unblocks `FloorCell`'s free point, and `CircumcircleDemo`'s and `CircumNormals`' corners, which are ports now; none
@@ -62,7 +64,9 @@ below can ship when it's done.
    4. Panels of different sizes, which with the drag ports `FollowPixel` and `PowerViews`.
    5. `ZoomLoop`, which needs design: a clock that doesn't loop, and a chart whose axis rescales. Its spiral half is a port.
 3. **`doyle-spiral-period`.** `LatticeMapping` and `RollTube` are done, and `ArmColors` comes from step 2. That leaves one port,
-   `CameraLog`. It's the first post that can be all Pencil, and it can be done before the shader post's later steps.
+   `CameraLog`. It's the first post that can be all Pencil, and it can be done before the shader post's later steps. **Done
+   2026-11-24:** `CameraLog` is `018-camera-log`, so every figure of the post is a corpus figure. Placing them waits on the
+   package's release and on sliders in the element.
 4. **`doyle-spiral-touch`.** `BoundsConstruction` is done, and `ScaledCopy` comes from step 2.
    1. Port: `LimaconTangency`.
    2. Newton's steps as values: `DoyleFlower`.
@@ -200,11 +204,11 @@ The home page's hero canvas and the header's logo are listed apart, at the end. 
 | `UnwrapMorph` | doyle-spiral-shader | primary | Same: `016-unwrap` | Nothing | Done |
 | `LogNearest` | doyle-spiral-shader | supporting | Same: `015-log-nearest` | Nothing | Done |
 | `FloorCell` | doyle-spiral-shader | supporting | None | Dragging a point in two dimensions (built 2026-11-18) | Port |
-| `ArmColors` | doyle-spiral-shader, doyle-spiral-period | primary | Related: `007-lattice` | A color per instance in `curves` and `dots` | Feature |
+| `ArmColors` | doyle-spiral-shader, doyle-spiral-period | primary | Same: `017-arm-colors` | Nothing | Done |
 | `ZoomLoop` | doyle-spiral-shader | primary | None | A clock that doesn't loop, and a chart | Design |
 | `LatticeMapping` | doyle-spiral-period | primary | Same: `007-lattice` | Nothing | Done |
 | `RollTube` | doyle-spiral-period | primary | Same: `013-tube` | Nothing | Done |
-| `CameraLog` | doyle-spiral-period | primary | Related: `007-lattice` | Nothing | Port |
+| `CameraLog` | doyle-spiral-period | primary | Same: `018-camera-log` | Nothing | Done |
 | `LimaconTangency` | doyle-spiral-touch | primary | None | Nothing | Port |
 | `LevelCurve` | doyle-spiral-touch | supporting | None | 3D: a view the reader turns | Design |
 | `DoyleFlower` | doyle-spiral-touch | primary | Related: `007-lattice`'s `solve`; `lab/zoom` (not Pencil) | Newton's steps as values | Feature |
@@ -609,7 +613,7 @@ replaced that.
 - **Reader:** drags x on the line, and drags a free point on the lattice, with keys. Readout of the floors.
 - **Lacks:** nothing since two-dimensional drag was built on 2026-11-18. The two sizes can be two figures.
 
-**`ArmColors`** (primary, in two posts): two panels.
+**`ArmColors`** (primary, in two posts): done as `017-arm-colors`, two panels.
 
 - **Draws:**
   - The spiral's circles, one per period, colored by arm: hue = (row mod n)/n, with n arms along the chosen direction (or rings when
@@ -623,7 +627,25 @@ replaced that.
   which is 0 at p = 0, so that end needs its own range. Circles take per-instance fills on their sides *(tried)*. A `curves`
   stroke and a `dots` fill can't read their variables: "unknown name `s`" and "unknown name `n`" *(tried)*. There's one curve and one row of dots per arm, and the number of
   arms follows p.
-- **Lacks:** a color per instance in `curves` and `dots`.
+- **Lacks:** nothing since a collection's colors were made per instance on 2026-11-24.
+- **Built:** the arms' direction is a choice of three, and a row is `imag(conj(along)·w) / imag(ω)`, the cross product counted
+  in rows. The number of arms is the rows the period crosses, `abs(row(A))`, which is p, q − p or q by direction, and the
+  arms' starts are r·(along·ω), one row over each. Rings are a second `curves` collection, empty unless the rows close.
+  The second placement is `period.style` over `plain.style`, with `params="p: 2; q: 7"` on the page.
+- **Differs from the site:** along ω the rows count the other way (−a where the site has a), so the hues go round the other
+  way. The site's window cut circles that still reached the corner at large k, and this one's outer edge is
+  ln(3.4/(1 − k)), past the corner. The arms run as far as the circles' window and no further.
+- **Not as planned:** p = 0 didn't need a range of its own. The circles are a parallelogram in (a, b), one side from N and
+  one from Re u, so a's range is its corners', and at p = 0, where Re u doesn't change along b, the slope it divides by is
+  held a hair above 0, which makes the same whole-number test. p = q needed the corners too: there Re u doesn't change
+  along a, and the unwrap's fixed `-16..16` for a can't be relied on. The grid has a line per row, not one per arm: an arm
+  is every nth row.
+- **Checked** (`crates/pencil-core/tests/corpus.rs`): for every q from 3 to 16 and p from 0 to q, the circles drawn are one of
+  each period, none twice, every lattice point of the window in a 121 × 121 box has its copy drawn, and there are at most
+  160, under the 256 for filled sides. For 11 (p, q) and all three directions, 2000 and more circles each have the arm
+  their row says, and lie on their arm's curve, or ring, within the stretch drawn, to 1e-9. The grid's rows are the rows
+  their numbers say and its points have their rows' arms; each arm's hue reaches the frame; the period sheet draws A from
+  0. `pencil check` agrees with the oracle to 1/255 at p = 0, 3, 5 and 16, along all three, and under the dark sheet.
 
 **`ZoomLoop`** (primary): two panels.
 
@@ -654,7 +676,7 @@ replaced that.
   and `roll` stops at 0.01, since Pencil can't write the flat limit of a cylinder of radius 1/roll.
 - **Lacks:** nothing.
 
-**`CameraLog`** (primary): two panels.
+**`CameraLog`** (primary): done as `018-camera-log`, two panels.
 
 - **Draws:**
   - In log space, the camera's square as the wavy curve x = c₀ + ln(H / max(|cos(y − c₁)|, |sin(y − c₁)|)), filled to the left.
@@ -667,6 +689,17 @@ replaced that.
   - Two collections for even and odd arms.
   - The yes/no readout from bindings, on the page.
 - **Lacks:** nothing.
+- **Built:** the path is a choice whose values are the step per unit of t, log c(1 + ω) or its length straight out, so
+  c = t·path, and both go as far for the same t. t steps by hundredths, as the site's slider does, so a reader lands on the
+  whole steps. The arms are one `dots` collection and one `circles`, each colored by `mix(accent, blue, mod(a, 2))`, not two
+  collections. The circles are two collections, the start and what's seen, since a `circles` collection can't go through a
+  map, and each is one per period, the seen one's window moving with Re c. The readout stays page HTML.
+- **Checked** (`crates/pencil-core/tests/corpus.rs`): e^{−c} of every point of the camera's edge, and of the start's, is on the
+  square's edge to 1e-12, and the region is bounded by the same curve. c is t steps of log c(1 + ω), worked out apart from
+  the figure, and the zoom is real, so it scales without turning. After one and two whole steps every circle on the screen
+  is one it started on, in the other arm after one and the same after two, and after a zoom, or half a step, none is. Both
+  collections are one per period, 43 circles each. `pencil check` agrees with the oracle to 1/255 at five t on both paths
+  and under the dark sheet, once the seen circles' fill stopped being a quarter, which lands on a rounding tie.
 
 ### doyle-spiral-touch
 
@@ -765,11 +798,11 @@ replaced that.
 
 **Coverage today, of 31 sources:**
 
-- **Done: 8.** `Unroll`, `BoundsConstruction`, `SquareZ`, `LatticeMapping`, `RollTube`, `ScaledCopy`, `LogNearest` and
-  `UnwrapMorph`, which are corpus figures.
-- **Port: 6.** Everything they need exists, and they aren't written yet: `circumcircle.glsl` (by extending `011`), `CircumCot`,
-  `TriangleLayers`, `MedianConstruction`, `CameraLog` and `LimaconTangency`.
-- **One feature: 6.** `CircumcircleDemo`, `CircumNormals`, `FloorCell`, `ArmColors`, `NewtonLine` and `DoyleFlower`.
+- **Done: 10.** `Unroll`, `BoundsConstruction`, `SquareZ`, `LatticeMapping`, `RollTube`, `ScaledCopy`, `LogNearest`,
+  `UnwrapMorph`, `ArmColors` and `CameraLog`, which are corpus figures.
+- **Port: 5.** Everything they need exists, and they aren't written yet: `circumcircle.glsl` (by extending `011`), `CircumCot`,
+  `TriangleLayers`, `MedianConstruction` and `LimaconTangency`.
+- **One feature: 5.** `CircumcircleDemo`, `CircumNormals`, `FloorCell`, `NewtonLine` and `DoyleFlower`.
 - **Two features: 3.** `FollowPixel`, `PowerViews` and `DigitsChart`.
 - **Since 2026-11-18,** when dragging a point in two dimensions was built, `CircumcircleDemo`, `CircumNormals` and
   `FloorCell` are ports, and `FollowPixel` and `PowerViews` need one feature, panels of different sizes. The counts above
@@ -778,9 +811,9 @@ replaced that.
   are design too.
 - **Stays GLSL: 3.** `DoyleSpiral`, `gradient.glsl` and `circle-distance.glsl`.
 
-**In the Doyle series,** which goes first: 23 sources. 7 are done (`SquareZ`, `LatticeMapping`, `RollTube`,
-`BoundsConstruction`, `ScaledCopy`, `LogNearest`, `UnwrapMorph`), 3 stay GLSL, 2 are ports (`CameraLog`, `LimaconTangency`), 4
-need one feature (`FloorCell`, `ArmColors`, `DoyleFlower`, `NewtonLine`), 3 need two (`FollowPixel`, `PowerViews`,
+**In the Doyle series,** which goes first: 23 sources. 9 are done (`SquareZ`, `LatticeMapping`, `RollTube`,
+`BoundsConstruction`, `ScaledCopy`, `LogNearest`, `UnwrapMorph`, `ArmColors`, `CameraLog`), 3 stay GLSL, 1 is a port
+(`LimaconTangency`), 3 need one feature (`FloorCell`, `DoyleFlower`, `NewtonLine`), 3 need two (`FollowPixel`, `PowerViews`,
 `DigitsChart`), and 4 need design (`ZoomLoop`, `LevelCurve`, `SkewSliders`, `NewtonDoyle`).
 
 **Missing features, by how many figures need each.** The table counts the 31 sources plus the hero and logo. "Alone" means the figure
@@ -797,7 +830,7 @@ is ported once this exists and nothing else does.
 | A field that names its nearest circle, or sides past the 256 cap | 0, now that `DoyleSpiral` stays GLSL and the hero is the site's (maybe `ZoomLoop`, if its circles pass the cap) | 0 | Core and shader: not planned |
 | Unequal axis scales | 2: `NewtonLine`, `DigitsChart` | 1 | Viewport: decided against on 2026-11-06, unless asked for |
 | Hover, or the pointer as an input outside a drag | 2: `DigitsChart`, hero | 0 | Design: a frame stays a function of its inputs |
-| A color per instance in `curves` and `dots` | 1: `ArmColors` (and `RollTube`, `CameraLog` more simply) | 1 | Style |
+| A color per instance in `curves` and `dots` | 1: `ArmColors` (and `RollTube`, `CameraLog` more simply) | 1 | Style: **built 2026-11-24**, a collection's `stroke` and a `dots` fill read its variables |
 | Separate beats per panel | 1: `LimaconConstruction` | 1 | Design, or linked elements |
 | A clock that doesn't loop, and axes whose ticks vary | 1: `ZoomLoop` | 0 | Design |
 | Moving between two views along a path | 1: `NewtonDoyle` | 0 | Not built, chosen in `lab/zoom` |

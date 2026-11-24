@@ -2,9 +2,11 @@
 //! offscreen path and the browser, so both run the same shader.
 
 use pencil_core::eval::srgb_encode;
-use pencil_core::frame::{GEOMETRY_VEC4S, Prepared, SIDE_TEXTURE_WIDTH, VALUE_VEC4S, side_rows};
+use pencil_core::frame::{
+    GEOMETRY_VEC4S, INK_TEXTURE_WIDTH, Prepared, SIDE_TEXTURE_WIDTH, VALUE_VEC4S, side_rows,
+};
 use pencil_core::nearest;
-use pencil_core::{Figure, stroke, wgsl};
+use pencil_core::{Figure, stroke, style, wgsl};
 
 /// A frame's inputs, matching `Uniforms` in `pencil_core::wgsl`.
 #[derive(Clone, Copy, Debug)]
@@ -47,14 +49,39 @@ const UNIFORM_BYTES: usize = 48 + VALUE_VEC4S * 16;
 const GEOMETRY_BYTES: usize = GEOMETRY_VEC4S * 16;
 
 const COVERAGE_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::R8Unorm;
+/// A stroke whose lines each have their own color: coverage, and which color, a byte at a time.
+const INKED_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
+/// How little a segment covers a pixel, so a depth test keeps the one that covers it most.
+const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 
-/// One coverage layer per traced curve. It's always an array of at least two layers,
-/// because wgpu's GL backend can't treat a one-layer texture as an array.
+/// One coverage layer per traced curve, and one per stroke whose lines each have their own
+/// color. Each is always an array of at least two layers, because wgpu's GL backend can't treat
+/// a one-layer texture as an array.
 struct Coverage {
     texture: wgpu::Texture,
+    inked: wgpu::Texture,
+    depth: wgpu::TextureView,
     bind_group: wgpu::BindGroup,
     width: u32,
     height: u32,
+}
+
+/// The texture of lines' own colors, `rows` high.
+fn ink_texture(device: &wgpu::Device, rows: u32) -> wgpu::Texture {
+    device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("pencil inks"),
+        size: wgpu::Extent3d {
+            width: INK_TEXTURE_WIDTH as u32,
+            height: rows.max(1),
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Rgba32Float,
+        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+        view_formats: &[],
+    })
 }
 
 /// The texture of traced curves, `rows` high.
@@ -88,10 +115,17 @@ pub struct FigurePipeline {
     /// Traced curves, tiled, for distances to them. It grows as a frame needs more rows.
     nearest: wgpu::Texture,
     nearest_view: wgpu::TextureView,
+    /// Each line's own color, for strokes whose lines each have one. It grows as needed.
+    inks: wgpu::Texture,
+    inks_view: wgpu::TextureView,
     coverage_pipeline: wgpu::RenderPipeline,
+    inked_pipeline: wgpu::RenderPipeline,
     coverage_bind_group: wgpu::BindGroup,
     coverage: Option<Coverage>,
     layers: u32,
+    inked_layers: u32,
+    /// Per line stroke, in mark order, whether its lines each have their own color.
+    inked: Vec<bool>,
 }
 
 impl FigurePipeline {
@@ -154,6 +188,26 @@ impl FigurePipeline {
                 },
                 wgpu::BindGroupLayoutEntry {
                     binding: 4,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 5,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                        view_dimension: wgpu::TextureViewDimension::D2Array,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 6,
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Texture {
                         sample_type: wgpu::TextureSampleType::Float { filterable: false },
@@ -258,13 +312,68 @@ impl FigurePipeline {
             cache: None,
         });
 
-        let layers = figure
+        // The segments and, in a buffer of their own, each one's row of colors.
+        let segment_buffer = wgpu::VertexBufferLayout {
+            array_stride: (stroke::FLOATS_PER_SEGMENT * 4) as u64,
+            step_mode: wgpu::VertexStepMode::Instance,
+            attributes: &wgpu::vertex_attr_array![
+                0 => Float32x4,
+                1 => Float32x4,
+                2 => Float32x4,
+            ],
+        };
+        let inked_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("pencil inked coverage"),
+            layout: Some(&coverage_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &coverage_module,
+                entry_point: Some("vs_inked"),
+                compilation_options: Default::default(),
+                buffers: &[
+                    Some(segment_buffer),
+                    Some(wgpu::VertexBufferLayout {
+                        array_stride: 4,
+                        step_mode: wgpu::VertexStepMode::Instance,
+                        attributes: &wgpu::vertex_attr_array![3 => Float32],
+                    }),
+                ],
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &coverage_module,
+                entry_point: Some("fs_inked"),
+                compilation_options: Default::default(),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: INKED_FORMAT,
+                    blend: None,
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleStrip,
+                ..Default::default()
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: DEPTH_FORMAT,
+                depth_write_enabled: Some(true),
+                depth_compare: Some(wgpu::CompareFunction::Less),
+                stencil: Default::default(),
+                bias: Default::default(),
+            }),
+            multisample: Default::default(),
+            multiview_mask: None,
+            cache: None,
+        });
+
+        let inked: Vec<bool> = figure
             .scene
             .marks
             .iter()
             .zip(&figure.styles.marks)
             .filter(|(m, s)| s.stroke_is_line(&m.form))
-            .count() as u32;
+            .map(|(m, s)| style::inked(m, s))
+            .collect();
+        let inked_layers = inked.iter().filter(|i| **i).count() as u32;
+        let layers = inked.len() as u32 - inked_layers;
         let sides = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("pencil sides"),
             size: wgpu::Extent3d {
@@ -282,6 +391,8 @@ impl FigurePipeline {
         let sides_view = sides.create_view(&Default::default());
         let nearest = nearest_texture(device, 1);
         let nearest_view = nearest.create_view(&Default::default());
+        let inks = ink_texture(device, 1);
+        let inks_view = inks.create_view(&Default::default());
         Self {
             pipeline,
             layout,
@@ -291,10 +402,15 @@ impl FigurePipeline {
             sides_view,
             nearest,
             nearest_view,
+            inks,
+            inks_view,
             coverage_pipeline,
+            inked_pipeline,
             coverage_bind_group,
             coverage: None,
             layers: layers.max(2),
+            inked_layers: inked_layers.max(2),
+            inked,
         }
     }
 
@@ -321,6 +437,40 @@ impl FigurePipeline {
             dimension: Some(wgpu::TextureViewDimension::D2Array),
             ..Default::default()
         });
+        let inked = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("pencil inked coverage"),
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: self.inked_layers,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: INKED_FORMAT,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+        let inked_view = inked.create_view(&wgpu::TextureViewDescriptor {
+            dimension: Some(wgpu::TextureViewDimension::D2Array),
+            ..Default::default()
+        });
+        let depth = device
+            .create_texture(&wgpu::TextureDescriptor {
+                label: Some("pencil coverage depth"),
+                size: wgpu::Extent3d {
+                    width,
+                    height,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: DEPTH_FORMAT,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                view_formats: &[],
+            })
+            .create_view(&Default::default());
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: None,
             layout: &self.layout,
@@ -345,10 +495,20 @@ impl FigurePipeline {
                     binding: 4,
                     resource: wgpu::BindingResource::TextureView(&self.nearest_view),
                 },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: wgpu::BindingResource::TextureView(&inked_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 6,
+                    resource: wgpu::BindingResource::TextureView(&self.inks_view),
+                },
             ],
         });
         self.coverage = Some(Coverage {
             texture,
+            inked,
+            depth,
             bind_group,
             width,
             height,
@@ -420,13 +580,47 @@ impl FigurePipeline {
                 },
             );
         }
+        let rows = (prepared.colors.len() / 4).div_ceil(INK_TEXTURE_WIDTH) as u32;
+        if rows > self.inks.height() {
+            self.inks = ink_texture(device, rows);
+            self.inks_view = self.inks.create_view(&Default::default());
+            self.coverage = None;
+        }
+        if rows > 0 {
+            let mut colors = prepared.colors.clone();
+            colors.resize(rows as usize * INK_TEXTURE_WIDTH * 4, 0.0);
+            let bytes: Vec<u8> = colors.iter().flat_map(|f| f.to_le_bytes()).collect();
+            queue.write_texture(
+                self.inks.as_image_copy(),
+                &bytes,
+                wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(INK_TEXTURE_WIDTH as u32 * 16),
+                    rows_per_image: None,
+                },
+                wgpu::Extent3d {
+                    width: INK_TEXTURE_WIDTH as u32,
+                    height: rows,
+                    depth_or_array_layers: 1,
+                },
+            );
+        }
         self.coverage_for(device, inputs.width, inputs.height);
         let coverage = self.coverage.as_ref().expect("just created");
 
+        let (mut plain, mut inked) = (0, 0);
         for (layer, segments) in prepared.strokes.iter().enumerate() {
-            let view = coverage.texture.create_view(&wgpu::TextureViewDescriptor {
+            let is_inked = self.inked.get(layer).copied().unwrap_or(false);
+            let (texture, index) = if is_inked {
+                inked += 1;
+                (&coverage.inked, inked - 1)
+            } else {
+                plain += 1;
+                (&coverage.texture, plain - 1)
+            };
+            let view = texture.create_view(&wgpu::TextureViewDescriptor {
                 dimension: Some(wgpu::TextureViewDimension::D2),
-                base_array_layer: layer as u32,
+                base_array_layer: index as u32,
                 array_layer_count: Some(1),
                 ..Default::default()
             });
@@ -441,6 +635,22 @@ impl FigurePipeline {
             if !bytes.is_empty() {
                 queue.write_buffer(&instances, 0, &bytes);
             }
+            let count = segments.len() / stroke::FLOATS_PER_SEGMENT;
+            let rows = is_inked.then(|| {
+                let mut rows = prepared.inks.get(layer).cloned().unwrap_or_default();
+                rows.resize(count, 0.0);
+                let bytes: Vec<u8> = rows.iter().flat_map(|f| f.to_le_bytes()).collect();
+                let buffer = device.create_buffer(&wgpu::BufferDescriptor {
+                    label: Some("pencil segment inks"),
+                    size: bytes.len() as u64,
+                    usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                    mapped_at_creation: false,
+                });
+                if !bytes.is_empty() {
+                    queue.write_buffer(&buffer, 0, &bytes);
+                }
+                buffer
+            });
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("pencil coverage"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -452,19 +662,31 @@ impl FigurePipeline {
                         store: wgpu::StoreOp::Store,
                     },
                 })],
-                depth_stencil_attachment: None,
+                depth_stencil_attachment: is_inked.then_some(
+                    wgpu::RenderPassDepthStencilAttachment {
+                        view: &coverage.depth,
+                        depth_ops: Some(wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(1.0),
+                            store: wgpu::StoreOp::Discard,
+                        }),
+                        stencil_ops: None,
+                    },
+                ),
                 timestamp_writes: None,
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
-            if !segments.is_empty() {
-                pass.set_pipeline(&self.coverage_pipeline);
+            if count > 0 {
+                match &rows {
+                    Some(rows) => {
+                        pass.set_pipeline(&self.inked_pipeline);
+                        pass.set_vertex_buffer(1, rows.slice(..));
+                    }
+                    None => pass.set_pipeline(&self.coverage_pipeline),
+                }
                 pass.set_bind_group(0, &self.coverage_bind_group, &[]);
                 pass.set_vertex_buffer(0, instances.slice(..));
-                pass.draw(
-                    0..4,
-                    0..(segments.len() / stroke::FLOATS_PER_SEGMENT) as u32,
-                );
+                pass.draw(0..4, 0..count as u32);
             }
         }
 

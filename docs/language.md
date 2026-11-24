@@ -262,7 +262,7 @@ A curve has its own parameter too, which runs smoothly, and comes first. So what
 `curves across = parametric (t): x0 + s·r / 3 + t·i for t in -r..r for s in -3..3`
 
 Its range can read what counts it, and `with` names can be used in both. `curves` can go `through` a map, and a viewport can `fit` one, which fits all of them. It's lines, so it has a `stroke`
-and no `fill`, and that `stroke` is one color for all of them. Its `width` can vary per curve, and along each with `self.t`, and each gets its own dashes and head. Where curves in one collection cross, they don't darken each other, as they do when they're separate marks.
+and no `fill`, and that `stroke` can be one color for all of them or one for each (below). Its `width` can vary per curve, and along each with `self.t`, and each gets its own dashes and head. Where curves in one collection cross, they don't darken each other, as they do when they're separate marks.
 
 - **It's one mark,** so one rule styles it all, and the count can follow a param from frame to frame.
 - **`with` names a value per instance:** `circles c = circle(z, z + (r, 0)) for a in 0..q with z = spiral(a)` works `z` out
@@ -270,6 +270,11 @@ and no `fill`, and that `stroke` is one color for all of them. Its `width` can v
 - **An instance that doesn't exist is skipped,** and one off the frame or too small to see costs nothing further.
 - **Sizes can vary per instance:** `radius` and `width` can use the variables, `self.scale`, the style pixels per world
   unit, and for `dots`, `self.x` and `self.y`, where the dot ended up: `radius: min(0.3·k·self.x·self.scale·1px, 3px)`.
+- **So can colors:** a collection's `stroke`, the line of each curve or each circle's rim, and the `fill` of `dots` can use the
+  variables and the `with` names, so a hue can index a family: `style arms { stroke: hue(r / n) }`. A color is per
+  instance and not along a line, so a curve's own parameter isn't one of them. Where lines of one collection in two colors
+  cover the same pixel, the one that covers more of it shows there, the first drawn of two that cover it alike, so they
+  still don't darken each other. `corpus/017-arm-colors` colors a spiral's arms this way.
 - **`circles` can be circles through three points,** so `circles c = circle(f(p), f(q), f(s)) for …` is what a Möbius map makes of a family. Any of them can be a line this frame, and is drawn as one.
 - **Circles have sides, per instance:** `style c::inside { fill: … }`. A side's `fill` and `fill_opacity` can use the variables, the `with` names, `self.dist`, `self.pixel` and `self.curvature`. Every pixel adds up every circle,
   so this costs about 0.09 ms per circle at 1080² on an M1 Pro, and it's limited to 256 per collection, which is an error past that. A collection with only rims doesn't pay for it and has no limit.
@@ -753,7 +758,7 @@ pixels, so they can't be in `em`.
 |---|---|---|
 | `fill` | Regions, dots, labels, facets | A color, or `none` for no fill. A field's `fill` needs a facet, and so does a `circles` collection's, `fill: none` included, since they're filled only by their sides. A label, a term, a panel's `title` or `formula`, or the `caption` with `fill: none` isn't drawn. The `paper` can't be `none`: leave its fill out for white. |
 | `fill_opacity` | Anything filled | Scales only the fill, on top of `opacity`. |
-| `stroke` | Curves, lines, regions, dots | A color, or `none` for no line. |
+| `stroke` | Curves, lines, regions, dots | A color, or `none` for no line. A collection's can be a color for each of its instances (see Collections). |
 | `width` | Strokes | A length. Can vary along the stroke with `self.t`, and with `self.z` on a curve of points in space. |
 | `head`, `head_span` | Curves | With `head: 13px`, a curve ends in an arrowhead. `head_span: 1` holds it to 60% of the last 1 of the curve's parameter, so it can't dwarf a spiral's tight turns. |
 | `dash`, `gap` | Lines | Lengths. A loop gets a whole number of dashes, stretched to fit. `dash: 0`, like `dash: none`, is solid. |

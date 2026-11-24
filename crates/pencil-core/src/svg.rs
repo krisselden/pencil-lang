@@ -195,6 +195,8 @@ struct Seg {
     ink: f64,
     /// Whether each end is where the frame cut it, and not where its line goes on or ends.
     cut: [bool; 2],
+    /// Its row of `Prepared::colors` plus one, for a line with its own color, and 0 otherwise.
+    row: usize,
 }
 
 impl Seg {
@@ -247,9 +249,10 @@ impl Seg {
     }
 }
 
-fn segments(raw: &[f32], width: f64, height: f64) -> Vec<Seg> {
+fn segments(raw: &[f32], rows: &[f32], width: f64, height: f64) -> Vec<Seg> {
     raw.chunks_exact(FLOATS_PER_SEGMENT)
-        .filter_map(|s| {
+        .enumerate()
+        .filter_map(|(i, s)| {
             let f = |i: usize| f64::from(s[i]);
             Seg {
                 a: [f(0), f(1)],
@@ -261,6 +264,7 @@ fn segments(raw: &[f32], width: f64, height: f64) -> Vec<Seg> {
                 clip: f(10),
                 ink: 1.0 - f(11),
                 cut: [false; 2],
+                row: rows.get(i).map_or(0, |row| *row as usize),
             }
             .within(width, height)
         })
@@ -874,6 +878,8 @@ fn marks(
                 writer.skip(&name, Left::Stroke, "stroke", PER_PIXEL);
                 None
             }
+            // Each line's own color is in its segments.
+            Some(_) if crate::style::inked(mark, style) => Some(String::new()),
             Some(color) => Some(hex(eval::color(color, &env)?)),
             None => None,
         };
@@ -988,6 +994,7 @@ fn marks(
                                     clip: 0.0,
                                     ink: 1.0,
                                     cut: [false; 2],
+                                    row: 0,
                                 }
                                 .within(size[0], size[1])
                             }));
@@ -1046,13 +1053,31 @@ fn marks(
         if let Some(color) = &stroke {
             let lined;
             let pieces: &[Seg] = if is_line {
-                lined = segments(&prepared.strokes[this_layer], size[0], size[1]);
+                lined = segments(
+                    &prepared.strokes[this_layer],
+                    prepared.inks.get(this_layer).map_or(&[], |rows| rows),
+                    size[0],
+                    size[1],
+                );
                 &lined
             } else {
                 &edge
             };
             let mut drawn = Vec::new();
             let mut ink = opacity;
+            // A collection whose lines each have their own color is drawn a line at a time.
+            let runs: Vec<(&[Seg], String)> = match crate::style::inked(mark, style) {
+                true => pieces
+                    .chunk_by(|a, b| a.row == b.row)
+                    .filter_map(|run| {
+                        let row = run[0].row.checked_sub(1)?;
+                        let color =
+                            std::array::from_fn(|k| f64::from(prepared.colors[row * 4 + k]));
+                        Some((run, hex(color)))
+                    })
+                    .collect(),
+                false => vec![(pieces, color.clone())],
+            };
             if dashes_a_taper(pieces) {
                 writer.skip(
                     &name,
@@ -1061,30 +1086,32 @@ fn marks(
                     "is on a stroke whose `width` varies along it, which isn't cut into dashes yet",
                 );
             } else {
-                match stroke_elements(pieces, color) {
-                    Stroke::Even(elements, even) => {
-                        drawn = elements;
-                        ink *= even;
-                    }
-                    Stroke::Masked(contents) if !contents.is_empty() => {
-                        let mask = writer.id(&format!("{name}.ink"));
-                        let mut group = format!(
-                            "<mask id=\"{mask}\" maskUnits=\"userSpaceOnUse\" x=\"0\" y=\"0\" width=\"{w}\" height=\"{h}\">\n",
-                            w = num(size[0]),
-                            h = num(size[1]),
-                        );
-                        for element in &contents {
-                            let _ = writeln!(group, "{}", close(element));
+                for (pieces, color) in &runs {
+                    match stroke_elements(pieces, color) {
+                        Stroke::Even(elements, even) => {
+                            drawn.extend(elements);
+                            ink = opacity * even;
                         }
-                        group.push_str("</mask>");
-                        elements.push(group);
-                        drawn.push(format!(
-                            "<rect width=\"{}\" height=\"{}\" fill=\"{color}\" mask=\"url(#{mask})\"",
-                            num(size[0]),
-                            num(size[1]),
-                        ));
+                        Stroke::Masked(contents) if !contents.is_empty() => {
+                            let mask = writer.id(&format!("{name}.ink"));
+                            let mut group = format!(
+                                "<mask id=\"{mask}\" maskUnits=\"userSpaceOnUse\" x=\"0\" y=\"0\" width=\"{w}\" height=\"{h}\">\n",
+                                w = num(size[0]),
+                                h = num(size[1]),
+                            );
+                            for element in &contents {
+                                let _ = writeln!(group, "{}", close(element));
+                            }
+                            group.push_str("</mask>");
+                            elements.push(group);
+                            drawn.push(format!(
+                                "<rect width=\"{}\" height=\"{}\" fill=\"{color}\" mask=\"url(#{mask})\"",
+                                num(size[0]),
+                                num(size[1]),
+                            ));
+                        }
+                        Stroke::Masked(_) => {}
                     }
-                    Stroke::Masked(_) => {}
                 }
             }
             // A dot's stroke is a ring on its edge.

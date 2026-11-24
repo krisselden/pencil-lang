@@ -99,10 +99,10 @@ GLSL shaders draw through one SVG system (`src/lib/plot.ts`), and nothing is mad
 4. **The move itself is tracked in `docs/migration.md`:** the order, what's done, and each of the site's 31 figures with the
    corpus figure that covers it and what Pencil lacks for it. **The Doyle series goes first** (Kris, 2026-11-14), in its own
    order, and the shader post's three GLSL figures stay GLSL, since that post is about writing a shader. Keyboard use comes
-   with the host, before the posts: handles a reader can tab to, and arrow keys. 8 figures are done (the shader
+   with the host, before the posts: handles a reader can tab to, and arrow keys. 10 figures are done (the shader
    post's `ScaledCopy`, `LogNearest` and `UnwrapMorph` on 2026-11-15, drawn on the site's demos page at 1633×919 and
-   375×812, light and dark), 6
-   are ports with what exists, 9 need one or two features, 5 need design and 3 stay. What most figures lack is around the figure
+   375×812, light and dark, and the period post's `ArmColors` and `CameraLog` on 2026-11-24, with a color per instance in
+   a collection), 5 are ports with what exists, 8 need one or two features, 5 need design and 3 stay. What most figures lack is around the figure
    and not in it: arrow keys (12 figures), dragging a point in two dimensions (5, built 2026-11-18: a handle that sets two
    params), Newton's steps as values (4) and panels of different sizes (4).
 
@@ -243,7 +243,8 @@ Built, and wrong or short in a known way. None has blocked a figure.
 - **SVG export** (`pencil svg`, 2026-11-16; `language.md`, A figure as SVG) leaves out two things that do have a vector form:
   a dashed stroke whose width varies, and the side of a curve that leaves the frame, each with a line saying so. A label's
   baseline is set 0.355 em below its center, which suits the fonts a page uses, and isn't read from the font that placed it.
-  No test rasterizes an SVG: it was compared with `pencil render` once, by hand, in Chromium.
+  No test rasterizes an SVG: it was compared with `pencil render` once, by hand, in Chromium. Where a collection's lines
+  in two colors cross, the later is painted over the earlier, where a frame shows the one that covers each pixel more.
 - **A Möbius pole exactly on one of the three points** loses that circle for the frame.
 - **Panels** all have to be one size, and a sheet can't hide or move one.
 - **Older figures:** those before the lattice still use `offset`, which a sheet can't move, and their pages keep their own palettes.

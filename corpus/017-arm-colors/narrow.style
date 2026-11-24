@@ -1,0 +1,13 @@
+// The same figure for a phone, after `plain.style`: still a pair side by side, as the blog keeps
+// its facets, with panels about as big as a phone draws them, so a pixel here is about a pixel
+// there. Lines and points are thinner to match.
+style panels { columns: 2; gap: 8px; title: 20px }
+style panel { width: 168px; height: 160px }
+style title { size: 0.7em }
+style spiral_circles { width: 0.5px }
+style arm_curves, ring_curves { width: 1.25px }
+style grid_rows { width: 1.25px }
+style grid_points { radius: 2.75px }
+style one, zero { radius: 2.5px }
+style period_arrow { width: 2px; head: 10px }
+style label { size: 0.88em; distance: 0.82em }

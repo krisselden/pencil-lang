@@ -113,3 +113,28 @@ fn the_default_ink_turns_over_with_the_paper_on_both() {
         passes(check_at(name, doc, sheet, time));
     }
 }
+
+/// Each line of a collection in its own color: where lines of two colors cross, the one covering
+/// a pixel more shows there, and the first drawn of two that cover it alike, on the GPU by a depth
+/// test and on the CPU by comparing. Dots and circles' rims too, blended as SVG does and by adding
+/// light, on a dark paper where it shows.
+#[test]
+fn lines_of_their_own_color_cross_alike() {
+    for (blend, paper) in [("gamma", "white"), ("add", "rgb(20, 20, 30)")] {
+        passes(check(
+            &format!("inked-{blend}"),
+            "viewport { x: -4..4, y: -4..4 }
+             curves rays = parametric (t): t·exp(i·(k·π / 7)) for t in -4..4 for k in 0..6
+             curves rings = parametric (t): (0.5 + 0.4·k)·exp(i·t) for t in 0..2·π for k in 0..6
+             dots d = (0.6·k - 2, 0.3·k - 1) for k in 0..6
+             circles c = circle((k - 3, 2.5), (k - 3.35, 2.5)) for k in 0..6",
+            &format!(
+                "style paper {{ fill: {paper} }}
+                 style rays {{ stroke: hue(k / 7) / 3; width: 1px + 0.5px·k; blend: {blend} }}
+                 style rings {{ stroke: hue(k / 7 + 0.5) / 3; width: 2.5px; blend: {blend} }}
+                 style d {{ fill: hue(k / 7 + 0.25); radius: 4px; blend: {blend} }}
+                 style c {{ stroke: mix(black, hue(k / 7), 0.7); width: 2px; blend: {blend} }}"
+            ),
+        ));
+    }
+}

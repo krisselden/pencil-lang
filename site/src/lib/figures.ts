@@ -294,6 +294,56 @@ export const DEMOS: Demo[] = [
     paused: true,
   },
   {
+    id: 'arm-colors',
+    tier: 'primary',
+    number: '017',
+    title: 'Coloring the spiral by arm',
+    about:
+      'Each circle is colored by which row of the grid it’s on, along ω, 1 or 1 + ω, wrapped around by the number of arms, which is how many rows the period crosses. Each arm’s exact curve runs through its circles, and on the grid each arm is a straight row. Where the rows run along the period they close into rings. The second look adds the period A, which crosses one row of each arm.',
+    label:
+      'A Doyle spiral with each circle colored by its arm and each arm’s curve drawn through its circles, beside the same grid flat, where each arm is a straight row.',
+    folder: 'corpus/017-arm-colors',
+    looks: [
+      {
+        name: 'plain.style',
+        pen: 'corpus/017-arm-colors/arm-colors.pen',
+        sheets: [THEME, 'corpus/017-arm-colors/plain.style'],
+        narrow: ['corpus/017-arm-colors/narrow.style'],
+        dark: [DARK],
+        playground: 'arm-colors',
+      },
+      {
+        name: 'period.style',
+        pen: 'corpus/017-arm-colors/arm-colors.pen',
+        sheets: [THEME, 'corpus/017-arm-colors/plain.style', 'corpus/017-arm-colors/period.style'],
+        narrow: ['corpus/017-arm-colors/narrow.style'],
+        dark: [DARK],
+        playground: 'arm-colors-period',
+      },
+    ],
+  },
+  {
+    id: 'camera-log',
+    tier: 'primary',
+    number: '018',
+    title: 'The camera in log space',
+    about:
+      'A camera at c sees the spiral times e^(−c), so in log space its square screen is a region with a wavy edge that slides by c. Steps of 1 + ω line the circles up with where they started at every whole step, and the arm colors too after p = 2; a pure zoom as far never lines up.',
+    label:
+      'Left, the circles’ centers in log space colored by arm, with the camera’s view shaded left of a wavy edge that slides as it moves. Right, what the camera sees, over a faint copy of where it started.',
+    folder: 'corpus/018-camera-log',
+    looks: [
+      {
+        pen: 'corpus/018-camera-log/camera-log.pen',
+        sheets: [THEME, 'corpus/018-camera-log/plain.style'],
+        narrow: ['corpus/018-camera-log/narrow.style'],
+        dark: [DARK],
+        playground: 'camera-log',
+      },
+    ],
+    paused: true,
+  },
+  {
     id: 'explainer',
     tier: 'primary',
     number: 'Lab',

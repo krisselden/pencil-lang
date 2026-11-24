@@ -446,6 +446,38 @@ fn looks() -> Vec<(&'static str, Vec<&'static str>)> {
             vec![THEME, "corpus/016-unwrap/plain.style"],
         ),
         (
+            "corpus/017-arm-colors/arm-colors.pen",
+            vec![THEME, "corpus/017-arm-colors/plain.style"],
+        ),
+        (
+            "corpus/017-arm-colors/arm-colors.pen",
+            vec![
+                THEME,
+                "corpus/017-arm-colors/plain.style",
+                "corpus/017-arm-colors/period.style",
+            ],
+        ),
+        (
+            "corpus/017-arm-colors/arm-colors.pen",
+            vec![
+                THEME,
+                "corpus/017-arm-colors/plain.style",
+                "corpus/017-arm-colors/narrow.style",
+            ],
+        ),
+        (
+            "corpus/018-camera-log/camera-log.pen",
+            vec![THEME, "corpus/018-camera-log/plain.style"],
+        ),
+        (
+            "corpus/018-camera-log/camera-log.pen",
+            vec![
+                THEME,
+                "corpus/018-camera-log/plain.style",
+                "corpus/018-camera-log/narrow.style",
+            ],
+        ),
+        (
             "lab/explainer/limacon.pen",
             vec![
                 THEME,

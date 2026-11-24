@@ -543,6 +543,9 @@ pub struct Frame<'a> {
     sided: Vec<crate::Sided>,
     /// One coverage buffer per line stroke, in mark order.
     coverage: Vec<Vec<f64>>,
+    /// For a stroke whose lines each have their own color, which one covers each pixel most, as
+    /// its row in `Prepared::colors` plus one. Empty for every other.
+    inks: Vec<Vec<f32>>,
 }
 
 impl<'a> Frame<'a> {
@@ -554,11 +557,21 @@ impl<'a> Frame<'a> {
     ) -> Result<Self, Error> {
         let dpr = frame::design_scale(figure, width).unwrap_or(1.0);
         let prepared = frame::prepare(figure, inputs, width, height, dpr)?;
-        let coverage = prepared
+        let (coverage, inks) = prepared
             .strokes
             .iter()
-            .map(|segments| stroke::rasterize(segments, width, height))
-            .collect();
+            .enumerate()
+            .map(|(layer, segments)| {
+                let inks = prepared.inks.get(layer).map_or(&[][..], |rows| rows);
+                if inks.is_empty() {
+                    (stroke::rasterize(segments, width, height), Vec::new())
+                } else {
+                    stroke::rasterize_inked(segments, inks, width, height)
+                        .into_iter()
+                        .unzip()
+                }
+            })
+            .unzip();
         let mut env = frame_env(figure, inputs)?;
         prepared.units(&mut env);
         Ok(Self {
@@ -569,6 +582,7 @@ impl<'a> Frame<'a> {
             sided: figure.sided(),
             prepared,
             coverage,
+            inks,
         })
     }
 
@@ -579,6 +593,21 @@ impl<'a> Frame<'a> {
             return 0.0;
         }
         self.coverage[layer][(y * w + x) as usize]
+    }
+
+    /// The color of the line that covers a pixel most, for a stroke whose lines each have their
+    /// own: black where none does, which nothing shows.
+    fn line_ink(&self, layer: usize, px: f64, py: f64) -> [f64; 3] {
+        let (x, y) = (px.floor() as i64, py.floor() as i64);
+        let (w, h) = (self.width as i64, self.height as i64);
+        let ink = match self.inks[layer].get((y * w + x) as usize) {
+            Some(ink) if x >= 0 && y >= 0 && x < w && y < h => *ink as usize,
+            _ => 0,
+        };
+        match ink.checked_sub(1) {
+            Some(row) => std::array::from_fn(|i| f64::from(self.prepared.colors[row * 4 + i])),
+            None => [0.0; 3],
+        }
     }
 
     /// The linear color at a pixel center, shaded in mark order over the paper.
@@ -756,18 +785,24 @@ impl<'a> Frame<'a> {
             let Some(stroke_color) = &style.stroke else {
                 continue;
             };
-            let coverage = if style.stroke_is_line(&mark.form) {
+            let inked = crate::style::inked(mark, style);
+            let (coverage, ink) = if style.stroke_is_line(&mark.form) {
                 let c = self.line_coverage(layer, px, py);
+                let ink = inked.then(|| self.line_ink(layer, px, py));
                 layer += 1;
-                c
+                (c, ink)
             } else if let Some((dist_px, n)) = measured {
                 let half = frame::stroke_width(style, &env)? / 2.0;
                 let d = dist_px.abs();
-                box_coverage(half - d, n.0, n.1) - box_coverage(-half - d, n.0, n.1)
+                let c = box_coverage(half - d, n.0, n.1) - box_coverage(-half - d, n.0, n.1);
+                (c, None)
             } else {
-                0.0
+                (0.0, None)
             };
-            let top = to_blend(color(stroke_color, &env)?, style.blend);
+            let top = match ink {
+                Some(ink) => to_blend(ink, style.blend),
+                None => to_blend(color(stroke_color, &env)?, style.blend),
+            };
             let under = to_blend(out, style.blend);
             let mixed = if style.blend == Blend::Add {
                 std::array::from_fn(|i| under[i] + top[i] * coverage * opacity)

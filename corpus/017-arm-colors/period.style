@@ -1,0 +1,3 @@
+// The second placement, after `plain.style`: the period A from 0, which crosses one row of each
+// arm. The page starts it at p = 2 and q = 7 (`params="p: 2; q: 7"`).
+style period_arrow, name_period { show: 1 }

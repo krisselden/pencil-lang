@@ -3273,3 +3273,619 @@ fn the_hearts_light_reaches_both_foci_at_every_size() {
         }
     }
 }
+
+/// A Doyle spiral's map for any (p, q), worked out here from the skew the figure solved for: grid
+/// points a + bω, their logs u = S(T(w)), and centers eᵘ.
+struct Doyle {
+    p: f64,
+    q: f64,
+    mu: f64,
+    nu: f64,
+}
+
+type C = [f64; 2];
+
+fn c_mul(a: C, b: C) -> C {
+    [a[0] * b[0] - a[1] * b[1], a[0] * b[1] + a[1] * b[0]]
+}
+
+fn c_exp(u: C) -> C {
+    [u[0].exp() * u[1].cos(), u[0].exp() * u[1].sin()]
+}
+
+impl Doyle {
+    fn from(env: &pencil_core::eval::Env) -> Self {
+        Doyle {
+            p: env.get("p").unwrap(),
+            q: env.get("q").unwrap(),
+            mu: env.get("mu").unwrap(),
+            nu: env.get("nu").unwrap(),
+        }
+    }
+    fn grid(a: f64, b: f64) -> C {
+        [a - b / 2.0, b * 3f64.sqrt() / 2.0]
+    }
+    /// α and β of A = α + βω.
+    fn period(&self) -> (i64, i64) {
+        (-self.p as i64, (self.q - self.p) as i64)
+    }
+    /// u = S(T(w)), with T(w) = 2πi·w / A and S(x + iy) = νx / (1 − iμ) + iy.
+    fn log(&self, w: C) -> C {
+        let big = Self::grid(-self.p, self.q - self.p);
+        let d = big[0] * big[0] + big[1] * big[1];
+        let ratio = [
+            (w[0] * big[0] + w[1] * big[1]) / d,
+            (w[1] * big[0] - w[0] * big[1]) / d,
+        ];
+        let tau = std::f64::consts::TAU;
+        let turn = [-tau * ratio[1], tau * ratio[0]];
+        let s = self.nu * turn[0] / (1.0 + self.mu * self.mu);
+        [s, s * self.mu + turn[1]]
+    }
+    fn center(&self, w: C) -> C {
+        c_exp(self.log(w))
+    }
+    /// The radius ratio: the circle at ω touches the circle at 1 when its radius is k|z|.
+    fn k(&self) -> f64 {
+        let z = self.center(Self::grid(0.0, 1.0));
+        let (to_one, out) = ((z[0] - 1.0).hypot(z[1]), z[0].hypot(z[1]));
+        to_one / (out + 1.0)
+    }
+    /// Twice w's inner product with A, a whole number that rises by 2|A|² from a circle's copy to
+    /// the next, so that −|A|² ≤ N < |A|² picks one of each.
+    fn twice_along(&self, a: i64, b: i64) -> i64 {
+        let (alpha, beta) = self.period();
+        2 * a * alpha + 2 * b * beta - a * beta - b * alpha
+    }
+    fn square(&self) -> i64 {
+        let (alpha, beta) = self.period();
+        alpha * alpha - alpha * beta + beta * beta
+    }
+}
+
+/// The (a, b) a collection draws are exactly one of each circle whose Re u is in the window: none
+/// twice, each with −|A|² ≤ N < |A|², and every lattice point of the window has its copy among them.
+fn one_per_period(drawn: &[(i64, i64)], doyle: &Doyle, window: [f64; 2], case: &str) {
+    let set: std::collections::HashSet<_> = drawn.iter().copied().collect();
+    assert_eq!(set.len(), drawn.len(), "{case}: a circle drawn twice");
+    let size = doyle.square();
+    let inside = |a: i64, b: i64| {
+        let re = doyle.log(Doyle::grid(a as f64, b as f64))[0];
+        re >= window[0] - 1e-9 && re <= window[1] + 1e-9
+    };
+    for &(a, b) in drawn {
+        assert!(inside(a, b), "{case}: ({a}, {b}) is outside the window");
+        let n = doyle.twice_along(a, b);
+        assert!((-size..size).contains(&n), "{case}: ({a}, {b}) has N = {n}");
+    }
+    // Every point of a box far bigger than the window, brought to its copy with N in range.
+    let (alpha, beta) = doyle.period();
+    let mut expected = std::collections::HashSet::new();
+    for a in -60..=60 {
+        for b in -60..=60 {
+            if !inside(a, b) {
+                continue;
+            }
+            let j = (doyle.twice_along(a, b) + size).div_euclid(2 * size);
+            let copy = (a - j * alpha, b - j * beta);
+            assert!(
+                copy.0.abs() < 50 && copy.1.abs() < 50,
+                "{case}: the box is too small for {copy:?}"
+            );
+            expected.insert(copy);
+        }
+    }
+    let missing: Vec<_> = expected.difference(&set).collect();
+    assert!(missing.is_empty(), "{case}: not drawn: {missing:?}");
+    assert_eq!(expected.len(), set.len(), "{case}");
+}
+
+fn arm_colors_with(more: &[&str]) -> pencil_core::Composition {
+    let [theme, plain] = [
+        square_read("theme.style"),
+        square_read("017-arm-colors/plain.style"),
+    ];
+    let extra: Vec<String> = more.iter().map(|f| square_read(f)).collect();
+    let mut sheets = vec![theme.as_str(), plain.as_str()];
+    sheets.extend(extra.iter().map(String::as_str));
+    pencil_core::compose(&square_read("017-arm-colors/arm-colors.pen"), &sheets).unwrap()
+}
+
+fn panel<'a>(composition: &'a pencil_core::Composition, id: &str) -> &'a pencil_core::Figure {
+    &composition
+        .panels
+        .iter()
+        .find(|p| p.id == id)
+        .unwrap_or_else(|| panic!("no panel `{id}`"))
+        .figure
+}
+
+#[test]
+fn arm_colors_ir_matches_golden() {
+    let composition = arm_colors_with(&[]);
+    let scenes: Vec<_> = composition
+        .panels
+        .iter()
+        .map(|p| p.figure.scene.to_json())
+        .collect();
+    let actual = golden_text(&serde_json::Value::Array(scenes));
+    let golden =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus/017-arm-colors/expected.ir.json");
+    if std::env::var_os("UPDATE_GOLDENS").is_some() {
+        std::fs::write(&golden, &actual).unwrap();
+    }
+    assert_eq!(actual, std::fs::read_to_string(golden).unwrap());
+}
+
+fn arm_inputs(p: f64, q: f64, along: usize) -> pencil_core::frame::Inputs {
+    pencil_core::frame::Inputs {
+        time: 0.0,
+        params: vec![
+            ("q".to_string(), q),
+            ("p".to_string(), p),
+            ("along.index".to_string(), along as f64),
+        ],
+    }
+}
+
+/// The grid direction arms run along, as the choice lists them, its row of a + bω counted from
+/// the left of it, and how many arms there are: the rows the period A = −p + (q − p)ω crosses.
+fn arm_direction(along: usize, p: i64, q: i64) -> (C, fn(i64, i64) -> i64, i64) {
+    match along {
+        0 => (Doyle::grid(0.0, 1.0), |a, _| -a, p),
+        1 => (Doyle::grid(1.0, 0.0), |_, b| b, q - p),
+        _ => (Doyle::grid(1.0, 1.0), |a, b| b - a, q),
+    }
+}
+
+/// For every q and p the sliders reach: one circle of each period, as far in as one is big enough
+/// to see and out past the view's corner, and few enough to fill.
+#[test]
+fn arm_colors_draws_one_circle_per_period_at_every_p_and_q() {
+    use pencil_core::eval::frame_env;
+    let composition = arm_colors_with(&[]);
+    let spiral = panel(&composition, "spiral_view");
+    for q in 3..=16 {
+        for p in 0..=q {
+            let case = format!("p = {p}, q = {q}");
+            let env = frame_env(spiral, &arm_inputs(p as f64, q as f64, 0)).unwrap();
+            let doyle = Doyle::from(&env);
+            let k = doyle.k();
+            assert!((k - env.get("k").unwrap()).abs() < 1e-12, "{case}");
+            let window = [(0.03 / k).ln(), (3.4 / (1.0 - k)).ln()];
+            let drawn = drawn_pairs(spiral, &env, "spiral_circles");
+            one_per_period(&drawn, &doyle, window, &case);
+            assert!(
+                drawn.len() <= pencil_core::frame::MAX_SIDED_CIRCLES,
+                "{case}: {} circles",
+                drawn.len()
+            );
+        }
+    }
+}
+
+/// Each circle is colored by its arm, its row mod the number of arms (mod q for rings), and its
+/// arm's curve, one row carried into the spiral, passes through its center, within the stretch
+/// that's drawn. A row and the row n over are one arm: the same circles, a period apart.
+#[test]
+fn each_arm_passes_through_its_circles() {
+    use pencil_core::{eval::frame_env, eval::real, ir::Form, ir::Shape, stroke::Instance};
+    let composition = arm_colors_with(&[]);
+    let spiral = panel(&composition, "spiral_view");
+    let range_of = |id: &str, env: &pencil_core::eval::Env| match mark_form(spiral, id) {
+        Form::Many {
+            shape: Shape::Curves(arc),
+            ..
+        } => [
+            real(&arc.range[0], env).unwrap(),
+            real(&arc.range[1], env).unwrap(),
+        ],
+        _ => unreachable!(),
+    };
+    let mut checked = 0;
+    for (p, q) in [
+        (0, 3),
+        (1, 3),
+        (3, 3),
+        (0, 8),
+        (3, 8),
+        (8, 8),
+        (2, 7),
+        (5, 13),
+        (16, 16),
+        (7, 16),
+        (1, 16),
+    ] {
+        for along in 0..3 {
+            let case = format!("p = {p}, q = {q}, along {along}");
+            let env = frame_env(spiral, &arm_inputs(p as f64, q as f64, along)).unwrap();
+            let doyle = Doyle::from(&env);
+            let k = doyle.k();
+            let (d, row, arms) = arm_direction(along, p, q);
+            let wrap = if arms == 0 { q } else { arms };
+            let next_row = c_mul(d, Doyle::grid(0.0, 1.0));
+            let (alpha, beta) = doyle.period();
+            assert_eq!(
+                row(alpha, beta).abs(),
+                arms,
+                "{case}: A crosses {arms} rows"
+            );
+            for (a, b) in drawn_pairs(spiral, &env, "spiral_circles") {
+                let (local, made) = instance_of(
+                    spiral,
+                    &env,
+                    "spiral_circles",
+                    &[("a", a as f64), ("b", b as f64)],
+                );
+                let Some(Instance::Circle(center, r)) = made else {
+                    panic!("{case}: ({a}, {b}) is {made:?}");
+                };
+                let z = doyle.center(Doyle::grid(a as f64, b as f64));
+                assert!(near(center, z, 1e-9 * z[0].hypot(z[1]).max(1.0)), "{case}");
+                assert!((r - k * z[0].hypot(z[1])).abs() < 1e-9, "{case}");
+                let arm = row(a, b).rem_euclid(wrap);
+                assert_eq!(local.get("arm").unwrap(), arm as f64, "{case}: ({a}, {b})");
+                // The point on its arm's row, r·(dω) + t·d, that's this circle or a copy of it.
+                let (curve, mut env, start_row, period_steps) = if arms > 0 {
+                    let steps = (arm - row(a, b)) / row(alpha, beta);
+                    assert_eq!(steps * row(alpha, beta), arm - row(a, b), "{case}");
+                    let mut env = env.clone();
+                    env.set("r", arm as f64);
+                    let w = (a + steps * alpha, b + steps * beta);
+                    ("arm_curves", env, arm, (w, None))
+                } else {
+                    let ring_row = row(a, b);
+                    let sign = env.get("ring_sign").unwrap();
+                    let (env, _) = instance_of(
+                        spiral,
+                        &env,
+                        "ring_curves",
+                        &[("m", ring_row as f64 * sign)],
+                    );
+                    assert_eq!(env.get("r").unwrap(), ring_row as f64, "{case}");
+                    ("ring_curves", env, ring_row, ((a, b), Some(q as f64)))
+                };
+                let ((wa, wb), turn) = period_steps;
+                let w = Doyle::grid(wa as f64, wb as f64);
+                let start = [
+                    next_row[0] * start_row as f64,
+                    next_row[1] * start_row as f64,
+                ];
+                let mut t = (w[0] - start[0]) * d[0] + (w[1] - start[1]) * d[1];
+                if let Some(turn) = turn {
+                    t = t.rem_euclid(turn);
+                }
+                let [lo, hi] = range_of(curve, &env);
+                assert!(
+                    t >= lo.min(hi) - 1e-9 && t <= lo.max(hi) + 1e-9,
+                    "{case}: ({a}, {b}) is at {t} on its arm, drawn {lo}..{hi}"
+                );
+                env.set("t", t);
+                let on_arm = arc_point(spiral, &env, curve, t);
+                assert!(
+                    near(on_arm, center, 1e-9 * z[0].hypot(z[1]).max(1.0)),
+                    "{case}: ({a}, {b}): {on_arm:?} against {center:?}"
+                );
+                checked += 1;
+            }
+        }
+    }
+    assert!(checked > 2000, "{checked}");
+}
+
+/// On the grid, each row's line is the row its number says, and each point is colored by the arm
+/// of its row, as its circle is.
+#[test]
+fn the_grids_rows_and_points_are_colored_by_arm() {
+    use pencil_core::{eval::frame_env, stroke::Instance};
+    let composition = arm_colors_with(&[]);
+    let grid = panel(&composition, "grid_view");
+    for (p, q) in [(0, 8), (3, 8), (8, 8), (2, 7), (5, 16)] {
+        for along in 0..3 {
+            let case = format!("p = {p}, q = {q}, along {along}");
+            let env = frame_env(grid, &arm_inputs(p as f64, q as f64, along)).unwrap();
+            let (d, row, arms) = arm_direction(along, p, q);
+            let wrap = if arms == 0 { q } else { arms };
+            // A row's number is how far across the direction it is, in rows of √3/2.
+            let across = |z: C| (d[0] * z[1] - d[1] * z[0]) / (3f64.sqrt() / 2.0);
+            let Some(rows) = drawn_rows(grid, &env, "grid_rows") else {
+                panic!("{case}");
+            };
+            assert!(rows.len() > 5, "{case}");
+            for r in rows {
+                let mut env = env.clone();
+                env.set("r", r as f64);
+                for s in [-3.0, 0.5, 4.0] {
+                    let at = arc_point(grid, &env, "grid_rows", s);
+                    assert!((across(at) - r as f64).abs() < 1e-9, "{case}: row {r}");
+                }
+            }
+            for (a, b) in drawn_pairs(grid, &env, "grid_points") {
+                let (local, made) = instance_of(
+                    grid,
+                    &env,
+                    "grid_points",
+                    &[("a", a as f64), ("b", b as f64)],
+                );
+                let Some(Instance::Dot(at)) = made else {
+                    panic!("{case}");
+                };
+                assert!(near(at, Doyle::grid(a as f64, b as f64), 1e-12), "{case}");
+                assert!((across(at) - row(a, b) as f64).abs() < 1e-9, "{case}");
+                assert_eq!(
+                    local.get("arm").unwrap(),
+                    row(a, b).rem_euclid(wrap) as f64,
+                    "{case}: ({a}, {b})"
+                );
+            }
+        }
+    }
+}
+
+/// The whole numbers a collection's one variable runs over this frame.
+fn drawn_rows(
+    figure: &pencil_core::Figure,
+    env: &pencil_core::eval::Env,
+    id: &str,
+) -> Option<Vec<i64>> {
+    use pencil_core::{eval::real, ir::Form};
+    let Form::Many { vars, .. } = mark_form(figure, id) else {
+        return None;
+    };
+    let [lo, hi] = [&vars[0].1[0], &vars[0].1[1]].map(|e| real(e, env).unwrap());
+    Some((lo.ceil() as i64..=hi.floor() as i64).collect())
+}
+
+/// Each arm's color reaches the frame: the spiral's curves, the grid's rows and its points are
+/// each drawn in their own arm's hue, the color the sheet works out for each one.
+#[test]
+fn each_arm_is_drawn_in_its_own_hue() {
+    use pencil_core::{eval::hue, frame::Inputs, terms::Estimate};
+    let composition = arm_colors_with(&[]);
+    let inputs: Inputs = arm_inputs(3.0, 8.0, 0);
+    let [w, h] = composition.size;
+    let frames = composition
+        .prepare(&inputs, w as u32, h as u32, 1.0, None, &Estimate)
+        .unwrap();
+    let hues: Vec<[f32; 3]> = (0..3)
+        .map(|r| hue(r as f64 / 3.0).map(|c| c as f32))
+        .collect();
+    for frame in &frames {
+        let p = &frame.prepared;
+        let colors: Vec<[f32; 3]> = p.colors.chunks(4).map(|c| [c[0], c[1], c[2]]).collect();
+        assert!(!colors.is_empty());
+        // Every line of its own color is one of the three arms' hues, and all three are there.
+        for color in &colors {
+            assert!(hues.contains(color), "{color:?}");
+        }
+        for want in &hues {
+            assert!(colors.contains(want), "{want:?}");
+        }
+        // And each segment of those strokes names one of them.
+        for (segments, inks) in p.strokes.iter().zip(&p.inks) {
+            if inks.is_empty() {
+                continue;
+            }
+            assert_eq!(
+                inks.len(),
+                segments.len() / pencil_core::stroke::FLOATS_PER_SEGMENT
+            );
+            assert!(
+                inks.iter()
+                    .all(|&row| row >= 1.0 && row as usize <= colors.len())
+            );
+        }
+    }
+}
+
+/// The second placement's sheet shows the period, from 0 to A, which crosses one row of each arm.
+#[test]
+fn the_period_sheet_draws_a_from_zero() {
+    use pencil_core::{eval::frame_env, eval::real, ir::Form};
+    let composition = arm_colors_with(&["017-arm-colors/period.style"]);
+    let grid = panel(&composition, "grid_view");
+    let env = frame_env(grid, &arm_inputs(2.0, 7.0, 0)).unwrap();
+    let Form::Arrow { from, to } = mark_form(grid, "period_arrow") else {
+        panic!("the period is an arrow");
+    };
+    let at =
+        |p: &[pencil_core::ir::Expr; 2]| [real(&p[0], &env).unwrap(), real(&p[1], &env).unwrap()];
+    assert_eq!(at(from), [0.0, 0.0]);
+    assert!(near(at(to), Doyle::grid(-2.0, 5.0), 1e-12));
+    let shown = |composition: &pencil_core::Composition| {
+        let grid = panel(composition, "grid_view");
+        let i = grid
+            .scene
+            .marks
+            .iter()
+            .position(|m| m.id == "period_arrow")
+            .unwrap();
+        let env = frame_env(grid, &arm_inputs(2.0, 7.0, 0)).unwrap();
+        real(grid.styles.marks[i].show.as_ref().unwrap(), &env).unwrap() > 0.0
+    };
+    assert!(shown(&composition));
+    assert!(!shown(&arm_colors_with(&[])));
+}
+
+fn camera_log() -> pencil_core::Composition {
+    pencil_core::compose(
+        &square_read("018-camera-log/camera-log.pen"),
+        &[
+            &square_read("theme.style"),
+            &square_read("018-camera-log/plain.style"),
+        ],
+    )
+    .unwrap()
+}
+
+#[test]
+fn camera_log_ir_matches_golden() {
+    let composition = camera_log();
+    let scenes: Vec<_> = composition
+        .panels
+        .iter()
+        .map(|p| p.figure.scene.to_json())
+        .collect();
+    let actual = golden_text(&serde_json::Value::Array(scenes));
+    let golden =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus/018-camera-log/expected.ir.json");
+    if std::env::var_os("UPDATE_GOLDENS").is_some() {
+        std::fs::write(&golden, &actual).unwrap();
+    }
+    assert_eq!(actual, std::fs::read_to_string(golden).unwrap());
+}
+
+fn camera_inputs(t: f64, path: usize) -> pencil_core::frame::Inputs {
+    pencil_core::frame::Inputs {
+        time: 0.0,
+        params: vec![
+            ("t".to_string(), t),
+            ("path.index".to_string(), path as f64),
+        ],
+    }
+}
+
+/// Where the camera is in log space, from the arrow that shows how far it has gone.
+fn camera_at(figure: &pencil_core::Figure, env: &pencil_core::eval::Env) -> C {
+    use pencil_core::{eval::real, ir::Form};
+    let Form::Arrow { to, .. } = mark_form(figure, "moved") else {
+        panic!("`moved` is an arrow");
+    };
+    [real(&to[0], env).unwrap(), real(&to[1], env).unwrap()]
+}
+
+/// Along 1 + ω the camera moves t steps of the grid, log(c(1 + ω)), and a zoom moves as far
+/// straight out, which scales the picture without turning it. The edge of what it shows, and the
+/// region it bounds, are the log of its square screen: e^{−c} of each of their points is on the
+/// square's edge, max(|x|, |y|) = H.
+#[test]
+fn the_cameras_view_is_the_log_of_its_square() {
+    use pencil_core::{eval::frame_env, eval::real, ir::Form, ir::Part};
+    let composition = camera_log();
+    let log = panel(&composition, "log_view");
+    let region_arc = match mark_form(log, "seen_region") {
+        Form::Region(parts) => parts
+            .iter()
+            .find_map(|part| match part {
+                Part::Arc(arc) => Some(arc.clone()),
+                Part::Point(_) => None,
+            })
+            .unwrap(),
+        _ => panic!("`seen_region` is a region"),
+    };
+    for t in [0.0, 0.37, 1.0, 1.8, 2.5] {
+        let step_env = frame_env(log, &camera_inputs(t, 0)).unwrap();
+        let doyle = Doyle {
+            p: 2.0,
+            q: 7.0,
+            mu: step_env.get("mu").unwrap(),
+            nu: step_env.get("nu").unwrap(),
+        };
+        let step = doyle.log(Doyle::grid(1.0, 1.0));
+        let along = camera_at(log, &step_env);
+        assert!(near(along, [t * step[0], t * step[1]], 1e-12), "t = {t}");
+        let zoom_env = frame_env(log, &camera_inputs(t, 1)).unwrap();
+        let zoom = camera_at(log, &zoom_env);
+        assert_eq!(zoom[1], 0.0, "t = {t}: a zoom doesn't turn");
+        assert!(
+            (zoom[0] - t * step[0].hypot(step[1])).abs() < 1e-12,
+            "t = {t}"
+        );
+        for (env, c) in [(&step_env, along), (&zoom_env, zoom)] {
+            for i in 0..=90 {
+                let y = -4.5 + 9.0 * i as f64 / 90.0;
+                for (id, at) in [("camera_edge", c), ("start_edge", [0.0, 0.0])] {
+                    let u = arc_point(log, env, id, y);
+                    assert_eq!(u[1], y);
+                    let z = c_exp([u[0] - at[0], u[1] - at[1]]);
+                    assert!(
+                        (z[0].abs().max(z[1].abs()) - 1.6).abs() < 1e-12,
+                        "{id}, t = {t}, y = {y}: {z:?}"
+                    );
+                }
+                let mut env = env.clone();
+                env.set(&region_arc.var, y);
+                let bound = [
+                    real(&region_arc.point[0], &env).unwrap(),
+                    real(&region_arc.point[1], &env).unwrap(),
+                ];
+                assert_eq!(bound, arc_point(log, &env, "camera_edge", y));
+            }
+        }
+    }
+}
+
+/// After whole steps along 1 + ω every circle the camera sees is one of the circles it started on,
+/// and in an arm of the same color after p = 2 steps, the other color after one. A zoom by the same
+/// amount puts no circle on one it started on.
+#[test]
+fn steps_line_the_circles_up_and_a_zoom_does_not() {
+    use pencil_core::{eval::frame_env, stroke::Instance};
+    let composition = camera_log();
+    let view = panel(&composition, "camera_view");
+    let circles = |env: &pencil_core::eval::Env, id: &str| -> Vec<(i64, C, f64)> {
+        drawn_pairs(view, env, id)
+            .into_iter()
+            .filter_map(|(a, b)| {
+                match instance_of(view, env, id, &[("a", a as f64), ("b", b as f64)]).1 {
+                    Some(Instance::Circle(c, r)) => Some((a, c, r)),
+                    _ => None,
+                }
+            })
+            // Big enough to matter, and on the screen.
+            .filter(|(_, c, r)| *r > 0.01 && c[0].abs() - r < 1.6 && c[1].abs() - r < 1.6)
+            .collect()
+    };
+    for (t, path) in [(1.0, 0), (2.0, 0), (1.0, 1), (0.5, 0), (2.0, 1)] {
+        let env = frame_env(view, &camera_inputs(t, path)).unwrap();
+        let start = circles(&env, "start_circles");
+        let seen = circles(&env, "seen_circles");
+        assert!(
+            seen.len() > 20 && start.len() > 20,
+            "{} {}",
+            seen.len(),
+            start.len()
+        );
+        let lined = path == 0 && t.fract() == 0.0;
+        for &(a, c, r) in &seen {
+            let found = start
+                .iter()
+                .find(|(_, s, sr)| near(*s, c, 1e-9) && (sr - r).abs() < 1e-9);
+            match (lined, found) {
+                (true, Some((sa, _, _))) => {
+                    let same = (a - sa).rem_euclid(2) == 0;
+                    assert_eq!(same, t == 2.0, "t = {t}: arm of a = {a} against {sa}");
+                }
+                (true, None) => panic!("t = {t}: a circle at {c:?} isn't one it started on"),
+                (false, Some(_)) => panic!("t = {t}, path {path}: {c:?} lines up"),
+                (false, None) => {}
+            }
+        }
+    }
+}
+
+/// Both panels' circles are one of each period, before the camera moves and after.
+#[test]
+fn the_camera_sees_one_circle_per_period() {
+    use pencil_core::eval::frame_env;
+    let composition = camera_log();
+    let view = panel(&composition, "camera_view");
+    for (t, path) in [(0.0, 0), (1.3, 0), (2.5, 0), (2.5, 1)] {
+        let env = frame_env(view, &camera_inputs(t, path)).unwrap();
+        let doyle = Doyle {
+            p: 2.0,
+            q: 7.0,
+            mu: env.get("mu").unwrap(),
+            nu: env.get("nu").unwrap(),
+        };
+        let k = doyle.k();
+        let window = [(0.004 / k).ln(), (1.6 * 2f64.sqrt() / (1.0 - k)).ln()];
+        let moved = camera_at(panel(&composition, "log_view"), &env)[0];
+        let case = format!("t = {t}, path {path}");
+        let start = drawn_pairs(view, &env, "start_circles");
+        one_per_period(&start, &doyle, window, &case);
+        let seen = drawn_pairs(view, &env, "seen_circles");
+        one_per_period(&seen, &doyle, [window[0] + moved, window[1] + moved], &case);
+        assert!(start.len().max(seen.len()) <= pencil_core::frame::MAX_SIDED_CIRCLES);
+    }
+}

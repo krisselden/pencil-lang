@@ -1,0 +1,22 @@
+// The site's look: the two arms along ω in the accent and blue, the camera's view shaded in the
+// accent, and where it started dashed.
+style panels { columns: 2; gap: 14px; title: 26px }
+style panel { width: 400px; height: 400px }
+style formula { fill: muted }
+
+// Even arms in the accent, odd ones in blue.
+fn arm_color(a) = mix(accent, blue, mod(a, 2))
+
+style seen_region { fill: accent; fill_opacity: 0.1 }
+style start_edge { stroke: muted; width: 1.25px; dash: 5px; gap: 4px }
+style camera_edge { stroke: accent; width: 2px }
+style .turn { stroke: muted; width: 1px; dash: 5px; gap: 4px }
+style centers { fill: arm_color(a); radius: 3px }
+style moved { stroke: ink; width: 2.5px; show: travel - 0.05 }
+style origin { fill: ink; radius: 3.5px }
+
+style start_circles { stroke: muted; width: 1px; opacity: 0.6 }
+style seen_circles { stroke: arm_color(a); width: 1.75px }
+style seen_circles::inside { fill: arm_color(a) }
+// Not a quarter, which lands a flat fill on a rounding tie between the shader and the oracle.
+style seen_circles { fill_opacity: 0.24 }

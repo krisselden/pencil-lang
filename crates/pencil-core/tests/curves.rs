@@ -198,7 +198,8 @@ fn what_it_cant_do_is_an_error() {
         ("style c { fill_opacity: 0.5 }", "made of lines"),
         ("style c { radius: 2px }", "made of lines"),
         ("style c::inside { fill: black }", "made of lines"),
-        ("style c { stroke: rgb(s, 0, 0) }", "unknown name"),
+        // A color is per curve, not along one.
+        ("style c { stroke: rgb(t, 0, 0) }", "unknown name `t`"),
         (
             "style c { stroke: mix(white, black, self.dist) }",
             "self.dist",
@@ -217,5 +218,78 @@ fn what_it_cant_do_is_an_error() {
     ] {
         let err = build(doc, &[]).unwrap_err();
         assert!(err.to_string().contains(wanted), "{doc}: {err}");
+    }
+}
+
+/// The color at a pixel of a 160 px frame, in display values from 0 to 255.
+fn color_at(figure: &pencil_core::Figure, x: f64, y: f64) -> [u8; 3] {
+    let frame = Frame::new(figure, &Inputs::at(0.0), 160, 160).unwrap();
+    frame
+        .shade(x, y)
+        .unwrap()
+        .map(|c| (pencil_core::eval::srgb_encode(c) * 255.0).round() as u8)
+}
+
+fn display(c: [f64; 3]) -> [u8; 3] {
+    c.map(|c| (pencil_core::eval::srgb_encode(c) * 255.0).round() as u8)
+}
+
+#[test]
+fn each_curve_and_dot_can_have_its_own_color() {
+    use pencil_core::eval::hue;
+    let doc = format!(
+        "{VIEW}curves c = parametric (t): (t, s) for t in -9..-1 for s in 1..3
+         dots d = (2, s) for s in 1..3 with k = s / 3"
+    );
+    let sheet = "style paper { fill: white }
+                 style c { stroke: hue(s / 3); width: 4px }
+                 style d { fill: hue(k); radius: 3px }";
+    let figure = build(&doc, &[sheet]).unwrap();
+    for s in 1..=3 {
+        let row = 80.5 - 10.0 * s as f64;
+        let want = display(hue(s as f64 / 3.0));
+        // A curve at y = s, and a dot at (2, s), each in hue s / 3.
+        assert_eq!(color_at(&figure, 40.5, row), want, "curve {s}");
+        assert_eq!(color_at(&figure, 100.5, row), want, "dot {s}");
+    }
+    // Still one mark each, with one layer to draw into.
+    let prepared = frame::prepare(&figure, &Inputs::at(0.0), 160, 160, 1.0).unwrap();
+    assert_eq!(prepared.strokes.len(), 2);
+    assert_eq!(prepared.colors.len(), 6 * 4);
+}
+
+#[test]
+fn where_two_colors_cross_the_one_covering_more_shows_and_neither_darkens() {
+    // Two lines across each other, red at y = 0 and blue at x = 0, the blue one wider.
+    let doc = format!(
+        "{VIEW}curves c = parametric (t): (1 - s)·(t, 0) + s·(0, t) for t in -9..9 for s in 0..1"
+    );
+    let sheet = "style paper { fill: white }
+                 style c { stroke: mix(rgb(255, 0, 0), rgb(0, 0, 255), s); width: 2px + 4px·s }";
+    let figure = build(&doc, &[sheet]).unwrap();
+    // Where they cross, both cover the pixel fully, and the first drawn keeps it.
+    assert_eq!(color_at(&figure, 80.5, 80.5), [255, 0, 0]);
+    // Just off the red line, the wider blue one covers it all and red only part.
+    assert_eq!(color_at(&figure, 80.5, 81.5), [0, 0, 255]);
+    // Away from the crossing, each is its own.
+    assert_eq!(color_at(&figure, 20.5, 80.5), [255, 0, 0]);
+    assert_eq!(color_at(&figure, 80.5, 20.5), [0, 0, 255]);
+}
+
+#[test]
+fn a_color_of_its_own_reads_only_its_collection() {
+    // A single curve has no instances to read, and a dot's fill can't read another mark's names.
+    for (doc, sheet) in [
+        (
+            "curve c = parametric (t): (t, 0) for t in 0..1",
+            "style c { stroke: hue(t) }",
+        ),
+        (
+            "dots d = (s, 0) for s in 0..2\ncurves c = parametric (t): (t, u) for t in 0..1 for u in 0..2",
+            "style d { fill: hue(u) }",
+        ),
+    ] {
+        let err = build(&format!("{VIEW}{doc}"), &[sheet]).unwrap_err();
+        assert!(err.to_string().contains("unknown name"), "{sheet}: {err}");
     }
 }
