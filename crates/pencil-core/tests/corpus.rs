@@ -3428,11 +3428,12 @@ fn arm_inputs(p: f64, q: f64, along: usize) -> pencil_core::frame::Inputs {
     }
 }
 
-/// The grid direction arms run along, as the choice lists them, its row of a + bω counted from
-/// the left of it, and how many arms there are: the rows the period A = −p + (q − p)ω crosses.
+/// The grid direction arms run along, as the choice lists them, the row of a + bω along it as the
+/// site and the shader number it, and how many arms there are: the rows the period
+/// A = −p + (q − p)ω crosses.
 fn arm_direction(along: usize, p: i64, q: i64) -> (C, fn(i64, i64) -> i64, i64) {
     match along {
-        0 => (Doyle::grid(0.0, 1.0), |a, _| -a, p),
+        0 => (Doyle::grid(0.0, 1.0), |a, _| a, p),
         1 => (Doyle::grid(1.0, 0.0), |_, b| b, q - p),
         _ => (Doyle::grid(1.0, 1.0), |a, b| b - a, q),
     }
@@ -3455,11 +3456,8 @@ fn arm_colors_draws_one_circle_per_period_at_every_p_and_q() {
             let window = [(0.03 / k).ln(), (3.4 / (1.0 - k)).ln()];
             let drawn = drawn_pairs(spiral, &env, "spiral_circles");
             one_per_period(&drawn, &doyle, window, &case);
-            assert!(
-                drawn.len() <= pencil_core::frame::MAX_SIDED_CIRCLES,
-                "{case}: {} circles",
-                drawn.len()
-            );
+            // As `migration.md` says, under the 256 a collection's filled sides allow.
+            assert!(drawn.len() <= 160, "{case}: {} circles", drawn.len());
         }
     }
 }
@@ -3503,7 +3501,17 @@ fn each_arm_passes_through_its_circles() {
             let k = doyle.k();
             let (d, row, arms) = arm_direction(along, p, q);
             let wrap = if arms == 0 { q } else { arms };
-            let next_row = c_mul(d, Doyle::grid(0.0, 1.0));
+            // One row up: the direction turned by ω, and back again along ω, where rows count the
+            // other way round it.
+            let turned = c_mul(d, Doyle::grid(0.0, 1.0));
+            let next_row = [turned[0] * d[0].signum(), turned[1] * d[0].signum()];
+            assert_eq!(row(0, 0) + 1, {
+                let w = (
+                    next_row[0] + next_row[1] / 3f64.sqrt(),
+                    2.0 * next_row[1] / 3f64.sqrt(),
+                );
+                row(w.0.round() as i64, w.1.round() as i64)
+            });
             let (alpha, beta) = doyle.period();
             assert_eq!(
                 row(alpha, beta).abs(),
@@ -3586,8 +3594,8 @@ fn the_grids_rows_and_points_are_colored_by_arm() {
             let env = frame_env(grid, &arm_inputs(p as f64, q as f64, along)).unwrap();
             let (d, row, arms) = arm_direction(along, p, q);
             let wrap = if arms == 0 { q } else { arms };
-            // A row's number is how far across the direction it is, in rows of √3/2.
-            let across = |z: C| (d[0] * z[1] - d[1] * z[0]) / (3f64.sqrt() / 2.0);
+            // A row's number is how far up across the direction it is, in rows of √3/2.
+            let across = |z: C| d[0].signum() * (d[0] * z[1] - d[1] * z[0]) / (3f64.sqrt() / 2.0);
             let Some(rows) = drawn_rows(grid, &env, "grid_rows") else {
                 panic!("{case}");
             };
@@ -3636,46 +3644,271 @@ fn drawn_rows(
     Some((lo.ceil() as i64..=hi.floor() as i64).collect())
 }
 
-/// Each arm's color reaches the frame: the spiral's curves, the grid's rows and its points are
-/// each drawn in their own arm's hue, the color the sheet works out for each one.
-#[test]
-fn each_arm_is_drawn_in_its_own_hue() {
-    use pencil_core::{eval::hue, frame::Inputs, terms::Estimate};
-    let composition = arm_colors_with(&[]);
-    let inputs: Inputs = arm_inputs(3.0, 8.0, 0);
-    let [w, h] = composition.size;
-    let frames = composition
-        .prepare(&inputs, w as u32, h as u32, 1.0, None, &Estimate)
+impl Doyle {
+    /// The grid point a + bω, fractional, whose log is u: the inverse of `log`.
+    fn unlog(&self, u: C) -> C {
+        let x = u[0] * (1.0 + self.mu * self.mu) / self.nu;
+        let y = u[1] - u[0] * self.mu;
+        // w = T·A / (2πi), with T = x + iy.
+        let big = Self::grid(-self.p, self.q - self.p);
+        let tau = std::f64::consts::TAU;
+        let w = c_mul([y / tau, -x / tau], big);
+        [w[0] + w[1] / 3f64.sqrt(), 2.0 * w[1] / 3f64.sqrt()]
+    }
+}
+
+/// A line stroke of a panel's frame, by its mark's name: where each segment starts, in device pixels,
+/// and its own color if it has one, with the frame's view and size.
+type Lines = (
+    String,
+    Vec<(C, Option<[f32; 3]>)>,
+    pencil_core::ir::Viewport,
+    [f64; 2],
+);
+
+/// Each line stroke of a panel's frame.
+fn inked_lines(
+    composition: &pencil_core::Composition,
+    frames: &[pencil_core::PanelFrame],
+    panel_id: &str,
+) -> Vec<Lines> {
+    use pencil_core::stroke::FLOATS_PER_SEGMENT;
+    let i = composition
+        .panels
+        .iter()
+        .position(|p| p.id == panel_id)
         .unwrap();
-    let hues: Vec<[f32; 3]> = (0..3)
-        .map(|r| hue(r as f64 / 3.0).map(|c| c as f32))
-        .collect();
-    for frame in &frames {
-        let p = &frame.prepared;
-        let colors: Vec<[f32; 3]> = p.colors.chunks(4).map(|c| [c[0], c[1], c[2]]).collect();
-        assert!(!colors.is_empty());
-        // Every line of its own color is one of the three arms' hues, and all three are there.
-        for color in &colors {
-            assert!(hues.contains(color), "{color:?}");
-        }
-        for want in &hues {
-            assert!(colors.contains(want), "{want:?}");
-        }
-        // And each segment of those strokes names one of them.
-        for (segments, inks) in p.strokes.iter().zip(&p.inks) {
-            if inks.is_empty() {
-                continue;
+    let figure = &composition.panels[i].figure;
+    let frame = &frames[i];
+    let p = &frame.prepared;
+    let lines = figure
+        .scene
+        .marks
+        .iter()
+        .zip(&figure.styles.marks)
+        .filter(|(m, s)| s.stroke_is_line(&m.form))
+        .map(|(m, _)| m.id.clone());
+    lines
+        .enumerate()
+        .map(|(layer, id)| {
+            let inks = &p.inks[layer];
+            let segments = p.strokes[layer]
+                .chunks(FLOATS_PER_SEGMENT)
+                .enumerate()
+                .map(|(k, s)| {
+                    let color = inks.get(k).map(|&row| {
+                        let at = (row as usize - 1) * 4;
+                        [p.colors[at], p.colors[at + 1], p.colors[at + 2]]
+                    });
+                    ([f64::from(s[0]), f64::from(s[1])], color)
+                })
+                .collect();
+            (
+                id,
+                segments,
+                p.view.clone(),
+                [frame.width as f64, frame.height as f64],
+            )
+        })
+        .collect()
+}
+
+/// A device pixel's place in the world, in a frame looking at `view`.
+fn world(at: C, view: &pencil_core::ir::Viewport, size: [f64; 2]) -> C {
+    [
+        view.x[0] + at[0] / size[0] * (view.x[1] - view.x[0]),
+        view.y[1] - at[1] / size[1] * (view.y[1] - view.y[0]),
+    ]
+}
+
+fn hue32(k: f64) -> [f32; 3] {
+    pencil_core::eval::hue(k).map(|c| c as f32)
+}
+
+/// What's drawn, segment by segment, is each line's own arm's hue: an arm's curve or ring, read back
+/// from where it is through the spiral's inverse, a row of the grid and a point of it, from where
+/// they are. hue((row mod n) / n), with n the arms, or q for rings.
+#[test]
+fn each_line_and_point_is_drawn_in_its_arms_hue() {
+    use pencil_core::terms::Estimate;
+    let composition = arm_colors_with(&[]);
+    let [w, h] = composition.size;
+    let mut checked = 0;
+    for (p, q) in [(3, 8), (0, 8), (8, 8), (2, 7), (5, 13)] {
+        for along in 0..3 {
+            let case = format!("p = {p}, q = {q}, along {along}");
+            let inputs = arm_inputs(p as f64, q as f64, along);
+            let frames = composition
+                .prepare(&inputs, w as u32, h as u32, 1.0, None, &Estimate)
+                .unwrap();
+            let env =
+                pencil_core::eval::frame_env(panel(&composition, "spiral_view"), &inputs).unwrap();
+            let doyle = Doyle::from(&env);
+            let (_, row, arms) = arm_direction(along, p, q);
+            let wrap = if arms == 0 { q } else { arms };
+            let want = |a: f64, b: f64, what: &str| {
+                let (ra, rb) = (a.round(), b.round());
+                assert!(
+                    (a - ra).abs() < 1e-3 && (b - rb).abs() < 1e-3,
+                    "{case}: {what} at ({a}, {b}) isn't on the grid"
+                );
+                hue32(row(ra as i64, rb as i64).rem_euclid(wrap) as f64 / wrap as f64)
+            };
+            for (id, segments, view, size) in inked_lines(&composition, &frames, "spiral_view") {
+                if id != "arm_curves" && id != "ring_curves" {
+                    continue;
+                }
+                for (at, color) in segments {
+                    let z = world(at, &view, size);
+                    if z[0].hypot(z[1]) < 0.05 {
+                        continue;
+                    }
+                    // The log of a point of the curve, and the row it's on; along the curve only
+                    // the place in the row changes.
+                    let u = [z[0].hypot(z[1]).ln(), z[1].atan2(z[0])];
+                    let [ga, gb] = doyle.unlog(u);
+                    let (d, _, _) = arm_direction(along, p, q);
+                    // Back along the row to a grid point, so its row can be read in whole numbers.
+                    let back = |t: f64| {
+                        let pt = Doyle::grid(ga, gb);
+                        let pt = [pt[0] - t * d[0], pt[1] - t * d[1]];
+                        [pt[0] + pt[1] / 3f64.sqrt(), 2.0 * pt[1] / 3f64.sqrt()]
+                    };
+                    // How far along the row from a grid point: d's coordinate in (a, b).
+                    let t = match along {
+                        0 => gb,
+                        _ => ga,
+                    };
+                    let [a, b] = back(t - t.round());
+                    assert_eq!(color, Some(want(a, b, &id)), "{case}: {id} at {z:?}");
+                    checked += 1;
+                }
             }
-            assert_eq!(
-                inks.len(),
-                segments.len() / pencil_core::stroke::FLOATS_PER_SEGMENT
-            );
-            assert!(
-                inks.iter()
-                    .all(|&row| row >= 1.0 && row as usize <= colors.len())
-            );
+            for (id, segments, view, size) in inked_lines(&composition, &frames, "grid_view") {
+                if id != "grid_rows" && id != "grid_points" {
+                    continue;
+                }
+                for (at, color) in segments {
+                    let z = world(at, &view, size);
+                    let (a, b) = (z[0] + z[1] / 3f64.sqrt(), 2.0 * z[1] / 3f64.sqrt());
+                    let [a, b] = if id == "grid_rows" {
+                        let (d, _, _) = arm_direction(along, p, q);
+                        // Slide along the row to the grid point nearest, as above.
+                        let t = if along == 0 { b } else { a };
+                        let s = t - t.round();
+                        let pt = [z[0] - s * d[0], z[1] - s * d[1]];
+                        [pt[0] + pt[1] / 3f64.sqrt(), 2.0 * pt[1] / 3f64.sqrt()]
+                    } else {
+                        [a, b]
+                    };
+                    assert_eq!(color, Some(want(a, b, &id)), "{case}: {id} at {z:?}");
+                    checked += 1;
+                }
+            }
         }
     }
+    assert!(checked > 20_000, "{checked}");
+}
+
+/// The shader post states an arm's color along ω as (a mod p) / p, as `doyle.glsl` works it out:
+/// at p = 3, the circle and the point at a = 1 are a third of the way round, at a = 2 two thirds,
+/// and at a = −1 two thirds too.
+#[test]
+fn along_omega_a_circles_hue_is_a_mod_p_over_p() {
+    use pencil_core::{eval::color, eval::frame_env};
+    let composition = arm_colors_with(&[]);
+    let spiral = panel(&composition, "spiral_view");
+    let grid = panel(&composition, "grid_view");
+    let inputs = arm_inputs(3.0, 8.0, 0);
+    for (a, b, k) in [
+        (1, 0, 1.0 / 3.0),
+        (2, 0, 2.0 / 3.0),
+        (-1, 4, 2.0 / 3.0),
+        (3, -2, 0.0),
+    ] {
+        for (figure, id) in [(spiral, "spiral_circles"), (grid, "grid_points")] {
+            let env = frame_env(figure, &inputs).unwrap();
+            let (local, _) = instance_of(figure, &env, id, &[("a", a as f64), ("b", b as f64)]);
+            let i = figure.scene.marks.iter().position(|m| m.id == id).unwrap();
+            let style = &figure.styles.marks[i];
+            // A circle's color is its inside's fill; a point's, its fill, which it's drawn by.
+            let paint = match id {
+                "spiral_circles" => style.inside.as_ref(),
+                _ => style.stroke.as_ref(),
+            };
+            let drawn = color(paint.unwrap(), &local).unwrap();
+            assert_eq!(drawn, pencil_core::eval::hue(k), "{id} at ({a}, {b})");
+        }
+    }
+}
+
+/// The circles touch: each one the figure draws, against its six neighbors as the figure works
+/// them out, is as far from each as their radii add up to. Nothing here takes the figure's word
+/// for the skew: a wrong root of `solve` would leave them apart or overlapping.
+#[test]
+fn the_spirals_circles_touch_their_six_neighbors() {
+    use pencil_core::{eval::frame_env, stroke::Instance};
+    let arm = arm_colors_with(&[]);
+    let camera = camera_log();
+    let cases: Vec<(
+        &pencil_core::Figure,
+        &str,
+        pencil_core::frame::Inputs,
+        String,
+    )> = [
+        (3, 3),
+        (1, 8),
+        (3, 8),
+        (0, 8),
+        (8, 8),
+        (5, 13),
+        (2, 16),
+        (16, 16),
+    ]
+    .into_iter()
+    .map(|(p, q)| {
+        (
+            panel(&arm, "spiral_view"),
+            "spiral_circles",
+            arm_inputs(p as f64, q as f64, 0),
+            format!("arms, p = {p}, q = {q}"),
+        )
+    })
+    .chain(std::iter::once((
+        panel(&camera, "camera_view"),
+        "start_circles",
+        camera_inputs(0.0, 0),
+        "camera".to_string(),
+    )))
+    .collect();
+    let mut checked = 0;
+    for (figure, id, inputs, case) in cases {
+        let env = frame_env(figure, &inputs).unwrap();
+        let circle = |a: i64, b: i64| match instance_of(
+            figure,
+            &env,
+            id,
+            &[("a", a as f64), ("b", b as f64)],
+        )
+        .1
+        {
+            Some(Instance::Circle(c, r)) => (c, r),
+            other => panic!("{case}: ({a}, {b}) is {other:?}"),
+        };
+        for (a, b) in drawn_pairs(figure, &env, id) {
+            let (c, r) = circle(a, b);
+            for (da, db) in [(1, 0), (-1, 0), (0, 1), (0, -1), (1, 1), (-1, -1)] {
+                let (n, rn) = circle(a + da, b + db);
+                let apart = (c[0] - n[0]).hypot(c[1] - n[1]);
+                assert!(
+                    (apart - (r + rn)).abs() < 1e-9 * (r + rn),
+                    "{case}: ({a}, {b}) and its neighbor ({da}, {db}) are {apart} apart, radii {r} and {rn}"
+                );
+                checked += 1;
+            }
+        }
+    }
+    assert!(checked > 3000, "{checked}");
 }
 
 /// The second placement's sheet shows the period, from 0 to A, which crosses one row of each arm.
@@ -3823,21 +4056,34 @@ fn steps_line_the_circles_up_and_a_zoom_does_not() {
     use pencil_core::{eval::frame_env, stroke::Instance};
     let composition = camera_log();
     let view = panel(&composition, "camera_view");
-    let circles = |env: &pencil_core::eval::Env, id: &str| -> Vec<(i64, C, f64)> {
+    let circles = |env: &pencil_core::eval::Env, id: &str| -> Vec<(i64, i64, C, f64)> {
         drawn_pairs(view, env, id)
             .into_iter()
             .filter_map(|(a, b)| {
                 match instance_of(view, env, id, &[("a", a as f64), ("b", b as f64)]).1 {
-                    Some(Instance::Circle(c, r)) => Some((a, c, r)),
+                    Some(Instance::Circle(c, r)) => Some((a, b, c, r)),
                     _ => None,
                 }
             })
             // Big enough to matter, and on the screen.
-            .filter(|(_, c, r)| *r > 0.01 && c[0].abs() - r < 1.6 && c[1].abs() - r < 1.6)
+            .filter(|(_, _, c, r)| *r > 0.01 && c[0].abs() - r < 1.6 && c[1].abs() - r < 1.6)
             .collect()
     };
     for (t, path) in [(1.0, 0), (2.0, 0), (1.0, 1), (0.5, 0), (2.0, 1)] {
         let env = frame_env(view, &camera_inputs(t, path)).unwrap();
+        // The camera at c sees z as e^{−c}·z, with c worked out here: t steps of log c(1 + ω), or
+        // as far straight out.
+        let doyle = Doyle {
+            p: 2.0,
+            q: 7.0,
+            mu: env.get("mu").unwrap(),
+            nu: env.get("nu").unwrap(),
+        };
+        let step = doyle.log(Doyle::grid(1.0, 1.0));
+        let c = match path {
+            0 => [t * step[0], t * step[1]],
+            _ => [t * step[0].hypot(step[1]), 0.0],
+        };
         let start = circles(&env, "start_circles");
         let seen = circles(&env, "seen_circles");
         assert!(
@@ -3846,13 +4092,23 @@ fn steps_line_the_circles_up_and_a_zoom_does_not() {
             seen.len(),
             start.len()
         );
+        for &(a, b, z, r) in &seen {
+            let u = doyle.log(Doyle::grid(a as f64, b as f64));
+            let want = c_exp([u[0] - c[0], u[1] - c[1]]);
+            let size = want[0].hypot(want[1]);
+            assert!(
+                near(z, want, 1e-9 * size.max(1.0)),
+                "t = {t}, path {path}: ({a}, {b})"
+            );
+            assert!((r - doyle.k() * size).abs() < 1e-9 * size.max(1.0));
+        }
         let lined = path == 0 && t.fract() == 0.0;
-        for &(a, c, r) in &seen {
+        for &(a, _, c, r) in &seen {
             let found = start
                 .iter()
-                .find(|(_, s, sr)| near(*s, c, 1e-9) && (sr - r).abs() < 1e-9);
+                .find(|(_, _, s, sr)| near(*s, c, 1e-9) && (sr - r).abs() < 1e-9);
             match (lined, found) {
-                (true, Some((sa, _, _))) => {
+                (true, Some((sa, _, _, _))) => {
                     let same = (a - sa).rem_euclid(2) == 0;
                     assert_eq!(same, t == 2.0, "t = {t}: arm of a = {a} against {sa}");
                 }
@@ -3886,6 +4142,7 @@ fn the_camera_sees_one_circle_per_period() {
         one_per_period(&start, &doyle, window, &case);
         let seen = drawn_pairs(view, &env, "seen_circles");
         one_per_period(&seen, &doyle, [window[0] + moved, window[1] + moved], &case);
-        assert!(start.len().max(seen.len()) <= pencil_core::frame::MAX_SIDED_CIRCLES);
+        // As `migration.md` says.
+        assert_eq!((start.len(), seen.len()), (43, 43), "{case}");
     }
 }

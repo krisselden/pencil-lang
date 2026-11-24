@@ -31,11 +31,14 @@ let k = sqrt(tangency(omega, mu, nu))
 fn to_log(w) = skewed(to_turn(w), mu, nu)
 fn spiral(w) = exp(to_log(w))
 
-// Which row along the chosen direction w is on: how far across it, counted in rows. The direction
-// is one step of the grid, so this is a whole number: a's negative along ω, b along 1, b − a along
-// 1 + ω. A step of the direction turned by ω, `along·omega`, is one row over.
-fn row(w) = round(imag(conj(along)·w) / imag(omega))
-let across = along·omega
+// Which row along the chosen direction w is on: how far across it, counted in rows, upward, as the
+// shader counts them. The direction is one step of the grid, so this is a whole number: a along ω,
+// b along 1 and b − a along 1 + ω. The cross product with the direction counts from its left, and
+// up is on its left when it points right, so `sign(real(along))` turns the count upward. A step of
+// the direction turned by ω, turned the same way, is one row up.
+let upward = sign(real(along))
+fn row(w) = round(upward·imag(conj(along)·w) / imag(omega))
+let across = upward·along·omega
 // The arms: how many rows the period crosses, or, where it crosses none, rings wrapped every q.
 let arms = abs(row(A))
 let ringed = max(0, 1 - arms)
@@ -66,7 +69,7 @@ let last_a = ceil(max(max(corner_a(-period, inner), corner_a(period, inner)), ma
 fn first_b(a) = max(-floor((period + rise_a·a) / rise_b), -floor((across_a·a - inner) / slope_b))
 fn last_b(a) = min(-floor((rise_a·a - period) / rise_b) - 1, floor((outer - across_a·a) / slope_b))
 
-// Each arm's exact curve: one row of the grid, r·(along·ω) + t·along, carried into the spiral,
+// Each arm's exact curve: one row of the grid, r·across + t·along, carried into the spiral,
 // as far as the circles reach. It passes through every circle of rows r, r + n, r + 2n and so on,
 // since each of those is one of row r's, a whole number of periods away.
 fn arm_curve(r, t) = spiral(r·across + t·along)

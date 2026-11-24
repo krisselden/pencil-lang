@@ -628,13 +628,17 @@ replaced that.
   stroke and a `dots` fill can't read their variables: "unknown name `s`" and "unknown name `n`" *(tried)*. There's one curve and one row of dots per arm, and the number of
   arms follows p.
 - **Lacks:** nothing since a collection's colors were made per instance on 2026-11-24.
-- **Built:** the arms' direction is a choice of three, and a row is `imag(conj(along)·w) / imag(ω)`, the cross product counted
-  in rows. The number of arms is the rows the period crosses, `abs(row(A))`, which is p, q − p or q by direction, and the
-  arms' starts are r·(along·ω), one row over each. Rings are a second `curves` collection, empty unless the rows close.
+- **Built:** the arms' direction is a choice of three, and a row is `sign(real(along))·imag(conj(along)·w) / imag(ω)`, the
+  cross product counted in rows, upward: a along ω, b along 1 and b − a along 1 + ω, as the site and `doyle.glsl` number
+  them, so along ω an arm's hue is (a mod p)/p, as the shader post states. No one orientation of the cross product gives all
+  three, and upward does. The number of arms is the rows the period crosses, `abs(row(A))`, which is p, q − p or q by
+  direction, and the arms' starts are r times one row up. Rings are a second `curves` collection, empty unless the rows close.
   The second placement is `period.style` over `plain.style`, with `params="p: 2; q: 7"` on the page.
-- **Differs from the site:** along ω the rows count the other way (−a where the site has a), so the hues go round the other
-  way. The site's window cut circles that still reached the corner at large k, and this one's outer edge is
-  ln(3.4/(1 − k)), past the corner. The arms run as far as the circles' window and no further.
+- **Differs from the site:** the site's window cut circles that still reached the corner at large k, and this one's outer
+  edge is ln(3.4/(1 − k)), past the corner. The arms run as far as the circles' window and no further. The colors are
+  `hue`'s, OKLCH at L 0.68 and C 0.14 from 0°, where the site fills at L 0.74 and C 0.12 and draws lines at L 0.5, from 25°:
+  `hue` is the language's one ramp, and works on the dark paper as well. The fill's opacity, 0.55, and the rim, 0.75 px of
+  ink, are the site's.
 - **Not as planned:** p = 0 didn't need a range of its own. The circles are a parallelogram in (a, b), one side from N and
   one from Re u, so a's range is its corners', and at p = 0, where Re u doesn't change along b, the slope it divides by is
   held a hair above 0, which makes the same whole-number test. p = q needed the corners too: there Re u doesn't change
@@ -642,10 +646,13 @@ replaced that.
   is every nth row.
 - **Checked** (`crates/pencil-core/tests/corpus.rs`): for every q from 3 to 16 and p from 0 to q, the circles drawn are one of
   each period, none twice, every lattice point of the window in a 121 × 121 box has its copy drawn, and there are at most
-  160, under the 256 for filled sides. For 11 (p, q) and all three directions, 2000 and more circles each have the arm
-  their row says, and lie on their arm's curve, or ring, within the stretch drawn, to 1e-9. The grid's rows are the rows
-  their numbers say and its points have their rows' arms; each arm's hue reaches the frame; the period sheet draws A from
-  0. `pencil check` agrees with the oracle to 1/255 at p = 0, 3, 5 and 16, along all three, and under the dark sheet.
+  160, under the 256 for filled sides. Each circle drawn touches its six neighbors, to 1e-9 of their radii, at eight (p, q)
+  from (3, 3) to (16, 16), which doesn't take `solve`'s word. For 11 (p, q) and all three directions, 2000 and more circles
+  each have the arm their row says, and lie on their arm's curve, or ring, within the stretch drawn, to 1e-9. Every
+  segment of the arms, rings, grid rows and points the frame draws, at five (p, q) and all three directions, is in the hue of
+  the arm it's on, read back from where it is. Along ω at p = 3 the circle and the point at a = 1 are hue 1/3 and at
+  a = 2 and −1, 2/3. The period sheet draws A from 0. `pencil check` agrees with the oracle to 1/255 at p = 0, 3, 5 and 16,
+  along all three, and under the dark sheet.
 
 **`ZoomLoop`** (primary): two panels.
 
@@ -697,7 +704,8 @@ replaced that.
 - **Checked** (`crates/pencil-core/tests/corpus.rs`): e^{−c} of every point of the camera's edge, and of the start's, is on the
   square's edge to 1e-12, and the region is bounded by the same curve. c is t steps of log c(1 + ω), worked out apart from
   the figure, and the zoom is real, so it scales without turning. After one and two whole steps every circle on the screen
-  is one it started on, in the other arm after one and the same after two, and after a zoom, or half a step, none is. Both
+  is one it started on, in the other arm after one and the same after two, and after a zoom, or half a step, none is. Each
+  circle seen is e^{−c} times its own, with c worked out apart from the figure, and its start touches its six neighbors. Both
   collections are one per period, 43 circles each. `pencil check` agrees with the oracle to 1/255 at five t on both paths
   and under the dark sheet, once the seen circles' fill stopped being a quarter, which lands on a rounding tie.
 

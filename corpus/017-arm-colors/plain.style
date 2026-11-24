@@ -6,7 +6,7 @@ style panel.grid_view { pad: 0.02 }
 
 fn arm_hue(r) = hue(mod(r, wrap) / wrap)
 
-style spiral_circles { stroke: ink; width: 0.75px; opacity: 0.8 }
+style spiral_circles { stroke: ink; width: 0.75px }
 style spiral_circles::inside { fill: arm_hue(arm) }
 style spiral_circles { fill_opacity: 0.55 }
 style arm_curves, ring_curves { stroke: arm_hue(r); width: 1.75px }

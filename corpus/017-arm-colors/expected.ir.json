@@ -51,15 +51,19 @@
         "id": "k"
       },
       {
-        "expr": ["Subtract",["Multiply","along.x","omega.x"],["Multiply","along.y","omega.y"]],
+        "expr": ["Sign","along.x"],
+        "id": "upward"
+      },
+      {
+        "expr": ["Subtract",["Multiply",["Multiply","upward","along.x"],"omega.x"],["Multiply",["Multiply","upward","along.y"],"omega.y"]],
         "id": "across.x"
       },
       {
-        "expr": ["Add",["Multiply","along.x","omega.y"],["Multiply","along.y","omega.x"]],
+        "expr": ["Add",["Multiply",["Multiply","upward","along.x"],"omega.y"],["Multiply",["Multiply","upward","along.y"],"omega.x"]],
         "id": "across.y"
       },
       {
-        "expr": ["Abs",["Multiply",["Sign",["Divide",["Add",["Multiply","along.x","A.y"],["Multiply",["Negate","along.y"],"A.x"]],"omega.y"]],["Floor",["Add",["Abs",["Divide",["Add",["Multiply","along.x","A.y"],["Multiply",["Negate","along.y"],"A.x"]],"omega.y"]],0.5]]]],
+        "expr": ["Abs",["Multiply",["Sign",["Divide",["Multiply","upward",["Add",["Multiply","along.x","A.y"],["Multiply",["Negate","along.y"],"A.x"]]],"omega.y"]],["Floor",["Add",["Abs",["Divide",["Multiply","upward",["Add",["Multiply","along.x","A.y"],["Multiply",["Negate","along.y"],"A.x"]]],"omega.y"]],0.5]]]],
         "id": "arms"
       },
       {
@@ -167,7 +171,7 @@
         "id": "reach"
       },
       {
-        "expr": ["Multiply",["Sign",["Divide",["Add",["Multiply","along.x","grid_middle.y"],["Multiply",["Negate","along.y"],"grid_middle.x"]],"omega.y"]],["Floor",["Add",["Abs",["Divide",["Add",["Multiply","along.x","grid_middle.y"],["Multiply",["Negate","along.y"],"grid_middle.x"]],"omega.y"]],0.5]]],
+        "expr": ["Multiply",["Sign",["Divide",["Multiply","upward",["Add",["Multiply","along.x","grid_middle.y"],["Multiply",["Negate","along.y"],"grid_middle.x"]]],"omega.y"]],["Floor",["Add",["Abs",["Divide",["Multiply","upward",["Add",["Multiply","along.x","grid_middle.y"],["Multiply",["Negate","along.y"],"grid_middle.x"]]],"omega.y"]],0.5]]],
         "id": "middle_row"
       },
       {
@@ -208,7 +212,7 @@
               "id": "z.y"
             },
             {
-              "expr": ["Mod",["Multiply",["Sign",["Divide",["Add",["Multiply","along.x",["Multiply","b","omega.y"]],["Multiply",["Negate","along.y"],["Add",["Multiply","b","omega.x"],"a"]]],"omega.y"]],["Floor",["Add",["Abs",["Divide",["Add",["Multiply","along.x",["Multiply","b","omega.y"]],["Multiply",["Negate","along.y"],["Add",["Multiply","b","omega.x"],"a"]]],"omega.y"]],0.5]]],"wrap"],
+              "expr": ["Mod",["Multiply",["Sign",["Divide",["Multiply","upward",["Add",["Multiply","along.x",["Multiply","b","omega.y"]],["Multiply",["Negate","along.y"],["Add",["Multiply","b","omega.x"],"a"]]]],"omega.y"]],["Floor",["Add",["Abs",["Divide",["Multiply","upward",["Add",["Multiply","along.x",["Multiply","b","omega.y"]],["Multiply",["Negate","along.y"],["Add",["Multiply","b","omega.x"],"a"]]]],"omega.y"]],0.5]]],"wrap"],
               "id": "arm"
             }
           ]
@@ -378,15 +382,19 @@
         "id": "k"
       },
       {
-        "expr": ["Subtract",["Multiply","along.x","omega.x"],["Multiply","along.y","omega.y"]],
+        "expr": ["Sign","along.x"],
+        "id": "upward"
+      },
+      {
+        "expr": ["Subtract",["Multiply",["Multiply","upward","along.x"],"omega.x"],["Multiply",["Multiply","upward","along.y"],"omega.y"]],
         "id": "across.x"
       },
       {
-        "expr": ["Add",["Multiply","along.x","omega.y"],["Multiply","along.y","omega.x"]],
+        "expr": ["Add",["Multiply",["Multiply","upward","along.x"],"omega.y"],["Multiply",["Multiply","upward","along.y"],"omega.x"]],
         "id": "across.y"
       },
       {
-        "expr": ["Abs",["Multiply",["Sign",["Divide",["Add",["Multiply","along.x","A.y"],["Multiply",["Negate","along.y"],"A.x"]],"omega.y"]],["Floor",["Add",["Abs",["Divide",["Add",["Multiply","along.x","A.y"],["Multiply",["Negate","along.y"],"A.x"]],"omega.y"]],0.5]]]],
+        "expr": ["Abs",["Multiply",["Sign",["Divide",["Multiply","upward",["Add",["Multiply","along.x","A.y"],["Multiply",["Negate","along.y"],"A.x"]]],"omega.y"]],["Floor",["Add",["Abs",["Divide",["Multiply","upward",["Add",["Multiply","along.x","A.y"],["Multiply",["Negate","along.y"],"A.x"]]],"omega.y"]],0.5]]]],
         "id": "arms"
       },
       {
@@ -494,7 +502,7 @@
         "id": "reach"
       },
       {
-        "expr": ["Multiply",["Sign",["Divide",["Add",["Multiply","along.x","grid_middle.y"],["Multiply",["Negate","along.y"],"grid_middle.x"]],"omega.y"]],["Floor",["Add",["Abs",["Divide",["Add",["Multiply","along.x","grid_middle.y"],["Multiply",["Negate","along.y"],"grid_middle.x"]],"omega.y"]],0.5]]],
+        "expr": ["Multiply",["Sign",["Divide",["Multiply","upward",["Add",["Multiply","along.x","grid_middle.y"],["Multiply",["Negate","along.y"],"grid_middle.x"]]],"omega.y"]],["Floor",["Add",["Abs",["Divide",["Multiply","upward",["Add",["Multiply","along.x","grid_middle.y"],["Multiply",["Negate","along.y"],"grid_middle.x"]]],"omega.y"]],0.5]]],
         "id": "middle_row"
       },
       {
@@ -548,7 +556,7 @@
           ],
           "with": [
             {
-              "expr": ["Mod",["Multiply",["Sign",["Divide",["Add",["Multiply","along.x",["Multiply","b","omega.y"]],["Multiply",["Negate","along.y"],["Add",["Multiply","b","omega.x"],"a"]]],"omega.y"]],["Floor",["Add",["Abs",["Divide",["Add",["Multiply","along.x",["Multiply","b","omega.y"]],["Multiply",["Negate","along.y"],["Add",["Multiply","b","omega.x"],"a"]]],"omega.y"]],0.5]]],"wrap"],
+              "expr": ["Mod",["Multiply",["Sign",["Divide",["Multiply","upward",["Add",["Multiply","along.x",["Multiply","b","omega.y"]],["Multiply",["Negate","along.y"],["Add",["Multiply","b","omega.x"],"a"]]]],"omega.y"]],["Floor",["Add",["Abs",["Divide",["Multiply","upward",["Add",["Multiply","along.x",["Multiply","b","omega.y"]],["Multiply",["Negate","along.y"],["Add",["Multiply","b","omega.x"],"a"]]]],"omega.y"]],0.5]]],"wrap"],
               "id": "arm"
             },
             {

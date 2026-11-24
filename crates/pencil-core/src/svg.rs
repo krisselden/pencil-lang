@@ -1065,6 +1065,8 @@ fn marks(
             };
             let mut drawn = Vec::new();
             let mut ink = opacity;
+            // Lines of their own color whose fades differ, each with its own, and their elements.
+            let mut faded: Vec<(Vec<Element>, f64)> = Vec::new();
             // A collection whose lines each have their own color is drawn a line at a time.
             let runs: Vec<(&[Seg], String)> = match crate::style::inked(mark, style) {
                 true => pieces
@@ -1086,9 +1088,11 @@ fn marks(
                     "is on a stroke whose `width` varies along it, which isn't cut into dashes yet",
                 );
             } else {
+                let mut evens = Vec::new();
                 for (pieces, color) in &runs {
                     match stroke_elements(pieces, color) {
                         Stroke::Even(elements, even) => {
+                            evens.push((drawn.len()..drawn.len() + elements.len(), even));
                             drawn.extend(elements);
                             ink = opacity * even;
                         }
@@ -1113,6 +1117,16 @@ fn marks(
                         Stroke::Masked(_) => {}
                     }
                 }
+                // Each line of a collection fades as one, by its own ink, where they aren't all
+                // the same. A line's own fade along it is in its mask instead.
+                if evens.iter().any(|(_, even)| *even != evens[0].1) {
+                    let mut rest = drawn.clone();
+                    for (range, even) in evens.iter().rev() {
+                        faded.push((rest.drain(range.clone()).collect(), opacity * even));
+                    }
+                    faded.push((rest, opacity));
+                    drawn.clear();
+                }
             }
             // A dot's stroke is a ring on its edge.
             if let (Some((at, radius)), false) = (ring, is_line) {
@@ -1128,7 +1142,11 @@ fn marks(
                 }
             }
             // Pieces of one stroke overlap, so they fade together, as one layer.
-            if ink > 0.0 {
+            faded.push((drawn, ink));
+            for (drawn, ink) in faded
+                .into_iter()
+                .filter(|(drawn, ink)| *ink > 0.0 && !drawn.is_empty())
+            {
                 match (ink < 1.0, drawn.len()) {
                     (false, _) => elements.extend(drawn.iter().map(close)),
                     (true, 1) => {
