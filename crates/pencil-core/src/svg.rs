@@ -190,7 +190,8 @@ struct Seg {
     s: [f64; 2],
     on: f64,
     period: f64,
-    /// Its line's length if the line ends square, and 0 if its ends are round.
+    /// Where its line ends, measured as `s` is, if the line ends square, and 0 if its ends are
+    /// round.
     clip: f64,
     ink: f64,
     /// Whether each end is where the frame cut it, and not where its line goes on or ends.

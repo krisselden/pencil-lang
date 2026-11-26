@@ -1225,6 +1225,68 @@ fn hearts_draw_no_false_chords_at_a_pole() {
     }
 }
 
+/// The other way round from the check above: everywhere a curve is in the frame, its stroke
+/// covers it. Near a pole a curve runs out to points 1e17 pixels away and more, so a piece of it is
+/// that long, and what's on the frame mustn't be lost to measuring along all of it. The truth is
+/// dense sampling of each curve, and the coverage is the oracle's.
+#[test]
+fn a_curve_with_poles_is_drawn_wherever_it_is_on_the_frame() {
+    use pencil_core::{
+        frame::{Inputs, device, prepare},
+        stroke::rasterize,
+    };
+    use std::f64::consts::PI;
+    let (width, height) = (560u32, 320u32);
+    let mut missing = Vec::new();
+    // A sample on a pole, at π or at 0, is finite or infinite by rounding, and both must draw.
+    for (range, from, to) in [
+        ("0..2·π", 0.0, 2.0 * PI),
+        ("-2·π..2·π", -2.0 * PI, 2.0 * PI),
+        ("0.001..2·π", 0.001, 2.0 * PI),
+    ] {
+        let doc = format!(
+            "viewport {{ x: 0 ± 7, y: -1..7 }}
+             curve b = parametric (x): (x, 1/sin(x)^2) for x in {range}
+             curve f = parametric (x): (x, 1/x) for x in -7..7"
+        );
+        let sheet = "style b { stroke: black; width: 2px }
+                     style f { stroke: black; width: 2px }";
+        let figure = build(&doc, &[sheet]).unwrap();
+        let prepared = prepare(&figure, &Inputs::at(0.0), width, height, 1.0).unwrap();
+        let y = |id: &str, x: f64| match id {
+            "b" => 1.0 / x.sin().powi(2),
+            _ => 1.0 / x,
+        };
+        for (layer, (id, lo, hi)) in [("b", from, to), ("f", -7.0, 7.0)].into_iter().enumerate() {
+            let coverage = rasterize(&prepared.strokes[layer], width, height);
+            let at = |px: i64, py: i64| coverage[(py * width as i64 + px) as usize];
+            let (mut checked, mut first) = (0, None);
+            for k in 0..=200_000 {
+                let x = lo + (hi - lo) * k as f64 / 200_000.0;
+                let (px, py) = device(x, y(id, x), &prepared.view, width, height);
+                // Away from the frame's edges, where only part of the stroke is on it.
+                if !(px > 3.0 && py > 3.0 && px < width as f64 - 3.0 && py < height as f64 - 3.0) {
+                    continue;
+                }
+                let (cx, cy) = (px.floor() as i64, py.floor() as i64);
+                let most = (-1..=1)
+                    .flat_map(|i| (-1..=1).map(move |j| (cx + i, cy + j)))
+                    .map(|(i, j)| at(i, j))
+                    .fold(0.0, f64::max);
+                if most <= 0.9 && first.is_none() {
+                    first = Some(format!(
+                        "{range}: `{id}` at x = {x:.4} is at pixel ({px:.1}, {py:.1}), which it covers {most:.3}"
+                    ));
+                }
+                checked += 1;
+            }
+            assert!(checked > 10_000, "{range}: `{id}` is on the frame");
+            missing.extend(first);
+        }
+    }
+    assert!(missing.is_empty(), "{}", missing.join("\n"));
+}
+
 fn squaring() -> pencil_core::Figure {
     pencil_core::build(&square_read("009-squaring/squaring.pen"), &[]).unwrap()
 }

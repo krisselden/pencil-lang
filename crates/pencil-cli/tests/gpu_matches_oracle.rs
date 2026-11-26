@@ -61,6 +61,34 @@ fn a_thin_line_through_a_pixel_center_has_the_same_coverage() {
     ));
 }
 
+/// Curves that run out to poles, whose pieces are 1e17 pixels long and more, which single
+/// precision can't measure to a pixel: a sample lands on the pole at π, and at 0 over the wider
+/// range. Plain, dashed and tapered, which measure along all of each piece.
+#[test]
+fn curves_through_poles_draw_alike() {
+    for (span, range) in [("narrow", "0..2·π"), ("wide", "-2·π..2·π")] {
+        for (name, look) in [
+            ("plain", "width: 2px"),
+            ("dashed", "width: 2px; dash: 7px; gap: 5px"),
+            ("tapered", "width: 0.5px + 6px·self.t"),
+        ] {
+            passes(check(
+                &format!("poles-{name}-{span}"),
+                &format!(
+                    "viewport {{ x: 0 ± 7, y: -1..7 }}
+                     curve b = parametric (x): (x, 1/sin(x)^2) for x in {range}
+                     curve f = parametric (x): (x, 1/x) for x in -7..7"
+                ),
+                &format!(
+                    "style paper {{ fill: white }}
+                     style b {{ stroke: black; {look} }}
+                     style f {{ stroke: black; {look} }}"
+                ),
+            ));
+        }
+    }
+}
+
 /// A rule whose `self.focus` is always 1 leaves an opacity made of nothing but numbers, which the
 /// shader has to be able to give a type.
 #[test]

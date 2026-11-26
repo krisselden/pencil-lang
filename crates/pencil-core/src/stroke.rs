@@ -369,9 +369,10 @@ fn ink(
 
 /// Builds one segment list per line stroke, in mark order, in device pixels, using a curve's
 /// lines from `traced` where it's already been traced:
-/// `x0 y0 x1 y1  r0 r1 s0 s1  dash_on dash_period line_length 0`. A nonzero length
-/// clips coverage to the line's arc length, so it ends square as in SVG, even where
-/// an earlier segment's round joint would overhang the end.
+/// `x0 y0 x1 y1  r0 r1 s0 s1  dash_on dash_period line_length 0`. `s0` and `s1` are how far
+/// along its line each end is and `line_length` is where the line ends, measured alike, as
+/// `push_spots` says. A nonzero length clips coverage to the line's arc length, so it ends square
+/// as in SVG, even where an earlier segment's round joint would overhang the end.
 #[allow(clippy::too_many_arguments)]
 pub fn build(
     figure: &Figure,
@@ -409,6 +410,7 @@ pub fn build(
             let (x, y) = frame::device(p[0], p[1], view, width, height);
             [x, y]
         };
+        let size = [width as f64, height as f64];
         if let Form::Many {
             vars,
             lets,
@@ -509,7 +511,7 @@ pub fn build(
             let b = to_device([eval::real(&to[0], env)?, eval::real(&to[1], env)?]);
             // It grows from its tail, head first.
             let b = [a[0] + (b[0] - a[0]) * trim, a[1] + (b[1] - a[1]) * trim];
-            push_arrow(a, b, style, env, dpr, &mut segments)?;
+            push_arrow(a, b, style, env, dpr, size, &mut segments)?;
             layers.push(segments);
             inks.push(Vec::new());
             continue;
@@ -561,14 +563,23 @@ pub fn build(
             // Ticks say two lengths are equal, so they wait for the stroke to reach its middle.
             if style.ticks.is_some() && trim >= 0.5 && line.points.len() == 2 {
                 let ends = [to_device(line.points[0]), to_device(line.points[1])];
-                push_ticks(ends, style, env, dpr, &mut segments)?;
+                push_ticks(ends, style, env, dpr, size, &mut segments)?;
             }
             let line = if trim < 1.0 {
                 trim_line(&line, trim)
             } else {
                 line
             };
-            push_line(&line, style, env, dpr, &to_device, None, &mut segments)?;
+            push_line(
+                &line,
+                style,
+                env,
+                dpr,
+                size,
+                &to_device,
+                None,
+                &mut segments,
+            )?;
         }
         layers.push(segments);
         inks.push(Vec::new());
@@ -611,6 +622,7 @@ fn push_ticks(
     style: &MarkStyle,
     env: &Env,
     dpr: f64,
+    frame: [f64; 2],
     segments: &mut Vec<f32>,
 ) -> Result<(), Error> {
     let count = match &style.ticks {
@@ -649,7 +661,7 @@ fn push_ticks(
             closed: false,
             params: Vec::new(),
         };
-        push_line(&tick, &plain, env, dpr, &|p| p, None, segments)?;
+        push_line(&tick, &plain, env, dpr, frame, &|p| p, None, segments)?;
     }
     Ok(())
 }
@@ -725,11 +737,13 @@ fn push_arc(
         let (x, y) = frame::device(p[0], p[1], view, width, height);
         [x, y]
     };
+    let size = [width as f64, height as f64];
     let Some(head) = &style.head else {
         // Dashes and tapers measure along the line, so they need all of it.
         let frame_only = !style.needs_arc_length();
         for line in arc_lines(arc, env, view, width, height, frame_only)? {
-            push_line(&line, style, env, dpr, &to_device, Along::of(arc), segments)?;
+            let along = Along::of(arc);
+            push_line(&line, style, env, dpr, size, &to_device, along, segments)?;
         }
         return Ok(());
     };
@@ -767,6 +781,7 @@ fn push_arc(
             style,
             env,
             dpr,
+            size,
             Along::of(arc),
             segments,
         )?;
@@ -810,7 +825,9 @@ fn push_outline(
         closed: true,
         params: Vec::new(),
     };
-    push_line(&line, style, env, dpr, &|p| p, None, segments)
+    let size = [width as f64, height as f64];
+    push_line(&line, style, env, dpr, size, &|p| p, None, segments)?;
+    Ok(())
 }
 
 /// A line in device pixels that ends in a head. The stroke stops inside the head, so its cap
@@ -824,6 +841,7 @@ fn push_curve_arrow(
     style: &MarkStyle,
     env: &Env,
     dpr: f64,
+    frame: [f64; 2],
     along: Option<Along>,
     segments: &mut Vec<f32>,
 ) -> Result<(), Error> {
@@ -861,13 +879,8 @@ fn push_curve_arrow(
         closed: false,
         params: stroke_params,
     };
-    let before = segments.len();
-    push_line(&line, style, env, dpr, &|p| p, along, segments)?;
     // The head has the ink the stroke ends with, so it fades with it.
-    let faded = match segments.len() > before {
-        true => segments[segments.len() - 1],
-        false => 0.0,
-    };
+    let faded = push_line(&line, style, env, dpr, frame, &|p| p, along, segments)?;
     let (dx, dy) = (tip[0] - end[0], tip[1] - end[1]);
     let len = dx.hypot(dy);
     if len <= 0.0 {
@@ -1196,7 +1209,9 @@ fn push_instance(
                 params: Vec::new(),
             };
             instance(lets, shape, env)?;
-            return push_line(&line, style, env, frame.dpr, &|p| p, None, segments);
+            let size = [frame.width as f64, frame.height as f64];
+            push_line(&line, style, env, frame.dpr, size, &|p| p, None, segments)?;
+            return Ok(());
         }
     };
     // A size that reads the instance needs its `with` names, which only `eval` looks at.
@@ -1246,7 +1261,8 @@ fn push_instance(
                     closed: true,
                     params: Vec::new(),
                 };
-                return push_line(&line, style, env, frame.dpr, &|p| p, None, segments);
+                push_line(&line, style, env, frame.dpr, [w, h], &|p| p, None, segments)?;
+                return Ok(());
             }
             // Only the arc that can be on the frame, as seen from a circle around the frame. A
             // huge circle is nearly all off it, and this keeps what's left to the flatness.
@@ -1302,6 +1318,7 @@ fn push_arrow(
     style: &MarkStyle,
     env: &Env,
     dpr: f64,
+    frame: [f64; 2],
     segments: &mut Vec<f32>,
 ) -> Result<(), Error> {
     let (dx, dy) = (b[0] - a[0], b[1] - a[1]);
@@ -1321,7 +1338,7 @@ fn push_arrow(
         closed: false,
         params: Vec::new(),
     };
-    push_line(&shaft, style, env, dpr, &|p| p, None, segments)?;
+    push_line(&shaft, style, env, dpr, frame, &|p| p, None, segments)?;
     segments.extend_from_slice(&[
         (b[0] - ux * head) as f32,
         (b[1] - uy * head) as f32,
@@ -1405,15 +1422,19 @@ struct Spot {
     ink: f64,
 }
 
+/// A line's stroke, on a frame `frame` device pixels in size. Returns how much of its ink the
+/// line's end is missing, for a head to have the same.
+#[allow(clippy::too_many_arguments)]
 fn push_line(
     line: &Polyline,
     style: &MarkStyle,
     env: &Env,
     dpr: f64,
+    frame: [f64; 2],
     to_device: &impl Fn([f64; 2]) -> [f64; 2],
     along: Option<Along>,
     segments: &mut Vec<f32>,
-) -> Result<(), Error> {
+) -> Result<f32, Error> {
     let points: Vec<[f64; 2]> = line.points.iter().map(|p| to_device(*p)).collect();
     let mut lengths = Vec::with_capacity(points.len());
     let mut total = 0.0;
@@ -1423,7 +1444,7 @@ fn push_line(
         lengths.push(total);
     }
     if total <= 0.0 {
-        return Ok(());
+        return Ok(0.0);
     }
 
     // What the style reads along the stroke. Its `z` needs the curve's own parameter at each
@@ -1474,7 +1495,10 @@ fn push_line(
             // Last first, so they come off the stack in order.
             let mut stack = vec![(pair[0], pair[1], 0)];
             while let Some((a, b, depth)) = stack.pop() {
-                let long = b.run - a.run > CUT_PX && depth < CUT_DEPTH;
+                // By the piece's own length: far enough along a long line, the difference of
+                // two runs is only rounding.
+                let long =
+                    (b.at[0] - a.at[0]).hypot(b.at[1] - a.at[1]) > CUT_PX && depth < CUT_DEPTH;
                 let stepped = (a.ink - b.ink).abs() > INK_STEP;
                 if !long || !(stepped || by_depth) {
                     cut.push(b);
@@ -1520,31 +1544,147 @@ fn push_line(
 
     // A loop of constant width has no ends. A taper's seam does: the width jumps there.
     let seamless = line.closed && (spots[0].radius - spots[spots.len() - 1].radius).abs() < 1e-6;
-    let clip = if seamless || style.cap == Cap::Round {
-        0.0
-    } else {
-        total
+    let square = !seamless && style.cap != Cap::Round;
+    push_spots(&spots, square, [on, period], frame, segments);
+    let end = &spots[spots.len() - 2..];
+    Ok(missing_ink(&end[0], &end[1]))
+}
+
+/// How much of its ink a piece is missing, so that none missing is 0, as it is for everything that
+/// isn't a line.
+fn missing_ink(a: &Spot, b: &Spot) -> f32 {
+    (1.0 - (a.ink + b.ink) / 2.0) as f32
+}
+
+/// A line's spots as segments, all measured in `f64` and only then made single precision.
+///
+/// A curve that runs out toward a pole can be 1e17 pixels long and more, which single precision
+/// can't measure to a pixel, nor double precision to a pixel's width once it's added up that far.
+/// So only what's within reach of the frame is kept, cut where it leaves in `f64`, and each stretch
+/// of the line that's kept is measured from where it starts: the distance there from the line's
+/// start, if that's near enough for the line's square start to show, and otherwise only where that
+/// falls in its dashes, which is all that's seen of it. Its end is measured back from the line's
+/// own end, which is where that's exact, and only as far as can show. Either way the dashes and the
+/// end are where they were along the whole line, and a taper, which `self.t` measures along all of
+/// it, is untouched.
+fn push_spots(
+    spots: &[Spot],
+    square: bool,
+    [on, period]: [f64; 2],
+    frame: [f64; 2],
+    segments: &mut Vec<f32>,
+) {
+    let widest = spots.iter().map(|s| s.radius).fold(0.0, f64::max);
+    // A segment's coverage reaches less than two pixels past its half width, so this keeps all
+    // that shows, and leaves a line that's merely off the edge as it is.
+    let reach = widest + frame[0].max(frame[1]);
+    let length = |i: usize| {
+        let (a, b) = (spots[i].at, spots[i + 1].at);
+        (b[0] - a[0]).hypot(b[1] - a[1])
     };
-    for pair in spots.windows(2) {
-        let (a, b) = (pair[0], pair[1]);
-        segments.extend_from_slice(&[
-            a.at[0] as f32,
-            a.at[1] as f32,
-            b.at[0] as f32,
-            b.at[1] as f32,
-            a.radius as f32,
-            b.radius as f32,
-            a.run as f32,
-            b.run as f32,
-            on as f32,
-            period as f32,
-            clip as f32,
-            // How much of its ink the piece is missing, so that none missing is 0, as it is
-            // for everything that isn't a line.
-            (1.0 - (a.ink + b.ink) / 2.0) as f32,
-        ]);
+    let mut to_end = vec![0.0; spots.len()];
+    for i in (0..spots.len() - 1).rev() {
+        to_end[i] = to_end[i + 1] + length(i);
     }
-    Ok(())
+    // Each segment's part within reach, as fractions of the way along it, and its index.
+    let parts: Vec<(usize, [f64; 2])> = spots
+        .windows(2)
+        .enumerate()
+        .filter_map(|(i, pair)| Some((i, within(pair[0].at, pair[1].at, reach, frame)?)))
+        .collect();
+    let mut rest = &parts[..];
+    while let Some(&(first, [from, _])) = rest.first() {
+        // A stretch goes on from segment to segment while the line stays within reach.
+        let mut count = 1;
+        while let [(i, [_, to]), (next, [starts, _]), ..] = rest[count - 1..] {
+            if next != i + 1 || to < 1.0 || starts > 0.0 {
+                break;
+            }
+            count += 1;
+        }
+        let (stretch, after) = rest.split_at(count);
+        rest = after;
+        let long: f64 = stretch
+            .iter()
+            .map(|&(i, [from, to])| length(i) * (to - from))
+            .sum();
+        let (a, b) = (&spots[first], &spots[first + 1]);
+        let from_start = a.run + (b.run - a.run) * from;
+        let base = if from_start <= reach {
+            from_start
+        } else if period > 0.0 {
+            let phase = (from_start - reach).rem_euclid(period);
+            reach + if phase.is_finite() { phase } else { 0.0 }
+        } else {
+            reach
+        };
+        let clip = if square {
+            let left = to_end[first + 1] + length(first) * (1.0 - from);
+            base + left.min(long + reach)
+        } else {
+            0.0
+        };
+        let mut position = base;
+        for &(i, [from, to]) in stretch {
+            let (a, b) = (&spots[i], &spots[i + 1]);
+            // A segment that isn't cut keeps its ends exactly, so it still meets its neighbors.
+            let along = |t: f64, u: f64, v: f64| {
+                if t <= 0.0 {
+                    u
+                } else if t >= 1.0 {
+                    v
+                } else {
+                    u + (v - u) * t
+                }
+            };
+            let at = |t: f64| [along(t, a.at[0], b.at[0]), along(t, a.at[1], b.at[1])];
+            let (start, end) = (at(from), at(to));
+            let next = position + length(i) * (to - from);
+            segments.extend_from_slice(&[
+                start[0] as f32,
+                start[1] as f32,
+                end[0] as f32,
+                end[1] as f32,
+                along(from, a.radius, b.radius) as f32,
+                along(to, a.radius, b.radius) as f32,
+                position as f32,
+                next as f32,
+                on as f32,
+                period as f32,
+                clip as f32,
+                // A piece that's cut keeps the ink of all of it.
+                missing_ink(a, b),
+            ]);
+            position = next;
+        }
+    }
+}
+
+/// The part of the segment from `a` to `b` within `reach` of a frame this big, from and to as
+/// fractions of the way along it, if any is. A segment of no length is kept where it is.
+fn within(a: [f64; 2], b: [f64; 2], reach: f64, frame: [f64; 2]) -> Option<[f64; 2]> {
+    if !a.iter().chain(&b).all(|v| v.is_finite()) {
+        return None;
+    }
+    let (dx, dy) = (b[0] - a[0], b[1] - a[1]);
+    let (mut from, mut to) = (0.0f64, 1.0f64);
+    for (p, q) in [
+        (-dx, a[0] + reach),
+        (dx, frame[0] + reach - a[0]),
+        (-dy, a[1] + reach),
+        (dy, frame[1] + reach - a[1]),
+    ] {
+        if p == 0.0 {
+            if q < 0.0 {
+                return None;
+            }
+        } else if p < 0.0 {
+            from = from.max(q / p);
+        } else {
+            to = to.min(q / p);
+        }
+    }
+    (from < to || (dx == 0.0 && dy == 0.0)).then_some([from, to])
 }
 
 /// One segment's coverage of the pixel centered at `(px, py)`.
@@ -2287,6 +2427,101 @@ mod tests {
         ];
         assert_eq!(segment_coverage(&segment, 26.5, 10.5), 1.0);
         assert_eq!(segment_coverage(&segment, 30.5, 10.5), 0.0);
+    }
+
+    /// A line that comes down from 1e17 pixels above the frame, as a curve does from a pole,
+    /// turns at (0, 0), pixel (200, 200), and ends at (1, 0), pixel (300, 200).
+    const FROM_AFAR: &str = "viewport { x: -2..2, y: -2..2 }
+                             path p = (0, 10^15), (0, 0), (1, 0)";
+
+    /// Its length is far past what single precision can measure to a pixel, and what's on the
+    /// frame is drawn all the same, and ends square where it ends.
+    #[test]
+    fn a_line_from_far_off_the_frame_is_drawn_to_its_end() {
+        let s = layer_of(FROM_AFAR, "style p { stroke: black; width: 4px }", 400);
+        let c = rasterize(&s, 400, 400);
+        let at = |x: u32, y: u32| c[(y * 400 + x) as usize];
+        assert_eq!(at(200, 3), 1.0);
+        assert_eq!(at(200, 150), 1.0);
+        assert_eq!(at(250, 200), 1.0);
+        assert_eq!(at(299, 200), 1.0);
+        assert_eq!(at(300, 200), 0.0);
+        // What's carried is about as big as the frame, not as the line.
+        assert!(s.iter().all(|v| v.abs() < 2000.0), "{s:?}");
+    }
+
+    /// Dashes are measured along the whole line, as before, and so keep their length and gap on
+    /// the frame however far away the line starts.
+    #[test]
+    fn dashes_go_on_along_a_line_from_far_off_the_frame() {
+        let s = layer_of(
+            FROM_AFAR,
+            "style p { stroke: black; width: 2px; dash: 7px; gap: 5px }",
+            400,
+        );
+        let c = rasterize(&s, 400, 400);
+        // Along the line from just past its turn to just before its end, where a dash's ends are.
+        let row: Vec<bool> = (205..295).map(|x| c[200 * 400 + x] > 0.5).collect();
+        let mut runs = vec![(row[0], 0i32)];
+        for on in row {
+            match runs.last_mut() {
+                Some((was, length)) if *was == on => *length += 1,
+                _ => runs.push((on, 1)),
+            }
+        }
+        // Whole dashes and gaps, between the first and last, which the row cuts.
+        let inner = &runs[1..runs.len() - 1];
+        assert!(inner.len() >= 12, "{runs:?}");
+        for (on, length) in inner {
+            let want = if *on { 7 } else { 5 };
+            assert!((length - want).abs() <= 1, "{runs:?}");
+        }
+    }
+
+    /// Where a line leaves the frame and comes back, what's cut away still counts: its dashes
+    /// fall where they did along the whole line, and it still ends where it ends.
+    #[test]
+    fn a_line_that_leaves_the_frame_keeps_its_dashes_where_they_were() {
+        // Up 30 units, 3000 pixels, well past what's kept, and back down.
+        let doc = "viewport { x: -2..2, y: -2..2 }
+                   path p = (-1, 0), (0, 30), (1, 0)";
+        let s = layer_of(
+            doc,
+            "style p { stroke: black; width: 2px; dash: 7px; gap: 5px }",
+            400,
+        );
+        let segments: Vec<&[f32]> = s.chunks(FLOATS_PER_SEGMENT).collect();
+        // It's in two pieces: some of it is cut away.
+        let breaks = segments
+            .windows(2)
+            .filter(|pair| pair[0][2..4] != pair[1][0..2])
+            .count();
+        assert_eq!(breaks, 1);
+        let total = 2.0 * 100f64.hypot(3000.0);
+        let last = segments.last().unwrap();
+        let (at, clip, period) = (last[7] as f64, last[10] as f64, last[9] as f64);
+        let phase = |s: f64| s.rem_euclid(period);
+        assert!((phase(at) - phase(total)).abs() < 1e-3, "{at} {total}");
+        assert!((clip - at).abs() < 1e-3, "{clip} {at}");
+    }
+
+    /// A taper follows `self.t` along the whole line, not only the part on the frame: this one is
+    /// at its start, thin, on its way up, and at its end, wide, on its way down.
+    #[test]
+    fn a_taper_is_measured_along_all_of_a_line_that_leaves_the_frame() {
+        let doc = "viewport { x: -2..2, y: -2..2 }
+                   path p = (-1, 0), (0, 10^6), (1, 0)";
+        let s = layer_of(
+            doc,
+            "style p { stroke: black; width: 1px + 8px·self.t }",
+            400,
+        );
+        let c = rasterize(&s, 400, 400);
+        // Across each leg, which is all but upright, the coverage adds up to its width.
+        let across = |xs: std::ops::Range<usize>| xs.map(|x| c[100 * 400 + x]).sum::<f64>();
+        let (up, down) = (across(0..200), across(200..400));
+        assert!((up - 1.0).abs() < 0.01, "{up}");
+        assert!((down - 9.0).abs() < 0.01, "{down}");
     }
 
     /// Segments overlap at joints, and that must not show as a darker knot.
