@@ -227,15 +227,15 @@ impl<'a> Field<'a> {
     /// it is, and it's a zero once the field there has fallen below half the largest the edge has
     /// shown. At a zero it falls toward 0, by about 2¹² where the field is smooth. At a pole it
     /// only grows, and across a jump it keeps about the size of the jump. A distance,
-    /// `|f| / |∇f|`, can't tell them apart: it goes to 0 at a pole too. With a zero, where it is, to
-    /// within a sixteenth of the way from `a` to `b` or better.
+    /// `|f| / |∇f|`, can't tell them apart: it goes to 0 at a pole too. With a zero, the two points
+    /// it's between, a sixteenth of the way from `a` to `b` apart or closer.
     fn goes_to_zero(
         &mut self,
         mut a: [f64; 2],
         mut b: [f64; 2],
         mut fa: f64,
         mut fb: f64,
-    ) -> Result<Option<[f64; 2]>, Error> {
+    ) -> Result<Option<[[f64; 2]; 2]>, Error> {
         // `max` passes over a NaN, where the field has no value, which is on the side that isn't
         // negative, as at the corners.
         let mut peak = fa.abs().max(fb.abs());
@@ -264,7 +264,7 @@ impl<'a> Field<'a> {
                 self.at([b[0] + step[0], b[1] + step[1]])?,
             ];
             if !past.iter().any(|f| f.abs() >= peak / 2.0) {
-                return Ok(Some([(a[0] + b[0]) / 2.0, (a[1] + b[1]) / 2.0]));
+                return Ok(Some([a, b]));
             }
         }
         Ok(None)
@@ -461,9 +461,10 @@ struct Tracer<'a> {
     up: BTreeMap<u32, BTreeSet<u32>>,
     /// The grid's edges that change sign without going through zero, across a pole or a jump.
     poles: BTreeSet<Edge>,
-    /// For each edge that changes sign, where it goes to zero, near enough to tell a crossing
-    /// Newton steps took onto another part of the curve, or nothing across a pole or a jump.
-    zeros: HashMap<Edge, Option<[f64; 2]>, Quick>,
+    /// For each edge that changes sign, the two points it goes to zero between, near enough to
+    /// tell a crossing Newton steps took onto another part of the curve, and to start from where
+    /// they don't settle, or nothing across a pole or a jump.
+    zeros: HashMap<Edge, Option<[[f64; 2]; 2]>, Quick>,
     vertices: HashMap<Edge, Vertex, Quick>,
     /// How far each line from one crossing to another was found to stray, in cells.
     strayed: HashMap<(Edge, Edge), f64, Quick>,
@@ -573,9 +574,9 @@ impl<'a> Tracer<'a> {
         Ok(self.zero(e)?.is_some())
     }
 
-    /// Where an edge whose ends differ in sign goes to zero, to a sixteenth of the edge or
-    /// better, or nothing across a pole or a jump.
-    fn zero(&mut self, e: Edge) -> Result<Option<[f64; 2]>, Error> {
+    /// The two points an edge whose ends differ in sign goes to zero between, a sixteenth of the
+    /// edge apart or closer, or nothing across a pole or a jump.
+    fn zero(&mut self, e: Edge) -> Result<Option<[[f64; 2]; 2]>, Error> {
         if let Some(zero) = self.zeros.get(&e) {
             return Ok(*zero);
         }
@@ -617,10 +618,11 @@ impl<'a> Tracer<'a> {
             ((p[0] - pa[0]) * along_edge[0] + (p[1] - pa[1]) * along_edge[1])
                 / (along_edge[0].powi(2) + along_edge[1].powi(2))
         };
+        let middle = zero.map(|[p, q]| [(p[0] + q[0]) / 2.0, (p[1] + q[1]) / 2.0]);
         // The point of the curve nearest where the steps started is no further from the edge's
         // zero than twice as far as they started from it, so one further than that, with a
         // sixteenth of the edge for where the zero was found, is on another part of the curve.
-        let near = zero.is_none_or(|z| apart(at, z) <= 2.0 * apart(start, z) + length / 16.0);
+        let near = middle.is_none_or(|z| apart(at, z) <= 2.0 * apart(start, z) + length / 16.0);
         let landed = settled
             && near
             && apart(at, start) <= length
@@ -628,8 +630,12 @@ impl<'a> Tracer<'a> {
         let v = if landed {
             Vertex { at, grad }
         } else {
-            let guess = along(zero.unwrap_or(at)).clamp(0.0, 1.0);
-            self.zero_between(pa, along_edge, [0.0, 1.0], [fa, fb], guess, fa < 0.0)?
+            // From between the two points the zero was found between, where there's one.
+            let (ends, guess) = match zero {
+                Some([p, q]) => ([along(p), along(q)], along(middle.unwrap_or(at))),
+                None => ([0.0, 1.0], along(at).clamp(0.0, 1.0)),
+            };
+            self.zero_between(pa, along_edge, ends, [fa, fb], guess, fa < 0.0)?
                 .unwrap_or(Vertex { at, grad })
         };
         self.vertices.insert(e, v);
@@ -665,6 +671,12 @@ impl<'a> Tracer<'a> {
             let plain = [f * gx / g2, f * gy / g2];
             let length = self.grid.cells(plain);
             let length = length[0].hypot(length[1]);
+            // A step longer than the last isn't closing in on a zero: from beside a pole, from
+            // where the field levels off, or across a cube root's vertical tangent, where each goes
+            // twice as far as the last. Where they don't settle the crossing is found another way.
+            if lengths.last().is_some_and(|&l| length > l) {
+                break;
+            }
             lengths.push(length);
             let times = if step >= NEWTON_STEPS {
                 multiple(&lengths)
@@ -742,35 +754,16 @@ impl<'a> Tracer<'a> {
         if plain {
             return Ok(2.0 * STRAY);
         }
-        // Otherwise samples a sixteenth of a pixel apart find each change of sign between them,
-        // and the curve is near if one is a zero.
-        let mut last = (-1.0, right);
-        for k in 1..=8 {
-            let s = -1.0 + f64::from(k) / 4.0;
-            let f = if k == 8 { left } else { self.field.at(at(s))? };
-            if (f < 0.0) != (last.1 < 0.0)
-                && self
-                    .field
-                    .goes_to_zero(at(last.0), at(s), last.1, f)?
-                    .is_some()
-            {
-                return Ok(most);
-            }
-            last = (s, f);
-        }
-        // Beside a pole the curve can be nearer it than the samples are apart, and Newton steps
-        // from the middle still find the curve. Where they settle a pole has the field grow, so
-        // the curve is near only where they settle within `STRAY` on a field far smaller than
-        // either side's.
+        // Otherwise Newton steps from the middle say where the curve is, and it's near if they
+        // settle within `STRAY`. They settle only on a zero: from beside a pole or a point where
+        // the gradient is infinite but the field isn't zero, each step goes further than the last.
         let (near, _, settled) = self.settle(middle)?;
         let moved = self.grid.cells([near[0] - middle[0], near[1] - middle[1]]);
-        if settled
-            && moved[0].hypot(moved[1]) <= STRAY
-            && self.field.at(near)?.abs() <= 1e-3 * left.abs().min(right.abs())
-        {
-            return Ok(most);
-        }
-        Ok(2.0 * STRAY)
+        Ok(if settled && moved[0].hypot(moved[1]) <= STRAY {
+            most
+        } else {
+            2.0 * STRAY
+        })
     }
 
     /// How far the line from `start` to `end` strays, worked out once.
@@ -821,6 +814,20 @@ impl<'a> Tracer<'a> {
             let bounds = self.bounds(part.0, part.1);
             let settled = self.bend(p, q, BENDS, can_split, bounds, &mut points)?;
             if settled || !can_split {
+                // A bend that didn't settle is kept as far as it got where its points go on from
+                // one end to the other in order, and dropped where they double back, as they can
+                // where a point halfway along a piece is found on another part of the curve.
+                let u = [q.at[0] - p.at[0], q.at[1] - p.at[1]];
+                let path = std::iter::once(p.at)
+                    .chain(points.iter().copied())
+                    .chain(std::iter::once(q.at))
+                    .collect::<Vec<_>>();
+                let onward = path
+                    .windows(2)
+                    .all(|w| (w[1][0] - w[0][0]) * u[0] + (w[1][1] - w[0][1]) * u[1] > 0.0);
+                if !settled && !onward {
+                    points.clear();
+                }
                 self.bent.insert((start, end), (points, part));
             } else {
                 self.failed.insert((start, end));
@@ -914,12 +921,16 @@ impl<'a> Tracer<'a> {
         self.zero_between(middle, out, [a, b], [fa, fb], (a + b) / 2.0, fm < 0.0)
     }
 
-    /// Where the field is zero on the line from `from` along `step`, between `a` and `b` steps
-    /// along, whose signs differ and where it's `ends`: Newton steps from `guess`, taken as many times over as
-    /// a multiple zero needs (`multiple`), kept between the last points found on either side and
-    /// halving where they'd leave, to a billionth of a step. With the gradient there in cells.
-    /// `None` where the sign changes across a pole or a jump: the field there didn't fall below
-    /// half the most it was at the ends, as `goes_to_zero` tells them apart.
+    /// Where the field is zero on the line from `from` along `step`, a cell long or less, between
+    /// `a` and `b` steps along, whose signs differ and where it's `ends`: Newton steps from
+    /// `guess`, taken as many times over as a multiple zero needs (`multiple`), kept between the
+    /// last points found on either side and halving where they'd leave, to a billionth of a step.
+    /// Once two have left, they aren't closing in, as across a cube root's vertical tangent, where
+    /// each goes twice as far as the last, and it's halved alone from there, which needs no
+    /// gradient, to a millionth of a step, as fine as `settle` takes a crossing. With the gradient
+    /// in cells where the last Newton step was worked out, between the last points found on
+    /// either side. `None` where the sign changes across a pole or a jump: the field there didn't
+    /// fall below half the most it was at the ends, as `goes_to_zero` tells them apart.
     fn zero_between(
         &mut self,
         from: [f64; 2],
@@ -937,7 +948,7 @@ impl<'a> Tracer<'a> {
             (a + b) / 2.0
         };
         let (mut g, mut last) = ([f64::NAN; 2], f64::NAN);
-        let mut lengths = Vec::new();
+        let (mut lengths, mut left) = (Vec::new(), 0);
         for _ in 0..40 {
             let f = self.field.at(at(s))?;
             last = f;
@@ -949,16 +960,21 @@ impl<'a> Tracer<'a> {
             } else {
                 b = s;
             }
-            g = self.field.slope(at(s))?;
-            let plain = f / (g[0] * step[0] + g[1] * step[1]);
-            lengths.push(plain.abs());
-            let newton = s - multiple(&lengths) * plain;
-            let next = if a < newton && newton < b {
-                newton
+            let next = if left < 2 {
+                g = self.field.slope(at(s))?;
+                let plain = f / (g[0] * step[0] + g[1] * step[1]);
+                lengths.push(plain.abs());
+                let newton = s - multiple(&lengths) * plain;
+                if a < newton && newton < b {
+                    newton
+                } else {
+                    left += 1;
+                    (a + b) / 2.0
+                }
             } else {
                 (a + b) / 2.0
             };
-            let settled = (next - s).abs() < 1e-9;
+            let settled = (next - s).abs() < if left < 2 { 1e-9 } else { 1e-6 };
             s = next;
             if settled {
                 break;
@@ -1016,6 +1032,12 @@ impl<'a> Tracer<'a> {
             .map(|c| self.value(*c))
             .sum::<f64>();
         let joins = pair(&crossings, middle < 0.0);
+        // Where more than two crossings are paired by the middle's sign, which is a guess, a line
+        // can join two that the curve doesn't, and bending two such lines can follow one piece of
+        // the curve twice. They're kept as they are, inside the part.
+        if crossings.len() > 2 {
+            return Ok(Some(joins));
+        }
         for &(start, end) in &joins {
             if !self.keep(start, end, can_split, ((i, j), s))? {
                 return Ok(None);
@@ -1618,19 +1640,25 @@ mod tests {
     }
 
     /// Zeros the field crosses steeply, flatly or with a vertical tangent are still crossings, so
-    /// each of these is one whole line from the bottom of the grid to the top.
+    /// each of these is one whole line from the bottom of the grid to the top, and every vertex is
+    /// on it.
     #[test]
     fn steep_and_flat_zeros_trace_whole() {
-        type Case = (&'static str, &'static str, Option<fn(f64) -> f64>, f64);
+        type Case = (&'static str, &'static str, fn([f64; 2]) -> f64, f64);
         let cases: [Case; 3] = [
-            (WIDE, "y = 1000·x", Some(|x| 1000.0 * x), 3.0),
-            (NARROW, "y = x^3", Some(|x| x * x * x), 0.75),
+            (WIDE, "y = 1000·x", |p| to_graph(|x| 1000.0 * x, p), 3.0),
+            (NARROW, "y = x^3", |p| to_graph(|x| x * x * x, p), 0.75),
             // Its field falls to zero as the cube root of the distance across its vertical
-            // tangent. Newton steps there move away from the curve, as they do for any cube root,
-            // so only that the line is whole is checked.
-            (NARROW, "y = sign(x)·abs(x)^(1/3)", None, 0.75),
+            // tangent, where a Newton step goes twice as far from the curve as it started. Its
+            // vertices are checked against x = y³, sampled along y, where that graph is level.
+            (
+                NARROW,
+                "y = sign(x)·abs(x)^(1/3)",
+                |p| to_graph(|y| y * y * y, [p[1], p[0]]),
+                0.75,
+            ),
         ];
-        for (view, curve, g, top) in cases {
+        for (view, curve, distance, top) in cases {
             for cells in GRIDS {
                 let found = lines(&format!("{view}curve c = implicit (x, y): {curve}"), cells);
                 assert_eq!(found.len(), 1, "{curve}, {cells} cells");
@@ -1642,24 +1670,23 @@ mod tests {
                     low < -top && high > top,
                     "{curve}, {cells} cells: {low}..{high}"
                 );
-                if let Some(g) = g {
-                    let off = farthest(&found, |p| to_graph(g, p));
-                    assert!(
-                        off < 1e-3,
-                        "{curve}, {cells} cells: a vertex {off} off the curve"
-                    );
-                }
+                let off = farthest(&found, distance);
+                assert!(
+                    off < 1e-3,
+                    "{curve}, {cells} cells: a vertex {off} off the curve"
+                );
             }
         }
         // A circle whose field is level away from it and steep at it, from −1 to 1 within a cell
-        // or two. Newton steps from where the field is level go far, so here too only that the
-        // loop is whole is checked.
+        // or two, where a Newton step from the level part can go far past the circle.
         for cells in GRIDS {
             let doc = "viewport { x: 0 ± 2, y: 0 ± 1.5 }\n\
                        curve c = implicit (x, y): tanh(50·(x² + y² - 1)) = 0";
             let found = lines(doc, cells);
             assert_eq!(found.len(), 1, "{cells} cells");
             assert!(found[0].closed, "{cells} cells");
+            let off = farthest(&found, |p| (p[0].hypot(p[1]) - 1.0).abs());
+            assert!(off < 1e-3, "{cells} cells: a vertex {off} off the circle");
         }
     }
 
@@ -2343,17 +2370,27 @@ mod tests {
     }
 
     /// `sin(100·x)·sin(100·y) = 0` is lines a cell or so apart, crossing everywhere, more than the
-    /// budget can refine. No two traced lines run along one piece of it, since a line is bent only
-    /// near its own cell, so two cells can't both follow the same piece.
+    /// budget can refine, and the loops of `sin(x + y) - cos(x·y) + 1 = 0` in a tall phone frame
+    /// zoomed out are more than it can reach, so cells that two parts of the curve pass through
+    /// are left to pair their crossings by a guess. No two traced lines run along one piece of
+    /// either: a line is bent only near its own cell, not at all where it's such a guess, and not
+    /// where a bend that didn't settle doubles back.
     #[test]
     fn no_two_lines_follow_one_piece() {
-        for shift in [[0.0, 0.0], [0.5, 0.5]] {
-            let d = drawn(
-                "sin(100·x)·sin(100·y) = 0",
-                [[-2.0, 2.0], [-2.0, 2.0]],
-                [812, 812],
-                shift,
-            );
+        type Case = (&'static str, [[f64; 2]; 2], [u32; 2], [f64; 2]);
+        let lattice = "sin(100·x)·sin(100·y) = 0";
+        let cases: [Case; 3] = [
+            (lattice, [[-2.0, 2.0], [-2.0, 2.0]], [812, 812], [0.0, 0.0]),
+            (lattice, [[-2.0, 2.0], [-2.0, 2.0]], [812, 812], [0.5, 0.5]),
+            (
+                "sin(x + y) - cos(x·y) + 1 = 0",
+                [[-10.0, 10.0], [-21.65, 21.65]],
+                [375, 812],
+                [0.0, 0.0],
+            ),
+        ];
+        for (curve, view, size, shift) in cases {
+            let d = drawn(curve, view, size, shift);
             let mut pieces = Vec::new();
             for (n, line) in d.lines.iter().enumerate() {
                 for (k, w) in line.points.windows(2).enumerate() {
@@ -2391,7 +2428,9 @@ mod tests {
                         continue;
                     }
                     let v = direction(t);
-                    if (u[0] * v[0] + u[1] * v[1]).abs() < 0.9 {
+                    // The same piece traced twice runs the same way both times, with negative on the
+                    // left. Two sides of a loop thinner than this run opposite ways, and are both real.
+                    if u[0] * v[0] + u[1] * v[1] < 0.9 {
                         continue;
                     }
                     // How far the middle is from the line through the other, and how much of
@@ -2403,7 +2442,7 @@ mod tests {
                     let common = s1.min(t1) - s0.max(t0);
                     assert!(
                         !(off < 0.05 && common > 0.05),
-                        "shifted {shift:?}: lines {n} and {m} both run along {middle:?} px"
+                        "{curve}, shifted {shift:?}: lines {n} and {m} both run along {middle:?} px"
                     );
                 }
             }
@@ -2549,6 +2588,38 @@ mod tests {
             let samples = dense(&d, |t| [1.25 * t.cos(), 1.25 * t.sin()], [0.0, TAU]);
             assert_near(&d, &samples, curve);
         }
+    }
+
+    /// Newton steps across a cube root's vertical tangent go twice as far each time, so its
+    /// crossings are found along their edges instead, halving. They cost little more than a plain
+    /// field's crossings do, which take three Newton steps: the steps stop once one goes further
+    /// than the last, and the halving starts between the points the edge was found to change sign
+    /// between, needs no gradient, and stops at a millionth of a cell.
+    #[test]
+    fn a_cube_roots_crossings_cost_little() {
+        let view = [[-2.0, 2.0], [-2.0, 2.0]];
+        let each = |curve: &str| {
+            let mut corners = 0;
+            let (d, work) = inspect(curve, view, [812, 812], [0.0, 0.0], Some(0), |t| {
+                corners = t.values.len();
+            });
+            let points: usize = d.lines.iter().map(|l| l.points.len()).sum();
+            (d, (work.evals - corners) as f64 / points as f64)
+        };
+        let (_, plain) = each("y = sin(30·x)");
+        let (d, root) = each("sign(y - sin(30·x))·abs(y - sin(30·x))^(1/3) = 0");
+        eprintln!(
+            "{plain:.1} times the field for each plain crossing, {root:.1} for a cube root's"
+        );
+        // It's 2.1 times, and each of the four takes it past 2.2 on its own: Newton steps going on
+        // past one that goes further, to 3.9, Newton steps along the edge kept on, to 3.9, halving
+        // from the whole edge, to 2.3, and halving to a billionth of a cell, to 2.7.
+        assert!(
+            root <= 2.2 * plain,
+            "{root} for a cube root's, {plain} for a plain one"
+        );
+        let off = farthest(&d.lines, |p| to_graph(|x| (30.0 * x).sin(), p));
+        assert!(off < 1e-3, "a vertex {off} off the curve");
     }
 
     /// Near a pole, a jump, the edge of where the field has a value, or a cusp, the two sides of

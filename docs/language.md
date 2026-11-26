@@ -100,7 +100,9 @@ onto it, and where two parts of the curve pass through one cell, the cell is spl
 cell, so a tip is drawn to its point and two arms that run close stay apart until they're under about half a pixel
 apart. A curve with more detail than that, as one zoomed far out, is followed as far as a budget for each frame goes, a
 few times the grid's own work, spent where the line strays furthest first, and past it the line is left as the grid
-finds it, with tips cut short and near parts joined. Nothing says when that happens.
+finds it, with tips cut short and near parts joined. Nothing says when that happens. Every point the line is drawn
+through is on the curve, also where the expression levels off around it, as `tanh(50·(x² + y² - 1)) = 0` does, and where it falls to zero
+as a cube root does, as across the vertical tangent of `y = sign(x)·abs(x)^(1/3)`.
 
 An implicit curve is where its expression is zero, so where the expression changes sign without going through zero,
 across a pole or a jump, nothing is traced: `y = tan(x)` is its branches with nothing along x = ±π/2, and `y = floor(x)`
