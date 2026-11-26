@@ -94,6 +94,14 @@ Each form keeps its own representation (`goals.md`).
 | Parametric | `curve c = parametric (t): (cos(t), sin(t)) for t in 0..2·π` | Sampled to a line |
 | Construction | `curve c = circle(O, A)`, `curve g = ray(O, B)` | A circle per pixel, a line or ray as a line |
 
+An implicit curve is traced on a grid of cells 6 device pixels across, and the line is kept within a quarter of a pixel
+of the curve both ways. Where the curve bends sharper than a cell, as at each tip of `sin(30·x) = y`, the line is bent
+onto it, and where two parts of the curve pass through one cell, the cell is split in four, down to a sixteenth of a
+cell, so a tip is drawn to its point and two arms that run close stay apart until they're under about half a pixel
+apart. A curve with more detail than that, as one zoomed far out, is followed as far as a budget for each frame goes, a
+few times the grid's own work, and past it the line is left as the grid finds it, with tips cut short and near parts
+joined. Nothing says when that happens.
+
 An implicit curve is where its expression is zero, so where the expression changes sign without going through zero,
 across a pole or a jump, nothing is traced: `y = tan(x)` is its branches with nothing along x = ±π/2, and `y = floor(x)`
 is steps without risers. The line stops at the edge of the grid cell the pole or the jump runs through. Where a curve
