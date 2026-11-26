@@ -48,17 +48,19 @@ const DEPTH: u32 = 4;
 const FINE: u32 = 1 << DEPTH;
 /// How many times a line that strays is halved at the curve to bend it.
 const BENDS: usize = 8;
-/// Checking, bending and splitting lines work the field out at most about this many times for
-/// each of the grid's corners, a gradient counting twice, so a curve with more detail than the
-/// grid can follow, as one zoomed far out has, costs a few times what its grid does and not
+/// Checking, bending and splitting lines work the field out about this many times for each of
+/// the grid's corners, a gradient counting twice, and half as much again at most, for the parts
+/// splits have made, which are still looked at once it's spent. So a curve with more detail than
+/// the grid can follow, as one zoomed far out has, costs a few times what its grid does and not
 /// hundreds. Past that, a line is left as the grid found it. The grid's own work isn't counted:
 /// its corners, whether each edge that changes sign goes to zero, and putting each of its
-/// crossings on the curve. The tips of `sin(30·x) = y` in `0 ± 2` need 5 at 375 pixels. Long
-/// needles and close arms in a small frame need more than there is: `sin(80·x) = y` needs 13 at
-/// 812 pixels, and `1/sin(x)² = y + 2` in `0 ± 51` needs 8.4 at 812 pixels and 48 at 400. Each
-/// unit costs a figure that strays everywhere about a fifth of what its grid does, so 8 keeps
-/// one zoomed far out under three times what it cost before refining.
-const BUDGET: usize = 8;
+/// crossings on the curve. The tips of `sin(30·x) = y` in `0 ± 2` need 4.9 at 375 pixels, those
+/// of `sin(80·x) = y` 6.7 at 812, the two close arms of `1/sin(x)² = y + 2` in `0 ± 51` 8.4 at
+/// 812, and a curve made at random 8.5 at 375. More than there is: those arms at 400 pixels need
+/// 48, and the 1600 double points of `sin(30·x)·sin(30·y) = 0` in `0 ± 2` at 812 need 33. Each
+/// unit costs a figure that strays everywhere about a fifth of what its grid does, so 12 keeps
+/// one zoomed far out to about three times what it cost before refining.
+const BUDGET: usize = 12;
 /// About how many times the field is worked out to look at a part a split makes: its new edges'
 /// zeros and crossings. The budget keeps this much for each such part waiting to be looked at,
 /// or what such parts have cost so far if that's more, so the work done once it's spent is small.
@@ -297,6 +299,12 @@ impl Grid {
     }
 }
 
+/// A square of the grid, as its lower left corner and its side, in the finest cells.
+type Square = ((u32, u32), u32);
+
+/// The points a line is bent through, and the part it was bent in.
+type Bend = (Vec<[f64; 2]>, Square);
+
 /// A grid cell split in four, and so on, as a list of its parts, the first being the whole cell.
 struct Part {
     /// Its lower left corner and its side, in the finest cells.
@@ -459,8 +467,8 @@ struct Tracer<'a> {
     vertices: HashMap<Edge, Vertex, Quick>,
     /// How far each line from one crossing to another was found to stray, in cells.
     strayed: HashMap<(Edge, Edge), f64, Quick>,
-    /// The points a line is bent through, where it strayed.
-    bent: HashMap<(Edge, Edge), Vec<[f64; 2]>, Quick>,
+    /// The points a line is bent through, where it strayed, with the part it was bent in.
+    bent: HashMap<(Edge, Edge), Bend, Quick>,
     /// The lines kept, bent or not, and those that wouldn't bend, so neither is bent again.
     kept: HashSet<(Edge, Edge), Quick>,
     failed: HashSet<(Edge, Edge), Quick>,
@@ -538,9 +546,15 @@ impl<'a> Tracer<'a> {
         self.field.evals - self.free
     }
 
-    /// Whether there's budget left to check, bend and split lines, keeping what looking at the
-    /// parts splits have made takes.
+    /// Whether there's budget left to check and bend lines.
     fn refining(&self) -> bool {
+        self.spent() < self.budget
+    }
+
+    /// Whether there's budget left to split a part, keeping what looking at the parts splits have
+    /// already made takes. Only splitting makes more parts to look at, so only splitting holds
+    /// back for them, and a line is checked and bent while anything is left.
+    fn splitting(&self) -> bool {
         let each = PART.max(self.owed[1] / self.owed[0].max(1));
         self.spent() + each * self.queue.owed < self.budget
     }
@@ -710,13 +724,53 @@ impl<'a> Tracer<'a> {
             -u[1] * STRAY * self.grid.cell[0],
             u[0] * STRAY * self.grid.cell[1],
         ];
-        let left = self.field.at([middle[0] + side[0], middle[1] + side[1]])?;
-        let right = self.field.at([middle[0] - side[0], middle[1] - side[1]])?;
-        Ok(if (left < 0.0) != (right < 0.0) {
-            most
-        } else {
-            2.0 * STRAY
-        })
+        let at = |s: f64| [middle[0] + s * side[0], middle[1] + s * side[1]];
+        let (left, right) = (self.field.at(at(1.0))?, self.field.at(at(-1.0))?);
+        if (left < 0.0) != (right < 0.0) {
+            return Ok(most);
+        }
+        // The two sides agree where the curve is further off, and also where something else is
+        // between them as well as the curve: a pole, a jump, the edge of where the field has a
+        // value, or another part of the curve, as at a cusp. The middle tells them apart: where
+        // the curve is further off the field there is of the sides' sign and between their sizes,
+        // as near enough a straight line through them says, and that's a line that strays.
+        let f = self.field.at(middle)?;
+        let (low, high) = (left.abs().min(right.abs()), left.abs().max(right.abs()));
+        let plain = (f < 0.0) == (left < 0.0)
+            && [left, right, f].iter().all(|v| v.is_finite())
+            && (low / 4.0..=high * 4.0).contains(&f.abs());
+        if plain {
+            return Ok(2.0 * STRAY);
+        }
+        // Otherwise samples a sixteenth of a pixel apart find each change of sign between them,
+        // and the curve is near if one is a zero.
+        let mut last = (-1.0, right);
+        for k in 1..=8 {
+            let s = -1.0 + f64::from(k) / 4.0;
+            let f = if k == 8 { left } else { self.field.at(at(s))? };
+            if (f < 0.0) != (last.1 < 0.0)
+                && self
+                    .field
+                    .goes_to_zero(at(last.0), at(s), last.1, f)?
+                    .is_some()
+            {
+                return Ok(most);
+            }
+            last = (s, f);
+        }
+        // Beside a pole the curve can be nearer it than the samples are apart, and Newton steps
+        // from the middle still find the curve. Where they settle a pole has the field grow, so
+        // the curve is near only where they settle within `STRAY` on a field far smaller than
+        // either side's.
+        let (near, _, settled) = self.settle(middle)?;
+        let moved = self.grid.cells([near[0] - middle[0], near[1] - middle[1]]);
+        if settled
+            && moved[0].hypot(moved[1]) <= STRAY
+            && self.field.at(near)?.abs() <= 1e-3 * left.abs().min(right.abs())
+        {
+            return Ok(most);
+        }
+        Ok(2.0 * STRAY)
     }
 
     /// How far the line from `start` to `end` strays, worked out once.
@@ -743,14 +797,14 @@ impl<'a> Tracer<'a> {
     }
 
     /// Whether to keep the line a part joins from `start` to `end`. Where it strays from the curve,
-    /// it's bent onto it within `bounds`, and kept if that settles, if the part can't be split, or
-    /// as it is once the budget is spent.
+    /// it's bent onto it within the `part` and a little round it, and kept if that settles, if the
+    /// part can't be split, or as it is once the budget is spent.
     fn keep(
         &mut self,
         start: Edge,
         end: Edge,
         can_split: bool,
-        bounds: [[f64; 2]; 2],
+        part: Square,
     ) -> Result<bool, Error> {
         // A part looked at again keeps what it kept, and a line that wouldn't bend still won't.
         if self.kept.contains(&(start, end)) {
@@ -764,9 +818,10 @@ impl<'a> Tracer<'a> {
         } else {
             let (p, q) = (self.vertex(start)?, self.vertex(end)?);
             let mut points = Vec::new();
+            let bounds = self.bounds(part.0, part.1);
             let settled = self.bend(p, q, BENDS, can_split, bounds, &mut points)?;
             if settled || !can_split {
-                self.bent.insert((start, end), points);
+                self.bent.insert((start, end), (points, part));
             } else {
                 self.failed.insert((start, end));
             }
@@ -952,7 +1007,7 @@ impl<'a> Tracer<'a> {
                 crossings.push((e, f[a] < 0.0));
             }
         }
-        let can_split = s > 1 && self.refining();
+        let can_split = s > 1 && self.splitting();
         if crossings.len() > 2 && can_split {
             return Ok(None);
         }
@@ -961,9 +1016,8 @@ impl<'a> Tracer<'a> {
             .map(|c| self.value(*c))
             .sum::<f64>();
         let joins = pair(&crossings, middle < 0.0);
-        let bounds = self.bounds((i, j), s);
         for &(start, end) in &joins {
-            if !self.keep(start, end, can_split, bounds)? {
+            if !self.keep(start, end, can_split, ((i, j), s))? {
                 return Ok(None);
             }
         }
@@ -1164,7 +1218,7 @@ impl<'a> Tracer<'a> {
             let mut at = start;
             let mut closed = false;
             while let Some(&to) = next.get(&at) {
-                if let Some(bent) = self.bent.get(&(at, to)) {
+                if let Some((bent, _)) = self.bent.get(&(at, to)) {
                     points.extend(bent);
                 }
                 if to == start {
@@ -1271,9 +1325,18 @@ fn canonical_start(
     thin: f64,
 ) -> Result<Vec<[f64; 2]>, Error> {
     let n = points.len();
+    // The sums are taken from the mean of the points, since from the origin they'd be the
+    // differences of large numbers, for a loop far from it, and lose what they're for.
+    let mean = points.iter().fold([0.0, 0.0], |m, p| {
+        [m[0] + p[0] / n as f64, m[1] + p[1] / n as f64]
+    });
     let (mut area, mut area_moment, mut length, mut line_moment) = (0.0, 0.0, 0.0, 0.0);
     for i in 0..n {
         let (a, b) = (points[i], points[(i + 1) % n]);
+        let (a, b) = (
+            [a[0] - mean[0], a[1] - mean[1]],
+            [b[0] - mean[0], b[1] - mean[1]],
+        );
         let cross = a[0] * b[1] - b[0] * a[1];
         area += cross / 2.0;
         area_moment += (a[1] + b[1]) * cross / 6.0;
@@ -1282,13 +1345,14 @@ fn canonical_start(
         length += piece;
     }
     // Thin, here, is narrower on average than the least two parts of a curve can be apart.
-    let cy = if area.abs() > length * thin {
-        area_moment / area
-    } else if length > 0.0 {
-        line_moment / length
-    } else {
-        points.iter().map(|p| p[1]).sum::<f64>() / n as f64
-    };
+    let cy = mean[1]
+        + if area.abs() > length * thin {
+            area_moment / area
+        } else if length > 0.0 {
+            line_moment / length
+        } else {
+            0.0
+        };
     let mut best: Option<(usize, [f64; 2])> = None;
     for i in 0..n {
         let (a, b) = (points[i], points[(i + 1) % n]);
@@ -1731,6 +1795,19 @@ mod tests {
     }
 
     fn worked(curve: &str, view: [[f64; 2]; 2], size: [u32; 2], shift: [f64; 2]) -> (Drawn, Work) {
+        inspect(curve, view, size, shift, None, |_| {})
+    }
+
+    /// Traces a curve as `drawn` does, with another budget if there's one, in field evaluations
+    /// for each corner of the grid, and hands the tracer to `look` once it's done.
+    fn inspect(
+        curve: &str,
+        view: [[f64; 2]; 2],
+        size: [u32; 2],
+        shift: [f64; 2],
+        budget: Option<usize>,
+        look: impl FnOnce(&mut Tracer),
+    ) -> (Drawn, Work) {
         let figure = build(&format!("curve c = implicit (x, y): {curve}"), &[]).unwrap();
         let env = eval::frame_env(&figure, &crate::frame::Inputs::at(0.0)).unwrap();
         let Form::Field {
@@ -1749,7 +1826,11 @@ mod tests {
         v.x = view[0].map(|x| x + shift[0] * cell[0]);
         v.y = view[1].map(|y| y + shift[1] * cell[1]);
         let mut tracer = tracer(vars, field, grad, &env, &v, cols, rows, 1).unwrap();
+        if let Some(budget) = budget {
+            tracer.budget = budget * tracer.values.len();
+        }
         let lines = tracer.lines().unwrap();
+        look(&mut tracer);
         let work = Work {
             evals: tracer.field.evals,
             spent: tracer.spent(),
@@ -1759,7 +1840,7 @@ mod tests {
                 .flatten()
                 .filter(|p| p.quarters.is_some())
                 .count(),
-            bends: tracer.bent.values().filter(|b| !b.is_empty()).count(),
+            bends: tracer.bent.values().filter(|b| !b.0.is_empty()).count(),
         };
         let drawn = Drawn {
             lines,
@@ -1919,7 +2000,7 @@ mod tests {
     #[test]
     fn sharp_tips_are_traced_to_the_tip() {
         use std::f64::consts::{PI, TAU};
-        for (k, sizes) in [(30.0, &[375, 812, 1633][..]), (80.0, &[1100, 1633][..])] {
+        for (k, sizes) in [(30.0, &[375, 812, 1633][..]), (80.0, &[812, 1100][..])] {
             for &size in sizes {
                 for shift in SHIFTS {
                     let what = format!("sin({k}·x), {size} px, shifted {shift:?}");
@@ -1969,7 +2050,7 @@ mod tests {
     #[test]
     fn narrow_spikes_keep_both_arms() {
         use std::f64::consts::PI;
-        for size in [1100, 1633] {
+        for size in [812, 1100, 1633] {
             for shift in SHIFTS {
                 let what = format!("{size} px, shifted {shift:?}");
                 let d = drawn(
@@ -2237,6 +2318,28 @@ mod tests {
                 worst.1
             );
         }
+        // Far from the origin, as a circle at (10⁶, 10⁶), and small in a view to match, as one of
+        // radius 0.001 at (100, 100), a circle still starts due east of its center as it breathes.
+        for (center, radius) in [(1e6, 1.0), (100.0, 0.001)] {
+            let half = 2.0 * radius;
+            let view = [
+                [center - half, center + half],
+                [center - half, center + half],
+            ];
+            for frame in 0..=10 {
+                let r = radius * (1.0 + 0.01 * f64::from(frame));
+                let curve = format!("(x - {center})² + (y - {center})² = {}", r * r);
+                let d = drawn(&curve, view, [812, 812], [0.0, 0.0]);
+                assert_eq!(d.lines.len(), 1, "at {center}, frame {frame}");
+                let start = d.lines[0].points[0];
+                let angle = (start[1] - center).atan2(start[0] - center);
+                assert!(
+                    angle.abs() < 1e-3,
+                    "at {center}, frame {frame}: the start is {}° round",
+                    angle.to_degrees()
+                );
+            }
+        }
     }
 
     /// `sin(100·x)·sin(100·y) = 0` is lines a cell or so apart, crossing everywhere, more than the
@@ -2446,5 +2549,157 @@ mod tests {
             let samples = dense(&d, |t| [1.25 * t.cos(), 1.25 * t.sin()], [0.0, TAU]);
             assert_near(&d, &samples, curve);
         }
+    }
+
+    /// Near a pole, a jump, the edge of where the field has a value, or a cusp, the two sides of
+    /// a line's middle can have something besides the curve between them. That isn't a line that
+    /// strays, so tracing there costs little more than not refining at all: in points, and in
+    /// times the field is worked out.
+    #[test]
+    fn poles_cusps_and_edges_cost_little() {
+        let square = [[-2.0, 2.0], [-2.0, 2.0]];
+        type Case = (&'static str, [[f64; 2]; 2], [u32; 2]);
+        let cases: [Case; 8] = [
+            (
+                "abs(x)^(2/3) + abs(y)^(2/3) = 1",
+                [[-1.6, 1.6], [-1.6, 1.6]],
+                [812, 812],
+            ),
+            ("y = 0.01/sin(30·x)", square, [812, 812]),
+            ("y = 0.002/sin(30·x)", square, [812, 812]),
+            ("y = 0.01·tan(30·x)", square, [812, 812]),
+            ("sqrt(1 - x²) = y", [[-2.0, 2.0], [-1.5, 1.5]], [812, 609]),
+            ("sqrt(sin(30·x)) = y", square, [812, 812]),
+            ("y = tan(x)", [[-200.0, 200.0], [-200.0, 200.0]], [812, 812]),
+            ("y = 30·x - floor(30·x) - 0.5", square, [375, 375]),
+        ];
+        for (curve, view, size) in cases {
+            let (refined, work) = worked(curve, view, size, [0.0, 0.0]);
+            let (plain, grid) = inspect(curve, view, size, [0.0, 0.0], Some(0), |_| {});
+            let points = |d: &Drawn| d.lines.iter().map(|l| l.points.len()).sum::<usize>();
+            let (more, longer) = (
+                points(&refined) as f64 / points(&plain) as f64,
+                work.evals as f64 / grid.evals as f64,
+            );
+            eprintln!("{curve}: {more:.2} times the points, {longer:.2} times the work");
+            assert!(more <= 2.0, "{curve}: {more} times the points");
+            assert!(longer <= 2.0, "{curve}: {longer} times the work");
+        }
+    }
+
+    /// A line is bent no further than its own part and two of the finest cells round it, 0.75
+    /// pixels, so no two parts' lines can follow the same piece of the curve.
+    #[test]
+    fn a_bend_stays_by_its_part() {
+        let square = [[-2.0, 2.0], [-2.0, 2.0]];
+        let mut bent = 0;
+        for (curve, size) in [("sin(30·x) = y", 375), ("sin(80·x) = y", 812)] {
+            inspect(curve, square, [size, size], [0.0, 0.0], None, |tracer| {
+                let margin = tracer
+                    .grid
+                    .cell
+                    .map(|c| 2.0 * c / f64::from(FINE) * (1.0 + 1e-9));
+                for (points, ((i, j), s)) in tracer.bent.values() {
+                    let lo = tracer.grid.at((*i, *j));
+                    let hi = tracer.grid.at((i + s, j + s));
+                    for p in points {
+                        bent += 1;
+                        for k in 0..2 {
+                            assert!(
+                                lo[k] - margin[k] <= p[k] && p[k] <= hi[k] + margin[k],
+                                "{curve}: {p:?} is bent past its part, {lo:?} to {hi:?}"
+                            );
+                        }
+                    }
+                }
+            });
+        }
+        assert!(bent > 100, "{bent} points bent");
+    }
+
+    /// The search a bend makes along a line stops at a zero, and not at a pole the field changes
+    /// sign across: along y = 0.5, across the pole of `y = 1/x` at x = 0 it finds nothing, and
+    /// across its zero at x = 2 it finds that.
+    #[test]
+    fn a_bend_does_not_take_a_pole_for_the_curve() {
+        let view = [[-4.0, 4.0], [-4.0, 4.0]];
+        inspect("y = 1/x", view, [400, 400], [0.0, 0.0], None, |tracer| {
+            for (a, b, zero) in [
+                ([-0.1, 0.5], [0.1, 0.5], None),
+                ([1.5, 0.5], [2.5, 0.5], Some(2.0)),
+            ] {
+                let ends = [tracer.field.at(a).unwrap(), tracer.field.at(b).unwrap()];
+                let step = [b[0] - a[0], b[1] - a[1]];
+                let found = tracer
+                    .zero_between(a, step, [0.0, 1.0], ends, 0.5, ends[0] < 0.0)
+                    .unwrap()
+                    .map(|v| v.at[0]);
+                match (found, zero) {
+                    (None, None) => {}
+                    (Some(x), Some(z)) => assert!((x - z).abs() < 1e-9, "{x}"),
+                    _ => panic!("from {a:?} to {b:?}: found {found:?}"),
+                }
+            }
+        });
+    }
+
+    /// Past what the grid can follow, as the loops of `sin(x + y) - cos(x·y) + 1 = 0` zoomed out to
+    /// `0 ± 20`, the work past the grid's own stays within half as much again as the budget, and
+    /// the whole trace within four times what not refining at all costs.
+    #[test]
+    fn past_the_grid_the_budget_holds() {
+        let (curve, view) = (
+            "sin(x + y) - cos(x·y) + 1 = 0",
+            [[-20.0, 20.0], [-20.0, 20.0]],
+        );
+        let size = [600, 600];
+        let (_, work) = worked(curve, view, size, [0.0, 0.0]);
+        let (_, grid) = inspect(curve, view, size, [0.0, 0.0], Some(0), |_| {});
+        let corners = ((600.0 / CELL_PX).ceil() + 3.0).powi(2);
+        let (spent, longer) = (
+            work.spent as f64 / corners,
+            work.evals as f64 / grid.evals as f64,
+        );
+        eprintln!("{spent:.2} a corner past the grid's work, {longer:.2} times the work");
+        // Parts splits made are still looked at once the budget is spent, which takes some more.
+        assert!(spent <= 1.5 * BUDGET as f64, "{spent} a corner");
+        assert!(longer <= 4.0, "{longer} times the work");
+    }
+
+    /// Two curves made at random, which the first version left astray where the budget ran out:
+    /// a product of sines at 500 pixels, and a sum of a sine of x and a cosine of y at 375. Both
+    /// are traced near the curve both ways, by samples worked out without the tracer: the second
+    /// is where sin(22.876·x + 0.983) is −0.072 − 0.784·cos(30.891·y), which takes each x as two
+    /// families of arcsines.
+    #[test]
+    fn curves_made_at_random_trace_near() {
+        use std::f64::consts::{PI, TAU};
+        let view = [[-1.6, 1.6], [-1.6, 1.6]];
+        let d = drawn(
+            "y = 1.45·sin(58.704·x)·cos(4.971·x)",
+            view,
+            [500, 500],
+            [0.896, 0.56],
+        );
+        let g = |x: f64| [x, 1.45 * (58.704 * x).sin() * (4.971 * x).cos()];
+        assert_near(&d, &dense(&d, g, [-1.8, 1.8]), "a product of sines");
+        let d = drawn(
+            "sin(22.876·x + 0.983) + 0.784·cos(30.891·y) = -0.072",
+            view,
+            [375, 375],
+            [0.309, 0.799],
+        );
+        let mut samples = Vec::new();
+        for k in -8..=8 {
+            for branch in [0.0, 1.0] {
+                let x = |y: f64| {
+                    let s = (-0.072 - 0.784 * (30.891 * y).cos()).asin();
+                    let phase = if branch == 0.0 { s } else { PI - s };
+                    [(phase + TAU * f64::from(k) - 0.983) / 22.876, y]
+                };
+                samples.extend(dense(&d, x, [-1.8, 1.8]));
+            }
+        }
+        assert_near(&d, &samples, "a sine and a cosine");
     }
 }
