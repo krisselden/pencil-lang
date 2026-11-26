@@ -142,11 +142,16 @@ fn sample_within(
     let mut complete = first.is_some();
     let mut stack = Vec::new();
     let mut previous = first;
+    // Each from the nearer bound, so a range from 1e17 still ends at its own end.
+    let param = |i: usize| match 2 * i <= INITIAL_INTERVALS {
+        true => lo + (hi - lo) * i as f64 / INITIAL_INTERVALS as f64,
+        false => hi - (hi - lo) * (INITIAL_INTERVALS - i) as f64 / INITIAL_INTERVALS as f64,
+    };
     for i in 1..=INITIAL_INTERVALS {
-        let t = lo + (hi - lo) * i as f64 / INITIAL_INTERVALS as f64;
+        let t = param(i);
         let p = at(t)?;
         stack.push(Span {
-            t0: lo + (hi - lo) * (i - 1) as f64 / INITIAL_INTERVALS as f64,
+            t0: param(i - 1),
             p0: previous,
             t1: t,
             p1: p,
@@ -509,8 +514,13 @@ pub fn build(
         if let Form::Arrow { from, to } = &mark.form {
             let a = to_device([eval::real(&from[0], env)?, eval::real(&from[1], env)?]);
             let b = to_device([eval::real(&to[0], env)?, eval::real(&to[1], env)?]);
-            // It grows from its tail, head first.
-            let b = [a[0] + (b[0] - a[0]) * trim, a[1] + (b[1] - a[1]) * trim];
+            // It grows from its tail, head first. Its tip is worked out from the nearer end, so
+            // one drawn in full is at `to` exactly, however far away its tail is.
+            let tip = Place {
+                from_b: trim > 0.5,
+                fraction: if trim > 0.5 { 1.0 - trim } else { trim },
+            };
+            let b = tip.at(a, b);
             push_arrow(a, b, style, env, dpr, size, &mut segments)?;
             layers.push(segments);
             inks.push(Vec::new());
@@ -855,24 +865,30 @@ fn push_curve_arrow(
         return Ok(());
     };
     let (a, b) = (points[outer], points[outer + 1]);
-    let (mut lo, mut hi) = (0.0, 1.0);
-    let at = |s: f64| [a[0] + (b[0] - a[0]) * s, a[1] + (b[1] - a[1]) * s];
-    for _ in 0..30 {
-        let mid = (lo + hi) / 2.0;
-        if away(at(mid)) > back {
-            lo = mid;
+    // Found back from `b`, the end inside, and no further than it can be, so it's as exact on a
+    // chord that comes from 1e17 pixels away as on a short one.
+    let at = |s: f64| Place {
+        from_b: true,
+        fraction: s,
+    };
+    let length = (a[0] - b[0]).hypot(a[1] - b[1]);
+    let (mut near, mut far) = (0.0, (2.0 * (back + away(b)) / length).min(1.0));
+    for _ in 0..40 {
+        let mid = (near + far) / 2.0;
+        if away(at(mid).at(a, b)) > back {
+            far = mid;
         } else {
-            hi = mid;
+            near = mid;
         }
     }
-    let end = at(lo);
+    let end = at(far).at(a, b);
     let mut stroke: Vec<[f64; 2]> = points[..=outer].to_vec();
     stroke.push(end);
     // The curve's parameter where the stroke stops, so a style can still read along it.
     let mut stroke_params = Vec::new();
     if params.len() == points.len() {
         stroke_params.extend_from_slice(&params[..=outer]);
-        stroke_params.push(params[outer] + (params[outer + 1] - params[outer]) * lo);
+        stroke_params.push(at(far).of(params[outer], params[outer + 1]));
     }
     let line = Polyline {
         points: stroke,
@@ -1586,30 +1602,38 @@ fn push_spots(
     for i in (0..spots.len() - 1).rev() {
         to_end[i] = to_end[i + 1] + length(i);
     }
-    // Each segment's part within reach, as fractions of the way along it, and its index.
-    let parts: Vec<(usize, [f64; 2])> = spots
+    // Each segment's part within reach, where it starts and ends on it, and its index.
+    let parts: Vec<(usize, [Place; 2])> = spots
         .windows(2)
         .enumerate()
         .filter_map(|(i, pair)| Some((i, within(pair[0].at, pair[1].at, reach, frame)?)))
         .collect();
+    // A part's ends in device pixels, and its length, from the same numbers. One that isn't cut is
+    // the segment as it was, so it still meets its neighbors.
+    let part = |i: usize, [start, end]: [Place; 2]| {
+        let (a, b) = (spots[i].at, spots[i + 1].at);
+        let (from, to) = (start.at(a, b), end.at(a, b));
+        let long = match start == Place::A && end == Place::B {
+            true => length(i),
+            false => (to[0] - from[0]).hypot(to[1] - from[1]),
+        };
+        (from, to, long)
+    };
     let mut rest = &parts[..];
-    while let Some(&(first, [from, _])) = rest.first() {
+    while let Some(&(first, [start, end])) = rest.first() {
         // A stretch goes on from segment to segment while the line stays within reach.
         let mut count = 1;
-        while let [(i, [_, to]), (next, [starts, _]), ..] = rest[count - 1..] {
-            if next != i + 1 || to < 1.0 || starts > 0.0 {
+        while let [(i, [_, ends]), (next, [starts, _]), ..] = rest[count - 1..] {
+            if next != i + 1 || ends != Place::B || starts != Place::A {
                 break;
             }
             count += 1;
         }
         let (stretch, after) = rest.split_at(count);
         rest = after;
-        let long: f64 = stretch
-            .iter()
-            .map(|&(i, [from, to])| length(i) * (to - from))
-            .sum();
+        let whole: f64 = stretch.iter().map(|&(i, ends)| part(i, ends).2).sum();
         let (a, b) = (&spots[first], &spots[first + 1]);
-        let from_start = a.run + (b.run - a.run) * from;
+        let from_start = start.of(a.run, b.run);
         let base = if from_start <= reach {
             from_start
         } else if period > 0.0 {
@@ -1619,34 +1643,24 @@ fn push_spots(
             reach
         };
         let clip = if square {
-            let left = to_end[first + 1] + length(first) * (1.0 - from);
-            base + left.min(long + reach)
+            let (from, ..) = part(first, [start, end]);
+            let left = to_end[first + 1] + (b.at[0] - from[0]).hypot(b.at[1] - from[1]);
+            base + left.min(whole + reach)
         } else {
             0.0
         };
         let mut position = base;
-        for &(i, [from, to]) in stretch {
+        for &(i, [start, end]) in stretch {
             let (a, b) = (&spots[i], &spots[i + 1]);
-            // A segment that isn't cut keeps its ends exactly, so it still meets its neighbors.
-            let along = |t: f64, u: f64, v: f64| {
-                if t <= 0.0 {
-                    u
-                } else if t >= 1.0 {
-                    v
-                } else {
-                    u + (v - u) * t
-                }
-            };
-            let at = |t: f64| [along(t, a.at[0], b.at[0]), along(t, a.at[1], b.at[1])];
-            let (start, end) = (at(from), at(to));
-            let next = position + length(i) * (to - from);
+            let (from, to, long) = part(i, [start, end]);
+            let next = position + long;
             segments.extend_from_slice(&[
-                start[0] as f32,
-                start[1] as f32,
-                end[0] as f32,
-                end[1] as f32,
-                along(from, a.radius, b.radius) as f32,
-                along(to, a.radius, b.radius) as f32,
+                from[0] as f32,
+                from[1] as f32,
+                to[0] as f32,
+                to[1] as f32,
+                start.of(a.radius, b.radius) as f32,
+                end.of(a.radius, b.radius) as f32,
                 position as f32,
                 next as f32,
                 on as f32,
@@ -1660,31 +1674,86 @@ fn push_spots(
     }
 }
 
-/// The part of the segment from `a` to `b` within `reach` of a frame this big, from and to as
-/// fractions of the way along it, if any is. A segment of no length is kept where it is.
-fn within(a: [f64; 2], b: [f64; 2], reach: f64, frame: [f64; 2]) -> Option<[f64; 2]> {
+/// A place on a segment, as a fraction of the way along it from whichever of its ends it's
+/// nearer, so that it's exact near either. From the far end, a place a few hundred pixels from
+/// the near end of a segment 1e18 pixels long is a fraction that rounds to 1.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Place {
+    from_b: bool,
+    fraction: f64,
+}
+
+impl Place {
+    const A: Place = Place {
+        from_b: false,
+        fraction: 0.0,
+    };
+    const B: Place = Place {
+        from_b: true,
+        fraction: 0.0,
+    };
+
+    /// What's here of something that's `u` at the segment's first end and `v` at its second, and
+    /// runs straight between them. At an end, it's what's there exactly.
+    fn of(self, u: f64, v: f64) -> f64 {
+        let (near, far) = if self.from_b { (v, u) } else { (u, v) };
+        if self.fraction == 0.0 {
+            near
+        } else {
+            near + (far - near) * self.fraction
+        }
+    }
+
+    fn at(self, a: [f64; 2], b: [f64; 2]) -> [f64; 2] {
+        [self.of(a[0], b[0]), self.of(a[1], b[1])]
+    }
+}
+
+/// The part of the segment from `a` to `b` within `reach` of a frame this big, if any is: where it
+/// starts and where it ends. A segment of no length is kept where it is.
+fn within(a: [f64; 2], b: [f64; 2], reach: f64, frame: [f64; 2]) -> Option<[Place; 2]> {
     if !a.iter().chain(&b).all(|v| v.is_finite()) {
         return None;
     }
-    let (dx, dy) = (b[0] - a[0], b[1] - a[1]);
-    let (mut from, mut to) = (0.0f64, 1.0f64);
-    for (p, q) in [
-        (-dx, a[0] + reach),
-        (dx, frame[0] + reach - a[0]),
-        (-dy, a[1] + reach),
-        (dy, frame[1] + reach - a[1]),
-    ] {
-        if p == 0.0 {
-            if q < 0.0 {
-                return None;
+    // How far along from `o` toward `e` the segment is within reach, as fractions of it.
+    let clip = |o: [f64; 2], e: [f64; 2]| -> Option<[f64; 2]> {
+        let (dx, dy) = (e[0] - o[0], e[1] - o[1]);
+        let (mut from, mut to) = (0.0f64, 1.0f64);
+        for (p, q) in [
+            (-dx, o[0] + reach),
+            (dx, frame[0] + reach - o[0]),
+            (-dy, o[1] + reach),
+            (dy, frame[1] + reach - o[1]),
+        ] {
+            if p == 0.0 {
+                if q < 0.0 {
+                    return None;
+                }
+            } else if p < 0.0 {
+                from = from.max(q / p);
+            } else {
+                to = to.min(q / p);
             }
-        } else if p < 0.0 {
-            from = from.max(q / p);
-        } else {
-            to = to.min(q / p);
         }
+        Some([from, to])
+    };
+    if a == b {
+        return clip(a, b).map(|_| [Place::A, Place::B]);
     }
-    (from < to || (dx == 0.0 && dy == 0.0)).then_some([from, to])
+    // Each half from its own end, so a cut is worked out from the end it's nearer.
+    let half = |o, e| {
+        clip(o, e)
+            .map(|[from, to]| [from, to.min(0.5)])
+            .filter(|[from, to]| from < to)
+    };
+    let (near_a, near_b) = (half(a, b), half(b, a));
+    let place = |from_b, fraction| Place { from_b, fraction };
+    match (near_a, near_b) {
+        (Some([from, _]), Some([to, _])) => Some([place(false, from), place(true, to)]),
+        (Some([from, to]), None) => Some([place(false, from), place(false, to)]),
+        (None, Some([to, from])) => Some([place(true, from), place(true, to)]),
+        (None, None) => None,
+    }
 }
 
 /// One segment's coverage of the pixel centered at `(px, py)`.
@@ -2429,52 +2498,120 @@ mod tests {
         assert_eq!(segment_coverage(&segment, 30.5, 10.5), 0.0);
     }
 
-    /// A line that comes down from 1e17 pixels above the frame, as a curve does from a pole,
-    /// turns at (0, 0), pixel (200, 200), and ends at (1, 0), pixel (300, 200).
-    const FROM_AFAR: &str = "viewport { x: -2..2, y: -2..2 }
-                             path p = (0, 10^15), (0, 0), (1, 0)";
+    /// How far away a line comes from, in world units at 100 pixels each: 1e17 pixels, as a curve
+    /// does from a pole, and further. Where the far end comes first, a cut worked out from it
+    /// would be hundreds of pixels out by 4e18 and lost by 5e18.
+    const AFAR: [&str; 5] = ["10^15", "10^16", "4·10^16", "10^17", "10^20"];
 
-    /// Its length is far past what single precision can measure to a pixel, and what's on the
-    /// frame is drawn all the same, and ends square where it ends.
-    #[test]
-    fn a_line_from_far_off_the_frame_is_drawn_to_its_end() {
-        let s = layer_of(FROM_AFAR, "style p { stroke: black; width: 4px }", 400);
-        let c = rasterize(&s, 400, 400);
-        let at = |x: u32, y: u32| c[(y * 400 + x) as usize];
-        assert_eq!(at(200, 3), 1.0);
-        assert_eq!(at(200, 150), 1.0);
-        assert_eq!(at(250, 200), 1.0);
-        assert_eq!(at(299, 200), 1.0);
-        assert_eq!(at(300, 200), 0.0);
-        // What's carried is about as big as the frame, not as the line.
-        assert!(s.iter().all(|v| v.abs() < 2000.0), "{s:?}");
+    /// A line down from that high above the frame, turning at (0, 0), pixel (200, 200), and
+    /// ending at (1, 0), pixel (300, 200): or the same line the other way, out to there.
+    fn from_afar(height: &str, inward: bool) -> String {
+        let mut points = [format!("(0, {height})"), "(0, 0)".into(), "(1, 0)".into()];
+        if !inward {
+            points.reverse();
+        }
+        format!(
+            "viewport {{ x: -2..2, y: -2..2 }}\npath p = {}",
+            points.join(", ")
+        )
     }
 
-    /// Dashes are measured along the whole line, as before, and so keep their length and gap on
-    /// the frame however far away the line starts.
+    /// Its length is far past what single precision can measure to a pixel, and what's on the
+    /// frame is drawn all the same, coming in or going out, and ends square where it ends.
     #[test]
-    fn dashes_go_on_along_a_line_from_far_off_the_frame() {
-        let s = layer_of(
-            FROM_AFAR,
-            "style p { stroke: black; width: 2px; dash: 7px; gap: 5px }",
-            400,
-        );
-        let c = rasterize(&s, 400, 400);
-        // Along the line from just past its turn to just before its end, where a dash's ends are.
-        let row: Vec<bool> = (205..295).map(|x| c[200 * 400 + x] > 0.5).collect();
-        let mut runs = vec![(row[0], 0i32)];
-        for on in row {
+    fn a_line_from_far_off_the_frame_is_drawn_to_its_end() {
+        for height in AFAR {
+            for inward in [true, false] {
+                let doc = from_afar(height, inward);
+                let s = layer_of(&doc, "style p { stroke: black; width: 4px }", 400);
+                let c = rasterize(&s, 400, 400);
+                let at = |x: u32, y: u32| c[(y * 400 + x) as usize];
+                for (x, y, want) in [
+                    (200, 3, 1.0),
+                    (200, 150, 1.0),
+                    (250, 200, 1.0),
+                    (299, 200, 1.0),
+                    (300, 200, 0.0),
+                ] {
+                    assert_eq!(at(x, y), want, "{doc}: at ({x}, {y})");
+                }
+                // What's carried is about as big as the frame, not as the line.
+                assert!(s.iter().all(|v| v.abs() < 2000.0), "{doc}: {s:?}");
+            }
+        }
+    }
+
+    /// An arrow whose tail is that far away keeps its shaft on the frame, not only its head.
+    #[test]
+    fn an_arrow_from_far_off_the_frame_keeps_its_shaft() {
+        for height in AFAR {
+            let doc =
+                format!("viewport {{ x: -2..2, y: -2..2 }}\narrow v = (0.5, {height}), (0.5, 0)");
+            let s = layer_of(&doc, "style v { stroke: black; width: 4px }", 400);
+            let c = rasterize(&s, 400, 400);
+            for y in [3, 100, 170] {
+                assert_eq!(c[y * 400 + 250], 1.0, "{doc}: at (250, {y})");
+            }
+            // And so does a curve with a head, straight, so it isn't cut up as it comes, and its
+            // tip is at the end of its range, pixel (250, 175).
+            let doc = format!(
+                "viewport {{ x: -2..2, y: -2..2 }}\n\
+                 curve v = parametric (t): (0.5, t) for t in {height}..0.25"
+            );
+            let s = layer_of(
+                &doc,
+                "style v { stroke: black; width: 4px; head: 12px }",
+                400,
+            );
+            let c = rasterize(&s, 400, 400);
+            for y in [3, 100, 160, 172] {
+                assert_eq!(c[y * 400 + 250], 1.0, "{doc}: at (250, {y})");
+            }
+            assert_eq!(c[177 * 400 + 250], 0.0, "{doc}: past its tip");
+        }
+    }
+
+    /// Whole dashes and gaps along a line of pixels, between the first and last, which it cuts.
+    fn dashes_along(on: impl Iterator<Item = bool>) -> Vec<(bool, i32)> {
+        let mut runs: Vec<(bool, i32)> = Vec::new();
+        for on in on {
             match runs.last_mut() {
                 Some((was, length)) if *was == on => *length += 1,
                 _ => runs.push((on, 1)),
             }
         }
-        // Whole dashes and gaps, between the first and last, which the row cuts.
-        let inner = &runs[1..runs.len() - 1];
-        assert!(inner.len() >= 12, "{runs:?}");
-        for (on, length) in inner {
-            let want = if *on { 7 } else { 5 };
-            assert!((length - want).abs() <= 1, "{runs:?}");
+        runs.get(1..runs.len().saturating_sub(1))
+            .unwrap_or_default()
+            .to_vec()
+    }
+
+    /// Dashes are measured along the whole line, as before, and so keep their length and gap on
+    /// the frame however far away the line starts or ends, on the leg that comes from there too.
+    #[test]
+    fn dashes_go_on_along_a_line_from_far_off_the_frame() {
+        for height in AFAR {
+            for inward in [true, false] {
+                let doc = from_afar(height, inward);
+                let s = layer_of(
+                    &doc,
+                    "style p { stroke: black; width: 2px; dash: 7px; gap: 5px }",
+                    400,
+                );
+                let c = rasterize(&s, 400, 400);
+                let on = |x: usize, y: usize| c[y * 400 + x] > 0.5;
+                // Down the far leg from the frame's top to near the turn, and along the other
+                // from just past the turn to just before the end.
+                for (leg, runs) in [
+                    ("far", dashes_along((5..195).map(|y| on(200, y)))),
+                    ("near", dashes_along((205..295).map(|x| on(x, 200)))),
+                ] {
+                    assert!(runs.len() >= 12, "{doc}, {leg} leg: {runs:?}");
+                    for (on, length) in &runs {
+                        let want = if *on { 7 } else { 5 };
+                        assert!((length - want).abs() <= 1, "{doc}, {leg} leg: {runs:?}");
+                    }
+                }
+            }
         }
     }
 

@@ -89,6 +89,29 @@ fn curves_through_poles_draw_alike() {
     }
 }
 
+/// Lines from 1e19 pixels away and more, coming in and going out, dashed and with heads: where
+/// the far end comes first, the frame's part of a segment is a sliver at the end of it.
+#[test]
+fn lines_from_far_off_the_frame_draw_alike() {
+    for (name, height) in [("afar-17", "10^17"), ("afar-20", "10^20")] {
+        passes(check(
+            name,
+            &format!(
+                "viewport {{ x: -2..2, y: -2..2 }}
+                 path inward = (-1, {height}), (-1, 0), (0, -1)
+                 path outward = (1, -1), (1, 0), (1.2, {height})
+                 arrow v = (0.3, {height}), (0.3, 0.5)
+                 curve c = parametric (t): (-0.4, t) for t in {height}..0.5"
+            ),
+            "style paper { fill: white }
+             style inward { stroke: black; width: 2px; dash: 7px; gap: 5px }
+             style outward { stroke: black; width: 2px; dash: 7px; gap: 5px }
+             style v { stroke: black; width: 2px }
+             style c { stroke: black; width: 2px; head: 12px }",
+        ));
+    }
+}
+
 /// A rule whose `self.focus` is always 1 leaves an opacity made of nothing but numbers, which the
 /// shader has to be able to give a type.
 #[test]
