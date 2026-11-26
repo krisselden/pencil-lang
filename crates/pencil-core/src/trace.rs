@@ -10,17 +10,21 @@
 //! skips zero, so neither is a crossing and the curve breaks there.
 //!
 //! Each cell's line is checked against the curve: against the curve's direction where it crosses
-//! the cell's edges, and the field halfway along. Where it strays by more than a quarter of a
-//! pixel, as across a tip narrower than a cell, it's bent onto the curve, halved at the curve
-//! until every piece is near it. A bend that doesn't settle is a line from one part of the curve
-//! to another, where two parts pass through one cell or a tip reaches further than a bend looks,
-//! and that cell is split in four, and so on down to a sixteenth of a cell. Each neighbour that
-//! gains a corner on its side is looked at again, since the curve may cross there too, which is
-//! how splitting follows two arms that run close together. Only cells whose line strays cost
-//! more, and a budget for each trace keeps a curve with more detail than the grid can follow from
-//! costing more than a few times what its grid does.
+//! the cell's edges, and the field's sign either side of its middle. Where it strays by more than
+//! a quarter of a pixel, as across a tip narrower than a cell, it's bent onto the curve, halved at
+//! the curve until every piece is near it, without leaving its cell by more than a fraction of a
+//! pixel, so no two cells' lines follow the same piece of the curve. A bend that doesn't settle is
+//! a line from one part of the curve to another, where two parts pass through one cell, or a tip
+//! reaches past the cell, and that cell is split in four, and so on down to a sixteenth of a cell.
+//! Each neighbour that gains a corner on its side is looked at again, since the curve may cross
+//! there too, which is how splitting follows two arms that run close together, or a tip into the
+//! next cell. Only cells whose line strays cost more, and a budget for each trace keeps a curve
+//! with more detail than the grid can follow from costing more than a few times what its grid
+//! does. Coarse cells are looked at before finer ones, and of those, the furthest astray first, so
+//! what the budget reaches is where the trace strayed most, wherever that is in the frame.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
+use std::cmp::Ordering;
+use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet};
 use std::hash::{BuildHasher, Hasher};
 
 use crate::error::Error;
@@ -44,15 +48,21 @@ const DEPTH: u32 = 4;
 const FINE: u32 = 1 << DEPTH;
 /// How many times a line that strays is halved at the curve to bend it.
 const BENDS: usize = 8;
-/// Bending and splitting work the field out at most this many times for each of the grid's
-/// corners, a gradient counting twice, so a curve with more detail than the grid can follow, as
-/// one zoomed far out has, costs a few times what its grid does and not hundreds. Past that, a
-/// line is left as the grid found it. Two arms a couple of pixels apart for a long way in a small
-/// frame need more: `1/sin(x)² = y + 2` in `0 ± 51` at 400 pixels needs five times this.
-const BUDGET: usize = 12;
-/// How far, in cells, a line that strays is bent out to find the curve: a tip narrower than a cell
-/// can reach this far past the cells that see it.
-const REACH: f64 = 4.0;
+/// Checking, bending and splitting lines work the field out at most about this many times for
+/// each of the grid's corners, a gradient counting twice, so a curve with more detail than the
+/// grid can follow, as one zoomed far out has, costs a few times what its grid does and not
+/// hundreds. Past that, a line is left as the grid found it. The grid's own work isn't counted:
+/// its corners, whether each edge that changes sign goes to zero, and putting each of its
+/// crossings on the curve. The tips of `sin(30·x) = y` in `0 ± 2` need 5 at 375 pixels. Long
+/// needles and close arms in a small frame need more than there is: `sin(80·x) = y` needs 13 at
+/// 812 pixels, and `1/sin(x)² = y + 2` in `0 ± 51` needs 8.4 at 812 pixels and 48 at 400. Each
+/// unit costs a figure that strays everywhere about a fifth of what its grid does, so 8 keeps
+/// one zoomed far out under three times what it cost before refining.
+const BUDGET: usize = 8;
+/// About how many times the field is worked out to look at a part a split makes: its new edges'
+/// zeros and crossings. The budget keeps this much for each such part waiting to be looked at,
+/// or what such parts have cost so far if that's more, so the work done once it's spent is small.
+const PART: usize = 24;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Polyline {
@@ -215,14 +225,15 @@ impl<'a> Field<'a> {
     /// it is, and it's a zero once the field there has fallen below half the largest the edge has
     /// shown. At a zero it falls toward 0, by about 2¹² where the field is smooth. At a pole it
     /// only grows, and across a jump it keeps about the size of the jump. A distance,
-    /// `|f| / |∇f|`, can't tell them apart: it goes to 0 at a pole too.
+    /// `|f| / |∇f|`, can't tell them apart: it goes to 0 at a pole too. With a zero, where it is, to
+    /// within a sixteenth of the way from `a` to `b` or better.
     fn goes_to_zero(
         &mut self,
         mut a: [f64; 2],
         mut b: [f64; 2],
         mut fa: f64,
         mut fb: f64,
-    ) -> Result<bool, Error> {
+    ) -> Result<Option<[f64; 2]>, Error> {
         // `max` passes over a NaN, where the field has no value, which is on the side that isn't
         // negative, as at the corners.
         let mut peak = fa.abs().max(fb.abs());
@@ -251,10 +262,10 @@ impl<'a> Field<'a> {
                 self.at([b[0] + step[0], b[1] + step[1]])?,
             ];
             if !past.iter().any(|f| f.abs() >= peak / 2.0) {
-                return Ok(true);
+                return Ok(Some([(a[0] + b[0]) / 2.0, (a[1] + b[1]) / 2.0]));
             }
         }
-        Ok(false)
+        Ok(None)
     }
 }
 
@@ -352,24 +363,81 @@ impl Hasher for Mix {
     }
 }
 
-/// The parts to look at, each once until it's looked at, in the order they were found.
+/// A part to look at. Coarser parts come first, and of parts as coarse, the one whose line strays
+/// furthest, so where the budget runs out, what's been refined is where the trace strayed most
+/// across the frame, and not the rows the grid happened to reach first.
+#[derive(Clone, Copy, Debug)]
+struct Task {
+    size: u32,
+    strays: f64,
+    cell: (u32, u32),
+    index: usize,
+    /// Whether a split made it, or gave it another corner, so the budget has to keep enough to
+    /// look at it.
+    owed: bool,
+}
+
+impl PartialEq for Task {
+    fn eq(&self, other: &Self) -> bool {
+        self.cmp(other) == Ordering::Equal
+    }
+}
+
+impl Eq for Task {}
+
+impl PartialOrd for Task {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Task {
+    /// Greater is sooner.
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.size
+            .cmp(&other.size)
+            .then(self.strays.total_cmp(&other.strays))
+            .then((other.cell, other.index).cmp(&(self.cell, self.index)))
+    }
+}
+
+/// The parts to look at, each once until it's looked at, and how many of them splits made.
 #[derive(Default)]
 struct Queue {
-    order: VecDeque<((u32, u32), usize)>,
+    tasks: BinaryHeap<Task>,
     queued: HashSet<((u32, u32), usize), Quick>,
+    owed: usize,
 }
 
 impl Queue {
-    fn push(&mut self, part: ((u32, u32), usize)) {
-        if self.queued.insert(part) {
-            self.order.push_back(part);
+    fn push(&mut self, task: Task) {
+        if self.queued.insert((task.cell, task.index)) {
+            self.owed += usize::from(task.owed);
+            self.tasks.push(task);
         }
     }
 
-    fn pop(&mut self) -> Option<((u32, u32), usize)> {
-        let part = self.order.pop_front()?;
-        self.queued.remove(&part);
-        Some(part)
+    fn pop(&mut self) -> Option<Task> {
+        let task = self.tasks.pop()?;
+        self.queued.remove(&(task.cell, task.index));
+        self.owed -= usize::from(task.owed);
+        Some(task)
+    }
+}
+
+/// How many times over to take a Newton step, from the lengths of the steps so far. Where the last
+/// three shrank by about the same ratio r, the zero is a multiple one, of about 1/(1 − r), as where
+/// the field is squared or cubed, and each step goes only that part of the way to it.
+fn multiple(lengths: &[f64]) -> f64 {
+    let &[.., a, b, c] = lengths else {
+        return 1.0;
+    };
+    let (r, s) = (b / a, c / b);
+    let steady = (0.3..0.95).contains(&r) && (0.3..0.95).contains(&s) && (s / r - 1.0).abs() < 0.1;
+    if steady {
+        (1.0 / (1.0 - s)).round().max(1.0)
+    } else {
+        1.0
     }
 }
 
@@ -385,19 +453,27 @@ struct Tracer<'a> {
     up: BTreeMap<u32, BTreeSet<u32>>,
     /// The grid's edges that change sign without going through zero, across a pole or a jump.
     poles: BTreeSet<Edge>,
-    /// Whether the field goes to zero on a shorter edge that changes sign.
-    zeros: HashMap<Edge, bool, Quick>,
+    /// For each edge that changes sign, where it goes to zero, near enough to tell a crossing
+    /// Newton steps took onto another part of the curve, or nothing across a pole or a jump.
+    zeros: HashMap<Edge, Option<[f64; 2]>, Quick>,
     vertices: HashMap<Edge, Vertex, Quick>,
-    /// The points a line from one crossing to another is bent through, where it strayed.
+    /// How far each line from one crossing to another was found to stray, in cells.
+    strayed: HashMap<(Edge, Edge), f64, Quick>,
+    /// The points a line is bent through, where it strayed.
     bent: HashMap<(Edge, Edge), Vec<[f64; 2]>, Quick>,
-    /// The lines kept, bent or not.
+    /// The lines kept, bent or not, and those that wouldn't bend, so neither is bent again.
     kept: HashSet<(Edge, Edge), Quick>,
+    failed: HashSet<(Edge, Edge), Quick>,
     /// The grid cells that are split, or whose sides a split neighbour gave another corner.
     split: BTreeMap<(u32, u32), Vec<Part>>,
-    /// How many times the field may be worked out to bend and split lines, and how many of the
-    /// times it has been were for the grid and its lines, which that doesn't count.
+    queue: Queue,
+    /// How many times the field may be worked out to check, bend and split lines, and how many of
+    /// the times it has been were the grid's own work: its corners, the edges that change sign,
+    /// and the three Newton steps that take each of its crossings onto the curve.
     budget: usize,
     free: usize,
+    /// How many parts splits made have been looked at, and what that cost.
+    owed: [usize; 2],
 }
 
 impl<'a> Tracer<'a> {
@@ -411,7 +487,7 @@ impl<'a> Tracer<'a> {
         }
         let value = |i: u32, j: u32| values[(j * (nx + 1) + i) as usize];
         // Only an edge that changes sign costs anything more.
-        let mut poles = BTreeSet::new();
+        let (mut poles, mut zeros) = (BTreeSet::new(), HashMap::default());
         for j in 0..=ny {
             for i in 0..=nx {
                 for (kind, to) in [(0, (i + 1, j)), (1, (i, j + 1))] {
@@ -419,16 +495,18 @@ impl<'a> Tracer<'a> {
                         continue;
                     }
                     let (fa, fb) = (value(i, j), value(to.0, to.1));
-                    if (fa < 0.0) != (fb < 0.0)
-                        && !field.goes_to_zero(
-                            grid.at((i * FINE, j * FINE)),
-                            grid.at((to.0 * FINE, to.1 * FINE)),
-                            fa,
-                            fb,
-                        )?
-                    {
+                    if (fa < 0.0) == (fb < 0.0) {
+                        continue;
+                    }
+                    let (a, b) = (
+                        grid.at((i * FINE, j * FINE)),
+                        grid.at((to.0 * FINE, to.1 * FINE)),
+                    );
+                    let zero = field.goes_to_zero(a, b, fa, fb)?;
+                    if zero.is_none() {
                         poles.insert(Edge::whole(kind, i, j));
                     }
+                    zeros.insert(Edge::whole(kind, i, j), zero);
                 }
             }
         }
@@ -441,19 +519,30 @@ impl<'a> Tracer<'a> {
             across: BTreeMap::new(),
             up: BTreeMap::new(),
             poles,
-            zeros: HashMap::default(),
+            zeros,
             vertices: HashMap::default(),
+            strayed: HashMap::default(),
             bent: HashMap::default(),
             kept: HashSet::default(),
+            failed: HashSet::default(),
             split: BTreeMap::new(),
+            queue: Queue::default(),
             budget,
             free,
+            owed: [0, 0],
         })
     }
 
-    /// Whether there's budget left to bend and split lines.
+    /// How many times the field has been worked out for more than the grid's own work.
+    fn spent(&self) -> usize {
+        self.field.evals - self.free
+    }
+
+    /// Whether there's budget left to check, bend and split lines, keeping what looking at the
+    /// parts splits have made takes.
     fn refining(&self) -> bool {
-        self.field.evals - self.free < self.budget
+        let each = PART.max(self.owed[1] / self.owed[0].max(1));
+        self.spent() + each * self.queue.owed < self.budget
     }
 
     fn value(&self, (i, j): (u32, u32)) -> f64 {
@@ -467,9 +556,12 @@ impl<'a> Tracer<'a> {
     /// Whether the field goes to zero on an edge whose ends differ in sign, and not through a
     /// pole or a jump.
     fn is_zero(&mut self, e: Edge) -> Result<bool, Error> {
-        if e.len == FINE {
-            return Ok(!self.poles.contains(&e));
-        }
+        Ok(self.zero(e)?.is_some())
+    }
+
+    /// Where an edge whose ends differ in sign goes to zero, to a sixteenth of the edge or
+    /// better, or nothing across a pole or a jump.
+    fn zero(&mut self, e: Edge) -> Result<Option<[f64; 2]>, Error> {
         if let Some(zero) = self.zeros.get(&e) {
             return Ok(*zero);
         }
@@ -485,76 +577,116 @@ impl<'a> Tracer<'a> {
     /// it changed evenly along it, taken onto the curve by Newton steps. Where the steps don't
     /// settle, or settle further away than the edge is long or off its ends, they've left for
     /// another part of the curve, as they do where the field bends sharply between the corners,
-    /// and the crossing is found along the edge instead.
+    /// and the crossing is found along the edge instead, where it changes sign. That's done
+    /// whatever the budget, since a crossing in the wrong place draws a line across the frame, and
+    /// for the grid's own edges it's the grid's own work, which the budget doesn't count: twelve
+    /// Newton steps and forty along the edge at most, and most crossings take three and none.
     fn vertex(&mut self, e: Edge) -> Result<Vertex, Error> {
         if let Some(v) = self.vertices.get(&e) {
             return Ok(*v);
         }
+        let before = self.field.evals;
         let [a, b] = e.ends();
         let (pa, pb) = (self.grid.at(a), self.grid.at(b));
         let (fa, fb) = (self.value(a), self.value(b));
         let t = fa / (fa - fb);
         let start = [pa[0] + (pb[0] - pa[0]) * t, pa[1] + (pb[1] - pa[1]) * t];
         let (at, grad, settled) = self.settle(start)?;
-        let moved = self.grid.cells([at[0] - start[0], at[1] - start[1]]);
-        // How far along the edge it is, as a fraction of it.
-        let along = ((at[0] - pa[0]) * (pb[0] - pa[0]) + (at[1] - pa[1]) * (pb[1] - pa[1]))
-            / ((pb[0] - pa[0]).powi(2) + (pb[1] - pa[1]).powi(2));
-        let v = if settled
-            && moved[0].hypot(moved[1]) <= f64::from(e.len) / f64::from(FINE)
-            && (-1e-3..=1.0 + 1e-3).contains(&along)
-        {
+        let zero = self.zero(e)?;
+        let cell = self.grid.cell;
+        let apart =
+            |p: [f64; 2], q: [f64; 2]| ((p[0] - q[0]) / cell[0]).hypot((p[1] - q[1]) / cell[1]);
+        let length = f64::from(e.len) / f64::from(FINE);
+        // How far along the edge a point is, as a fraction of it.
+        let along_edge = [pb[0] - pa[0], pb[1] - pa[1]];
+        let along = |p: [f64; 2]| {
+            ((p[0] - pa[0]) * along_edge[0] + (p[1] - pa[1]) * along_edge[1])
+                / (along_edge[0].powi(2) + along_edge[1].powi(2))
+        };
+        // The point of the curve nearest where the steps started is no further from the edge's
+        // zero than twice as far as they started from it, so one further than that, with a
+        // sixteenth of the edge for where the zero was found, is on another part of the curve.
+        let near = zero.is_none_or(|z| apart(at, z) <= 2.0 * apart(start, z) + length / 16.0);
+        let landed = settled
+            && near
+            && apart(at, start) <= length
+            && (-1e-3..=1.0 + 1e-3).contains(&along(at));
+        let v = if landed {
             Vertex { at, grad }
         } else {
-            self.zero_between(pa, [pb[0] - pa[0], pb[1] - pa[1]], [0.0, 1.0], fa < 0.0)?
+            let guess = along(zero.unwrap_or(at)).clamp(0.0, 1.0);
+            self.zero_between(pa, along_edge, [0.0, 1.0], [fa, fb], guess, fa < 0.0)?
+                .unwrap_or(Vertex { at, grad })
         };
         self.vertices.insert(e, v);
+        if e.len == FINE {
+            self.free += self.field.evals - before;
+        }
         Ok(v)
     }
 
-    /// Newton steps along the gradient from `p`: the three a crossing has always had, and more,
-    /// up to twelve, while the last still moved a millionth of a cell or more. With the point, the
-    /// gradient in cells where the last step started, which is the curve's normal once the steps
-    /// have closed in on it, and whether they did.
+    /// Newton steps along the gradient from `p`: the three a crossing has always had, and more, up
+    /// to twelve, until one moves less than a millionth of a cell. Where
+    /// the steps shrink by a steady ratio the zero is a multiple one, and each is taken as many
+    /// times over as that says (`multiple`). With the point, the gradient in cells where the last
+    /// step started, which is the curve's normal once the steps have closed in on it, and whether
+    /// they did.
     #[allow(clippy::type_complexity)]
     fn settle(&mut self, mut p: [f64; 2]) -> Result<([f64; 2], Option<[f64; 2]>, bool), Error> {
-        let mut normal = None;
+        let (mut normal, mut settled) = (None, false);
+        let (mut lengths, mut last) = (Vec::new(), f64::NAN);
         for step in 0..12 {
             let f = self.field.at(p)?;
             let [gx, gy] = self.field.slope(p)?;
             let g2 = gx * gx + gy * gy;
             // Where the gradient vanishes or is infinite, as at a cusp, a step goes nowhere useful.
+            // It vanishes on the curve too where the zero is a multiple one, which the field falling
+            // by a thousand since the last step shows.
             if !(1e-12..f64::INFINITY).contains(&g2) {
+                settled = step >= NEWTON_STEPS && f.abs() <= last.abs() * 1e-3;
                 break;
             }
+            last = f;
             normal = Some(self.grid.per_cell([gx, gy]));
-            let next = [p[0] - f * gx / g2, p[1] - f * gy / g2];
+            let plain = [f * gx / g2, f * gy / g2];
+            let length = self.grid.cells(plain);
+            let length = length[0].hypot(length[1]);
+            lengths.push(length);
+            let times = if step >= NEWTON_STEPS {
+                multiple(&lengths)
+            } else {
+                1.0
+            };
+            let next = [p[0] - times * plain[0], p[1] - times * plain[1]];
             if !(next[0].is_finite() && next[1].is_finite()) {
                 break;
             }
-            let moved = self.grid.cells([next[0] - p[0], next[1] - p[1]]);
             p = next;
-            if step + 1 >= NEWTON_STEPS && moved[0].hypot(moved[1]) < 1e-6 {
-                return Ok((p, normal, true));
+            if step + 1 >= NEWTON_STEPS && times * length < 1e-6 {
+                settled = true;
+                break;
             }
         }
-        Ok((p, normal, false))
+        Ok((p, normal, settled))
     }
 
-    /// Whether the curve between two vertices strays from the line between them by more than
-    /// `STRAY`. An arc that turns evenly leaves its chord by `c/2·tan(α/2)` at most, c being the
-    /// chord's length and α the angle the curve makes with it at either end, so the curve's
-    /// direction at the ends says most of it: across a tip, or from one part of a curve to
-    /// another, it turns right back. Where the curve runs along the line at both ends and leaves
-    /// it between them, the field halfway along shows it, against the gradient at the ends.
-    fn strays(&mut self, p: Vertex, q: Vertex) -> Result<bool, Error> {
+    /// How far the curve between two vertices strays from the line between them, in cells, as
+    /// near as can be told, which is under `STRAY` where it doesn't. An arc that turns evenly
+    /// leaves its chord by `c/2·tan(α/2)` at most, c being the chord's length and α the angle the
+    /// curve makes with it at either end, so the curve's direction at the ends says most of it:
+    /// across a tip, or from one part of a curve to another, it turns right back. Where the curve
+    /// runs along the line at both ends and leaves it between them, the field shows it: `STRAY`
+    /// to either side of the line's middle, it has one sign. That holds where the field's gradient
+    /// vanishes on the curve, as it does where the field is squared, and a distance worked out
+    /// from the gradient doesn't.
+    fn stray(&mut self, p: Vertex, q: Vertex) -> Result<f64, Error> {
         let d = self.grid.cells([q.at[0] - p.at[0], q.at[1] - p.at[1]]);
         let c = d[0].hypot(d[1]);
         if !(c > 0.0 && c.is_finite()) {
-            return Ok(false);
+            return Ok(0.0);
         }
         let u = [d[0] / c, d[1] / c];
-        let (mut sum, mut count) = ([0.0, 0.0], 0);
+        let mut most = 0.0f64;
         for g in [p.grad, q.grad].into_iter().flatten() {
             let n = g[0].hypot(g[1]);
             if !(n > 0.0 && n.is_finite()) {
@@ -564,54 +696,79 @@ impl<'a> Tracer<'a> {
             let t = [-g[1] / n, g[0] / n];
             let along = u[0] * t[0] + u[1] * t[1];
             let off = (u[0] * t[1] - u[1] * t[0]).abs();
-            if along <= 0.0 || c / 2.0 * off / (1.0 + along) > STRAY {
-                return Ok(true);
-            }
-            sum = [sum[0] + g[0], sum[1] + g[1]];
-            count += 1;
+            most = most.max(if along > 0.0 {
+                c / 2.0 * off / (1.0 + along)
+            } else {
+                c.max(2.0 * STRAY)
+            });
+        }
+        if most > STRAY {
+            return Ok(most);
         }
         let middle = [(p.at[0] + q.at[0]) / 2.0, (p.at[1] + q.at[1]) / 2.0];
-        let f = self.field.at(middle)?;
-        if f == 0.0 {
-            return Ok(false);
-        }
-        let slope = if count > 0 {
-            sum[0].hypot(sum[1]) / count as f64
+        let side = [
+            -u[1] * STRAY * self.grid.cell[0],
+            u[0] * STRAY * self.grid.cell[1],
+        ];
+        let left = self.field.at([middle[0] + side[0], middle[1] + side[1]])?;
+        let right = self.field.at([middle[0] - side[0], middle[1] - side[1]])?;
+        Ok(if (left < 0.0) != (right < 0.0) {
+            most
         } else {
-            let g = self.grid.per_cell(self.field.slope(middle)?);
-            g[0].hypot(g[1])
-        };
-        Ok(!(0.0..=STRAY * slope).contains(&f.abs()))
+            2.0 * STRAY
+        })
     }
 
-    /// Whether to keep the line a cell joins from `start` to `end`. Where it strays from the
-    /// curve, it's bent onto it, and kept if that settles, if the cell can't be split, or as it is
-    /// once the budget is spent. A whole cell's line is the grid's own work, which the budget
-    /// doesn't count, until it's bent.
+    /// How far the line from `start` to `end` strays, worked out once.
+    fn strays(&mut self, start: Edge, end: Edge) -> Result<f64, Error> {
+        if let Some(e) = self.strayed.get(&(start, end)) {
+            return Ok(*e);
+        }
+        let (p, q) = (self.vertex(start)?, self.vertex(end)?);
+        let e = self.stray(p, q)?;
+        self.strayed.insert((start, end), e);
+        Ok(e)
+    }
+
+    /// A part's square in the world, with two finest cells more on every side. A line bent in it
+    /// stays within that, so no two parts' lines follow the same piece of the curve, and a tip
+    /// the finest parts don't see the end of is still bent round its end.
+    fn bounds(&self, (i, j): (u32, u32), s: u32) -> [[f64; 2]; 2] {
+        let (lo, hi) = (self.grid.at((i, j)), self.grid.at((i + s, j + s)));
+        let m = [
+            2.0 * self.grid.cell[0] / f64::from(FINE),
+            2.0 * self.grid.cell[1] / f64::from(FINE),
+        ];
+        [[lo[0] - m[0], lo[1] - m[1]], [hi[0] + m[0], hi[1] + m[1]]]
+    }
+
+    /// Whether to keep the line a part joins from `start` to `end`. Where it strays from the curve,
+    /// it's bent onto it within `bounds`, and kept if that settles, if the part can't be split, or
+    /// as it is once the budget is spent.
     fn keep(
         &mut self,
         start: Edge,
         end: Edge,
         can_split: bool,
-        whole: bool,
+        bounds: [[f64; 2]; 2],
     ) -> Result<bool, Error> {
-        // A part looked at again keeps what it kept.
+        // A part looked at again keeps what it kept, and a line that wouldn't bend still won't.
         if self.kept.contains(&(start, end)) {
             return Ok(true);
         }
-        let before = self.field.evals;
-        let (p, q) = (self.vertex(start)?, self.vertex(end)?);
-        let strays = self.strays(p, q)?;
-        if whole {
-            self.free += self.field.evals - before;
+        if can_split && self.failed.contains(&(start, end)) {
+            return Ok(false);
         }
-        let keep = if !strays || !self.refining() {
+        let keep = if !self.refining() || self.strays(start, end)? <= STRAY {
             true
         } else {
+            let (p, q) = (self.vertex(start)?, self.vertex(end)?);
             let mut points = Vec::new();
-            let settled = self.bend(p, q, BENDS, can_split, &mut points)?;
+            let settled = self.bend(p, q, BENDS, can_split, bounds, &mut points)?;
             if settled || !can_split {
                 self.bent.insert((start, end), points);
+            } else {
+                self.failed.insert((start, end));
             }
             settled || !can_split
         };
@@ -624,42 +781,47 @@ impl<'a> Tracer<'a> {
     /// Bends the line from `p` to `q` onto the curve, halving it at the curve while it strays,
     /// adds the points that takes, and says whether it settled: whether every piece is near the
     /// curve. A line from one part of the curve to another doesn't, since the point halfway along
-    /// it isn't on the curve, or the pieces still turn back.
+    /// it isn't on the curve, or the pieces still turn back. With `give_up`, it stops at the first
+    /// piece that won't.
     fn bend(
         &mut self,
         p: Vertex,
         q: Vertex,
         depth: usize,
         give_up: bool,
+        bounds: [[f64; 2]; 2],
         out: &mut Vec<[f64; 2]>,
     ) -> Result<bool, Error> {
-        if !self.strays(p, q)? {
+        if self.stray(p, q)? <= STRAY {
             return Ok(true);
         }
         if depth == 0 || !self.refining() {
             return Ok(false);
         }
-        let Some(r) = self.halfway(p, q)? else {
+        let Some(r) = self.halfway(p, q, bounds)? else {
             return Ok(false);
         };
-        let before = self.bend(p, r, depth - 1, give_up, out)?;
+        let before = self.bend(p, r, depth - 1, give_up, bounds, out)?;
         if give_up && !before {
             return Ok(false);
         }
         out.push(r.at);
-        Ok(self.bend(r, q, depth - 1, give_up, out)? && before)
+        Ok(self.bend(r, q, depth - 1, give_up, bounds, out)? && before)
     }
 
     /// Where the curve crosses the line square to the one from `p` to `q` through its middle,
     /// which is between them, so the line through it doesn't double back. The curve from `p` to
     /// `q` has negative on its left, so where the middle is negative it bulges to the right of the
     /// line, and to the left where it isn't. Steps out that way, doubling, find where the field
-    /// changes sign, as far as `REACH` or as far as they are apart, since a tip can reach further
-    /// than it's wide, and Newton steps kept between the last two close in on it.
-    fn halfway(&mut self, p: Vertex, q: Vertex) -> Result<Option<Vertex>, Error> {
+    /// changes sign, as far as `bounds` go, and Newton steps kept between the last two close in.
+    fn halfway(
+        &mut self,
+        p: Vertex,
+        q: Vertex,
+        bounds: [[f64; 2]; 2],
+    ) -> Result<Option<Vertex>, Error> {
         let d = self.grid.cells([q.at[0] - p.at[0], q.at[1] - p.at[1]]);
         let c = d[0].hypot(d[1]);
-        let reach = c.max(REACH);
         let middle = [(p.at[0] + q.at[0]) / 2.0, (p.at[1] + q.at[1]) / 2.0];
         let fm = self.field.at(middle)?;
         // A step of one along it is a cell's length.
@@ -668,42 +830,74 @@ impl<'a> Tracer<'a> {
             side * d[1] / c * self.grid.cell[0],
             -side * d[0] / c * self.grid.cell[1],
         ];
+        // How far it can go before it leaves the bounds.
+        let mut reach = f64::INFINITY;
+        for k in 0..2 {
+            let edge = if out[k] > 0.0 {
+                bounds[1][k]
+            } else {
+                bounds[0][k]
+            };
+            if out[k] != 0.0 {
+                reach = reach.min((edge - middle[k]) / out[k]);
+            }
+        }
+        if reach.is_nan() || reach <= 0.0 {
+            return Ok(None);
+        }
         let at = |s: f64| [middle[0] + s * out[0], middle[1] + s * out[1]];
         let (mut a, mut b) = (0.0, (c / 4.0).min(reach));
-        loop {
-            if (self.field.at(at(b))? < 0.0) != (fm < 0.0) {
-                break;
-            }
+        let (mut fa, mut fb) = (fm, self.field.at(at(b))?);
+        while (fb < 0.0) == (fm < 0.0) {
             if b >= reach {
                 return Ok(None);
             }
-            (a, b) = (b, (2.0 * b).min(reach));
+            (a, fa) = (b, fb);
+            b = (2.0 * b).min(reach);
+            fb = self.field.at(at(b))?;
         }
-        self.zero_between(middle, out, [a, b], fm < 0.0).map(Some)
+        self.zero_between(middle, out, [a, b], [fa, fb], (a + b) / 2.0, fm < 0.0)
     }
 
     /// Where the field is zero on the line from `from` along `step`, between `a` and `b` steps
-    /// along, whose signs differ: Newton steps, kept between the last points found on either side
-    /// and halving where they'd leave, to a billionth of a step. With the gradient there in cells.
+    /// along, whose signs differ and where it's `ends`: Newton steps from `guess`, taken as many times over as
+    /// a multiple zero needs (`multiple`), kept between the last points found on either side and
+    /// halving where they'd leave, to a billionth of a step. With the gradient there in cells.
+    /// `None` where the sign changes across a pole or a jump: the field there didn't fall below
+    /// half the most it was at the ends, as `goes_to_zero` tells them apart.
     fn zero_between(
         &mut self,
         from: [f64; 2],
         step: [f64; 2],
         [mut a, mut b]: [f64; 2],
+        ends: [f64; 2],
+        guess: f64,
         negative_at_a: bool,
-    ) -> Result<Vertex, Error> {
+    ) -> Result<Option<Vertex>, Error> {
         let at = |s: f64| [from[0] + s * step[0], from[1] + s * step[1]];
-        let mut s = (a + b) / 2.0;
-        let mut g = [f64::NAN; 2];
+        let peak = ends[0].abs().max(ends[1].abs());
+        let mut s = if a < guess && guess < b {
+            guess
+        } else {
+            (a + b) / 2.0
+        };
+        let (mut g, mut last) = ([f64::NAN; 2], f64::NAN);
+        let mut lengths = Vec::new();
         for _ in 0..40 {
             let f = self.field.at(at(s))?;
+            last = f;
+            if f == 0.0 {
+                break;
+            }
             if (f < 0.0) == negative_at_a {
                 a = s;
             } else {
                 b = s;
             }
             g = self.field.slope(at(s))?;
-            let newton = s - f / (g[0] * step[0] + g[1] * step[1]);
+            let plain = f / (g[0] * step[0] + g[1] * step[1]);
+            lengths.push(plain.abs());
+            let newton = s - multiple(&lengths) * plain;
             let next = if a < newton && newton < b {
                 newton
             } else {
@@ -715,10 +909,13 @@ impl<'a> Tracer<'a> {
                 break;
             }
         }
-        Ok(Vertex {
+        if last.is_nan() || last.abs() >= peak / 2.0 {
+            return Ok(None);
+        }
+        Ok(Some(Vertex {
             at: at(s),
             grad: Some(self.grid.per_cell(g)),
-        })
+        }))
     }
 
     /// The lines through a whole part of a split cell, from crossing to crossing on its sides,
@@ -764,8 +961,9 @@ impl<'a> Tracer<'a> {
             .map(|c| self.value(*c))
             .sum::<f64>();
         let joins = pair(&crossings, middle < 0.0);
+        let bounds = self.bounds((i, j), s);
         for &(start, end) in &joins {
-            if !self.keep(start, end, can_split, false)? {
+            if !self.keep(start, end, can_split, bounds)? {
                 return Ok(None);
             }
         }
@@ -773,8 +971,8 @@ impl<'a> Tracer<'a> {
     }
 
     /// Splits a part in four, adds the corners that takes, and looks again at the parts whose
-    /// sides those corners are on.
-    fn split(&mut self, cell: (u32, u32), index: usize, queue: &mut Queue) -> Result<(), Error> {
+    /// sides those corners are on, which come in the order of the part, `strays`.
+    fn split(&mut self, cell: (u32, u32), index: usize, strays: f64) -> Result<(), Error> {
         let Some(parts) = self.split.get_mut(&cell) else {
             return Ok(());
         };
@@ -792,7 +990,13 @@ impl<'a> Tracer<'a> {
             });
         }
         for k in 0..4 {
-            queue.push((cell, first + k));
+            self.queue.push(Task {
+                size: h,
+                strays,
+                cell,
+                index: first + k,
+                owed: true,
+            });
         }
         let [w, t] = [self.grid.cells[0] * FINE, self.grid.cells[1] * FINE];
         // The middle of each side, with the finest cell across it, in the neighbour that side
@@ -807,7 +1011,7 @@ impl<'a> Tracer<'a> {
             if self.add(corner)?
                 && let Some(beyond) = beyond
             {
-                self.look_again(beyond, queue);
+                self.look_again(beyond, strays);
             }
         }
         self.add((i + h, j + h))?;
@@ -828,7 +1032,7 @@ impl<'a> Tracer<'a> {
 
     /// Queues the whole part that holds the finest cell at `c`, taking its grid cell in with the
     /// split ones if it isn't yet.
-    fn look_again(&mut self, c: (u32, u32), queue: &mut Queue) {
+    fn look_again(&mut self, c: (u32, u32), strays: f64) {
         let cell = (c.0 / FINE, c.1 / FINE);
         let parts = self
             .split
@@ -839,16 +1043,22 @@ impl<'a> Tracer<'a> {
             let (at, h) = (parts[index].at, parts[index].size / 2);
             index = first + usize::from(c.0 >= at.0 + h) + 2 * usize::from(c.1 >= at.1 + h);
         }
-        queue.push((cell, index));
+        let size = parts[index].size;
+        self.queue.push(Task {
+            size,
+            strays,
+            cell,
+            index,
+            owed: true,
+        });
     }
 
-    fn lines(mut self) -> Result<Vec<Polyline>, Error> {
+    fn lines(&mut self) -> Result<Vec<Polyline>, Error> {
         let [nx, ny] = self.grid.cells;
         // Each segment runs from where the perimeter (walked counterclockwise) goes
         // negative to positive, to where it goes positive to negative. That keeps the
         // negative side on the left.
         let mut joins = Vec::new();
-        let mut queue = Queue::default();
         for j in 0..ny {
             for i in 0..nx {
                 let corner = |di: u32, dj: u32| self.value(((i + di) * FINE, (j + dj) * FINE));
@@ -872,32 +1082,49 @@ impl<'a> Tracer<'a> {
                 if crossings.is_empty() || crossings.iter().any(|c| self.poles.contains(&c.0)) {
                     continue;
                 }
-                if let [(start, end)] = pair(&crossings, false)[..]
-                    && self.keep(start, end, true, true)?
+                // Where two parts of the curve pass through a cell, it's split first.
+                let line = pair(&crossings, false);
+                let strays = match line[..] {
+                    [(start, end)] if self.refining() => self.strays(start, end)?,
+                    [_] => 0.0,
+                    _ => f64::INFINITY,
+                };
+                if let [(start, end)] = line[..]
+                    && strays <= STRAY
                 {
                     joins.push(((i, j), start, end));
                     continue;
                 }
-                // Its line strays and won't bend onto the curve, or two parts of the curve pass
-                // through it.
+                // Its line strays, or two parts of the curve pass through it: it's bent or split,
+                // the furthest astray first.
                 self.split.insert((i, j), vec![Part::whole((i, j))]);
-                queue.push(((i, j), 0));
+                self.queue.push(Task {
+                    size: FINE,
+                    strays,
+                    cell: (i, j),
+                    index: 0,
+                    owed: false,
+                });
             }
         }
 
-        while let Some((cell, index)) = queue.pop() {
-            let part = &self.split[&cell][index];
+        while let Some(task) = self.queue.pop() {
+            let before = self.field.evals;
+            let part = &self.split[&task.cell][task.index];
             if part.quarters.is_some() {
                 continue;
             }
             let (at, size) = (part.at, part.size);
             match self.joins(at, size)? {
                 Some(lines) => {
-                    if let Some(parts) = self.split.get_mut(&cell) {
-                        parts[index].joins = lines;
+                    if let Some(parts) = self.split.get_mut(&task.cell) {
+                        parts[task.index].joins = lines;
                     }
                 }
-                None => self.split(cell, index, &mut queue)?,
+                None => self.split(task.cell, task.index, task.strays)?,
+            }
+            if task.owed {
+                self.owed = [self.owed[0] + 1, self.owed[1] + self.field.evals - before];
             }
         }
 
@@ -1002,6 +1229,21 @@ pub fn trace(
     rows: u32,
     margin: u32,
 ) -> Result<Vec<Polyline>, Error> {
+    tracer(vars, expr, grad, env, view, cols, rows, margin)?.lines()
+}
+
+/// The tracer for `trace`, with its grid's corners worked out.
+#[allow(clippy::too_many_arguments)]
+fn tracer<'a>(
+    vars: &'a [String; 2],
+    expr: &'a Expr,
+    grad: &'a [Expr; 2],
+    env: &Env,
+    view: &Viewport,
+    cols: u32,
+    rows: u32,
+    margin: u32,
+) -> Result<Tracer<'a>, Error> {
     let margin = margin.max(1);
     let grid = Grid {
         origin: [view.x[0], view.y[0]],
@@ -1012,7 +1254,7 @@ pub fn trace(
         margin: margin as f64,
         cells: [cols + 2 * margin, rows + 2 * margin],
     };
-    Tracer::new(Field::new(vars, expr, grad, env), grid)?.lines()
+    Tracer::new(Field::new(vars, expr, grad, env), grid)
 }
 
 /// Starts a loop where it crosses the horizontal through its centroid on the +x
@@ -1410,7 +1652,7 @@ mod tests {
             (fa < 0.0) != (fb < 0.0),
             "{curve}: {fa} and {fb} have one sign"
         );
-        f.goes_to_zero(a, b, fa, fb).unwrap()
+        f.goes_to_zero(a, b, fa, fb).unwrap().is_some()
     }
 
     #[test]
@@ -1475,6 +1717,20 @@ mod tests {
     }
 
     fn drawn(curve: &str, view: [[f64; 2]; 2], size: [u32; 2], shift: [f64; 2]) -> Drawn {
+        worked(curve, view, size, shift).0
+    }
+
+    /// How much work a trace took: how many times it worked the field out in all, and past the
+    /// grid's own work, and how many parts it split and lines it bent.
+    #[derive(Clone, Copy, Debug)]
+    struct Work {
+        evals: usize,
+        spent: usize,
+        splits: usize,
+        bends: usize,
+    }
+
+    fn worked(curve: &str, view: [[f64; 2]; 2], size: [u32; 2], shift: [f64; 2]) -> (Drawn, Work) {
         let figure = build(&format!("curve c = implicit (x, y): {curve}"), &[]).unwrap();
         let env = eval::frame_env(&figure, &crate::frame::Inputs::at(0.0)).unwrap();
         let Form::Field {
@@ -1492,12 +1748,25 @@ mod tests {
         let mut v = figure.scene.viewport.clone();
         v.x = view[0].map(|x| x + shift[0] * cell[0]);
         v.y = view[1].map(|y| y + shift[1] * cell[1]);
-        let lines = trace(vars, field, grad, &env, &v, cols, rows, 1).unwrap();
-        Drawn {
+        let mut tracer = tracer(vars, field, grad, &env, &v, cols, rows, 1).unwrap();
+        let lines = tracer.lines().unwrap();
+        let work = Work {
+            evals: tracer.field.evals,
+            spent: tracer.spent(),
+            splits: tracer
+                .split
+                .values()
+                .flatten()
+                .filter(|p| p.quarters.is_some())
+                .count(),
+            bends: tracer.bent.values().filter(|b| !b.is_empty()).count(),
+        };
+        let drawn = Drawn {
             lines,
             view: v,
             size: [f64::from(size[0]), f64::from(size[1])],
-        }
+        };
+        (drawn, work)
     }
 
     /// Points along `curve` for its parameter in `range`, none more than a tenth of a pixel from
@@ -1650,7 +1919,7 @@ mod tests {
     #[test]
     fn sharp_tips_are_traced_to_the_tip() {
         use std::f64::consts::{PI, TAU};
-        for (k, sizes) in [(30.0, &[375, 812, 1633][..]), (80.0, &[812, 1100][..])] {
+        for (k, sizes) in [(30.0, &[375, 812, 1633][..]), (80.0, &[1100, 1633][..])] {
             for &size in sizes {
                 for shift in SHIFTS {
                     let what = format!("sin({k}·x), {size} px, shifted {shift:?}");
@@ -1700,7 +1969,7 @@ mod tests {
     #[test]
     fn narrow_spikes_keep_both_arms() {
         use std::f64::consts::PI;
-        for size in [812, 1100, 1633] {
+        for size in [1100, 1633] {
             for shift in SHIFTS {
                 let what = format!("{size} px, shifted {shift:?}");
                 let d = drawn(
@@ -1967,6 +2236,215 @@ mod tests {
                 worst.0,
                 worst.1
             );
+        }
+    }
+
+    /// `sin(100·x)·sin(100·y) = 0` is lines a cell or so apart, crossing everywhere, more than the
+    /// budget can refine. No two traced lines run along one piece of it, since a line is bent only
+    /// near its own cell, so two cells can't both follow the same piece.
+    #[test]
+    fn no_two_lines_follow_one_piece() {
+        for shift in [[0.0, 0.0], [0.5, 0.5]] {
+            let d = drawn(
+                "sin(100·x)·sin(100·y) = 0",
+                [[-2.0, 2.0], [-2.0, 2.0]],
+                [812, 812],
+                shift,
+            );
+            let mut pieces = Vec::new();
+            for (n, line) in d.lines.iter().enumerate() {
+                for (k, w) in line.points.windows(2).enumerate() {
+                    pieces.push((n, k, [d.px(w[0]), d.px(w[1])]));
+                }
+            }
+            let bin = |q: [f64; 2]| (q[0].floor() as i64, q[1].floor() as i64);
+            let mut bins: HashMap<(i64, i64), Vec<usize>> = HashMap::new();
+            for (i, (_, _, s)) in pieces.iter().enumerate() {
+                let (lo, hi) = (
+                    bin([s[0][0].min(s[1][0]), s[0][1].min(s[1][1])]),
+                    bin([s[0][0].max(s[1][0]), s[0][1].max(s[1][1])]),
+                );
+                for x in lo.0..=hi.0 {
+                    for y in lo.1..=hi.1 {
+                        bins.entry((x, y)).or_default().push(i);
+                    }
+                }
+            }
+            let direction = |s: &[[f64; 2]; 2]| {
+                let d = [s[1][0] - s[0][0], s[1][1] - s[0][1]];
+                let l = d[0].hypot(d[1]);
+                [d[0] / l, d[1] / l]
+            };
+            for (n, k, s) in &pieces {
+                let middle = [(s[0][0] + s[1][0]) / 2.0, (s[0][1] + s[1][1]) / 2.0];
+                let (u, (bx, by)) = (direction(s), bin(middle));
+                for i in (bx - 1..=bx + 1)
+                    .flat_map(|x| (by - 1..=by + 1).map(move |y| (x, y)))
+                    .filter_map(|key| bins.get(&key))
+                    .flatten()
+                {
+                    let (m, j, t) = &pieces[*i];
+                    if m == n && j.abs_diff(*k) <= 1 {
+                        continue;
+                    }
+                    let v = direction(t);
+                    if (u[0] * v[0] + u[1] * v[1]).abs() < 0.9 {
+                        continue;
+                    }
+                    // How far the middle is from the line through the other, and how much of
+                    // that line the two have in common.
+                    let off = ((middle[0] - t[0][0]) * v[1] - (middle[1] - t[0][1]) * v[0]).abs();
+                    let at = |q: [f64; 2]| (q[0] - t[0][0]) * v[0] + (q[1] - t[0][1]) * v[1];
+                    let (s0, s1) = (at(s[0]).min(at(s[1])), at(s[0]).max(at(s[1])));
+                    let (t0, t1) = (0.0f64.min(at(t[1])), 0.0f64.max(at(t[1])));
+                    let common = s1.min(t1) - s0.max(t0);
+                    assert!(
+                        !(off < 0.05 && common > 0.05),
+                        "shifted {shift:?}: lines {n} and {m} both run along {middle:?} px"
+                    );
+                }
+            }
+        }
+    }
+
+    /// Refining near a pole or a jump that changes the field's sign keeps the rule of issue 28: no
+    /// line is traced across one, and the curve stops within a cell or so of it. Away from it the
+    /// trace and the curve are near each other both ways, at sizes where tips are bent and cells
+    /// split: `y = tan(x)` zoomed out, whose branches turn in about two cells; a sine with tips
+    /// that `floor` shifts at each whole number; and a pole along y = 0.99, just below the tips.
+    #[test]
+    fn refining_keeps_poles_and_jumps() {
+        use std::f64::consts::{FRAC_PI_2, PI};
+        type Graph = fn(f64) -> f64;
+        // Each curve, its view and size, its pieces as graphs over ranges of x, and its poles and
+        // jumps, as lines x = c or y = c.
+        type Case = (
+            &'static str,
+            [[f64; 2]; 2],
+            [u32; 2],
+            Graph,
+            Vec<[f64; 2]>,
+            Vec<(usize, f64)>,
+        );
+        let cases: [Case; 3] = [
+            (
+                "y = tan(x)",
+                [[-80.0, 80.0], [-80.0, 80.0]],
+                [812, 812],
+                f64::tan,
+                (-27..=26)
+                    .map(|k| [f64::from(k) * PI - FRAC_PI_2, f64::from(k) * PI + FRAC_PI_2])
+                    .collect(),
+                (-27..=26)
+                    .map(|k| (0, f64::from(k) * PI + FRAC_PI_2))
+                    .collect(),
+            ),
+            (
+                "y = sin(30·x) + 2·floor(x)",
+                [[-2.0, 2.0], [-5.0, 3.0]],
+                [600, 1200],
+                |x| (30.0 * x).sin() + 2.0 * x.floor(),
+                (-3..=2).map(|k| [f64::from(k), f64::from(k + 1)]).collect(),
+                (-2..=2).map(|k| (0, f64::from(k))).collect(),
+            ),
+            (
+                "(y - sin(30·x))/(0.99 - y) = 0",
+                [[-2.0, 2.0], [-2.0, 2.0]],
+                [812, 812],
+                |x| (30.0 * x).sin(),
+                vec![[-2.2, 2.2]],
+                vec![(1, 0.99)],
+            ),
+        ];
+        for (curve, view, size, graph, pieces, cuts) in cases {
+            for shift in SHIFTS {
+                let what = format!("{curve}, shifted {shift:?}");
+                let (d, work) = worked(curve, view, size, shift);
+                assert!(work.bends + work.splits > 0, "{what}: nothing refined");
+                // Within a cell and a half of a pole or a jump, the curve may stop.
+                let cell = d.size[0] / (d.size[0] / CELL_PX).ceil() * 1.5 / d.scale();
+                let near = |p: [f64; 2]| cuts.iter().any(|&(k, c)| (p[k] - c).abs() < cell);
+                let mut samples = Vec::new();
+                for range in &pieces {
+                    let inside = [range[0] + 1e-9, range[1] - 1e-9];
+                    samples.extend(dense(&d, |x| [x, graph(x)], inside));
+                }
+                samples.retain(|p| !near(*p));
+                let [off, missed] = apart(&d, &samples);
+                // The trace may stop short of a cut, so only the curve away from them is checked
+                // against it, and every traced point is checked against all the curve.
+                assert!(
+                    missed.0 <= NEAR_PX,
+                    "{what}: the curve is {} px off the trace at {:?} px",
+                    missed.0,
+                    missed.1
+                );
+                let all: Vec<[f64; 2]> = pieces
+                    .iter()
+                    .flat_map(|r| dense(&d, |x| [x, graph(x)], [r[0] + 1e-9, r[1] - 1e-9]))
+                    .collect();
+                let [off_all, _] = apart(&d, &all);
+                assert!(
+                    off_all.0 <= NEAR_PX,
+                    "{what}: the trace is {} px off the curve at {:?} px ({:?})",
+                    off_all.0,
+                    off_all.1,
+                    off.1
+                );
+                for line in &d.lines {
+                    for w in line.points.windows(2) {
+                        for &(k, c) in &cuts {
+                            assert!(
+                                (w[0][k] < c) == (w[1][k] < c),
+                                "{what}: a line across {} = {c} at {:?} px",
+                                ["x", "y"][k],
+                                d.px(w[0])
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// A refined trace is the same each time it's made.
+    #[test]
+    fn refining_is_deterministic() {
+        let (curve, view) = (
+            "sin(x + y) - cos(x·y) + 1 = 0",
+            [[-10.0, 10.0], [-10.0, 10.0]],
+        );
+        let (first, work) = worked(curve, view, [812, 812], [0.0, 0.0]);
+        assert!(work.bends > 0 && work.splits > 0, "{work:?}");
+        let (second, _) = worked(curve, view, [812, 812], [0.0, 0.0]);
+        assert_eq!(first.lines, second.lines);
+    }
+
+    /// A curve whose trace doesn't stray is bent and split nowhere, and the only work past the
+    /// grid's own is checking its lines. One whose field's gradient vanishes on it, as a squared
+    /// or cubed field's does, costs about what the plain one does, and is traced as near.
+    #[test]
+    fn a_trace_that_does_not_stray_costs_what_the_grid_does() {
+        use std::f64::consts::TAU;
+        let view = [[-2.0, 2.0], [-2.0, 2.0]];
+        let (d, plain) = worked("x² + y² = 1.5625", view, [1633, 1633], [0.0, 0.0]);
+        let points: usize = d.lines.iter().map(|l| l.points.len()).sum();
+        assert_eq!((plain.splits, plain.bends), (0, 0), "{plain:?}");
+        assert!(plain.spent <= 3 * points, "{plain:?} for {points} points");
+        for curve in [
+            "(x² + y² - 1.5625)·abs(x² + y² - 1.5625) = 0",
+            "(x² + y² - 1.5625)^3 = 0",
+        ] {
+            let (d, work) = worked(curve, view, [1633, 1633], [0.0, 0.0]);
+            assert_eq!((work.splits, work.bends), (0, 0), "{curve}: {work:?}");
+            assert!(
+                work.evals as f64 <= 1.25 * plain.evals as f64,
+                "{curve}: {} times the field, where the plain circle takes {}",
+                work.evals,
+                plain.evals
+            );
+            let samples = dense(&d, |t| [1.25 * t.cos(), 1.25 * t.sin()], [0.0, TAU]);
+            assert_near(&d, &samples, curve);
         }
     }
 }

@@ -99,8 +99,8 @@ of the curve both ways. Where the curve bends sharper than a cell, as at each ti
 onto it, and where two parts of the curve pass through one cell, the cell is split in four, down to a sixteenth of a
 cell, so a tip is drawn to its point and two arms that run close stay apart until they're under about half a pixel
 apart. A curve with more detail than that, as one zoomed far out, is followed as far as a budget for each frame goes, a
-few times the grid's own work, and past it the line is left as the grid finds it, with tips cut short and near parts
-joined. Nothing says when that happens.
+few times the grid's own work, spent where the line strays furthest first, and past it the line is left as the grid
+finds it, with tips cut short and near parts joined. Nothing says when that happens.
 
 An implicit curve is where its expression is zero, so where the expression changes sign without going through zero,
 across a pole or a jump, nothing is traced: `y = tan(x)` is its branches with nothing along x = ±π/2, and `y = floor(x)`
