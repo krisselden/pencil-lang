@@ -94,6 +94,10 @@ Each form keeps its own representation (`goals.md`).
 | Parametric | `curve c = parametric (t): (cos(t), sin(t)) for t in 0..2·π` | Sampled to a line |
 | Construction | `curve c = circle(O, A)`, `curve g = ray(O, B)` | A circle per pixel, a line or ray as a line |
 
+An implicit curve is where its expression is zero, so where the expression changes sign without going through zero,
+across a pole or a jump, nothing is traced: `y = tan(x)` is its branches with nothing along x = ±π/2, and `y = floor(x)`
+is steps without risers. The line ends within a few pixels of the pole or the jump.
+
 A parametric range can run down as well as up, and the curve is drawn from its first bound, so
 `for u in 0..t` sweeps an angle from 0 to `t` whichever sign `t` has. `trim` and a `head` follow that
 direction. A collection's `for i in a..b` counts up, and is empty when `b` is below `a`.
