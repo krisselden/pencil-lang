@@ -96,7 +96,9 @@ Each form keeps its own representation (`goals.md`).
 
 An implicit curve is where its expression is zero, so where the expression changes sign without going through zero,
 across a pole or a jump, nothing is traced: `y = tan(x)` is its branches with nothing along x = ±π/2, and `y = floor(x)`
-is steps without risers. The line ends within a few pixels of the pole or the jump.
+is steps without risers. The line stops at the edge of the grid cell the pole or the jump runs through. Where a curve
+runs along its asymptote, within a cell of the pole, that can be a long stretch, and writing the curve without the pole,
+`x·y = 1` for `y = 1/x`, draws it whole.
 
 A parametric range can run down as well as up, and the curve is drawn from its first bound, so
 `for u in 0..t` sweeps an angle from 0 to `t` whichever sign `t` has. `trim` and a `head` follow that
