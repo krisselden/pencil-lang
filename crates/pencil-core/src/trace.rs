@@ -915,6 +915,9 @@ impl<'a> Tracer<'a> {
             }
         }
 
+        // The finest cell's side, in the world, which a loop narrower than is too thin to start
+        // from its area.
+        let thin = self.grid.cell[0].min(self.grid.cell[1]) / f64::from(FINE);
         let targets: BTreeSet<Edge> = next.values().copied().collect();
         let mut lines = Vec::new();
         let mut visited: BTreeSet<Edge> = BTreeSet::new();
@@ -952,7 +955,7 @@ impl<'a> Tracer<'a> {
                 continue;
             }
             if closed {
-                points = canonical_start(points, &mut self.field)?;
+                points = canonical_start(points, &mut self.field, thin)?;
             }
             lines.push(Polyline {
                 points,
@@ -1015,9 +1018,35 @@ pub fn trace(
 /// Starts a loop where it crosses the horizontal through its centroid on the +x
 /// side, and closes it. Grid vertices move as the curve moves, so starting at one
 /// would make dashes jitter. For a circle this start is exactly angle 0.
-fn canonical_start(points: Vec<[f64; 2]>, field: &mut Field) -> Result<Vec<[f64; 2]>, Error> {
+///
+/// The centroid is the area's the loop encloses, which moves only as the curve does. The mean of
+/// its points moves wherever points are added, and bending a tip adds them there, one more or
+/// fewer from one frame to the next as the curve moves, and the tips of a long loop are where
+/// that moves the mean most. A loop too thin to enclose much takes the centroid of its line.
+fn canonical_start(
+    points: Vec<[f64; 2]>,
+    field: &mut Field,
+    thin: f64,
+) -> Result<Vec<[f64; 2]>, Error> {
     let n = points.len();
-    let cy = points.iter().map(|p| p[1]).sum::<f64>() / n as f64;
+    let (mut area, mut area_moment, mut length, mut line_moment) = (0.0, 0.0, 0.0, 0.0);
+    for i in 0..n {
+        let (a, b) = (points[i], points[(i + 1) % n]);
+        let cross = a[0] * b[1] - b[0] * a[1];
+        area += cross / 2.0;
+        area_moment += (a[1] + b[1]) * cross / 6.0;
+        let piece = (b[0] - a[0]).hypot(b[1] - a[1]);
+        line_moment += piece * (a[1] + b[1]) / 2.0;
+        length += piece;
+    }
+    // Thin, here, is narrower on average than the least two parts of a curve can be apart.
+    let cy = if area.abs() > length * thin {
+        area_moment / area
+    } else if length > 0.0 {
+        line_moment / length
+    } else {
+        points.iter().map(|p| p[1]).sum::<f64>() / n as f64
+    };
     let mut best: Option<(usize, [f64; 2])> = None;
     for i in 0..n {
         let (a, b) = (points[i], points[(i + 1) % n]);
@@ -1049,8 +1078,13 @@ fn canonical_start(points: Vec<[f64; 2]>, field: &mut Field) -> Result<Vec<[f64;
     for k in 1..=n {
         out.push(points[(i + k) % n]);
     }
+    let near = |a: &[f64; 2], b: &[f64; 2]| (a[0] - b[0]).hypot(a[1] - b[1]) < 1e-12;
+    out.dedup_by(|a, b| near(a, b));
+    // It ends where it starts, exactly, whatever point next to the start was too near it to keep.
+    while out.len() > 1 && out.last().is_some_and(|p| near(p, &start)) {
+        out.pop();
+    }
     out.push(start);
-    out.dedup_by(|a, b| (a[0] - b[0]).hypot(a[1] - b[1]) < 1e-12);
     Ok(out)
 }
 
@@ -1892,6 +1926,46 @@ mod tests {
                 length <= 3.0 * cell,
                 "a line {length} px long at {:?} px",
                 s[0]
+            );
+        }
+    }
+
+    /// A long thin ellipse that turns and drifts a little each frame, with tips sharp enough to be
+    /// bent, starts where the curve takes its start: from one frame to the next it moves about as
+    /// far as the curve does, and not by the pixel or more that bending a tip once more or once
+    /// fewer moved it when the start was found from the mean of the line's points.
+    #[test]
+    fn a_loop_keeps_its_start_as_it_moves() {
+        for minor in [0.1, 0.02] {
+            let mut last: Option<[f64; 2]> = None;
+            let mut worst = (0.0f64, 0);
+            for frame in 0..=40 {
+                let t = f64::from(frame) * 0.05;
+                let (a, u) = (0.5 + 0.002 * t, 0.003 * t);
+                let curve = format!(
+                    "(((x - {u})·cos({a}) + y·sin({a}))/1.5)² + ((-(x - {u})·sin({a}) + y·cos({a}))/{minor})² = 1"
+                );
+                let d = drawn(&curve, [[-2.0, 2.0], [-2.0, 2.0]], [812, 812], [0.0, 0.0]);
+                assert_eq!(d.lines.len(), 1, "{minor}, frame {frame}");
+                assert!(d.lines[0].closed, "{minor}, frame {frame}");
+                let start = d.px(d.lines[0].points[0]);
+                if let Some(last) = last {
+                    let moved = (start[0] - last[0]).hypot(start[1] - last[1]);
+                    if moved > worst.0 {
+                        worst = (moved, frame);
+                    }
+                }
+                last = Some(start);
+            }
+            eprintln!(
+                "minor {minor}: the start moved {:.4} px at most, into frame {}",
+                worst.0, worst.1
+            );
+            assert!(
+                worst.0 <= 0.1,
+                "minor axis {minor}: the start moved {} px into frame {}",
+                worst.0,
+                worst.1
             );
         }
     }
