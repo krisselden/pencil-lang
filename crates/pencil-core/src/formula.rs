@@ -108,6 +108,129 @@ pub fn width(text: &str, size: f64, font: Font, widths: &dyn TextWidths) -> f64 
     }
 }
 
+/// A label's text as it's said: its words as they are, and its mathematics as words a screen
+/// reader reads as mathematics, from the same reading `lay` sets it from. `z^2 = 1` is "z squared
+/// = 1", `x_1` is "x sub 1", `(a + b)/2` is "(a + b) over 2" and `sqrt(x)` is "the square root of
+/// x". Letters are the letters, not their italics.
+pub fn spoken(text: &str) -> String {
+    segments(text)
+        .iter()
+        .map(|segment| match segment {
+            Segment::Text(words) => words.clone(),
+            Segment::Math(source) => say_row(&parse(source)),
+        })
+        .collect()
+}
+
+/// A letter's italic, as `italic` makes it, back to the letter.
+fn upright(c: char) -> char {
+    let back = |first: u32, to: char| char::from_u32(to as u32 + (c as u32 - first)).unwrap_or(c);
+    match c as u32 {
+        0x210e => 'h',
+        0x1d44e..=0x1d467 => back(0x1d44e, 'a'),
+        0x1d434..=0x1d44d => back(0x1d434, 'A'),
+        0x1d6fc..=0x1d714 => back(0x1d6fc, 'α'),
+        _ => match c {
+            '𝜖' => 'ϵ',
+            '𝜗' => 'ϑ',
+            '𝜘' => 'ϰ',
+            '𝜙' => 'ϕ',
+            '𝜚' => 'ϱ',
+            '𝜛' => 'ϖ',
+            _ => c,
+        },
+    }
+}
+
+/// A row of mathematics as it's said: what's spaced as an operator or a relation is said with
+/// a space either side, and what's side by side stays together, as `2ab`.
+fn say_row(nodes: &[Node]) -> String {
+    let mut out = String::new();
+    // A sign with nothing before it to work on, as the minus of `= −2`, is the number's own.
+    let mut after: Option<Class> = None;
+    for node in nodes {
+        let said = say_node(node);
+        let class = match node {
+            Node::Atom { class, .. } => Some(*class),
+            _ => None,
+        };
+        let unary = class == Some(Class::Bin)
+            && matches!(
+                after,
+                None | Some(Class::Bin | Class::Rel | Class::Open | Class::Punct)
+            );
+        after = class.or(Some(Class::Ord));
+        let spaced = !unary && matches!(class, Some(Class::Bin | Class::Rel));
+        if spaced {
+            out = out.trim_end().to_string();
+            out.push(' ');
+            out.push_str(&said);
+            out.push(' ');
+        } else if matches!(
+            node,
+            Node::Atom {
+                class: Class::Punct,
+                ..
+            }
+        ) {
+            out.push_str(&said);
+            out.push(' ');
+        } else {
+            out.push_str(&said);
+        }
+    }
+    out.trim().to_string()
+}
+
+/// One thing in a row as it's said. What's more than one thing is bracketed, so it's heard as one.
+fn say_group(nodes: &[Node]) -> String {
+    let said = say_row(nodes);
+    match nodes {
+        [Node::Atom { .. }] | [Node::Fence { .. }] => said,
+        _ => format!("({said})"),
+    }
+}
+
+fn say_node(node: &Node) -> String {
+    match node {
+        Node::Atom { text, class } => {
+            let text: String = text.chars().map(upright).collect();
+            match class {
+                // A function's name is said apart from what it's of.
+                Class::Op => format!("{text} "),
+                _ => text,
+            }
+        }
+        Node::Scripts { base, sup, sub } => {
+            let mut said = say_node(base).trim_end().to_string();
+            if let Some(sub) = sub {
+                said.push_str(&format!(" sub {}", say_group(sub)));
+            }
+            if let Some(sup) = sup {
+                let power = say_row(sup);
+                said.push_str(&match power.as_str() {
+                    "2" => " squared".to_string(),
+                    "3" => " cubed".to_string(),
+                    _ => format!(" to the power {}", say_group(sup)),
+                });
+            }
+            said
+        }
+        Node::Frac { num, den, .. } => format!("{} over {}", say_group(num), say_group(den)),
+        Node::Root(body) => format!("the square root of {}", say_group(body)),
+        Node::Fence { open, body, close } => {
+            let inner = say_row(body);
+            match (open, close) {
+                ('|', _) => format!("the absolute value of {}", say_group(body)),
+                _ => format!(
+                    "{open}{inner}{}",
+                    close.map(String::from).unwrap_or_default()
+                ),
+            }
+        }
+    }
+}
+
 /// What an editor writes for a name typed after a backslash, as `\to` is `→`: the names LaTeX
 /// gives the symbols a keyboard lacks. Pencil's text is the symbol itself, and never a backslash,
 /// so this is for typing, and nothing reads it back.

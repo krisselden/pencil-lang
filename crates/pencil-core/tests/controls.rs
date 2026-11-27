@@ -148,7 +148,9 @@ fn a_label_with_no_place_is_a_readout() {
     // A value's readout says its name and value, since nothing else beside the figure says which
     // it is. One with words says them, and each to its own digits and format.
     assert_eq!(texts, ["$r = 2.67$", "ratio 2.667", "$w^2$ = 8 + i"]);
+    // A screen reader hears its mathematics as mathematics.
     assert_eq!(said[0].words(), "r = 2.67");
+    assert_eq!(said[2].words(), "w squared = 8 + i");
     assert!(said[0].laid.is_some() && said[1].laid.is_none());
     // It's tagged, so a sheet can reach them all, and it's still a label.
     let figure = &composition.panels[0].figure;
@@ -187,6 +189,54 @@ fn a_label_with_no_place_is_a_readout() {
         .unwrap();
     assert_eq!(mark["form"]["readout"], true);
     assert!(mark["form"].get("at").is_none());
+}
+
+#[test]
+fn a_readout_of_one_value_says_which_value_it_is() {
+    let doc = format!(
+        "{VIEW}param q = 3 in 1..9 step 1\nlet r = q / 3\nlabel n = \"{{q - 1}}\"\nlabel r = \"ratio\"\nlabel k = \"$k_1$ is {{q^2}}\""
+    );
+    let said = compose(&doc, &[])
+        .unwrap()
+        .readouts(&Inputs::at(0.0), &Estimate)
+        .unwrap();
+    let texts: Vec<&str> = said.iter().map(|r| r.text.as_str()).collect();
+    // A value with no words is said by what's between its braces, as `text: name = value` says
+    // it, and a value's label with words says them with its value.
+    assert_eq!(texts, ["$q − 1 = 2$", "ratio = $1$", "$k_1$ is 9"]);
+    let words: Vec<String> = said.iter().map(|r| r.words()).collect();
+    assert_eq!(words, ["q − 1 = 2", "ratio = 1", "k sub 1 is 9"]);
+}
+
+#[test]
+fn a_readouts_words_read_as_mathematics() {
+    let said = |text: &str| pencil_core::formula::spoken(text);
+    assert_eq!(said("$z^2 = 1$"), "z squared = 1");
+    assert_eq!(said("$x^3 + y^n$"), "x cubed + y to the power n");
+    assert_eq!(said("$(a + b)/2$"), "(a + b) over 2");
+    assert_eq!(said("$sqrt(x + 1)$"), "the square root of (x + 1)");
+    assert_eq!(said("area $x_1$"), "area x sub 1");
+    // A sign that starts a number is the number's.
+    assert_eq!(said("$A = -2 + 5ω$"), "A = −2 + 5ω");
+    assert_eq!(said("$-x^2$"), "−x squared");
+}
+
+#[test]
+fn control_is_a_controls_and_nothing_elses() {
+    for doc in [
+        format!("{VIEW}let control = (0, 0)\ndot control"),
+        format!("{VIEW}let P = (0, 0)\ndot P\ntag control"),
+        format!("{VIEW}param control = 1 in 0..2"),
+    ] {
+        let message = error(&doc, &[]);
+        assert!(
+            message.contains("`control` is the type of a param's control"),
+            "{message}"
+        );
+    }
+    // So `style control` is the controls', and says what it takes.
+    let doc = format!("{VIEW}param q = 1 in 0..2");
+    assert!(error(&doc, &["style control { fill: red }"]).contains("takes `text` and `kind`"));
 }
 
 #[test]
@@ -238,7 +288,7 @@ fn a_readout_is_the_whole_figures() {
 fn a_readouts_room_holds_the_most_it_says() {
     let doc = format!("{VIEW}param q = 3 in 1..1000 step 1\nlet r = q / 7\nlabel r");
     let composition = compose(&doc, &[]).unwrap();
-    let room = composition.readout_room(&Estimate).unwrap();
+    let room = composition.readout_room(&Estimate, None).unwrap();
     let at = |q: f64| {
         let held = Inputs {
             time: 0.0,
@@ -254,7 +304,48 @@ fn a_readouts_room_holds_the_most_it_says() {
     // One that follows time is tried through its clock.
     let timed = format!("{VIEW}duration 10\nlet t = time·100\nlabel t");
     let composition = compose(&timed, &[]).unwrap();
-    let room = composition.readout_room(&Estimate).unwrap();
+    let room = composition.readout_room(&Estimate, None).unwrap();
     let late = composition.readouts(&Inputs::at(9.99), &Estimate).unwrap()[0].width;
     assert!(room[0][0] >= late);
+}
+
+/// Every value an unstepped param can take, between the ends that are tried, and the moment a page
+/// starts at, fit the room.
+#[test]
+fn a_readouts_room_holds_values_between_the_ends_and_where_a_page_starts() {
+    let doc = format!(
+        "{VIEW}param t = 0 in 0..1\nparam theta \"angle\" = 0 in 0..2·π\nlabel sq = \"t² = {{t·t}}\"\nlabel c = \"cos θ = {{cos(theta)}}\""
+    );
+    let composition = compose(&doc, &[]).unwrap();
+    let room = composition.readout_room(&Estimate, None).unwrap();
+    let held = |t: f64, theta: f64| Inputs {
+        time: 0.0,
+        params: vec![("t".into(), t), ("theta".into(), theta)],
+    };
+    for k in 0..=200 {
+        let (t, theta) = (
+            k as f64 / 200.0,
+            2.0 * std::f64::consts::PI * k as f64 / 200.0,
+        );
+        let said = composition.readouts(&held(t, theta), &Estimate).unwrap();
+        for (room, readout) in room.iter().zip(&said) {
+            assert!(
+                room[0] + 1e-9 >= readout.width,
+                "{} doesn't fit {}",
+                readout.text,
+                room[0]
+            );
+        }
+    }
+    // What a build or a page holds is tried too: here a value near a pole that none of the
+    // places tried comes near.
+    let doc = format!("{VIEW}param a = 0 in 0..1\nlabel n = \"{{1/(a - 0.3001)}}\"");
+    let composition = compose(&doc, &[]).unwrap();
+    let asked = Inputs {
+        time: 0.0,
+        params: vec![("a".into(), 0.3)],
+    };
+    let width = composition.readouts(&asked, &Estimate).unwrap()[0].width;
+    assert!(composition.readout_room(&Estimate, None).unwrap()[0][0] < width);
+    assert!(composition.readout_room(&Estimate, Some(&asked)).unwrap()[0][0] >= width);
 }

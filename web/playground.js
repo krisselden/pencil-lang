@@ -703,7 +703,7 @@ function paintControls() {
   // Each readout's room, which the core works out from the moments a reader can reach.
   let room = [];
   try {
-    room = JSON.parse(figure.player?.readout_room() ?? '[]');
+    room = JSON.parse(figure.player?.readout_room(figure.time) ?? '[]');
   } catch {}
   const row = $('readouts');
   row.hidden = readouts.length === 0;

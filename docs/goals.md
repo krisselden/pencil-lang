@@ -167,7 +167,7 @@ GLSL shaders draw through one SVG system (`src/lib/plot.ts`), and nothing is mad
   must. A param says its range, its `step` and a choice of values, `param axis in {ω, 1, 1 + ω}`, from which the
   playground builds sliders and choices, as the site builds a shader's controls from `//default, [min, max] {a, b, c}`
   comments. A choice of names that aren't values, such as `{clip, tanh}`, waits for a figure that needs one. Built
-  2026-11-27: `param q "arms" = …`, a `label` without `at` as a readout, `style q.control`, and the element's `controls`
+  2026-11-26: `param q "arms" = …`, a `label` without `at` as a readout, `style q.control`, and the element's `controls`
   (`language.md`, Controls and readouts, and `decisions.md`).
 - **Can a figure's accessible text come from the document (Kris)?** The IR knows what each mark is and what it's built from,
   so a reading like "a circle about C through 1" could be generated, with no alt text written by hand.
@@ -1358,7 +1358,7 @@ playground's case, which matters as much and is a different one. The site's page
   - On the site one function writes the controls (`site/src/scripts/controls-markup.js`), for the build and for the
     page. `Figure.astro` writes them disabled, and `<figure-controls>` turns them on at `load`, and writes them again
     only when the figure is another kind of thing than they were made for, as when a reader picks another look. Since
-    2026-11-27 that function is the package's (`packages/figure/src/controls.js`), the element's `controls`, and the
+    2026-11-26 that function is the package's (`packages/figure/src/controls.js`), the element's `controls`, and the
     site's copy is gone.
   - An output is as many `ch` wide as the longest value its range allows, and every caption of a figure lies in one grid
     cell with only the beat's own showing, so the row is as tall as the longest from the start. That leaves blank lines

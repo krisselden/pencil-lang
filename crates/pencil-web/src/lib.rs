@@ -669,8 +669,9 @@ impl Player {
 
     /// How much room each readout needs, as JSON `[[width, height], …]` in ems, so that nothing
     /// beside it moves as it changes: the most it takes at the moments a reader can reach that
-    /// are tried. A build works out the same with the same fonts.
-    pub fn readout_room(&self) -> Result<String, JsError> {
+    /// are tried, from this time and the params the page holds. A build works out the same with
+    /// the same fonts.
+    pub fn readout_room(&self, time: f32) -> Result<String, JsError> {
         let Some((composition, _)) = &self.figure else {
             return Ok("[]".to_string());
         };
@@ -678,7 +679,9 @@ impl Player {
             measure: &self.measure,
             measured: &self.measured,
         };
-        let room = composition.readout_room(&widths).map_err(js_error)?;
+        let room = composition
+            .readout_room(&widths, Some(&self.inputs(time)))
+            .map_err(js_error)?;
         Ok(serde_json::json!(room).to_string())
     }
 

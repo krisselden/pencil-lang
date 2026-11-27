@@ -581,7 +581,8 @@ fn build(args: &Args) -> Result<(), Box<dyn Error>> {
     // them in, which are the ones built in here: a page lays them out before any of it runs.
     let fonts = text::Fonts::load(None)?;
     let readouts = composition.readouts_json(&inputs, &fonts)?;
-    let room = composition.readout_room(&fonts)?;
+    // From the moment it was asked to start at, with the params a page holds there.
+    let room = composition.readout_room(&fonts, Some(&inputs))?;
     let mut info = composition.info();
     if let Some(said) = info["readouts"].as_array_mut() {
         for (readout, [width, height]) in said.iter_mut().zip(room) {

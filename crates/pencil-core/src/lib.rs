@@ -510,6 +510,8 @@ fn part_word(part: style::TextPart) -> &'static str {
 const ROOM_TIMES: usize = 32;
 /// How many of a stepped param's values, or a choice's options, are each tried, at most.
 const ROOM_STEPS: usize = 16;
+/// How many parts a param's range is cut into otherwise, each place tried.
+const ROOM_PLACES: usize = 8;
 
 impl Composition {
     /// What the figure's readouts say at this moment, in the order they're written.
@@ -518,7 +520,7 @@ impl Composition {
         inputs: &frame::Inputs,
         widths: &dyn terms::TextWidths,
     ) -> Result<Vec<frame::Readout>, Error> {
-        frame::readouts(&self.panels[0].figure, inputs, widths)
+        frame::readouts(&self.panels[0].figure, inputs, widths, false)
     }
 
     /// What the readouts say at this moment, as a page sets them: each one's words, and what's laid
@@ -538,12 +540,18 @@ impl Composition {
 
     /// How much room each readout needs so that nothing beside it moves as what it says changes,
     /// as `[width, height]` in ems: the most it takes over the moments a reader can reach, which
-    /// are tried. They're the poster's moment, moments through the clock, each param at either
-    /// end of its range and at each of its steps, if it has a few, and every param at its start
-    /// or its end together. A number's digits are each tried as the widest digit too, since a
-    /// value between the ones tried has others. A value that only gets wider between them can
-    /// still be wider than this, and a page keeps its box, so it doesn't move.
-    pub fn readout_room(&self, widths: &dyn terms::TextWidths) -> Result<Vec<[f64; 2]>, Error> {
+    /// are tried. They're the poster's moment and the one a build or a page starts at, `asked`,
+    /// moments through the clock from it, each param through its range from it, at every step if
+    /// it has a few and at nine places otherwise, and every param at its start or its end
+    /// together. Every number is written to its `digits`, a whole one too, and each of its digits
+    /// is tried as a wide one, since a value between the ones tried has others. A value that only
+    /// gets wider between them can still be wider than this, and a page keeps its box, so nothing
+    /// beside it moves.
+    pub fn readout_room(
+        &self,
+        widths: &dyn terms::TextWidths,
+        asked: Option<&frame::Inputs>,
+    ) -> Result<Vec<[f64; 2]>, Error> {
         let figure = &self.panels[0].figure;
         let scene = &figure.scene;
         let count = scene.marks.iter().filter(|m| frame::is_readout(m)).count();
@@ -551,16 +559,17 @@ impl Composition {
             return Ok(Vec::new());
         }
         let poster = self.poster();
-        let mut moments = vec![poster.clone()];
+        let base = asked.cloned().unwrap_or_else(|| poster.clone());
+        let mut moments = vec![poster, base.clone()];
         if clock::composition_uses_time(self) {
             let length = scene.duration.unwrap_or(LOOP);
             moments.extend((0..=ROOM_TIMES).map(|k| frame::Inputs {
                 time: length * k as f64 / ROOM_TIMES as f64,
-                params: poster.params.clone(),
+                params: base.params.clone(),
             }));
         }
         let held = |params: Vec<(String, f64)>| {
-            let mut inputs = poster.clone();
+            let mut inputs = base.clone();
             for (name, value) in params {
                 inputs.params.retain(|(held, _)| *held != name);
                 inputs.params.push((name, value));
@@ -569,13 +578,16 @@ impl Composition {
         };
         for param in &scene.params {
             let [lo, hi] = param.range;
-            let mut values = vec![lo, hi];
-            if let Some(step) = param.step
-                && ((hi - lo) / step) < ROOM_STEPS as f64
-            {
-                let steps = ((hi - lo) / step + 1e-9).floor() as usize;
-                values.extend((1..steps).map(|k| lo + k as f64 * step));
-            }
+            let values: Vec<f64> = match param.step {
+                Some(step) if ((hi - lo) / step) < ROOM_STEPS as f64 => {
+                    let steps = ((hi - lo) / step + 1e-9).floor() as usize;
+                    (0..=steps).map(|k| lo + k as f64 * step).collect()
+                }
+                // A value between the ends, which has decimals where an end may have none.
+                _ => (0..=ROOM_PLACES)
+                    .map(|k| lo + (hi - lo) * k as f64 / ROOM_PLACES as f64)
+                    .collect(),
+            };
             moments.extend(
                 values
                     .into_iter()
@@ -593,7 +605,7 @@ impl Composition {
         }
         let mut room = vec![[0.0f64, frame::READOUT_LINE]; count];
         for inputs in &moments {
-            let said = match self.readouts(inputs, widths) {
+            let said = match frame::readouts(figure, inputs, widths, true) {
                 Ok(said) => said,
                 // A moment the figure can't be worked out at isn't one a reader sees.
                 Err(_) => continue,

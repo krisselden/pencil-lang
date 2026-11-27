@@ -2606,8 +2606,14 @@ fn through(items: Vec<Item>, map: &str) -> Result<Vec<Item>, Error> {
     Ok(out)
 }
 
-/// Replaces each `use` with its group's statements, and passes a group's parameters by
-/// defining them first.
+/// The type of a param's control, which a sheet reaches as `style control` and `style q.control`,
+/// so nothing in a figure can be called or tagged it.
+pub const CONTROL: &str = "control";
+
+fn reserved_control() -> String {
+    "`control` is the type of a param's control, which a sheet reaches as `style control` or `style q.control`, so nothing in a figure can be called or tagged `control`: call it something else".to_string()
+}
+
 /// A readout is said beside the whole figure, so it's written among the figure's own statements,
 /// and not in a group, which can be drawn more than once, or in a panel.
 fn no_readouts(items: &[Item], within: &str) -> Result<(), Error> {
@@ -2631,6 +2637,8 @@ fn no_readouts(items: &[Item], within: &str) -> Result<(), Error> {
     Ok(())
 }
 
+/// Replaces each `use` with its group's statements, and passes a group's parameters by
+/// defining them first.
 fn expanded(items: &[Item], doc: &Document, out: &mut Vec<Item>) -> Result<(), Error> {
     for item in items {
         match item {
@@ -3618,6 +3626,9 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
     let none = Locals::new();
     let mut ids: HashSet<String> = HashSet::new();
     let mut claim = |name: &str, line: usize| -> Result<(), Error> {
+        if name == CONTROL {
+            return Err(Error::at(line, 1, reserved_control()));
+        }
         if SIGNALS.contains(&name)
             || CONSTANTS.contains(&name)
             || name == "ImaginaryUnit"
@@ -3667,6 +3678,9 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
         let marks_before = scene.marks.len();
         match item {
             Item::Tag(tags) => {
+                if tags.iter().any(|tag| tag == CONTROL) {
+                    return Err(Error::new(reserved_control()));
+                }
                 for mark in &mut scene.marks[last_marks.clone()] {
                     mark.tags.extend(tags.iter().cloned());
                 }
@@ -4941,6 +4955,14 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
                 ),
             ));
         }
+    }
+    // Whatever a mark came to be called or tagged, `control` is a param's control's.
+    if let Some(mark) = scene
+        .marks
+        .iter()
+        .find(|m| m.id == CONTROL || m.tags.iter().any(|t| t == CONTROL))
+    {
+        return Err(Error::new(format!("`{}`: {}", mark.id, reserved_control())));
     }
     in_dependency_order(&mut scene)?;
     // Time and a reader's hand take turns on a param, and a still is one moment, so it has one

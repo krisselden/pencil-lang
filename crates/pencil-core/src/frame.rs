@@ -662,9 +662,9 @@ pub struct Readout {
 }
 
 impl Readout {
-    /// Its text as it reads, without the marks around its mathematics.
+    /// Its text as it's said, with its mathematics in words, for a screen reader: `z squared = 1`.
     pub fn words(&self) -> String {
-        words(&self.text)
+        formula::spoken(&self.text)
     }
 
     /// How tall its line is, in ems: a line of text, or what's laid out, from the middle.
@@ -697,12 +697,17 @@ pub fn is_readout(mark: &crate::ir::Mark) -> bool {
 }
 
 /// What a figure's readouts say at this moment, in the order they're written. A readout says what
-/// a label would, and with no `text` in its style, its words or else its name and value: beside
-/// the figure, nothing else says which value it is. One that doesn't exist this frame says `—`.
+/// a label would, and with no `text` in its style, its name and value, `k = 0.62` or `q − 1 = 2`
+/// for `"{q - 1}"`, or its own words with its value: beside the figure, nothing else says which
+/// value it is. One that doesn't exist this frame says `—`.
+///
+/// `padded` writes every number to its `digits`, a whole one too, as the most room it can take:
+/// what a page's box for it is sized from.
 pub fn readouts(
     figure: &Figure,
     inputs: &Inputs,
     widths: &dyn terms::TextWidths,
+    padded: bool,
 ) -> Result<Vec<Readout>, Error> {
     let scene = &figure.scene;
     if !scene.marks.iter().any(is_readout) {
@@ -733,10 +738,14 @@ pub fn readouts(
         let said = match present {
             true => {
                 let mut style = style.clone();
-                style
-                    .text
-                    .get_or_insert_with(|| vec![TextPart::Caption, TextPart::Value]);
-                label_text(text, values, subject.as_ref(), &style, &env)?
+                // A value with no words of its own is said by its name, which for `"{q - 1}"` is
+                // what's between the braces.
+                let only_a_value = subject.is_some() && (text.is_empty() || text == "{}");
+                style.text.get_or_insert_with(|| match only_a_value {
+                    true => vec![TextPart::Name, TextPart::Value],
+                    false => vec![TextPart::Caption, TextPart::Value],
+                });
+                label_text(text, values, subject.as_ref(), &style, &env, padded)?
             }
             false => "—".to_string(),
         };
@@ -763,10 +772,14 @@ fn label_text(
     subject: Option<&Subject>,
     style: &MarkStyle,
     env: &Env,
+    padded: bool,
 ) -> Result<String, Error> {
-    let digits = match &style.digits {
-        Some(d) => eval::real(d, env)?.round().clamp(0.0, 10.0) as usize,
-        None => 2,
+    let digits = Places {
+        digits: match &style.digits {
+            Some(d) => eval::real(d, env)?.round().clamp(0.0, 10.0) as usize,
+            None => 2,
+        },
+        padded,
     };
     let caption = |subject: Option<&Subject>| -> Result<String, Error> {
         match subject {
@@ -821,8 +834,26 @@ fn label_text(
     Ok(out)
 }
 
+/// How many decimal places a label writes a number to, and whether a whole one is written to them
+/// too, as the most room it can take.
+#[derive(Clone, Copy, Debug)]
+struct Places {
+    digits: usize,
+    padded: bool,
+}
+
+impl Places {
+    #[cfg(test)]
+    fn of(digits: usize) -> Places {
+        Places {
+            digits,
+            padded: false,
+        }
+    }
+}
+
 /// A value as a label writes it: to `digits` places, and a point in the style's `format`.
-fn written(value: &Shown, style: &MarkStyle, digits: usize, env: &Env) -> Result<String, Error> {
+fn written(value: &Shown, style: &MarkStyle, digits: Places, env: &Env) -> Result<String, Error> {
     let printed = match value {
         Shown::Number(v) => number(eval::real(v, env)?, digits),
         Shown::Point([x, y]) => {
@@ -838,7 +869,7 @@ fn filled(
     text: &str,
     values: &[Shown],
     style: &MarkStyle,
-    digits: usize,
+    digits: Places,
     env: &Env,
 ) -> Result<String, Error> {
     let mut out = String::new();
@@ -851,9 +882,10 @@ fn filled(
     Ok(out)
 }
 
-/// A number to `digits` places, or whole if it's a whole number.
-fn number(v: f64, digits: usize) -> String {
-    let printed = if (v - v.round()).abs() < 1e-9 {
+/// A number to `digits` places, or whole if it's a whole number and not padded.
+fn number(v: f64, places: Places) -> String {
+    let digits = places.digits;
+    let printed = if (v - v.round()).abs() < 1e-9 && !places.padded {
         format!("{}", v.round() as i64)
     } else {
         format!("{v:.digits$}")
@@ -871,13 +903,19 @@ fn number(v: f64, digits: usize) -> String {
 }
 
 /// A point as a label writes it, with ASCII minus signs, which the caller turns into `−`.
-fn written_point(x: f64, y: f64, format: crate::style::Format, digits: usize) -> String {
+fn written_point(x: f64, y: f64, format: crate::style::Format, digits: Places) -> String {
     use crate::style::Format;
     // A part that would print as zero is left out of a sum, as `i` rather than `0 + 1i`.
     let zero = |v: f64| {
-        number(v, digits)
-            .chars()
-            .all(|c| c == '0' || c == '.' || c == '-')
+        number(
+            v,
+            Places {
+                padded: false,
+                ..digits
+            },
+        )
+        .chars()
+        .all(|c| c == '0' || c == '.' || c == '-')
     };
     let imaginary = |v: f64| match number(v, digits).as_str() {
         "1" => "i".to_string(),
@@ -1259,7 +1297,7 @@ pub fn prepare_with(
                 }
             }
         };
-        let text = label_text(text, values, subject.as_ref(), style, &env)?;
+        let text = label_text(text, values, subject.as_ref(), style, &env, false)?;
         let size = length_or_em(&style.size, DEFAULT_LABEL_SIZE, &env)?;
         labels.push(Label {
             id: mark.id.clone(),
@@ -1396,10 +1434,15 @@ mod tests {
 
     #[test]
     fn a_number_rounded_to_nothing_has_no_sign() {
-        assert_eq!(super::number(-0.001, 2), "0.00");
-        assert_eq!(super::number(-1e-12, 2), "0");
+        assert_eq!(super::number(-0.001, super::Places::of(2)), "0.00");
+        assert_eq!(super::number(-1e-12, super::Places::of(2)), "0");
         assert_eq!(
-            super::written_point(1e-17, -2.0, crate::style::Format::Complex, 2),
+            super::written_point(
+                1e-17,
+                -2.0,
+                crate::style::Format::Complex,
+                super::Places::of(2)
+            ),
             "-2i"
         );
     }
