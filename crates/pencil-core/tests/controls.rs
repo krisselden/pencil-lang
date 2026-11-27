@@ -219,6 +219,11 @@ fn a_readouts_words_read_as_mathematics() {
     // A sign that starts a number is the number's.
     assert_eq!(said("$A = -2 + 5ω$"), "A = −2 + 5ω");
     assert_eq!(said("$-x^2$"), "−x squared");
+    // What follows a word is said apart from it, and bars are an absolute value, as `abs` is.
+    assert_eq!(said("$x^2y$"), "x squared y");
+    assert_eq!(said("$|z - 1|$"), "the absolute value of (z − 1)");
+    assert_eq!(said("$|z - 1|$"), said("$abs(z - 1)$"));
+    assert_eq!(said("$2|x| + 1$"), "2 the absolute value of x + 1");
 }
 
 #[test]
@@ -229,6 +234,30 @@ fn control_is_a_controls_and_nothing_elses() {
         format!("{VIEW}param control = 1 in 0..2"),
     ] {
         let message = error(&doc, &[]);
+        assert!(
+            message.contains("`control` is the type of a param's control"),
+            "{message}"
+        );
+    }
+    // A tag is reported where it's written: inline, on its own line, after a beat's name, and on
+    // a step. `VIEW` is the first line.
+    for (doc, at) in [
+        (
+            format!("{VIEW}let P = (0, 0)\ndot P tag blue, control"),
+            "3:17:",
+        ),
+        (format!("{VIEW}let P = (0, 0)\ndot P\ntag control"), "4:5:"),
+        (
+            format!("{VIEW}let P = (0, 0)\nbeat grow tag control show P\ndot P"),
+            "3:15:",
+        ),
+        (
+            format!("{VIEW}let P = (0, 0)\nbeat \"A point.\" tag control {{\n  dot P\n}}"),
+            "3:21:",
+        ),
+    ] {
+        let message = error(&doc, &[]);
+        assert!(message.starts_with(at), "{message} isn't at {at}");
         assert!(
             message.contains("`control` is the type of a param's control"),
             "{message}"

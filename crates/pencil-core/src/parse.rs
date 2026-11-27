@@ -1218,10 +1218,14 @@ impl Parser {
                         _ => break,
                     };
                     self.bump();
+                    let tagging = matches!(self.toks.get(self.pos - 1).map(|t| &t.tok), Some(Tok::Ident(w)) if w == "tag");
                     loop {
                         // A tag is written `.tag`, as in a selector.
                         let dotted = self.eat(".");
-                        let word = self.ident("a mark or `.tag`")?;
+                        let word = match tagging {
+                            true => self.tag("a mark or `.tag`")?,
+                            false => self.ident("a mark or `.tag`")?,
+                        };
                         list.push(if dotted { format!(".{word}") } else { word });
                         if !self.eat(",") {
                             break;
@@ -1309,11 +1313,20 @@ impl Parser {
             return Ok(Vec::new());
         }
         self.bump();
-        let mut tags = vec![self.ident("a tag")?];
+        let mut tags = vec![self.tag("a tag")?];
         while self.eat(",") {
-            tags.push(self.ident("a tag")?);
+            tags.push(self.tag("a tag")?);
         }
         Ok(tags)
+    }
+
+    /// A tag's word, which can't be `control`, the type of a param's control. It's an error where
+    /// the word is written.
+    fn tag(&mut self, what: &str) -> Result<String, Error> {
+        if matches!(self.peek(), Tok::Ident(w) if w == CONTROL) {
+            return Err(self.error(reserved_control()));
+        }
+        self.ident(what)
     }
 
     fn expr_list(&mut self) -> Result<Vec<Expr>, Error> {
@@ -2083,6 +2096,15 @@ impl Parser {
             branches: None,
         })
     }
+}
+
+/// The type of a param's control, which a sheet reaches as `style control` and `style q.control`,
+/// so nothing in a figure can be called or tagged it.
+pub const CONTROL: &str = "control";
+
+/// What's wrong with a name or a tag `control`.
+pub fn reserved_control() -> String {
+    "`control` is the type of a param's control, which a sheet reaches as `style control` or `style q.control`, so nothing in a figure can be called or tagged `control`: call it something else".to_string()
 }
 
 /// Checks a param's caption: what its control says, in words. A value changes, so it's a

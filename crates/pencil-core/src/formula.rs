@@ -148,7 +148,24 @@ fn say_row(nodes: &[Node]) -> String {
     let mut out = String::new();
     // A sign with nothing before it to work on, as the minus of `= −2`, is the number's own.
     let mut after: Option<Class> = None;
-    for node in nodes {
+    // Whether what was said last ends in a word, as "squared" does, which what follows is said
+    // apart from.
+    let mut worded = false;
+    let mut i = 0;
+    while i < nodes.len() {
+        let node = &nodes[i];
+        i += 1;
+        // Bars written around something, `|z − 1|`, are its absolute value, as `abs(z − 1)` is.
+        if is_bar(node)
+            && let Some(close) = nodes[i..].iter().position(is_bar)
+        {
+            let said = format!("the absolute value of {}", say_group(&nodes[i..i + close]));
+            i += close + 1;
+            apart(&mut out);
+            out.push_str(&said);
+            (after, worded) = (Some(Class::Ord), true);
+            continue;
+        }
         let said = say_node(node);
         let class = match node {
             Node::Atom { class, .. } => Some(*class),
@@ -159,27 +176,44 @@ fn say_row(nodes: &[Node]) -> String {
                 after,
                 None | Some(Class::Bin | Class::Rel | Class::Open | Class::Punct)
             );
-        after = class.or(Some(Class::Ord));
         let spaced = !unary && matches!(class, Some(Class::Bin | Class::Rel));
         if spaced {
             out = out.trim_end().to_string();
             out.push(' ');
             out.push_str(&said);
             out.push(' ');
-        } else if matches!(
-            node,
-            Node::Atom {
-                class: Class::Punct,
-                ..
-            }
-        ) {
+        } else if class == Some(Class::Punct) {
             out.push_str(&said);
             out.push(' ');
         } else {
+            // What begins with a word is said apart from what's before it, and so is anything
+            // after a word.
+            let begins = matches!(node, Node::Root(_) | Node::Fence { open: '|', .. });
+            if worded || begins {
+                apart(&mut out);
+            }
             out.push_str(&said);
         }
+        worded = match node {
+            Node::Scripts { .. } | Node::Frac { .. } | Node::Root(_) => true,
+            Node::Fence { open, .. } => *open == '|',
+            _ => false,
+        };
+        after = class.or(Some(Class::Ord));
     }
     out.trim().to_string()
+}
+
+/// A bar written by itself, as `|z|` is.
+fn is_bar(node: &Node) -> bool {
+    matches!(node, Node::Atom { text, .. } if text == "|")
+}
+
+/// Ends what's been said with a space, if it doesn't already end with one or an opening bracket.
+fn apart(out: &mut String) {
+    if !out.is_empty() && !out.ends_with([' ', '(', '[']) {
+        out.push(' ');
+    }
 }
 
 /// One thing in a row as it's said. What's more than one thing is bracketed, so it's heard as one.

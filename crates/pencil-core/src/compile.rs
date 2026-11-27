@@ -12,7 +12,8 @@ use crate::ir::{
     Shown, Spot, Subject, System, Viewport,
 };
 use crate::parse::{
-    CurveSyntax, Document, Item, MINUS_PLUS, ManyKind, Over, PLUS_MINUS, PartSyntax,
+    CONTROL, CurveSyntax, Document, Item, MINUS_PLUS, ManyKind, Over, PLUS_MINUS, PartSyntax,
+    reserved_control,
 };
 
 /// Names every expression can use without declaring them.
@@ -2606,14 +2607,6 @@ fn through(items: Vec<Item>, map: &str) -> Result<Vec<Item>, Error> {
     Ok(out)
 }
 
-/// The type of a param's control, which a sheet reaches as `style control` and `style q.control`,
-/// so nothing in a figure can be called or tagged it.
-pub const CONTROL: &str = "control";
-
-fn reserved_control() -> String {
-    "`control` is the type of a param's control, which a sheet reaches as `style control` or `style q.control`, so nothing in a figure can be called or tagged `control`: call it something else".to_string()
-}
-
 /// A readout is said beside the whole figure, so it's written among the figure's own statements,
 /// and not in a group, which can be drawn more than once, or in a panel.
 fn no_readouts(items: &[Item], within: &str) -> Result<(), Error> {
@@ -3678,9 +3671,6 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
         let marks_before = scene.marks.len();
         match item {
             Item::Tag(tags) => {
-                if tags.iter().any(|tag| tag == CONTROL) {
-                    return Err(Error::new(reserved_control()));
-                }
                 for mark in &mut scene.marks[last_marks.clone()] {
                     mark.tags.extend(tags.iter().cloned());
                 }
