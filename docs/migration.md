@@ -227,14 +227,16 @@ it. See "Keyboard, hover and linked panels".
 
 The site wraps each figure in HTML that Pencil doesn't own, and `<pencil-figure>` doesn't build any of it yet:
 
-- **Controls from params.** Sliders and choices are built from a figure's params in the playground (`web/playground.js`) and by
-  `pencil-lang.dev`'s `<figure-controls>` (`site/src/scripts/figure-controls.js`), not in the element. Every interactive figure
-  here has them. A slider whose maximum follows another (p ≤ q in `ArmColors`, `DoyleSpiral`, `DoyleFlower`, `LatticeMapping`)
+- **Controls from params.** Since 2026-11-27 the element has them: `<pencil-figure controls>`, which the Astro component writes
+  at build, with a param's caption, `param q "arms" = …`, as its words, and radios, a select or a checkbox for a choice
+  (`language.md`, Controls and readouts). The playground (`web/playground.js`) builds its own from the same `info`. Every
+  interactive figure here has them. A slider whose maximum follows another (p ≤ q in `ArmColors`, `DoyleSpiral`, `DoyleFlower`, `LatticeMapping`)
   is said in the document since 2026-11-14: `param p = 2 in 0..q step 1`, which the figure enforces and a page reads through
   `info.params` and `figure.range` (`language.md`, Documents). Five layer checkboxes (`TriangleLayers`) are choices
   `{"off": 0, "on": 1}` read by `show` *(tried)*, so a host only needs to draw a two-option choice as a checkbox.
-- **Readouts.** Most figures have a one-line monospace readout of computed values. The element's `value` reads any binding, so the
-  numbers are there (`004-bounds` keeps `ring_count` for this). The formatting is the page's: fixed decimals with a sign column,
+- **Readouts.** Most figures have a one-line monospace readout of computed values. Since 2026-11-27 a `label` without `at` is
+  one, said beside the figure in the element's controls, with a label's `digits`, `format` and `$…$`. The element's `value`
+  reads any binding too (`004-bounds` keeps `ring_count` for this). The formatting a label lacks is still the page's: fixed decimals with a sign column,
   exponent notation with superscript exponents (`DigitsChart`, `NewtonDoyle`, `DoyleFlower`), and yes/no text (`CameraLog`).
 - **Captions and step counts.** Beat captions and `i / n` exist in the core. `BoundsConstruction`'s port already has them.
 - **Legends, colored identities and panel titles with formulas.** `LatticeMapping`'s legend and live identity, `Unroll`'s colored

@@ -8,7 +8,7 @@ interface Props {
   description?: string;
   /** Which nav item is this page's. */
   section?: 'docs' | 'demos' | 'playground';
-  /** Whether the page draws figures, and so loads their controls. The element comes with each figure. */
+  /** Whether the page draws figures, and so loads what the site does around them (`scripts/figures.js`). The element and its controls come with each figure. */
   figures?: boolean;
   /** A page that fills the window, such as the playground's. */
   full?: boolean;
@@ -89,6 +89,6 @@ const image = card ? new URL(card.src, Astro.site).href : undefined;
         </p>
       </footer>
     )}
-    {figures && <script src="../scripts/figure-controls.js"></script>}
+    {figures && <script src="../scripts/figures.js"></script>}
   </body>
 </html>

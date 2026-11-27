@@ -16,6 +16,8 @@ param p = 2 in 0..q step 1
 let omega = -1 / 2 + sqrt(3) / 2·i
 fn grid(a, b) = a + b·omega
 let A = grid(-p, q - p)
+// Said beside the figure: the period in the lattice's own steps, which the two routes to it add up to.
+label steps_to_a = "$A = {-p} + {q - p}ω$"
 
 fn to_turn(w) = 2·π·i·w / A
 fn skewed(t, m, n) = n·real(t) / (1 - i·m) + i·imag(t)

@@ -115,6 +115,17 @@
       {
         "beat": null,
         "form": {
+          "kind": "label",
+          "readout": true,
+          "text": "$A = {} + {}ω$",
+          "values": [["Negate","p"],["Subtract","q","p"]]
+        },
+        "id": "steps_to_a",
+        "tags": ["label","readout","flat"]
+      },
+      {
+        "beat": null,
+        "form": {
           "kind": "many",
           "shape": {
             "dots": ["self.x","self.y"]
@@ -584,6 +595,17 @@
     "expressions": [],
     "handles": [],
     "marks": [
+      {
+        "beat": null,
+        "form": {
+          "kind": "label",
+          "readout": true,
+          "text": "$A = {} + {}ω$",
+          "values": [["Negate","p"],["Subtract","q","p"]]
+        },
+        "id": "steps_to_a",
+        "tags": ["label","readout","log"]
+      },
       {
         "beat": null,
         "form": {
@@ -1370,6 +1392,17 @@
       {
         "beat": null,
         "form": {
+          "kind": "label",
+          "readout": true,
+          "text": "$A = {} + {}ω$",
+          "values": [["Negate","p"],["Subtract","q","p"]]
+        },
+        "id": "steps_to_a",
+        "tags": ["label","readout","whole"]
+      },
+      {
+        "beat": null,
+        "form": {
           "kind": "many",
           "shape": {
             "circles": ["z.x","z.y"],
@@ -1814,6 +1847,17 @@
     "expressions": [],
     "handles": [],
     "marks": [
+      {
+        "beat": null,
+        "form": {
+          "kind": "label",
+          "readout": true,
+          "text": "$A = {} + {}ω$",
+          "values": [["Negate","p"],["Subtract","q","p"]]
+        },
+        "id": "steps_to_a",
+        "tags": ["label","readout","detail"]
+      },
       {
         "beat": null,
         "form": {

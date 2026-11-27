@@ -280,6 +280,7 @@
   ],
   "params": [
     {
+      "caption": "arms",
       "id": "p",
       "range": [1.0,3.0],
       "step": 1.0

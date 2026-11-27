@@ -14,6 +14,7 @@ import { editHistory } from './history.js';
 import { touch, holdToViewport } from './viewport.js';
 import { uses } from '@pencil-lang/figure/host';
 import { pack, unpack } from '@pencil-lang/figure/pack';
+import { controlName, kindOf, readoutHtml, saysValue, valueText } from '@pencil-lang/figure/controls';
 
 /** A file's name without its folder or its extension, as the menus show it. */
 function styleName(path) {
@@ -625,9 +626,13 @@ function paintErrors() {
 
 // ---- Controls: time, beats and params, the same bindings every page uses ----
 
-/** Builds the controls for what's loaded. A figure that never reads time gets no clock. */
+/** Builds the controls for what's loaded. A figure that never reads time gets no clock. Each
+ * param's control is the one a page gets, a slider, radios, a select or a checkbox, and says what a
+ * page's says, its caption or its name, with its name beside it when the two differ, since here
+ * the reader is writing the figure. The readouts, each a label with no place, follow, each in a box
+ * as big as the most it says, so a value changing moves nothing. */
 function paintControls() {
-  const { size, params: declared, beats = [], usesTime } = info();
+  const { size, params: declared, beats = [], usesTime, readouts = [] } = info();
   // Its shape, which the page's styles keep it to the window's height with.
   figure.style.setProperty('--shape', String(size[0] / size[1]));
   $('clock').hidden = !usesTime;
@@ -636,33 +641,83 @@ function paintControls() {
   const params = $('params');
   // The same params as before keep their sliders, so a recompile, or going back to the last
   // figure that drew, doesn't take one from under a finger that's dragging it, or take its focus.
-  const same = JSON.stringify(declared.map(({ id, min, max, step, choice }) => [id, min, max, step, choice])) + beats.length;
+  const same =
+    JSON.stringify(declared.map(({ id, min, max, step, choice, caption, control }) => [id, min, max, step, choice, caption, control])) +
+    beats.length + JSON.stringify(readouts.map((r) => r.id));
   if (params.dataset.same === same && params.childElementCount) return paintPlay();
   params.dataset.same = same;
   params.replaceChildren();
   for (const param of declared) {
     // Beats are stepped, not slid.
     if (param.id === 'beat' && beats.length) continue;
-    const label = document.createElement('label');
+    const id = `param-${param.id}`;
     // A choice is named for its value, and its param is which option.
-    label.textContent = param.choice?.of ?? param.id;
-    label.htmlFor = `param-${param.id}`;
+    const name = param.control?.name ?? param.choice?.of ?? param.id;
+    const kind = kindOf(param);
+    const label = document.createElement('label');
+    label.id = `${id}-label`;
+    label.textContent = controlName(param);
+    if (label.textContent !== name) {
+      const own = document.createElement('span');
+      own.className = 'name';
+      own.textContent = name;
+      label.append(' ', own);
+    }
+    const hold = (value) => {
+      figure.pause();
+      figure.hold(param.id, value);
+    };
     let input;
-    if (param.choice) {
+    if (kind === 'radios' || kind === 'checkbox') {
+      input = document.createElement('span');
+      Object.assign(input, { id, className: 'choices' });
+      input.setAttribute('role', kind === 'radios' ? 'radiogroup' : 'group');
+      input.setAttribute('aria-labelledby', label.id);
+      const options = kind === 'checkbox' ? [param.choice.options[1]] : param.choice.options;
+      options.forEach((text, i) => {
+        const option = document.createElement('label');
+        const box = Object.assign(document.createElement('input'), {
+          type: kind === 'radios' ? 'radio' : 'checkbox',
+          name: id,
+          value: String(kind === 'checkbox' ? 1 : i),
+        });
+        box.addEventListener('change', () => (kind === 'checkbox' ? hold(box.checked ? 1 : 0) : box.checked && hold(i)));
+        option.append(box, ` ${text}`);
+        input.append(option);
+      });
+    } else if (kind === 'select') {
       input = document.createElement('select');
-      input.id = `param-${param.id}`;
+      input.id = id;
       param.choice.options.forEach((text, i) => input.append(new Option(text, String(i))));
+      input.addEventListener('change', () => hold(Number(input.value)));
     } else {
       input = document.createElement('input');
-      Object.assign(input, { type: 'range', id: `param-${param.id}`, min: param.min, max: param.max, step: param.step ?? ((param.max - param.min) / 1000 || 0.001) });
+      Object.assign(input, { type: 'range', id, min: param.min, max: param.max, step: param.step ?? ((param.max - param.min) / 1000 || 0.001) });
+      input.addEventListener('input', () => hold(Number(input.value)));
     }
+    if (input.localName !== 'span') label.htmlFor = id;
     const out = document.createElement('output');
-    input.addEventListener(param.choice ? 'change' : 'input', () => {
-      figure.pause();
-      figure.hold(param.id, Number(input.value));
-    });
+    out.dataset.says = kind === 'slider' && saysValue(param) ? 'value' : '';
     params.append(label, input, out);
   }
+  // Each readout's room, which the core works out from the moments a reader can reach.
+  let room = [];
+  try {
+    room = JSON.parse(figure.player?.readout_room() ?? '[]');
+  } catch {}
+  const row = $('readouts');
+  row.hidden = readouts.length === 0;
+  row.replaceChildren(
+    ...readouts.map((readout, i) => {
+      const box = document.createElement('output');
+      box.className = 'readout';
+      box.dataset.readout = readout.id;
+      const [width, height] = room[i] ?? [4, 1.4];
+      box.style.cssText = `width: ${width}em; height: ${height}em`;
+      box.title = readout.id;
+      return box;
+    }),
+  );
   paintPlay();
 }
 
@@ -679,15 +734,32 @@ function readControls() {
   for (const param of info()?.params ?? []) {
     const input = $(`param-${param.id}`);
     if (!input) continue;
-    // A range that follows another param is read as it stands.
-    if (param.follows?.length) [input.min, input.max] = figure.range(param.id);
     const value = figure.value(param.id);
-    if (document.activeElement !== input) input.value = String(value);
+    if (input.localName === 'span') {
+      for (const box of input.querySelectorAll('input')) box.checked = Number(box.value) === Math.round(value);
+    } else {
+      // A range that follows another param is read as it stands.
+      if (param.follows?.length) [input.min, input.max] = figure.range(param.id);
+      if (document.activeElement !== input) input.value = String(input.localName === 'select' ? Math.round(value) : value);
+    }
     // A stepped param shows as many decimals as its step has, so a whole number shows as one. A
     // choice shows its option in the control itself.
     const decimals = param.step == null ? 3 : (String(param.step).split('.')[1] ?? '').length;
-    input.nextElementSibling.textContent = param.choice ? '' : Number.isFinite(value) ? value.toFixed(decimals) : '—';
+    const said = !input.nextElementSibling.dataset.says ? ''
+      : param.choice ? valueText(param, value)
+      : Number.isFinite(value) ? value.toFixed(decimals) : '—';
+    if (input.nextElementSibling.textContent !== said) input.nextElementSibling.textContent = said;
     input.previousElementSibling.classList.toggle('held', held.has(param.id));
+  }
+  const boxes = $('readouts').children;
+  if (boxes.length) {
+    const said = new Map(figure.readouts.map((readout) => [readout.id, readout]));
+    for (const box of boxes) {
+      const readout = said.get(box.dataset.readout);
+      if (box.dataset.said === readout?.text) continue;
+      box.dataset.said = readout?.text ?? '';
+      box.innerHTML = readoutHtml(readout);
+    }
   }
   const beats = info()?.beats ?? [];
   const range = info()?.params.find((p) => p.id === 'beat');

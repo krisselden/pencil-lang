@@ -1,13 +1,13 @@
 ---
 // A live figure: the package's `<Figure>`, which builds it and its poster for each of the sheets
-// its page in `web/` loads, and, unless `controls` is false, what a reader can set on it (and
-// either way, why it can't draw if it can't). The controls are written here, from what the build
-// says of the figure, as it will stand when it starts and disabled, so they're in the page with
-// their size before the figure is. `<figure-controls>` turns them on when it loads.
+// its page in `web/` loads, and, unless `controls` is false, writes the package's default controls
+// into the page, from what the build says of the figure, as it will stand when it starts and
+// disabled, so they're in the page with their size before the figure is. A demo with more than one
+// look adds a choice between them, which the controls show after their own. Either way, it says
+// why the figure can't draw if it can't (`scripts/figures.js`).
 import PencilFigure from '@pencil-lang/figure/Figure.astro';
 import { alternates, build } from '@pencil-lang/figure/astro';
 import type { Look } from '../lib/figures';
-import { markup, shape } from '../scripts/controls-markup.js';
 
 interface Props {
   id: string;
@@ -37,9 +37,9 @@ const held = Object.fromEntries(
 const poster = { time: start, params: held };
 // A tall figure fits the window's height on a wide screen rather than running off it. Its shape
 // is known here, so it's that wide before it loads. The stylesheet says when `--fit-width` applies.
-const { info, moment } = await build({ src: look.pen, sheets: look.sheets, ...poster });
+const { info } = await build({ src: look.pen, sheets: look.sheets, ...poster });
 const fit = info ? `--fit-width: calc(85vh * ${info.size[0] / info.size[1]})` : undefined;
-// A figure with more than one look has each built, and its controls swap one for another. A look
+// A figure with more than one look has each built, and the choice swaps one for another. A look
 // has its own sheets for a dark theme or a narrow page, or none, so each brings the `<source>`s
 // the figure needs while it's the one showing: the first look's would otherwise go on applying.
 type Built = Awaited<ReturnType<typeof build>>;
@@ -51,7 +51,7 @@ const from = (built: Built) =>
 // width only when its sheets give one, and without it its size is its view's, in its own units.
 // Each set of sheets a reader can get has its own, so they're written as the poster's shape is:
 // under each one's media query, the first that matches winning, so in reverse. A look brings its
-// own rules, which the controls put in place of these when a reader picks it.
+// own rules, which the choice puts in place of these when a reader picks it.
 const sizing = (built: Built) => {
   const info = built.info;
   if (!info) return undefined;
@@ -80,12 +80,6 @@ const built = await Promise.all(
   }),
 );
 const choices = looks.length > 1 ? JSON.stringify(built) : undefined;
-const named = choices ? JSON.parse(choices) : [];
-// The poster's moment is where the figure starts, so its values are the controls' first ones.
-// Without them (a figure that doesn't compile, in `astro dev`), the page writes them on load.
-const written = controls && info
-  ? markup({ id, info, moment, paused: Boolean(paused), looks: named, looksLabel: choose, disabled: true })
-  : '';
 ---
 {built[0].sizes && <style is:inline data-sizes-for={id} set:html={built[0].sizes}></style>}
 <div class:list={['live', className]} data-sizes={id}>
@@ -100,16 +94,18 @@ const written = controls && info
     priority={priority}
     params={params}
     paused={paused}
+    controls={controls}
     data-start={start}
     style={fit}
-  />
-  <figure-controls
-    for={id}
-    looks={choices}
-    looks-label={choose}
-    bare={controls ? undefined : ''}
-    hidden={written === '' ? true : undefined}
-    data-shape={written ? shape(info, named) : undefined}
-    set:html={written}
-  />
+  >
+    {controls && choices && (
+      <label slot="controls" class="look">
+        {choose ?? 'Style'}
+        <select data-look data-for={id} data-looks={choices}>
+          {built.map((each, i) => <option value={i} selected={i === 0}>{each.name}</option>)}
+        </select>
+      </label>
+    )}
+  </PencilFigure>
+  <p class="figure-error" data-error-for={id} role="alert" hidden></p>
 </div>

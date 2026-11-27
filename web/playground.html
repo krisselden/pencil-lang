@@ -115,6 +115,12 @@
   .controls label { font-family: ui-monospace, monospace; font-size: 0.75rem; }
   .controls .row { grid-column: 1 / -1; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   .controls .held { color: var(--word); }
+  .controls label .name { color: var(--muted); }
+  .controls .choices { display: flex; flex-wrap: wrap; gap: 4px 12px; }
+  .controls .choices label { font-family: inherit; font-size: 0.8125rem; display: inline-flex; gap: 4px; align-items: center; }
+  /* A readout's box is as big as the most it says, so a value changing moves nothing. */
+  .controls .readouts { gap: 4px 20px; }
+  .controls .readout { display: inline-block; flex: none; contain: strict; overflow: clip; font-size: 1rem; line-height: 1; min-width: 0; font-family: inherit; color: var(--ink); }
   output { font-variant-numeric: tabular-nums; font-family: ui-monospace, monospace; font-size: 0.75rem; min-width: 5ch; }
   #caption { color: var(--muted); font-style: italic; }
   #errors { margin: 0; padding: 0; list-style: none; font: 0.75rem/1.5 ui-monospace, monospace; }
@@ -307,6 +313,8 @@
         <span id="caption"></span>
       </div>
       <div id="params" style="display: contents"></div>
+      <!-- What the figure says beside itself: each label with no place. -->
+      <div class="row readouts" id="readouts" hidden></div>
     </div>
     <ul id="errors" role="alert"></ul>
     <p id="status">Starting…</p>

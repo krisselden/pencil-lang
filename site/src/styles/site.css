@@ -155,42 +155,30 @@ pre code { font-size: inherit; }
 /* ---- Figures ---- */
 
 .live { min-width: 0; }
-pencil-figure { display: block; width: 100%; background: var(--plate); border-radius: 3px; }
-pencil-figure:focus-visible { outline-offset: 4px; }
+pencil-figure { display: block; width: 100%; }
+/* The figure's own plate is its stage: the controls under it sit on the page. */
+pencil-figure::part(stage) { background: var(--plate); border-radius: 3px; }
+pencil-figure:focus-visible { outline: none; }
+pencil-figure:focus-visible::part(stage) { outline: 2px solid var(--link); outline-offset: 2px; }
 @media (min-width: 60.01rem) { pencil-figure { max-width: var(--fit-width, none); } }
 
-figure-controls {
-  display: flex;
-  flex-direction: column;
-  gap: 0.375rem;
-  margin-top: 0.625rem;
-  font: 0.875rem/1.4 var(--font-ui);
-  color: var(--muted);
+/* The package's controls, in the site's palette and type. Their sizes are their own: an output is
+   as wide as the widest it says, and every caption lies in one place, so nothing moves. */
+pencil-figure {
+  --pencil-controls-font: 0.875rem/1.4 var(--font-ui);
+  --pencil-ink: var(--ink);
+  --pencil-muted: var(--muted);
+  --pencil-accent: var(--accent);
+  --pencil-rule: var(--rule);
+  --pencil-surface: var(--paper);
+  --pencil-surface-menu: var(--paper);
+  --pencil-focus: var(--link);
+  --pencil-math-font: italic 1rem var(--font-body);
 }
-figure-controls .row { display: flex; align-items: center; gap: 0.5rem 0.75rem; flex-wrap: wrap; }
-figure-controls input[type='range'] { flex: 1 1 8rem; min-width: 6rem; accent-color: var(--accent); }
-/* An output is as wide as the widest thing it can say, which the controls work out from the
-   param's range (`--room`), so a value changing never moves or wraps what's beside it. */
-figure-controls output {
-  display: inline-block;
-  flex: none;
-  width: var(--room, 3.5rem);
-  text-align: right;
-  white-space: nowrap;
-  font-variant-numeric: tabular-nums;
-  color: var(--ink);
-}
-figure-controls .beats output { text-align: center; }
-figure-controls .param { min-width: 1.5rem; }
-figure-controls var { font: italic 1rem var(--font-body); color: var(--ink); }
-/* Every caption lies in the same place and only the beat's own shows, so the row is as tall as
-   the longest from the start and stepping moves nothing below it. */
-figure-controls .captions { flex-basis: 100%; display: grid; font-style: italic; }
-figure-controls .caption { grid-area: 1 / 1; visibility: hidden; }
-figure-controls .caption[data-on] { visibility: visible; }
-figure-controls input:disabled, figure-controls select:disabled { cursor: default; }
-figure-controls .error { color: var(--bad); margin: 0; }
-figure-controls button, figure-controls select, .button {
+pencil-controls::part(play) { min-width: 4.5rem; }
+/* A demo's choice of looks, after the controls. */
+.look { display: inline-flex; align-items: center; gap: 0.5rem 0.75rem; }
+.look select, .button {
   font: inherit;
   color: var(--ink);
   background: var(--paper);
@@ -199,8 +187,7 @@ figure-controls button, figure-controls select, .button {
   padding: 0.25rem 0.625rem;
   cursor: pointer;
 }
-figure-controls button:disabled { opacity: 0.4; cursor: default; }
-figure-controls button.play { min-width: 4.5rem; }
+.figure-error { color: var(--bad); margin: 0.375rem 0 0; font: 0.875rem/1.4 var(--font-ui); }
 
 /* ---- Landing ---- */
 

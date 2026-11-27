@@ -64,7 +64,8 @@ that is the poster of the hearts figure under the glow sheet, the home page's he
 shows the same image whatever the page.
 
 `src/lib/figures.ts` lists the demos, with the sheets each figure's page in `web/` loads.
-`src/scripts/controls-markup.js` writes each demo's controls from what the figure declares: into the page at build,
-disabled and in their first state, so nothing moves when the figure loads. `src/scripts/figure-controls.js` turns them
-on. Add
-`?gl` to a page's address to draw with WebGL2.
+Each demo's controls are the package's: `src/components/Figure.astro` asks its `<Figure>` for them, which writes them into
+the page at build, disabled and in their first state, so nothing moves when the figure loads, and the element turns them
+on. A demo with more than one look adds a choice between them, which the controls show after their own.
+`src/scripts/figures.js` does what the site does around a figure: the choice of looks, saying why one can't draw, fitting a
+tall one to the window, and starting one at a moment. Add `?gl` to a page's address to draw with WebGL2.

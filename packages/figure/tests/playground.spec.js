@@ -2241,3 +2241,24 @@ test.describe('the text or the controls', () => {
     await expect(switcher(page)).toBeHidden();
   });
 });
+
+test.describe('the playground\'s controls', () => {
+  test.use({ viewport: { width: 1633, height: 919 } });
+
+  test('say a param\'s caption with its name, and the readouts as the figure says them', async ({ page }) => {
+    await openPlayground(page, 'figure=tube');
+    await drawnHere(page);
+    // The tube's p is captioned, and here its name is beside it, since this is where it's written.
+    await expect(page.locator('#param-p-label')).toHaveText('arms p');
+    await expect(page.getByRole('slider', { name: 'arms p' })).toHaveValue('1');
+    await expect(page.locator('#readouts')).toBeHidden();
+    // The lattice says where A is, in its own steps, as q and p change, in a box that keeps its size.
+    await page.locator('#figure-pick').selectOption({ label: '007 lattice' });
+    const said = page.locator('#readouts [data-readout="steps_to_a"]');
+    await expect(said).toContainText('A = −2 + 5ω');
+    const box = await said.boundingBox();
+    await page.locator('#param-p').fill('6');
+    await expect(said).toContainText('A = −6 + 1ω');
+    expect(await said.boundingBox()).toEqual(box);
+  });
+});
