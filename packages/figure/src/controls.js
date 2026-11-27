@@ -237,15 +237,17 @@ input[type='range']:focus-visible { outline-offset: 1px; }
 /* On a phone, or a screen with little height, one row stays, on one line, in a bar of fixed height,
    and the rest open from a menu over the page, as a sheet from the bottom: the figure keeps the
    height. Each thing in the bar keeps its own width, so the element can tell when the row doesn't
-   fit, and then it goes behind the menu too. Its beats' caption is in the menu. */
+   fit, and then it goes behind the menu too. The beats' caption is a line of its own under the bar,
+   as tall as the longest caption at that width, wherever the stepper is. */
 @media (max-width: 40rem), (max-height: 32rem) {
   .controls { display: block; }
   .bar { display: flex; align-items: center; gap: 0.5rem; height: 2.25rem; min-width: 0; }
   .bar > .row, .bar > .row.param, .bar > .row.time { display: flex; flex: 1 1 auto; min-width: 0; flex-wrap: nowrap; overflow: hidden; gap: 0.5rem 0.75rem; }
   .bar > .row > *, .bar > .row label { flex: none; white-space: nowrap; }
   .bar > .row > input[type='range'] { flex: 1 1 4rem; min-width: 4rem; }
-  .bar .captions { display: none; }
-  .row.phone { display: flex; }
+  .beats .captions { display: none; }
+  .row.phone { display: flex; margin-top: 0.25rem; }
+  .row.phone .caption { white-space: normal; }
   .controls[data-more] .more { display: inline-flex; align-items: center; gap: 0.375rem; flex: none; margin-left: auto; padding: 0.25rem 0.5rem; line-height: 1; }
   .bar[data-crowded] .more-words { display: inline; }
   .rest { display: grid; }
@@ -383,11 +385,15 @@ export function markup({ info, moment, paused = false, disabled = false, extra =
   const at = BAR === 'readouts' && all.readouts !== undefined ? all.readouts : 0;
   const first = all[at];
   const rest = all.filter((_, i) => i !== at);
-  // With the beats in the bar, their caption is in the menu, where it has room to be read whole.
-  if (first?.startsWith('<div class="row beats"')) {
-    const captions = first.slice(first.indexOf('<span class="captions"'), first.lastIndexOf('</div>'));
-    rest.unshift(`<div class="row captions-row phone" part="row captions">${captions}</div>`);
-  }
+  // On a phone the beats' caption is a line of its own with the bar, wherever the stepper is: it's
+  // the figure's own words. Every caption lies in its one place, so it's as tall as the longest.
+  const beats = all.find((row) => row.startsWith('<div class="row beats"'));
+  const captions = beats
+    ? `<div class="row captions-row phone" part="row captions">${beats.slice(beats.indexOf('<span class="captions"'), beats.lastIndexOf('</div>'))}</div>`
+    : '';
+  // Where it is in the beats and what the caption says, said when a beat changes, wherever the
+  // stepper is, so Next beat is heard.
+  const said = beats ? '<span class="said" data-said role="status" aria-live="polite"></span>' : '';
   // On a phone the button opens the menu, and shows whenever anything is in it: the rows that aren't
   // the bar's, what the page put in, or the bar's own row when it doesn't fit.
   const more =
@@ -395,9 +401,11 @@ export function markup({ info, moment, paused = false, disabled = false, extra =
     `<span class="more-words">Controls</span> ⋯</button>`;
   const menu = rest.length > 0 || extra;
   return (
-    `<div${attrs({ class: 'controls', part: 'controls', 'data-more': first && menu })}>` +
+    `<div${attrs({ class: 'controls', part: 'controls', 'data-more': first && menu, 'data-menu': first && menu })}>` +
     (first ? `<div class="bar" part="bar">${first}${more}</div>` : '') +
+    captions +
     `<div class="rest" id="rest" part="rest"${first ? ' popover' : ''}>${rest.join('')}<slot></slot></div>` +
+    said +
     `</div>`
   );
 }

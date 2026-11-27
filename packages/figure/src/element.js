@@ -837,8 +837,9 @@ export class PencilFigure extends HTMLElement {
   #writeControls(host, info) {
     const root = host.shadowRoot;
     // A reader who was on a control is still on it afterwards, as one who picked a look with the
-    // keyboard: the same control, found by what it's for.
+    // keyboard: the same control, found by what it's for, and a menu that was open is open still.
     const focused = root.activeElement ? identity(root.activeElement) : null;
+    const open = !!root.querySelector('[popover]:popover-open');
     let html = '<div class="controls" part="controls"><div class="rest" part="rest"><slot></slot></div></div>';
     if (info) {
       let room = [];
@@ -864,6 +865,11 @@ export class PencilFigure extends HTMLElement {
     }
     host.dataset.shape = info ? shape(info) : 'page';
     this.#wiring.forget();
+    if (open) {
+      try {
+        root.querySelector('[popover]')?.showPopover();
+      } catch {}
+    }
     if (focused) root.querySelector(focused)?.focus();
   }
 

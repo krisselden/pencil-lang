@@ -1,0 +1,7 @@
+// For the controls: a readout near a pole that only the moment a page starts at comes near.
+doc pole
+param a = 0 in 0..1
+viewport { x: -2..2, y: -2..2 }
+let O = (0, 0)
+dot O
+label n = "{1/(a - 0.3001)}"

@@ -225,6 +225,79 @@ test.describe('on a phone', () => {
     await expect(more).toBeFocused();
   });
 
+  test('a beat\'s caption is a line of its own with the bar, as tall as the longest, and a new beat is said', async ({ page }) => {
+    // Steps with no clock, whose stepper is the bar's, and steps that follow time, whose stepper is
+    // in the menu and whose bar is the time's.
+    for (const figure of ['beats', 'timed']) {
+      await open(page, 'controlled', `figure=${figure}`);
+      await drawn(page);
+      const box = controls(page);
+      const line = box.locator('.row.phone');
+      const shown = line.locator('.caption[data-on]');
+      await expect(shown).toBeVisible();
+      await expect(shown).toHaveText('One circle.');
+      expect(await fits(page), figure).toEqual([]);
+      const before = await boxes(page);
+      await onFigure(page, (f) => f.step(1));
+      await expect(shown).toHaveText('Then as many as the arms say, each a little smaller than the last, around the first.');
+      // The live region says where it is and what the caption says.
+      await expect(box.locator('[data-said]')).toHaveText('2 / 3: Then as many as the arms say, each a little smaller than the last, around the first.');
+      await onFigure(page, (f) => f.step(1));
+      await expect(shown).toHaveText('And the point they share.');
+      await expect(box.locator('[data-said]')).toHaveText('3 / 3: And the point they share.');
+      // Nothing moved: the line is as tall as the longest caption from the start.
+      expect(await boxes(page)).toEqual(before);
+      expect(await fits(page), figure).toEqual([]);
+      // With the menu open it's still there.
+      await box.getByRole('button', { name: 'More controls' }).click();
+      await expect(shown).toBeVisible();
+      await page.keyboard.press('Escape');
+    }
+  });
+
+  test('a row the bar gave up comes back once it fits, as when the phone turns, and after a look switch', async ({ page }) => {
+    await open(page, 'controlled', 'figure=bar');
+    await drawn(page);
+    const box = controls(page);
+    const inBar = () => box.evaluate((host) => host.shadowRoot.querySelectorAll('.bar > .row').length);
+    const crowded = () => box.evaluate((host) => host.shadowRoot.querySelector('.bar').hasAttribute('data-crowded'));
+    await expect.poll(inBar).toBe(0);
+    expect(await crowded()).toBe(true);
+    // Turned, a phone is wide enough for it, and it's back, cut off nowhere.
+    await page.setViewportSize({ width: 812, height: 375 });
+    await expect.poll(inBar).toBe(1);
+    expect(await crowded()).toBe(false);
+    await expect(box.getByRole('radio', { name: 'equal area' })).toBeVisible();
+    expect(await fits(page)).toEqual([]);
+    await page.setViewportSize({ width: 375, height: 812 });
+    await expect.poll(inBar).toBe(0);
+    // Another look, another figure: its own controls, with a bar that fits, and then this one's again.
+    await onFigure(page, (f) => f.setAttribute('src', 'controls.pen'));
+    await expect(box.getByRole('slider', { name: 'Time' })).toBeVisible();
+    await expect.poll(inBar).toBe(1);
+    expect(await crowded()).toBe(false);
+    await onFigure(page, (f) => f.setAttribute('src', 'bar.pen'));
+    await expect.poll(crowded).toBe(true);
+    await expect.poll(inBar).toBe(0);
+  });
+
+  test('an open menu stays open, with the focus where it was, when the controls are written again', async ({ page }) => {
+    await open(page, 'controlled', 'figure=controls');
+    await drawn(page);
+    const box = controls(page);
+    await box.getByRole('button', { name: 'More controls' }).click();
+    const arms = box.getByRole('slider', { name: 'arms' });
+    await arms.focus();
+    const loads = (await events(page)).load;
+    await box.evaluate((host) => (host.dataset.shape = 'another'));
+    await onFigure(page, (f) => f.reload());
+    await expect.poll(async () => (await events(page)).load).toBeGreaterThan(loads);
+    await expect.poll(() => box.evaluate((host) => host.dataset.shape)).not.toBe('another');
+    await expect(arms).toBeVisible();
+    await expect(arms).toBeFocused();
+    expect(await box.evaluate((host) => host.shadowRoot.querySelector('.rest').matches(':popover-open'))).toBe(true);
+  });
+
   test('a first row too long for the bar goes behind the menu, and nothing in the bar is cut off', async ({ page }) => {
     for (const figure of ['bar', 'ro']) {
       await open(page, 'controlled', `figure=${figure}`);
@@ -245,6 +318,17 @@ test.describe('on a phone', () => {
     }
   });
 });
+
+/** Where the figure, its controls' bar, the caption's line and the menu are, and how big each is. */
+const boxes = (page) =>
+  page.evaluate(() => {
+    const figure = document.getElementById('figure');
+    const root = figure.querySelector('pencil-controls').shadowRoot;
+    return [figure, ...root.querySelectorAll('.bar, .row.phone, .rest')].map((el) => {
+      const r = el.getBoundingClientRect();
+      return [r.x, r.y, r.width, r.height].map((v) => Math.round(v * 4) / 4);
+    });
+  });
 
 /**
  * What doesn't fit its box in the controls in view: an output or a readout whose text runs past
@@ -274,6 +358,16 @@ const fits = (page) =>
       const edge = row.getBoundingClientRect().right;
       for (const item of row.children) {
         if (shown(item) && item.getBoundingClientRect().right > edge + 0.5) wrong.push(`${item.localName} in the bar is cut off`);
+      }
+    }
+    // A caption's line holds every caption, the one showing included.
+    for (const line of root.querySelectorAll('.row.phone')) {
+      if (!shown(line)) continue;
+      const edge = line.getBoundingClientRect();
+      if (line.scrollWidth > line.clientWidth + 0.5) wrong.push('a caption runs past its line');
+      for (const caption of line.querySelectorAll('.caption')) {
+        const r = caption.getBoundingClientRect();
+        if (r.bottom > edge.bottom + 0.5 || r.right > edge.right + 0.5) wrong.push(`"${caption.textContent}" runs out of its line`);
       }
     }
     for (const label of root.querySelectorAll('label[for]')) {
@@ -320,6 +414,16 @@ for (const [width, height] of [[1633, 919], [375, 812]]) {
     });
   });
 }
+
+test('a readout\'s room holds what it says where the page starts the figure', async ({ page }) => {
+  // Near a pole none of the places tried along `a` comes near: only the page's own moment does.
+  await open(page, 'controlled', 'figure=pole&params=a:0.3');
+  await drawn(page);
+  await expect(controls(page).locator('[data-readout="n"]')).toContainText('= −10000.00');
+  expect(await fits(page)).toEqual([]);
+  const [room, width] = await onFigure(page, (f) => [JSON.parse(f.player.readout_room(f.time))[0][0], f.readouts[0].width]);
+  expect(room).toBeGreaterThanOrEqual(width);
+});
 
 test.describe('the defaults, and a page\'s own content', () => {
   test('without `controls`, only what the page put in `<pencil-controls>` shows', async ({ page }) => {

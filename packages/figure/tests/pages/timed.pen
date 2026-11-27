@@ -1,0 +1,15 @@
+// For the controls: steps that share a duration, so time follows them, and a param beside them.
+doc timed
+duration 6
+param q "arms" = 3 in 1..9 step 1
+viewport { x: -2..2, y: -2..2 }
+let O = (0, 0)
+beat "One circle." {
+  curve one = circle((0, 0), (1, 0))
+}
+beat "Then as many as the arms say, each a little smaller than the last, around the first." {
+  circles more = circle((0, 0), (1 - k / (q + 1), 0)) for k in 1..q
+}
+beat "And the point they share." {
+  dot O
+}

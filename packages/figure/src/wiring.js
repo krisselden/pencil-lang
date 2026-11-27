@@ -38,6 +38,7 @@ export class Wiring {
   #off = null;
   #parts = null;
   #sized = null; // watches the bars, which hold one row on a phone
+  #beatSaid = undefined; // the beat last said, by its caption's place
 
   constructor(figure) {
     this.#figure = figure;
@@ -46,6 +47,7 @@ export class Wiring {
   /** Listens on these roots, a shadow root or a page's own element, and looks for what's in them
    * again. */
   attach(roots) {
+    this.#beatSaid = undefined;
     this.#off?.abort();
     this.#off = new AbortController();
     this.#roots = roots;
@@ -95,18 +97,33 @@ export class Wiring {
    * The bar is as tall either way, so nothing moves.
    */
   fit() {
-    if (typeof matchMedia === 'undefined' || !matchMedia(PHONE).matches) return;
+    const phone = typeof matchMedia !== 'undefined' && matchMedia(PHONE).matches;
     for (const root of this.#roots) {
       const bar = root.querySelector('.bar');
-      const row = bar?.querySelector(':scope > .row');
       const menu = root.querySelector('.rest');
-      if (!row || !menu || row.scrollWidth <= row.clientWidth + 0.5) continue;
-      // The beats' caption is in the menu for a bar that steps them, and they bring it with them.
-      if (row.matches('.beats')) menu.querySelector(':scope > .captions-row')?.remove();
-      menu.prepend(row);
-      bar.toggleAttribute('data-crowded', true);
-      root.querySelector('.controls')?.toggleAttribute('data-more', true);
-      this.#parts = null;
+      const controls = root.querySelector('.controls');
+      if (!bar || !menu || !controls) continue;
+      const scope = root.getRootNode?.() ?? document;
+      const focused = scope.activeElement;
+      // A row the bar gave up comes back to see whether it fits now, as when a phone turns.
+      const moved = menu.querySelector(':scope > .row[data-moved]');
+      if (moved) {
+        moved.removeAttribute('data-moved');
+        bar.insertBefore(moved, bar.querySelector(':scope > .more'));
+        bar.removeAttribute('data-crowded');
+        controls.toggleAttribute('data-more', controls.hasAttribute('data-menu'));
+        this.#parts = null;
+      }
+      const row = bar.querySelector(':scope > .row');
+      if (phone && row && row.scrollWidth > row.clientWidth + 0.5) {
+        menu.prepend(row);
+        row.setAttribute('data-moved', '');
+        bar.setAttribute('data-crowded', '');
+        controls.setAttribute('data-more', '');
+        this.#parts = null;
+      }
+      // Moving what has the focus takes it away, so it's given back.
+      if (focused && focused !== scope.activeElement && focused.isConnected) focused.focus({ preventScroll: true });
     }
   }
 
@@ -137,6 +154,7 @@ export class Wiring {
         .map((el) => ({ el, param: paramNamed(info, el.dataset.param), said: null }))
         .filter((each) => each.param),
       readouts: this.#all('[data-readout]').map((el) => ({ el, id: el.dataset.readout, said: null })),
+      said: this.#all('[data-said]'),
     });
   }
 
@@ -253,6 +271,13 @@ export class Wiring {
       const at = beatAt(info, beat);
       for (const out of parts.beatOuts) say(out, at.text);
       for (const list of parts.captions) list.forEach((caption, i) => caption.toggleAttribute('data-on', i === at.caption));
+      // A beat that changes is said: which it is, and its caption. Not the first, which is where the
+      // figure starts and isn't news.
+      if (this.#beatSaid !== undefined && this.#beatSaid !== at.caption) {
+        const words = `${at.caption + 1} / ${info.beats.length}${info.beats[at.caption] ? `: ${info.beats[at.caption]}` : ''}`;
+        for (const said of parts.said) say(said, words);
+      }
+      this.#beatSaid = at.caption;
       for (const button of parts.back) button.disabled = beat <= range.min;
       for (const button of parts.next) button.disabled = beat >= range.max;
     }

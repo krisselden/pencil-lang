@@ -84,7 +84,12 @@ or fewer, a `<select>` for more, and a checkbox for a choice of off and on (`doc
   from a `⋯` button as a menu over the page, from the bottom. The figure keeps the height. Which row is `BAR` in
   [`src/controls.js`](src/controls.js): `'first'`, the first row, or `'readouts'`. A row that doesn't fit the bar's line,
   as radios with long words, goes behind the menu too, and the button says "Controls", so nothing in the bar is cut off.
-  When the bar steps the beats, their caption is in the menu. Escape closes the menu and gives the focus back to `⋯`.
+  A row that comes to fit again, as when a phone turns, comes back to the bar. The beats' caption is a line of its own
+  under the bar, wherever the stepper is, as tall as the longest caption at that width, so stepping moves nothing.
+  Escape closes the menu and gives the focus back to `⋯`, and controls written again, as for another look, keep an
+  open menu open and the focus where it was.
+- **A new beat is said,** in a polite live region: which beat it is and its caption, `2 / 3: Then as many…`, whether
+  a reader stepped to it or time brought it.
 - **Anything a page puts in `<pencil-controls>`,** as a choice of looks, is shown after the defaults, and on a phone in
   their menu. With the Astro component it goes in the `controls` slot: `<Figure …><label slot="controls">…</label></Figure>`.
 
