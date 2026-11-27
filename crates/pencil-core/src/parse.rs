@@ -71,6 +71,8 @@ pub enum Item {
     },
     Param {
         name: String,
+        /// What its control says, `param q "arms" = 8 in 3..16`, where a beat writes its caption.
+        caption: Option<String>,
         default: Expr,
         range: [Expr; 2],
         step: Option<Expr>,
@@ -80,6 +82,7 @@ pub enum Item {
     /// text as written, which is how a page names it, and so is the default if there is one.
     Choice {
         name: String,
+        caption: Option<String>,
         default: Option<String>,
         options: Vec<(Expr, String)>,
         line: usize,
@@ -128,7 +131,9 @@ pub enum Item {
         name: String,
         /// Without any, a panel gives it with `text`, or doesn't show it.
         text: Option<String>,
-        at: Expr,
+        /// Where it's drawn. A label with no place is a readout: said beside the figure as text,
+        /// and not drawn in it.
+        at: Option<Expr>,
         offset: Option<Expr>,
         /// Which way from its point, with the distance in its style.
         away: Option<Expr>,
@@ -1583,6 +1588,11 @@ impl Parser {
 
     fn param(&mut self, line: usize) -> Result<Item, Error> {
         let name = self.ident("a param")?;
+        // What its control says, written where a beat writes its caption.
+        let caption = self.optional_string();
+        if let Some(caption) = &caption {
+            control_caption(caption).map_err(|message| Error::at(line, 1, message))?;
+        }
         let start = self.pos + 1;
         // A choice's default can be one of its options' names.
         let (default, default_text) = if self.eat("=") {
@@ -1629,6 +1639,7 @@ impl Parser {
             }
             return Ok(Item::Choice {
                 name,
+                caption,
                 default: default_text,
                 options,
                 line,
@@ -1652,6 +1663,7 @@ impl Parser {
         };
         Ok(Item::Param {
             name,
+            caption,
             default,
             range,
             step,
@@ -1750,8 +1762,18 @@ impl Parser {
         } else {
             None
         };
-        self.keyword("at")?;
-        let at = self.expr()?;
+        // Without a place it's a readout, said beside the figure, so it has nowhere to sit from.
+        let at = if matches!(self.peek(), Tok::Ident(w) if w == "at") {
+            self.bump();
+            Some(self.expr()?)
+        } else {
+            if matches!(self.peek(), Tok::Ident(w) if w == "offset" || w == "away") {
+                return Err(self.error(
+                    "a label without `at` is a readout, said beside the figure, so it has no `offset` or `away`: give it a place with `at`",
+                ));
+            }
+            None
+        };
         let (mut offset, mut away) = (None, None);
         if matches!(self.peek(), Tok::Ident(w) if w == "offset") {
             self.bump();
@@ -2061,6 +2083,25 @@ impl Parser {
             branches: None,
         })
     }
+}
+
+/// Checks a param's caption: what its control says, in words. A value changes, so it's a
+/// readout's, and a control's words are set as text beside the figure, with no mathematics.
+pub fn control_caption(caption: &str) -> Result<(), String> {
+    if caption.contains('{') {
+        return Err(format!(
+            "a control's caption is words, and \"{caption}\" has a value in it: a value is a readout's, `label name = \"…\"` without `at`"
+        ));
+    }
+    if caption.contains('$') {
+        return Err(format!(
+            "a control's caption is words, and \"{caption}\" has mathematics in it, which a control can't set yet: write the symbols, as \"θ\""
+        ));
+    }
+    if caption.trim().is_empty() {
+        return Err("a control's caption says what the control is, so it can't be empty: leave it out for the param's name".into());
+    }
+    Ok(())
 }
 
 pub fn parse_expression(src: &str) -> Result<Expr, Error> {

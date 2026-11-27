@@ -1434,6 +1434,7 @@ fn declare_beat(scene: &mut Scene, lowerer: &mut Lowerer) {
         limits: [None, None],
         step: None,
         choice: None,
+        caption: None,
     });
     scene.bindings.push(Binding {
         id: BEAT_PARAM.to_string(),
@@ -2348,7 +2349,7 @@ fn renamed_items(
                     Item::Label {
                         name: renamed(&name),
                         text,
-                        at: rename(&at, names),
+                        at: at.as_ref().map(|at| rename(at, names)),
                         offset: offset.as_ref().map(|o| rename(o, names)),
                         away: away.as_ref().map(|d| rename(d, names)),
                         line,
@@ -2556,8 +2557,11 @@ fn through(items: Vec<Item>, map: &str) -> Result<Vec<Item>, Error> {
             } => out.push(Item::Label {
                 name,
                 text,
-                away: away.map(|d| Expr::app(PUSHED, vec![Expr::sym(map), at.clone(), d])),
-                at: image(at),
+                away: away.and_then(|d| {
+                    at.as_ref()
+                        .map(|at| Expr::app(PUSHED, vec![Expr::sym(map), at.clone(), d]))
+                }),
+                at: at.map(&image),
                 offset,
                 line,
             }),
@@ -2604,6 +2608,29 @@ fn through(items: Vec<Item>, map: &str) -> Result<Vec<Item>, Error> {
 
 /// Replaces each `use` with its group's statements, and passes a group's parameters by
 /// defining them first.
+/// A readout is said beside the whole figure, so it's written among the figure's own statements,
+/// and not in a group, which can be drawn more than once, or in a panel.
+fn no_readouts(items: &[Item], within: &str) -> Result<(), Error> {
+    for item in items {
+        if let Item::Label {
+            name,
+            at: None,
+            line,
+            ..
+        } = item
+        {
+            return Err(Error::at(
+                *line,
+                1,
+                format!(
+                    "`{name}` has no `at`, so it's a readout, said beside the whole figure: write it outside any {within}, or give it a place with `at`"
+                ),
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn expanded(items: &[Item], doc: &Document, out: &mut Vec<Item>) -> Result<(), Error> {
     for item in items {
         match item {
@@ -2654,6 +2681,7 @@ fn expanded(items: &[Item], doc: &Document, out: &mut Vec<Item>) -> Result<(), E
                         line: *line,
                     });
                 }
+                no_readouts(inner, "group")?;
                 let mut statements = Vec::new();
                 expanded(inner, doc, &mut statements)?;
                 if scoped.is_empty() {
@@ -2849,7 +2877,7 @@ fn needs(item: &Item) -> Vec<String> {
             away,
             ..
         } => {
-            all(&mut [at].into_iter().chain(offset).chain(away), &mut out);
+            all(&mut at.iter().chain(offset).chain(away), &mut out);
             if let Some(text) = text {
                 refers_in_text(text, &mut out);
             }
@@ -3266,6 +3294,7 @@ pub fn compile(doc: &Document) -> Result<Scene, Error> {
         if let Item::Label {
             name,
             text: None,
+            at,
             line,
             ..
         } = item
@@ -3274,11 +3303,12 @@ pub fn compile(doc: &Document) -> Result<Scene, Error> {
                 .iter()
                 .any(|i| matches!(i, Item::Text { name: n, .. } if n == name))
         {
+            let place = if at.is_some() { " at …" } else { "" };
             return Err(Error::at(
                 *line,
                 1,
                 format!(
-                    "label `{name}` has no text and isn't a value's: write `label {name} = \"…\" at …`"
+                    "label `{name}` has no text and isn't a value's: write `label {name} = \"…\"{place}`"
                 ),
             ));
         }
@@ -3300,6 +3330,7 @@ pub fn compile_panels(doc: &Document) -> Result<Vec<PanelScene>, Error> {
         else {
             continue;
         };
+        no_readouts(items, "panel")?;
         let mut flat = Vec::new();
         expanded(&doc.items, doc, &mut flat)?;
         expanded(items, doc, &mut flat)?;
@@ -3763,6 +3794,7 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
             }
             Item::Choice {
                 name,
+                caption,
                 default,
                 options,
                 line,
@@ -3823,6 +3855,7 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
                         of: name.clone(),
                         options: labels,
                     }),
+                    caption: caption.clone(),
                 });
                 scene.bindings.push(Binding {
                     id: index.clone(),
@@ -3847,6 +3880,7 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
             }
             Item::Param {
                 name,
+                caption,
                 default,
                 range,
                 step,
@@ -3880,6 +3914,7 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
                     limits,
                     step,
                     choice: None,
+                    caption: caption.clone(),
                 });
                 scene.bindings.push(Binding {
                     id: name.clone(),
@@ -4095,7 +4130,10 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
                     return Err(Error::at(*line, 1, format!("`{name}` already has a label")));
                 }
                 let fail = at_line(*line);
-                let at = lowerer.point(at, &none).map_err(&fail)?;
+                let at = at
+                    .as_ref()
+                    .map(|at| lowerer.point(at, &none).map_err(&fail))
+                    .transpose()?;
                 let offset = match offset {
                     Some(e) => lowerer.point(e, &none).map_err(&fail)?,
                     None => [num(0.0), num(0.0)],
@@ -4154,6 +4192,7 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
                 } else {
                     None
                 };
+                let readout = at.is_none();
                 mark!(
                     name.clone(),
                     Form::Label {
@@ -4166,6 +4205,10 @@ fn compile_flat(name: Option<String>, items: &[Item]) -> Result<Scene, Error> {
                     },
                     "label"
                 );
+                // One with no place is said beside the figure, and a sheet can reach them all.
+                if readout && let Some(mark) = scene.marks.last_mut() {
+                    mark.tags.insert(1, "readout".to_string());
+                }
             }
             Item::Text { .. }
             | Item::Panel { .. }
@@ -6110,7 +6153,7 @@ mod tests {
             panic!();
         };
         assert_eq!(arc.point[1], num(0.0));
-        let Form::Label { at, .. } = &s.marks[1].form else {
+        let Form::Label { at: Some(at), .. } = &s.marks[1].form else {
             panic!();
         };
         assert_eq!(at, &[num(2.0), num(0.0)]);
@@ -6203,7 +6246,10 @@ mod tests {
         let env = env_of(&s, 0.0);
         // |e^{iu} + 1|² = 2 + 2cos u, so u is π/2.
         assert!((env.get("u").unwrap() - std::f64::consts::FRAC_PI_2).abs() < 1e-9);
-        let Form::Label { at, away, .. } = &s.marks[0].form else {
+        let Form::Label {
+            at: Some(at), away, ..
+        } = &s.marks[0].form
+        else {
             panic!();
         };
         // (1 + i)² = 2i, and the derivative of w² along 1 is 2w.
@@ -6256,7 +6302,7 @@ mod tests {
                 pair(&arc.point, &env)
             }
             Form::Dot(at) => pair(at, &env),
-            Form::Label { at, .. } => pair(at, &env),
+            Form::Label { at: Some(at), .. } => pair(at, &env),
             Form::Many { lets, shape, .. } => {
                 env.set("i", var);
                 for (name, e) in lets {

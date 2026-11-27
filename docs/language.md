@@ -48,6 +48,7 @@ that names them. `lab/explainer/limacon.pen` is the example: a file to each part
 | `param p = 2 in 0..q step 1` | A range whose end follows other params, here one that says `p` can't pass `q`. An end is numbers, constants (see Constants), and params, declared before or after it: not a `let` that a param or `time` moves, a choice's value or `time`. The figure keeps `p` inside the range as it stands each frame, so a reader who lowers `q` below `p` brings `p` down with it. What the reader set isn't lost: raise `q` again and `p` goes back to it. A page reads the widest the range gets and which params move it (`info.params`: `min`, `max`, `follows`), and the range as it stands (`figure.range("p")`), so a control built from them stops where the figure does. The widest is found at the ends of the ranges it reads, which is right for an end that only rises or falls with each. A range that ends before it starts leaves its start. |
 | `param n = 3 in 1..12 step 1` | A param that only takes its range's start plus whole steps, however it's driven: its default, a binding, a reader or a drag goes to the nearest one. A step of 1 makes it a whole number, and a page's control steps the same way. The step is a constant (see Constants). |
 | `param axis in {ω, 1, 1 + ω}` | A param that's one of these values, the first unless `= 1` names another as written. They can be any one kind, and numbers go with points as points on the real axis. The name is the chosen value, so the math can use it directly: `imag(conj(axis)·P)` is the cross product with whichever direction was chosen. The param a reader sets is `axis.index`, which option it is, from 0, and a page labels each option with its text, or with its name: in `{"p = 0": 2·π / q, "q = 2p": …}` a page shows the names and the math gets the values, and `= "q = 2p"` starts there. |
+| `param q "arms" = 8 in 3..16 step 1` | A caption, after the name, as a beat's is: what the param's control on a page says, in words. A choice takes one the same way, `param along "direction" in {1, i, 1 + i}`. Without one, a control says the param's name (see Controls and readouts). |
 | `solve (x, y) from 0, 1: f(x, y) = 0, g(x, y) = 2` | Unknowns defined by equations (see below). |
 | `bind a = expr` | What drives a param when no reader has taken it over. A param with a binding has two drivers, the binding and the reader, and the reader's last action picks. Setting it, with a drag, a key, a control or a page's `hold`, takes it over. Setting a param its binding reads, directly, through other bindings, a choice's options or a range, hands it back: in `bind theta = case`, where the case's options read `q`, setting `q` or the case brings θ back to its binding. Params set together, as in the element's `params="q: 8; theta: 1"`, keep each other. Time is the same: setting it, or playing, hands back what it drives. A page reads which params each binding reads in `info.params` (`reads`), and needs no script of its own for this. |
 | `beat "caption" tag t { … }` | A discrete step of a construction (see below). |
@@ -63,6 +64,7 @@ that names them. `lab/explainer/limacon.pen` is the example: a file to each part
 | `label n = "−{q}" at P away D` | Text at a point, on the side `D` points to, in the figure's own coordinates. Its style's `distance` says how far. `{expr}` in the text is a value: a number, written to the style's `digits` and whole if it's whole, or a point, written as its style's `format` says. `$…$` in the text is mathematics, laid out (see Mathematics in labels). What a label says about a value is its style's `text`. Without text, each panel gives it (see Panels). A figure without panels needs text, unless the label is a value's. |
 | `label root at P` | A label named after a value is that value's label, as a dot is its point's, so one rule styles both. It's about that value, and its style's `text` says what it shows of it: with no text of its own, the value. A value has one label. A label whose text is one value, `"{q - 1}"`, is about that value in the same way. |
 | `label n = "P" at P offset (12, -12)` | The same, at a fixed shift in `px` with y down. A sheet can't change it, so prefer `away`. |
+| `label ratio = "ratio {q / p}"`, `label k` | A label with no place is a readout: said as text beside the figure, and not drawn in it, with everything a label has (see Controls and readouts). |
 | `arrow v = A, B` | A shaft and a head, as one line. |
 | `dots d = P(i) for i in 1..n with z = f(i)` | One mark drawn many times (see below). |
 | `circles c = circle(C(i), T(i)) for i in 1..n` | The same, as circles. |
@@ -161,6 +163,50 @@ and a `.json` of what a page needs to know: the figure's shape, its duration, it
 captions, its poster's moment with every param's value and range there, the colors its sheets name, and every file that
 went into it (`sources`), so a build knows when to make it again. `--card` adds a 1200×630 card for sharing, the figure on its own paper. The Astro component in
 `packages/figure` runs this for each figure on a site, and writes the page around what it made.
+
+### Controls and readouts
+
+A page can show a figure's controls beside it: a play button and time, beat stepping, a control for each param a handle
+doesn't set, and the readouts. Their words are the document's, written where they belong, and a sheet says how much of them
+to say, as it does for a label.
+
+**A param's caption is what its control says:** `param q "arms" = 8 in 3..16 step 1`, after the name, where a beat writes
+its caption. A choice takes one the same way: `param along "direction" in {1, i, 1 + i}`, and `param along "direction" =
+"i" in {…}` with a default. Without one, a control says the param's name, set as mathematics.
+
+- **It's words.** A value changes, so it's a readout's, and a caption with `{…}` in it is an error. So is one with `$…$`,
+  which a control can't set yet: write the symbol, as `"θ"`.
+- **Each param gets the control that fits it.** A range is a slider, with its value after it. A choice of a few options, four
+  at most, is radios, which show every option at once, and a choice of more is a list that opens. A choice of off and on,
+  two options written `0` and `1` or named `off` and `on`, as in `param glow in {"off": 0, "on": 1}`, is a checkbox. A param
+  a handle sets has no control of its own: the handle is its control.
+
+**A label with no place is a readout:** `label ratio = "ratio {q / p}"`, or `label k` for a value. It's said as text beside
+the figure, after the controls, and isn't drawn in it. It has everything a label has: `{expr}` values, `$…$` mathematics, a
+sheet's `digits`, a point's `format` and `text`. With no `text` in its sheets it says its words, or a value's name and value,
+`k = 0.62`, since beside the figure nothing else says which value it is.
+
+- **It's the whole figure's,** so it's written among the figure's own statements, not in a group, which can be drawn more
+  than once, or in a panel. A figure with panels says its readouts beside all of them.
+- **It's tagged `readout`,** and its type is `label`, so `style readout { digits: 3 }` reaches every one, and `style label`
+  reaches them with the labels.
+- **One that doesn't exist this frame says `—`.**
+- **A page keeps room for it,** as wide and as tall as the most it says, worked out from the moments a reader can reach: the
+  poster's, moments through the clock, each param at either end of its range and at each of its steps if it has a few, and
+  every param at its start or its end together, with each digit tried as a wide one. A value that only gets wider between
+  those can say more than the room, and its box keeps its size anyway, so nothing beside it moves.
+
+**A sheet says what a control says, and which control it is,** as for a thing whose type is `control` and whose name is its
+param's: `style control { … }` is every control, and `style q.control { … }` is `q`'s, or for a choice, the name its value
+has, `along.control`. A param's name alone, `style q`, still names a mark.
+
+| Property | Meaning |
+|---|---|
+| `text` | What the control says, as a label's `text`: `caption` (its caption, or its name if it has none), `name`, and `value`, said after a slider. `text: caption = value` is the default, `text: name = value` says `q`, and `text: caption` leaves the value out. A choice shows its option in the control itself. |
+| `kind` | Which control it is: `slider`, `radios`, `select` or `checkbox`. Any param can be a slider, a choice radios or a select, and a choice of off and on a checkbox. A rule for every control sets a kind only on those it fits, and one that names a control has to fit it. |
+
+`<pencil-figure controls>` shows them, and a build writes them into the page before any script runs (the package's
+README).
 
 ### Beats
 
@@ -731,7 +777,7 @@ to define a function decides what it means, and a function can't call itself. A 
 it, but a rule by type or tag may match nothing, since a shared sheet can't know what each figure uses.
 
 **Selectors** combine a name or type with tags: `c`, `circle`, `.aux`, `circle.blue`, and
-`c::inside` for a facet. A mark's type is one of its tags: `circle`, `line`, `ray`, `curve`,
+`c::inside` for a facet. `control` and `q.control` are params' controls (see Controls and readouts). A mark's type is one of its tags: `circle`, `line`, `ray`, `curve`,
 `segment`, `decoration`, `region`, `dot`, `label`, `arrow`, `term`, `dots`, `circles`, `curves`, `outline`. `paper` is the background.
 
 **Facets** are the two sides of a mark. `::negative` and `::positive` are the field's sign. On a circle, `::inside` and
@@ -791,7 +837,8 @@ pixels, so they can't be in `em`.
 | `font` | Labels | A role: `sans` (default) or `math`, an italic for names and notes. Both are the package's own fonts, Libertinus Sans and Libertinus Serif Italic, the same files in the command and on a page, with Libertinus Math behind each for the symbols a text face lacks and for a label's mathematics. It sets a label's words: its mathematics is laid out the same in either. |
 | `place` | Labels | `settle` (default), tied to its `offset` by a spring and pushed off what's drawn and other labels, or `fixed`, exactly at its `offset`. A label written on its own point, as `label z at z` is, starts a little up and to the right of it, and settles from there. |
 | `format` | Labels | How a point in its text is written: `point` (default) as `(−0.50, −0.87)`, `complex` as `−0.50 − 0.87i`, or `polar` as `e^(−2πi/3)`, with an angle that's a fraction of π up to twelfths written as one. A point and a complex number are one thing in Pencil, so which it reads as is the sheet's. |
-| `text` | Labels | What a label says about the value it's about, as parts joined by `=`: `caption` (its own words, or the value's name if it has none), `name`, `expr` (the expression as written: a `let`'s right side, or what's between the braces) and `value`. `text: expr = value` is `σ(2) = −0.50 − 0.87i`, `text: name = value` is `root = −0.50 − 0.87i`, and `text: caption` is the words alone. Parts that come out the same are said once, so a param's `expr = value` is `q = 3`. Without it, a label says its own words, or its value if it has none. A label that isn't about one value says its words whatever this is. |
+| `kind` | Controls | Which control a param gets: `slider`, `radios`, `select` or `checkbox` (see Controls and readouts). |
+| `text` | Labels, controls | What a label says about the value it's about, as parts joined by `=`: `caption` (its own words, or the value's name if it has none), `name`, `expr` (the expression as written: a `let`'s right side, or what's between the braces) and `value`. `text: expr = value` is `σ(2) = −0.50 − 0.87i`, `text: name = value` is `root = −0.50 − 0.87i`, and `text: caption` is the words alone. Parts that come out the same are said once, so a param's `expr = value` is `q = 3`. Without it, a label says its own words, or its value if it has none. A label that isn't about one value says its words whatever this is. A readout with none says `caption = value`. On a control, what it says (see Controls and readouts). |
 | `digits` | Labels | How many decimal places its values are written to. Defaults to 2. A whole number is written whole, and a part that rounds to zero is left out of a complex number. |
 | `head` | Arrows | The head's length. Defaults to 14 px. |
 | `distance` | Labels | How far a label written with `away` sits from its point. Defaults to 16/17 em. |

@@ -37,7 +37,7 @@ pub const SELF_LIFE: &str = "self.life";
 pub const SELF_FOCUS: &str = "self.focus";
 /// Every property a style can set. `docs/language.md` must describe each one, and a test
 /// holds it to that.
-pub const PROPERTIES: [&str; 27] = [
+pub const PROPERTIES: [&str; 28] = [
     "fill",
     "fill_opacity",
     "stroke",
@@ -65,6 +65,7 @@ pub const PROPERTIES: [&str; 27] = [
     "format",
     "digits",
     "text",
+    "kind",
 ];
 pub const COLORS: [&str; 2] = ["white", "black"];
 /// The tags that say what kind of mark something is.
@@ -357,6 +358,8 @@ pub struct Styled {
     pub no_title_fill: bool,
     pub no_formula_fill: bool,
     pub panels: PanelStyle,
+    /// One per `scene.params`, in the same order: what the sheets say of its control.
+    pub controls: Vec<ControlStyle>,
 }
 
 /// How panels sit on the canvas, in design pixels: `style panels` for the whole, and
@@ -622,6 +625,224 @@ fn sheet_functions(sheets: &[Document]) -> Functions {
     functions
 }
 
+/// Which control a page gives a param.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum ControlKind {
+    /// A range, with its value beside it.
+    Slider,
+    /// A choice's options side by side, one of them picked.
+    Radios,
+    /// A choice's options in a list that opens.
+    Select,
+    /// A choice of off and on.
+    Checkbox,
+}
+
+impl ControlKind {
+    pub fn word(self) -> &'static str {
+        match self {
+            ControlKind::Slider => "slider",
+            ControlKind::Radios => "radios",
+            ControlKind::Select => "select",
+            ControlKind::Checkbox => "checkbox",
+        }
+    }
+}
+
+/// A choice with more options than this is a `<select>` by default, and one with this many or
+/// fewer is radios, which show every option at once.
+pub const MOST_RADIOS: usize = 4;
+
+/// What a sheet says of a param's control, with `style q.control { … }` or `style control { … }`.
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ControlStyle {
+    /// What it says, as a label's `text`: its `caption` or `name`, and its `value` or not.
+    pub text: Option<Vec<TextPart>>,
+    pub kind: Option<ControlKind>,
+}
+
+/// Whether a choice is off and on: two options, written `0` and `1` or named `off` and `on`.
+pub fn off_and_on(choice: &crate::ir::Choice) -> bool {
+    let said: Vec<String> = choice
+        .options
+        .iter()
+        .map(|o| o.trim().to_lowercase())
+        .collect();
+    said == ["0", "1"] || said == ["off", "on"]
+}
+
+/// Which kinds of control a param can have: any can be a slider, a choice can be radios or a
+/// select, and a choice of off and on a checkbox.
+pub fn control_fits(param: &crate::ir::Param, kind: ControlKind) -> bool {
+    match (kind, &param.choice) {
+        (ControlKind::Slider, _) => true,
+        (ControlKind::Radios | ControlKind::Select, choice) => choice.is_some(),
+        (ControlKind::Checkbox, Some(choice)) => off_and_on(choice),
+        (ControlKind::Checkbox, None) => false,
+    }
+}
+
+/// The control a param gets: the one its sheets say, or by default a slider for a range, a
+/// checkbox for a choice of off and on, radios for a choice of a few, and a select past that.
+pub fn control_kind(param: &crate::ir::Param, style: &ControlStyle) -> ControlKind {
+    if let Some(kind) = style.kind {
+        return kind;
+    }
+    match &param.choice {
+        None => ControlKind::Slider,
+        Some(choice) if off_and_on(choice) => ControlKind::Checkbox,
+        Some(choice) if choice.options.len() <= MOST_RADIOS => ControlKind::Radios,
+        Some(_) => ControlKind::Select,
+    }
+}
+
+/// A control's name, which `style q.control` reaches: a choice's is the name its value has.
+pub fn control_name(param: &crate::ir::Param) -> &str {
+    param
+        .choice
+        .as_ref()
+        .map_or(param.id.as_str(), |choice| choice.of.as_str())
+}
+
+/// `text`'s parts, as a label's or a control's.
+fn text_parts(value: &Expr, what: &str) -> Result<Vec<TextPart>, String> {
+    let parts = match value {
+        Expr::App(head, parts) if head == crate::parse::TEXT_PARTS => parts,
+        _ => return Err("`text` is parts joined by `=`, as `expr = value`".into()),
+    };
+    parts
+        .iter()
+        .map(|part| match part {
+            Expr::Sym(word) => match word.as_str() {
+                "caption" => Ok(TextPart::Caption),
+                "name" => Ok(TextPart::Name),
+                "expr" => Ok(TextPart::Expr),
+                "value" => Ok(TextPart::Value),
+                other => Err(format!(
+                    "{what}'s text is made of `caption`, `name`, `expr` and `value`, not `{other}`"
+                )),
+            },
+            _ => Err("`text` is parts joined by `=`, as `expr = value`".into()),
+        })
+        .collect()
+}
+
+/// The controls a selector reaches, by their params' places in the scene, and whether it names
+/// one, or None for a selector that isn't about controls. A control is reached as a thing whose
+/// type is `control` and whose name is its param's: `control` is every one, and `q.control` is
+/// `q`'s.
+type Reached = Option<Result<(Vec<usize>, bool), String>>;
+
+fn controls_reached(scene: &Scene, selector: &crate::parse::Selector) -> Reached {
+    let typed = selector.target == "control";
+    let tagged = selector.tags.iter().any(|t| t == "control");
+    if !typed && !tagged {
+        return None;
+    }
+    let mut words = selector.target.clone();
+    for tag in &selector.tags {
+        words.push('.');
+        words.push_str(tag);
+    }
+    if selector.facet.is_some() || selector.tags.iter().any(|t| t != "control") {
+        return Some(Err(format!(
+            "a control is reached as `control`, every one, or `q.control`, the control of param `q`, not `{words}`"
+        )));
+    }
+    if typed || selector.target.is_empty() {
+        return Some(Ok(((0..scene.params.len()).collect(), false)));
+    }
+    let found: Vec<usize> = scene
+        .params
+        .iter()
+        .enumerate()
+        .filter(|(_, p)| control_name(p) == selector.target)
+        .map(|(i, _)| i)
+        .collect();
+    if found.is_empty() {
+        let known = scene.params.iter().map(control_name);
+        return Some(Err(crate::suggest::unknown(
+            "param",
+            &selector.target,
+            known,
+        )));
+    }
+    Some(Ok((found, true)))
+}
+
+/// What a rule says of the controls it reaches. A rule for every control sets a kind only on
+/// those it fits, and one that names a control has to fit it.
+fn apply_control(
+    styled: &mut Styled,
+    scene: &Scene,
+    reached: &[usize],
+    named: bool,
+    decls: &[(String, Expr)],
+) -> Result<(), String> {
+    for (prop, value) in decls {
+        match prop.as_str() {
+            "text" => {
+                let parts = match is_none(value) {
+                    true => None,
+                    false => Some(text_parts(value, "a control")?),
+                };
+                for &i in reached {
+                    styled.controls[i].text = parts.clone();
+                }
+            }
+            "kind" => {
+                let kind = match value {
+                    _ if is_none(value) => None,
+                    Expr::Sym(word) => Some(match word.as_str() {
+                        "slider" => ControlKind::Slider,
+                        "radios" => ControlKind::Radios,
+                        "select" => ControlKind::Select,
+                        "checkbox" => ControlKind::Checkbox,
+                        other => {
+                            return Err(format!(
+                                "a control's `kind` is `slider`, `radios`, `select` or `checkbox`, not `{other}`"
+                            ));
+                        }
+                    }),
+                    _ => {
+                        return Err(
+                            "a control's `kind` is `slider`, `radios`, `select` or `checkbox`"
+                                .into(),
+                        );
+                    }
+                };
+                for &i in reached {
+                    let param = &scene.params[i];
+                    match kind {
+                        Some(kind) if !control_fits(param, kind) => {
+                            if named {
+                                let why = match kind {
+                                    ControlKind::Checkbox => {
+                                        "a checkbox is for a choice of off and on, two options written `0` and `1` or named `off` and `on`"
+                                    }
+                                    _ => {
+                                        "radios and a select are for a choice, and a range is a slider"
+                                    }
+                                };
+                                return Err(format!(
+                                    "`{}` can't be a {}: {why}",
+                                    control_name(param),
+                                    kind.word()
+                                ));
+                            }
+                        }
+                        _ => styled.controls[i].kind = kind,
+                    }
+                }
+            }
+            other => {
+                return Err(format!("a control takes `text` and `kind`, not `{other}`"));
+            }
+        }
+    }
+    Ok(())
+}
+
 /// How a beat's caption looks, when a sheet asks for it with `style caption { … }`.
 #[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct CaptionStyle {
@@ -727,6 +948,7 @@ pub fn resolve_keeping(
 ) -> Result<Styled, Error> {
     let mut styled = Styled {
         marks: vec![MarkStyle::default(); scene.marks.len()],
+        controls: vec![ControlStyle::default(); scene.params.len()],
         ..Styled::default()
     };
     let names: Vec<&str> = scene.bindings.iter().map(|b| b.id.as_str()).collect();
@@ -920,6 +1142,18 @@ pub fn resolve_keeping(
                         styled.paper = Some(value.clone());
                     }
                     continue;
+                }
+                // A param's control is said beside the figure, and isn't one of its marks.
+                match controls_reached(scene, selector) {
+                    Some(Ok((reached, named))) => {
+                        apply_control(&mut styled, scene, &reached, named, &decls).map_err(&at)?;
+                        continue;
+                    }
+                    Some(Err(message)) => {
+                        unmatched.push(at(message));
+                        continue;
+                    }
+                    None => {}
                 }
                 let matches: Vec<usize> = scene
                     .marks
@@ -1250,26 +1484,7 @@ fn apply(
             if !matches!(form, Form::Label { .. }) || facet.is_some() {
                 return Err(format!("`{id}` isn't a label, so it can't use `text`"));
             }
-            let parts = match value {
-                Expr::App(head, parts) if head == crate::parse::TEXT_PARTS => parts,
-                _ => return Err("`text` is parts joined by `=`, as `expr = value`".into()),
-            };
-            let parts: Result<Vec<TextPart>, String> = parts
-                .iter()
-                .map(|part| match part {
-                    Expr::Sym(word) => match word.as_str() {
-                        "caption" => Ok(TextPart::Caption),
-                        "name" => Ok(TextPart::Name),
-                        "expr" => Ok(TextPart::Expr),
-                        "value" => Ok(TextPart::Value),
-                        other => Err(format!(
-                            "a label's text is made of `caption`, `name`, `expr` and `value`, not `{other}`"
-                        )),
-                    },
-                    _ => Err("`text` is parts joined by `=`, as `expr = value`".into()),
-                })
-                .collect();
-            target.text = Some(parts?);
+            target.text = Some(text_parts(value, "a label")?);
             continue;
         }
         if let (None, "draw" | "blend" | "cap" | "font" | "place" | "format") =

@@ -83,14 +83,7 @@ impl Label {
 
     /// Its text as it reads, without the marks around its mathematics.
     pub fn words(&self) -> String {
-        match formula::has_math(&self.text) {
-            true => self
-                .text
-                .replace("$$", "\u{0}")
-                .replace('$', "")
-                .replace('\u{0}', "$"),
-            false => self.text.clone(),
-        }
+        words(&self.text)
     }
 }
 
@@ -652,6 +645,112 @@ pub fn drag_value(
         .collect())
 }
 
+/// A readout: a label with no place, said beside the figure as text and not drawn in it. What it
+/// says is worked out as a label's is, and laid out at one em, so a page sets it at the size of
+/// the text around it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Readout {
+    pub id: String,
+    /// What it says, with `$` around its mathematics, as a label's text. A dash when it doesn't
+    /// exist this frame.
+    pub text: String,
+    pub font: Font,
+    /// Its text laid out at one em, if it has mathematics in it, from the middle of its line.
+    pub laid: Option<formula::Laid>,
+    /// How wide it is, in ems.
+    pub width: f64,
+}
+
+impl Readout {
+    /// Its text as it reads, without the marks around its mathematics.
+    pub fn words(&self) -> String {
+        words(&self.text)
+    }
+
+    /// How tall its line is, in ems: a line of text, or what's laid out, from the middle.
+    pub fn height(&self) -> f64 {
+        let half = match &self.laid {
+            Some(laid) => TEXT_HALF_HEIGHT.max(laid.above).max(laid.below),
+            None => TEXT_HALF_HEIGHT,
+        };
+        (2.0 * half).max(READOUT_LINE)
+    }
+}
+
+/// How tall a readout's line is at least, in ems.
+pub const READOUT_LINE: f64 = 1.4;
+
+/// Text as it reads, without the marks around its mathematics.
+pub fn words(text: &str) -> String {
+    match formula::has_math(text) {
+        true => text
+            .replace("$$", "\u{0}")
+            .replace('$', "")
+            .replace('\u{0}', "$"),
+        false => text.to_string(),
+    }
+}
+
+/// Whether a mark is a readout: a label with no place.
+pub fn is_readout(mark: &crate::ir::Mark) -> bool {
+    matches!(mark.form, Form::Label { at: None, .. })
+}
+
+/// What a figure's readouts say at this moment, in the order they're written. A readout says what
+/// a label would, and with no `text` in its style, its words or else its name and value: beside
+/// the figure, nothing else says which value it is. One that doesn't exist this frame says `—`.
+pub fn readouts(
+    figure: &Figure,
+    inputs: &Inputs,
+    widths: &dyn terms::TextWidths,
+) -> Result<Vec<Readout>, Error> {
+    let scene = &figure.scene;
+    if !scene.marks.iter().any(is_readout) {
+        return Ok(Vec::new());
+    }
+    let mut env = eval::frame_env(figure, inputs)?;
+    // A length in a readout's style has no frame to be measured in, and changes nothing it says.
+    set_units(&mut env, 1.0, 1.0, 1.0);
+    env.set(VIEW_WIDTH, scene.viewport.x[1] - scene.viewport.x[0]);
+    let mut out = Vec::new();
+    for ((mark, style), conditional) in scene
+        .marks
+        .iter()
+        .zip(&figure.styles.marks)
+        .zip(&figure.conditional)
+    {
+        let Form::Label {
+            text,
+            values,
+            subject,
+            at: None,
+            ..
+        } = &mark.form
+        else {
+            continue;
+        };
+        let present = !conditional || presence::present(mark, style, &env)?;
+        let said = match present {
+            true => {
+                let mut style = style.clone();
+                style
+                    .text
+                    .get_or_insert_with(|| vec![TextPart::Caption, TextPart::Value]);
+                label_text(text, values, subject.as_ref(), &style, &env)?
+            }
+            false => "—".to_string(),
+        };
+        out.push(Readout {
+            id: mark.id.clone(),
+            laid: formula::lay(&said, 1.0, style.font, widths),
+            width: formula::width(&said, 1.0, style.font, widths),
+            text: said,
+            font: style.font,
+        });
+    }
+    Ok(out)
+}
+
 /// What a label says: its caption, or what its style's `text` makes of the value it's about,
 /// as `expr = value`. A label with no words of its own shows its value. Parts that come out
 /// the same aren't said twice, so a param's `name = expr = value` is `q = 3`.
@@ -1122,11 +1221,12 @@ pub fn prepare_with(
 
     let mut labels = Vec::new();
     for (i, (mark, style)) in scene.marks.iter().zip(&figure.styles.marks).enumerate() {
+        // A readout has no place: it's said beside the figure (`readouts`).
         let Form::Label {
             text,
             values,
             subject,
-            at,
+            at: Some(at),
             offset,
             away,
         } = &mark.form

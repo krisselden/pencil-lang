@@ -577,6 +577,18 @@ fn build(args: &Args) -> Result<(), Box<dyn Error>> {
         );
     }
 
+    // What the readouts say there, and the room each needs, measured in the fonts a page sets
+    // them in, which are the ones built in here: a page lays them out before any of it runs.
+    let fonts = text::Fonts::load(None)?;
+    let readouts = composition.readouts_json(&inputs, &fonts)?;
+    let room = composition.readout_room(&fonts)?;
+    let mut info = composition.info();
+    if let Some(said) = info["readouts"].as_array_mut() {
+        for (readout, [width, height]) in said.iter_mut().zip(room) {
+            readout["room"] = serde_json::json!([width, height]);
+        }
+    }
+
     let mut manifest = serde_json::json!({
         "figure": figure,
         // Which build of Pencil can read the figure, and what's in it, so a host can tell
@@ -592,9 +604,10 @@ fn build(args: &Args) -> Result<(), Box<dyn Error>> {
                 .collect::<serde_json::Map<_, _>>(),
             "values": values,
             "ranges": ranges,
+            "readouts": readouts,
             "images": posters,
         },
-        "info": composition.info(),
+        "info": info,
     });
 
     if args.card {

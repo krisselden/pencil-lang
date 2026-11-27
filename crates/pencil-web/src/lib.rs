@@ -74,6 +74,9 @@ impl Drop for Player {
     }
 }
 
+/// How many texts' widths are kept at most before they're forgotten.
+const MEASURED: usize = 4096;
+
 /// A page's own text widths, asking it once for each.
 struct PageWidths<'a> {
     measure: &'a Option<js_sys::Function>,
@@ -100,7 +103,12 @@ impl TextWidths for PageWidths<'_> {
             .ok()
             .and_then(|v| v.as_f64())
             .unwrap_or_else(|| Estimate.width(text, size, font));
-        self.measured.borrow_mut().insert(key, width);
+        let mut measured = self.measured.borrow_mut();
+        // A value that changes every frame is new text every frame, as a readout's is.
+        if measured.len() > MEASURED {
+            measured.clear();
+        }
+        measured.insert(key, width);
         width
     }
 }
@@ -640,6 +648,38 @@ impl Player {
                 self.surface.configure(&self.device, &self.config);
             }
         }
+    }
+
+    /// What the figure's readouts say at a time, as JSON: for each label with no place, in the
+    /// order it's written, its text and what's laid out of it, in ems, for the page to set beside
+    /// the figure (`readout_json` in the core).
+    pub fn readouts(&self, time: f32) -> Result<String, JsError> {
+        let Some((composition, _)) = &self.figure else {
+            return Ok("[]".to_string());
+        };
+        let widths = PageWidths {
+            measure: &self.measure,
+            measured: &self.measured,
+        };
+        Ok(composition
+            .readouts_json(&self.inputs(time), &widths)
+            .map_err(js_error)?
+            .to_string())
+    }
+
+    /// How much room each readout needs, as JSON `[[width, height], …]` in ems, so that nothing
+    /// beside it moves as it changes: the most it takes at the moments a reader can reach that
+    /// are tried. A build works out the same with the same fonts.
+    pub fn readout_room(&self) -> Result<String, JsError> {
+        let Some((composition, _)) = &self.figure else {
+            return Ok("[]".to_string());
+        };
+        let widths = PageWidths {
+            measure: &self.measure,
+            measured: &self.measured,
+        };
+        let room = composition.readout_room(&widths).map_err(js_error)?;
+        Ok(serde_json::json!(room).to_string())
     }
 
     /// Draws a frame, and returns its labels as JSON, for the page's text overlay.

@@ -87,6 +87,9 @@ pub struct Param {
     /// For a param that's one of a list of values, the value's name and what each option says.
     /// The param itself is which one, counting from 0.
     pub choice: Option<Choice>,
+    /// What its control says, as the document writes it: `param q "arms" = 8 in 3..16`. Without
+    /// one, a control says the param's name.
+    pub caption: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -195,7 +198,8 @@ pub enum Form {
         values: Vec<Shown>,
         /// What the label is about, if it's about one value.
         subject: Option<Subject>,
-        at: [Expr; 2],
+        /// Where it's drawn. None is a readout, said beside the figure as text.
+        at: Option<[Expr; 2]>,
         offset: [Expr; 2],
         /// Which way it sits from its point, in the figure's own coordinates, at the distance
         /// its style sets. Replaces `offset`.
@@ -530,9 +534,15 @@ impl Scene {
                         "kind": "label",
                         "text": text,
                         "values": values.iter().map(Shown::to_mathjson).collect::<Vec<_>>(),
-                        "at": pair(at),
-                        "offset": pair(offset),
                     });
+                    // A readout has no place: it's said beside the figure.
+                    match at {
+                        Some(at) => {
+                            label["at"] = pair(at);
+                            label["offset"] = pair(offset);
+                        }
+                        None => label["readout"] = json!(true),
+                    }
                     if let Some(away) = away {
                         label["away"] = pair(away);
                     }
@@ -599,6 +609,9 @@ impl Scene {
                 }
                 if let Some(choice) = &p.choice {
                     param["choice"] = json!({ "of": choice.of, "options": choice.options });
+                }
+                if let Some(caption) = &p.caption {
+                    param["caption"] = json!(caption);
                 }
                 param
             }).collect::<Vec<_>>(),

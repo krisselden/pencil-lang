@@ -209,7 +209,7 @@ fn scene_exprs(scene: &Scene, f: &mut impl FnMut(&Expr)) {
                     .iter()
                     .flat_map(|s| s.value.exprs())
                     .for_each(&mut *f);
-                pair(at, f);
+                at.iter().for_each(|p| pair(p, f));
                 pair(offset, f);
                 away.iter().for_each(|p| pair(p, f));
             }
@@ -246,6 +246,8 @@ fn styled_exprs(styled: &Styled, f: &mut impl FnMut(&Expr)) {
         no_title_fill: _,
         no_formula_fill: _,
         panels,
+        // Words and kinds: nothing a frame evaluates.
+        controls: _,
     } = styled;
     for style in marks {
         let MarkStyle {

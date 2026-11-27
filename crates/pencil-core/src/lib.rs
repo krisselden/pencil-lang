@@ -449,7 +449,7 @@ impl Composition {
             "beatLengths": figure.scene.beat_lengths,
             "timeDriven": clock::time_driven(&figure.scene),
             "usesTime": clock::composition_uses_time(self),
-            "params": figure.scene.params.iter().map(|p| serde_json::json!({
+            "params": figure.scene.params.iter().zip(&figure.styles.controls).map(|(p, control)| serde_json::json!({
                 // The widest its range gets, and the params an end of it follows: a page asks
                 // for the range as it stands when it draws one of those.
                 "id": p.id, "min": p.range[0], "max": p.range[1], "step": p.step,
@@ -458,6 +458,19 @@ impl Composition {
                 // to its binding.
                 "reads": reads.get(&p.id).cloned().unwrap_or_default(),
                 "choice": p.choice.as_ref().map(|c| serde_json::json!({ "of": c.of, "options": c.options })),
+                // What its control says, as the document writes it, and what the sheets make of
+                // that: which kind of control it is, and which parts of it the control says.
+                "caption": p.caption,
+                "control": {
+                    "name": style::control_name(p),
+                    "kind": style::control_kind(p, control).word(),
+                    "text": control.text.as_deref().unwrap_or(&CONTROL_TEXT).iter().map(|part| part_word(*part)).collect::<Vec<_>>(),
+                },
+            })).collect::<Vec<_>>(),
+            // What it says beside itself, in the order it's written: each label with no place.
+            // Each frame's words are `readouts`, and how much room each needs is `readout_room`.
+            "readouts": figure.scene.marks.iter().filter(|m| frame::is_readout(m)).map(|m| serde_json::json!({
+                "id": m.id,
             })).collect::<Vec<_>>(),
             // Each mark a reader can move, in every panel, in the order a page asks about them:
             // which panel it's in, its mark, and the params it sets: one, or two for a point
@@ -478,6 +491,178 @@ impl Composition {
                 .collect::<serde_json::Map<_, _>>(),
         })
     }
+}
+
+/// What a control says with nothing in its sheets: its caption, or its name, and its value.
+const CONTROL_TEXT: [style::TextPart; 2] = [style::TextPart::Caption, style::TextPart::Value];
+
+fn part_word(part: style::TextPart) -> &'static str {
+    match part {
+        style::TextPart::Caption => "caption",
+        style::TextPart::Name => "name",
+        style::TextPart::Expr => "expr",
+        style::TextPart::Value => "value",
+    }
+}
+
+/// How many moments of its clock a readout's room is worked out over, with each param at either
+/// end of its range.
+const ROOM_TIMES: usize = 32;
+/// How many of a stepped param's values, or a choice's options, are each tried, at most.
+const ROOM_STEPS: usize = 16;
+
+impl Composition {
+    /// What the figure's readouts say at this moment, in the order they're written.
+    pub fn readouts(
+        &self,
+        inputs: &frame::Inputs,
+        widths: &dyn terms::TextWidths,
+    ) -> Result<Vec<frame::Readout>, Error> {
+        frame::readouts(&self.panels[0].figure, inputs, widths)
+    }
+
+    /// What the readouts say at this moment, as a page sets them: each one's words, and what's laid
+    /// out, in ems from the left of its line and the middle of it, as `{ id, text, words, math,
+    /// width, height, laid }`.
+    pub fn readouts_json(
+        &self,
+        inputs: &frame::Inputs,
+        widths: &dyn terms::TextWidths,
+    ) -> Result<serde_json::Value, Error> {
+        Ok(self
+            .readouts(inputs, widths)?
+            .iter()
+            .map(readout_json)
+            .collect())
+    }
+
+    /// How much room each readout needs so that nothing beside it moves as what it says changes,
+    /// as `[width, height]` in ems: the most it takes over the moments a reader can reach, which
+    /// are tried. They're the poster's moment, moments through the clock, each param at either
+    /// end of its range and at each of its steps, if it has a few, and every param at its start
+    /// or its end together. A number's digits are each tried as the widest digit too, since a
+    /// value between the ones tried has others. A value that only gets wider between them can
+    /// still be wider than this, and a page keeps its box, so it doesn't move.
+    pub fn readout_room(&self, widths: &dyn terms::TextWidths) -> Result<Vec<[f64; 2]>, Error> {
+        let figure = &self.panels[0].figure;
+        let scene = &figure.scene;
+        let count = scene.marks.iter().filter(|m| frame::is_readout(m)).count();
+        if count == 0 {
+            return Ok(Vec::new());
+        }
+        let poster = self.poster();
+        let mut moments = vec![poster.clone()];
+        if clock::composition_uses_time(self) {
+            let length = scene.duration.unwrap_or(LOOP);
+            moments.extend((0..=ROOM_TIMES).map(|k| frame::Inputs {
+                time: length * k as f64 / ROOM_TIMES as f64,
+                params: poster.params.clone(),
+            }));
+        }
+        let held = |params: Vec<(String, f64)>| {
+            let mut inputs = poster.clone();
+            for (name, value) in params {
+                inputs.params.retain(|(held, _)| *held != name);
+                inputs.params.push((name, value));
+            }
+            inputs
+        };
+        for param in &scene.params {
+            let [lo, hi] = param.range;
+            let mut values = vec![lo, hi];
+            if let Some(step) = param.step
+                && ((hi - lo) / step) < ROOM_STEPS as f64
+            {
+                let steps = ((hi - lo) / step + 1e-9).floor() as usize;
+                values.extend((1..steps).map(|k| lo + k as f64 * step));
+            }
+            moments.extend(
+                values
+                    .into_iter()
+                    .map(|v| held(vec![(param.id.clone(), v)])),
+            );
+        }
+        for end in [0, 1] {
+            moments.push(held(
+                scene
+                    .params
+                    .iter()
+                    .map(|p| (p.id.clone(), p.range[end]))
+                    .collect(),
+            ));
+        }
+        let mut room = vec![[0.0f64, frame::READOUT_LINE]; count];
+        for inputs in &moments {
+            let said = match self.readouts(inputs, widths) {
+                Ok(said) => said,
+                // A moment the figure can't be worked out at isn't one a reader sees.
+                Err(_) => continue,
+            };
+            for (room, readout) in room.iter_mut().zip(&said) {
+                let widest = DIGITS
+                    .iter()
+                    .map(|digit| {
+                        let text: String = readout
+                            .text
+                            .chars()
+                            .map(|c| if c.is_ascii_digit() { *digit } else { c })
+                            .collect();
+                        formula::width(&text, 1.0, readout.font, widths)
+                    })
+                    .fold(readout.width, f64::max);
+                room[0] = room[0].max(widest);
+                room[1] = room[1].max(readout.height());
+            }
+        }
+        Ok(room)
+    }
+}
+
+/// Digits to try each of a readout's digits as, for the widest it can be.
+const DIGITS: [char; 3] = ['0', '4', '8'];
+/// How long time runs before it loops, for a figure that says no `duration`, as a page has it.
+const LOOP: f64 = 10.0;
+
+/// A readout as a page sets it: what it says, and what's laid out, in ems, with each run's top
+/// as a page places text from, and its left from the left of the line.
+pub fn readout_json(readout: &frame::Readout) -> serde_json::Value {
+    let left = readout.width / 2.0;
+    let laid = readout.laid.as_ref().map(|laid| {
+        let runs: Vec<_> = laid
+            .runs
+            .iter()
+            .map(|run| {
+                serde_json::json!({
+                    "text": run.text,
+                    "x": run.x + left,
+                    "top": run.y - (0.5 + formula::BASELINE) * run.size,
+                    "size": run.size,
+                    "math": run.face == formula::Face::Math,
+                    "stretch": run.stretch,
+                })
+            })
+            .collect();
+        let rules: Vec<_> = laid
+            .rules
+            .iter()
+            .map(|rule| {
+                serde_json::json!({
+                    "x": rule.x + left, "y": rule.y,
+                    "width": rule.width, "height": rule.height,
+                })
+            })
+            .collect();
+        serde_json::json!({ "runs": runs, "rules": rules })
+    });
+    serde_json::json!({
+        "id": readout.id,
+        "text": readout.text,
+        "words": readout.words(),
+        "math": readout.font == style::Font::Math,
+        "width": readout.width,
+        "height": readout.height(),
+        "laid": laid,
+    })
 }
 
 /// The colors sheets name, for a page to match the figure it holds. Each is what the name

@@ -85,17 +85,20 @@ fn form_exprs(form: &Form) -> Vec<&Expr> {
         // Where it sits is the expression's business, per state.
         Form::Term { .. } => {}
         Form::Outline { .. } => {}
+        // What it says too: a readout has no place, and is there when what it says is.
         Form::Label {
             at,
             offset,
             away,
             values,
+            subject,
             ..
         } => {
-            out.extend(at);
+            out.extend(at.iter().flatten());
             out.extend(offset);
             out.extend(away.iter().flatten());
             out.extend(values.iter().flat_map(Shown::exprs));
+            out.extend(subject.iter().flat_map(|s| s.value.exprs()));
         }
     }
     out
@@ -192,12 +195,15 @@ pub fn present(mark: &Mark, style: &MarkStyle, env: &Env) -> Result<bool, Error>
             offset,
             away,
             values,
+            subject,
             ..
         } => all_evaluate(
             at.iter()
+                .flatten()
                 .chain(offset)
                 .chain(away.iter().flatten())
-                .chain(values.iter().flat_map(Shown::exprs)),
+                .chain(values.iter().flat_map(Shown::exprs))
+                .chain(subject.iter().flat_map(|s| s.value.exprs())),
             env,
         ),
     }
