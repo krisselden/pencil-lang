@@ -159,10 +159,14 @@ GLSL shaders draw through one SVG system (`src/lib/plot.ts`), and nothing is mad
   by Kris's rule, and `lab/narration` checks it by matching letters and numbers. The compiler could check it exactly, if a caption
   could refer to a point by its name rather than spelling it.
 - **Should E have a label of its own** before it's called z²? The narration avoids saying it for now.
-- **How much of a control should a `.pen` say (Kris)?** It says a param's range, its `step`, and now a choice of values,
-  `param axis in {ω, 1, 1 + ω}`, and the playground builds sliders and choices from those, as the site builds a shader's
-  controls from `//default, [min, max] {a, b, c}` comments. What's left is whether it should say a control's label, or
-  whether that's a sheet's. A choice of names that aren't values, such as `{clip, tanh}`, waits for a figure that needs one.
+- **How much of a control should a `.pen` say (Kris)?** Decided 2026-11-26 ([issue 4](https://github.com/krisselden/pencil-lang/issues/4)):
+  the words are the document's, as a label's words and a beat's caption already are, and a sheet's `text` says how much of
+  them to say. A param can carry a caption that labels its control, and a label with no place is a readout, said beside the
+  figure. Kris's reason: for an explainer, a control's label is part of how the figure teaches, and short words that belong
+  to one declaration are written beside it, so nothing has to be kept in sync with another file, as the narration's script
+  must. A param says its range, its `step` and a choice of values, `param axis in {ω, 1, 1 + ω}`, from which the
+  playground builds sliders and choices, as the site builds a shader's controls from `//default, [min, max] {a, b, c}`
+  comments. A choice of names that aren't values, such as `{clip, tanh}`, waits for a figure that needs one.
 - **Can a figure's accessible text come from the document (Kris)?** The IR knows what each mark is and what it's built from,
   so a reading like "a circle about C through 1" could be generated, with no alt text written by hand.
 - **Should a `fit` view ease** when something it fits vanishes? It jumps, which is correct.
