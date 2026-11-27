@@ -131,6 +131,11 @@ export class Wiring {
     return this.#roots;
   }
 
+  /** Whether the controls say each new beat themselves, so the figure needn't say a key's. */
+  get speaks() {
+    return this.#roots.length > 0 && !!this.#figure.info && this.#find().said.length > 0;
+  }
+
   /** What's in them changed: look again. */
   forget() {
     this.#parts = null;
@@ -271,13 +276,17 @@ export class Wiring {
       const at = beatAt(info, beat);
       for (const out of parts.beatOuts) say(out, at.text);
       for (const list of parts.captions) list.forEach((caption, i) => caption.toggleAttribute('data-on', i === at.caption));
-      // A beat that changes is said: which it is, and its caption. Not the first, which is where the
-      // figure starts and isn't news.
-      if (this.#beatSaid !== undefined && this.#beatSaid !== at.caption) {
-        const words = `${at.caption + 1} / ${info.beats.length}${info.beats[at.caption] ? `: ${info.beats[at.caption]}` : ''}`;
+      // A beat that changes is said, however it changed: which it is, and its caption, in the
+      // words the element says a key's step in, which it leaves to this. Not the first, which is
+      // where the figure starts and isn't news. Beats with lengths are at their start before the
+      // first is done.
+      const step = (info.beatLengths?.length ?? 0) > 0 && beat < 1e-6 ? 0 : at.caption + 1;
+      if (this.#beatSaid !== undefined && this.#beatSaid !== step) {
+        const caption = info.beats[step - 1];
+        const words = step < 1 ? 'Start' : `Step ${step} of ${info.beats.length}${caption ? `: ${caption}` : ''}`;
         for (const said of parts.said) say(said, words);
       }
-      this.#beatSaid = at.caption;
+      this.#beatSaid = step;
       for (const button of parts.back) button.disabled = beat <= range.min;
       for (const button of parts.next) button.disabled = beat >= range.max;
     }

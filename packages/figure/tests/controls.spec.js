@@ -241,10 +241,10 @@ test.describe('on a phone', () => {
       await onFigure(page, (f) => f.step(1));
       await expect(shown).toHaveText('Then as many as the arms say, each a little smaller than the last, around the first.');
       // The live region says where it is and what the caption says.
-      await expect(box.locator('[data-said]')).toHaveText('2 / 3: Then as many as the arms say, each a little smaller than the last, around the first.');
+      await expect(box.locator('[data-said]')).toHaveText('Step 2 of 3: Then as many as the arms say, each a little smaller than the last, around the first.');
       await onFigure(page, (f) => f.step(1));
       await expect(shown).toHaveText('And the point they share.');
-      await expect(box.locator('[data-said]')).toHaveText('3 / 3: And the point they share.');
+      await expect(box.locator('[data-said]')).toHaveText('Step 3 of 3: And the point they share.');
       // Nothing moved: the line is as tall as the longest caption from the start.
       expect(await boxes(page)).toEqual(before);
       expect(await fits(page), figure).toEqual([]);
@@ -414,6 +414,59 @@ for (const [width, height] of [[1633, 919], [375, 812]]) {
     });
   });
 }
+
+test.describe('a new beat', () => {
+  test.use({ viewport: { width: 1280, height: 900 } });
+
+  test('is said once, by a key on the figure, a button, play, or a page setting it', async ({ page }) => {
+    await open(page, 'controlled', 'figure=timed');
+    await drawn(page);
+    // Every word either live region says: the figure's own, for its keys, and the controls'.
+    await page.evaluate(() => {
+      const figure = document.getElementById('figure');
+      const regions = [figure.shadowRoot.querySelector('.said'), figure.querySelector('pencil-controls').shadowRoot.querySelector('[data-said]')];
+      window.__said = [];
+      const seen = new MutationObserver(() => regions.forEach((region, i) => {
+        const text = region.textContent;
+        if (text && text !== region.dataset.heard) window.__said.push([i, text]);
+        region.dataset.heard = text;
+      }));
+      for (const region of regions) seen.observe(region, { childList: true, characterData: true, subtree: true });
+    });
+    const said = () => page.evaluate(() => window.__said.splice(0));
+    const beat = () => value(page, 'beat');
+    const settle = () => page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(done, 100)))));
+    const box = controls(page);
+
+    // Steps share the clock evenly, two seconds each, and the first is beat 0.
+    const second = 'Step 2 of 3: Then as many as the arms say, each a little smaller than the last, around the first.';
+    // A key on the figure.
+    await figureOf(page).focus();
+    await page.keyboard.press('ArrowRight');
+    await expect.poll(beat).toBe(1);
+    await settle();
+    expect(await said()).toEqual([[1, second]]);
+    // A button.
+    await box.getByRole('button', { name: 'Next beat' }).click();
+    await expect.poll(beat).toBe(2);
+    await settle();
+    expect(await said()).toEqual([[1, 'Step 3 of 3: And the point they share.']]);
+    // A page setting it.
+    await onFigure(page, (f) => (f.beat = 0));
+    await expect.poll(beat).toBe(0);
+    await settle();
+    expect(await said()).toEqual([[1, 'Step 1 of 3: One circle.']]);
+    // Play, from just before a beat ends, until it has: the same beat, said once.
+    await onFigure(page, (f) => {
+      f.time = 1.9;
+      f.play();
+    });
+    await expect.poll(beat).toBe(1);
+    await onFigure(page, (f) => f.pause());
+    await settle();
+    expect(await said()).toEqual([[1, second]]);
+  });
+});
 
 test('a readout\'s room holds what it says where the page starts the figure', async ({ page }) => {
   // Near a pole none of the places tried along `a` comes near: only the page's own moment does.

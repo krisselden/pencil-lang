@@ -1378,6 +1378,8 @@ export class PencilFigure extends HTMLElement {
     const timed = (this.#info.beatLengths?.length ?? 0) > 0;
     const n = Math.round(timed ? beat : beat + 1);
     const caption = beats[n - 1] ?? '';
+    // Controls that say each new beat say this one, and a beat is said once.
+    if (this.#wiring.speaks) return;
     this.#said.textContent = n < 1 ? 'Start' : `Step ${n} of ${beats.length}${caption ? `: ${caption}` : ''}`;
   };
 
