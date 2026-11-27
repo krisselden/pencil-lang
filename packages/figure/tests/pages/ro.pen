@@ -1,0 +1,11 @@
+// For the controls on a phone: readouts alone, too wide together for its bar.
+doc ro
+viewport { x: -2..2, y: -2..2 }
+let a = 1.25
+let b = -3.5
+let c = 12.75
+let O = (0, 0)
+dot O
+label first = "the first ratio {a}"
+label second = "the second ratio {b}"
+label third = "the third ratio {c}"

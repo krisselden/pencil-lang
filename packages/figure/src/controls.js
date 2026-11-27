@@ -7,8 +7,9 @@
 // Nothing moves when a value changes. An `<output>` is as wide as the widest value its param's
 // range can show, a readout's box is as big as the most it says at the moments a build tries, every
 // caption lies in one place, so the row is as tall as the longest of them, and the play button is
-// as wide as the wider of its words. On a phone the first row stays, and the rest open from a menu
-// over the page, so the figure keeps the height.
+// as wide as the wider of its words. On a phone one row stays, `BAR` says which, and the rest open
+// from a menu over the page, so the figure keeps the height. That row, too, goes behind the menu if
+// it doesn't fit (the element checks), so nothing in the bar is ever cut off.
 //
 // Every control is marked with what it sets (`data-param`, `data-time`, `data-play`, `data-step`),
 // and each output with what it shows (`data-param`, `data-time`, `data-beat`, `data-readout`), as a
@@ -24,6 +25,16 @@ const attrs = (pairs) =>
 
 /** How long time runs before it loops, for a figure that declares no `duration`, as the element has it. */
 const LOOP = 10;
+
+/**
+ * Which row a phone's bar keeps, of the controls' one line, with the rest behind its menu: `'first'`,
+ * the first of them (time, beats, or the first param's control), or `'readouts'`, the readouts when
+ * a figure has any, and the first row when it has none.
+ */
+export const BAR = 'first';
+
+/** When the controls are a phone's: one row, and a menu. The styles below say the same. */
+export const PHONE = '(max-width: 40rem), (max-height: 32rem)';
 
 /** As many decimals as a param's step has, so a whole-number param reads as one. */
 export const decimals = (param) => (param.step == null ? 2 : (String(param.step).split('.')[1] ?? '').length);
@@ -182,16 +193,20 @@ export const CONTROLS_CSS = `
 :host { display: block; }
 :host([hidden]) { display: none; }
 /* One grid, so every slider starts and ends where the others do: what a control says, the control,
-   and its value. A row of anything else takes the whole width. */
-.controls, .rest { display: grid; grid-template-columns: max-content minmax(0, 1fr) max-content; gap: 0.375rem 0.75rem; align-items: center; }
+   and its value. What a control says wraps past two fifths of the width, so a long caption doesn't
+   squeeze its slider. A row of anything else takes the whole width. */
+.controls, .rest { display: grid; grid-template-columns: fit-content(40%) minmax(0, 1fr) max-content; gap: 0.375rem 0.75rem; align-items: center; }
 .controls { margin-top: 0.625rem; font: var(--pencil-controls-font, 0.875rem/1.4 ui-sans-serif, system-ui, sans-serif); color: var(--pencil-muted, color-mix(in srgb, currentColor 68%, transparent)); }
 .bar, .rest { display: contents; }
 .rest { position: static; inset: auto; margin: 0; padding: 0; border: 0; width: auto; height: auto; max-width: none; max-height: none; overflow: visible; background: none; color: inherit; }
-.more { display: none; }
+.more, .more-words, .row.phone { display: none; }
 .row { grid-column: 1 / -1; display: flex; align-items: center; gap: 0.5rem 0.75rem; flex-wrap: wrap; margin: 0; padding: 0; border: 0; min-width: 0; }
 .row.param, .row.time { display: contents; }
+/* The readouts come after the controls, wherever the bar's switch puts them, and what a page put
+   in after them. */
+.row.readouts { order: 1; }
 slot { display: contents; }
-::slotted(*) { grid-column: 1 / -1; }
+::slotted(*) { grid-column: 1 / -1; order: 2; }
 fieldset.row { min-inline-size: 0; }
 legend { float: left; padding: 0; margin-right: 0.25rem; }
 label { display: inline-flex; align-items: center; gap: 0.375rem; }
@@ -219,17 +234,21 @@ input:disabled, select:disabled { cursor: default; }
 :focus-visible { outline: 2px solid var(--pencil-focus, currentColor); outline-offset: 2px; }
 input[type='range']:focus-visible { outline-offset: 1px; }
 .said { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-/* On a phone, or a screen with little height, the first row stays, on one line, and the rest open
-   from a menu over the page, as a sheet from the bottom: the figure keeps the height. */
+/* On a phone, or a screen with little height, one row stays, on one line, in a bar of fixed height,
+   and the rest open from a menu over the page, as a sheet from the bottom: the figure keeps the
+   height. Each thing in the bar keeps its own width, so the element can tell when the row doesn't
+   fit, and then it goes behind the menu too. Its beats' caption is in the menu. */
 @media (max-width: 40rem), (max-height: 32rem) {
   .controls { display: block; }
-  .bar { display: flex; align-items: center; gap: 0.5rem; min-width: 0; }
-  .bar > .row, .bar > .row.param, .bar > .row.time { display: flex; flex: 1 1 auto; min-width: 0; flex-wrap: nowrap; overflow: hidden; }
-  .bar .captions { flex: 1 1 0; display: grid; }
-  .bar .caption { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .more { display: inline-block; flex: none; padding: 0.25rem 0.5rem; line-height: 1; }
+  .bar { display: flex; align-items: center; gap: 0.5rem; height: 2.25rem; min-width: 0; }
+  .bar > .row, .bar > .row.param, .bar > .row.time { display: flex; flex: 1 1 auto; min-width: 0; flex-wrap: nowrap; overflow: hidden; gap: 0.5rem 0.75rem; }
+  .bar > .row > *, .bar > .row label { flex: none; white-space: nowrap; }
+  .bar > .row > input[type='range'] { flex: 1 1 4rem; min-width: 4rem; }
+  .bar .captions { display: none; }
+  .row.phone { display: flex; }
+  .controls[data-more] .more { display: inline-flex; align-items: center; gap: 0.375rem; flex: none; margin-left: auto; padding: 0.25rem 0.5rem; line-height: 1; }
+  .bar[data-crowded] .more-words { display: inline; }
   .rest { display: grid; }
-  .rest:not([popover]) { margin-top: 0.375rem; }
   .rest[popover]:not(:popover-open) { display: none; }
   .rest:popover-open { position: fixed; inset: auto 0 0 0; margin: 0; width: auto; max-height: 70vh; overflow: auto; padding: 1rem 1rem 1.25rem; row-gap: 0.75rem; background: var(--pencil-surface-menu, Canvas); color: var(--pencil-muted, CanvasText); border-top: 1px solid var(--pencil-rule, color-mix(in srgb, currentColor 25%, transparent)); box-shadow: 0 -0.5rem 1.5rem rgb(0 0 0 / 0.15); font: var(--pencil-controls-font, 0.875rem/1.4 ui-sans-serif, system-ui, sans-serif); }
 }
@@ -329,12 +348,14 @@ function rows({ info, moment, paused, disabled }) {
       kind === 'slider' && saysValue(param)
         ? `<output${attrs({ for: id, part: 'value', 'data-param': name, 'aria-live': 'off', style: room(...widest) })}>${escape(valueText(param, value))}</output>`
         : '';
+    // Three cells, always, so every row keeps to the grid's columns.
     const said = label ? `<label${attrs({ for: id, part: 'label', class: 'param' })}>${label}</label>` : '<span></span>';
-    out.push(`<div class="row param" part="row param">${said}${input}${out_}</div>`);
+    out.push(`<div class="row param" part="row param">${said}${input}${out_ || '<span></span>'}</div>`);
   }
 
   const said = info.readouts ?? [];
   if (said.length) {
+    out.readouts = out.length;
     const boxes = said
       .map((readout, i) => {
         const [width, height] = readout.room ?? [readouts[i]?.width ?? 4, readouts[i]?.height ?? 1.4];
@@ -358,13 +379,25 @@ function rows({ info, moment, paused, disabled }) {
  *   which comes after the defaults, and on a phone in their menu.
  */
 export function markup({ info, moment, paused = false, disabled = false, extra = false }) {
-  const [first, ...rest] = rows({ info, moment, paused, disabled });
-  const more = `<button${attrs({ type: 'button', class: 'more', part: 'button more', popovertarget: 'rest', 'aria-label': 'More controls', title: 'More controls' })}>⋯</button>`;
-  const menu = rest.length > 0 || (extra && first);
+  const all = rows({ info, moment, paused, disabled });
+  const at = BAR === 'readouts' && all.readouts !== undefined ? all.readouts : 0;
+  const first = all[at];
+  const rest = all.filter((_, i) => i !== at);
+  // With the beats in the bar, their caption is in the menu, where it has room to be read whole.
+  if (first?.startsWith('<div class="row beats"')) {
+    const captions = first.slice(first.indexOf('<span class="captions"'), first.lastIndexOf('</div>'));
+    rest.unshift(`<div class="row captions-row phone" part="row captions">${captions}</div>`);
+  }
+  // On a phone the button opens the menu, and shows whenever anything is in it: the rows that aren't
+  // the bar's, what the page put in, or the bar's own row when it doesn't fit.
+  const more =
+    `<button${attrs({ type: 'button', class: 'more', part: 'button more', popovertarget: 'rest', 'aria-label': 'More controls', title: 'More controls' })}>` +
+    `<span class="more-words">Controls</span> ⋯</button>`;
+  const menu = rest.length > 0 || extra;
   return (
-    `<div class="controls" part="controls">` +
-    (first ? `<div class="bar" part="bar">${first}${menu ? more : ''}</div>` : '') +
-    `<div class="rest" id="rest" part="rest"${menu ? ' popover' : ''}>${rest.join('')}<slot></slot></div>` +
+    `<div${attrs({ class: 'controls', part: 'controls', 'data-more': first && menu })}>` +
+    (first ? `<div class="bar" part="bar">${first}${more}</div>` : '') +
+    `<div class="rest" id="rest" part="rest"${first ? ' popover' : ''}>${rest.join('')}<slot></slot></div>` +
     `</div>`
   );
 }

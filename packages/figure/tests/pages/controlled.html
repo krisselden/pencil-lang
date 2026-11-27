@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>controlled</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { margin: 0; padding: 8px; }
+  main { max-width: 765px; margin: 0 auto; }
+</style>
+</head>
+<body>
+<main>
+  <!-- One of the controls' fixtures, named by `?figure=`, with its sheet if it has one. -->
+  <pencil-figure id="figure" controls paused aria-label="A figure with controls."></pencil-figure>
+  <p><a href="#after" id="after">After the figure</a></p>
+</main>
+<script>
+  const name = new URLSearchParams(location.search).get('figure') ?? 'controls';
+  const figure = document.getElementById('figure');
+  figure.setAttribute('src', `${name}.pen`);
+  if (['controls', 'grid'].includes(name)) figure.setAttribute('sheets', `${name}.style`);
+</script>
+<script type="module" src="./boot.js"></script>
+</body>
+</html>

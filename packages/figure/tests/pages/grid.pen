@@ -1,0 +1,10 @@
+// For the controls: a choice of six before two sliders, one of which says only its caption.
+doc grid
+param many "how many" in {1, 2, 3, 4, 5, 6}
+param q "arms" = 5 in 3..12 step 1
+param r "radius" = 0.5 in 0..1
+param s "size" = 0.5 in 0..1
+viewport { x: -2..2, y: -2..2 }
+let P = (r·many / 6, s)
+dot P
+circles c = circle(0, 0.1·k) for k in 1..q

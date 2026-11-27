@@ -14,13 +14,30 @@
 //   button[data-step="1"], [data-step="-1"], output[data-beat], [data-captions]   beats
 //
 // A choice's `data-param` is the name its value has, `along`, or its param, `along.index`.
-import { paramNamed, valueText, timeText, beatAt, steps, readoutHtml } from './controls.js';
+import { PHONE, paramNamed, valueText, timeText, beatAt, steps, readoutHtml } from './controls.js';
+
+const ATTRIBUTES = ['data-play', 'data-time', 'data-step', 'data-param', 'data-readout'];
+
+/** What a control is, as a selector that finds the same control in controls written again: its
+ * `id`, or what it's marked as being for, or the menu's button. None for anything else. */
+export function identity(el) {
+  if (el.id) return `#${CSS.escape(el.id)}`;
+  for (const name of ATTRIBUTES) {
+    if (!el.hasAttribute(name)) continue;
+    const value = el.getAttribute(name);
+    let key = `${el.localName}[${name}${value ? `="${CSS.escape(value)}"` : ''}]`;
+    if (el.type === 'radio') key += `[value="${CSS.escape(el.value)}"]`;
+    return key;
+  }
+  return el.classList.contains('more') ? '.more' : null;
+}
 
 export class Wiring {
   #figure;
   #roots = [];
   #off = null;
   #parts = null;
+  #sized = null; // watches the bars, which hold one row on a phone
 
   constructor(figure) {
     this.#figure = figure;
@@ -38,6 +55,58 @@ export class Wiring {
       root.addEventListener('input', (e) => this.#input(e.target), { signal });
       root.addEventListener('change', (e) => this.#change(e.target), { signal });
       root.addEventListener('click', (e) => this.#click(e.target.closest?.('button')), { signal });
+      this.#menus(root, signal);
+    }
+    this.#sized?.disconnect();
+    this.#sized = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => this.fit());
+    for (const root of roots) for (const bar of root.querySelectorAll('.bar')) this.#sized?.observe(bar);
+  }
+
+  /** A menu that closes with the focus in it, on Escape, gives the focus back to its button, as a
+   * menu should, where a browser can leave it nowhere. */
+  #menus(root, signal) {
+    const scope = root.getRootNode?.() ?? document;
+    for (const menu of root.querySelectorAll('[popover][id]')) {
+      const button = root.querySelector(`[popovertarget="${CSS.escape(menu.id)}"]`);
+      let inside = false;
+      menu.addEventListener(
+        'beforetoggle',
+        (e) => {
+          if (e.newState === 'closed') inside = menu.contains(scope.activeElement);
+        },
+        { signal },
+      );
+      menu.addEventListener(
+        'toggle',
+        (e) => {
+          if (e.newState !== 'closed' || !inside) return;
+          inside = false;
+          const now = scope.activeElement;
+          if (!now || now === document.body || menu.contains(now)) button?.focus();
+        },
+        { signal },
+      );
+    }
+  }
+
+  /**
+   * On a phone a bar keeps one row on one line, and one that doesn't fit, as radios with long
+   * words or a long caption, goes behind the menu with the rest, so nothing in the bar is cut off.
+   * The bar is as tall either way, so nothing moves.
+   */
+  fit() {
+    if (typeof matchMedia === 'undefined' || !matchMedia(PHONE).matches) return;
+    for (const root of this.#roots) {
+      const bar = root.querySelector('.bar');
+      const row = bar?.querySelector(':scope > .row');
+      const menu = root.querySelector('.rest');
+      if (!row || !menu || row.scrollWidth <= row.clientWidth + 0.5) continue;
+      // The beats' caption is in the menu for a bar that steps them, and they bring it with them.
+      if (row.matches('.beats')) menu.querySelector(':scope > .captions-row')?.remove();
+      menu.prepend(row);
+      bar.toggleAttribute('data-crowded', true);
+      root.querySelector('.controls')?.toggleAttribute('data-more', true);
+      this.#parts = null;
     }
   }
 
@@ -92,6 +161,7 @@ export class Wiring {
     }
     for (const input of this.#find().times) Object.assign(input, { min: 0, max: this.#figure.duration, step: 0.001 });
     if (info) this.paintPlay();
+    this.fit();
     this.read();
   }
 
@@ -201,6 +271,8 @@ export class Wiring {
   detach() {
     this.#off?.abort();
     this.#off = null;
+    this.#sized?.disconnect();
+    this.#sized = null;
     this.#roots = [];
     this.#parts = null;
   }

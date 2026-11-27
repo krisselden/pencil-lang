@@ -1,0 +1,6 @@
+// For the controls on a phone: a first row too long for its bar, and a long caption.
+doc bar
+param mode "projection" in {"stereographic": 1, "orthographic": 2, "gnomonic": 3, "equal area": 4}
+param q "the number of arms on the rolled tube" = 5 in 3..12 step 1
+viewport { x: -2..2, y: -2..2 }
+circles c = circle(0, 0.1·k·mode) for k in 1..q

@@ -51,7 +51,8 @@
 // the readouts. They're `<pencil-controls slot="controls">`, a child whose shadow root holds them,
 // styled through `::part` and custom properties (`controls.js`). A build writes it into the page,
 // with every size reserved, and disabled until the figure loads (the Astro component does); a page
-// that wrote none gets one when the figure loads. A page with its own fills the `controls` slot
+// that wrote none gets one when the figure loads. Without the attribute they're hidden, and what a
+// page put in `<pencil-controls>` stays, as `<video controls>` does. A page with its own fills the `controls` slot
 // with inputs and outputs marked `data-param="q"` or `data-readout="ratio"`, and the element sets
 // their ranges, steps and values and follows them each frame (`wiring.js`), with or without the
 // attribute. `readouts` is what the readouts say this frame.
@@ -66,7 +67,7 @@ import { LABEL_CSS, LabelLayer, fonts } from './labels.js';
 import { match } from './fit.js';
 import { follow, settle, unfollow } from './scheme.js';
 import { CONTROLS_CSS, hasControls, markup, shape } from './controls.js';
-import { Wiring } from './wiring.js';
+import { Wiring, identity } from './wiring.js';
 
 // How long time runs before it loops, for a figure that declares no `duration`.
 const LOOP = 10;
@@ -375,10 +376,8 @@ export class PencilFigure extends HTMLElement {
     if (name === 'params') {
       this.#hold(parseParams(this.getAttribute('params')));
     } else if (name === 'controls') {
+      // As `<video controls>`: without it the defaults are hidden, and what the page wrote stays.
       if (this.#info) this.#controlsReady();
-      if (!this.hasAttribute('controls')) {
-        for (const made of this.querySelectorAll(':scope > pencil-controls[slot="controls"]')) made.remove();
-      }
     } else {
       this.#refetch();
     }
@@ -802,42 +801,60 @@ export class PencilFigure extends HTMLElement {
   #controlsReady() {
     const info = this.#info;
     if (!info) return;
+    const asked = this.hasAttribute('controls');
     const slotted = this.querySelectorAll(':scope > [slot="controls"]');
-    if (this.hasAttribute('controls') && slotted.length === 0 && hasControls(info)) {
+    if (asked && slotted.length === 0 && hasControls(info)) {
       const made = document.createElement('pencil-controls');
       made.setAttribute('slot', 'controls');
       made.attachShadow({ mode: 'open' });
       this.#writeControls(made, info);
       this.append(made);
     }
-    for (const defaults of this.querySelectorAll(':scope > pencil-controls[slot="controls"]')) {
-      if (!defaults.shadowRoot) defaults.attachShadow({ mode: 'open' });
-      if (defaults.dataset.shape !== shape(info)) this.#writeControls(defaults, info);
+    for (const host of this.querySelectorAll(':scope > pencil-controls[slot="controls"]')) {
+      if (!asked) {
+        // What a page put in shows, and the defaults don't. One the page wrote without a shadow
+        // root of defaults, as the Astro component does without `controls`, is the page's alone.
+        if (host.shadowRoot && host.dataset.shape !== 'page') this.#writeControls(host, null);
+        host.hidden = host.children.length === 0;
+        continue;
+      }
+      // A declarative shadow root that wasn't read, as in HTML a script put in the page, isn't
+      // there: the element writes the defaults into one of its own.
+      const unread = !host.shadowRoot || host.shadowRoot.childElementCount === 0;
+      // Its template is left as a child, which isn't the page's own content.
+      if (unread) for (const left of host.querySelectorAll(':scope > template[shadowrootmode]')) left.remove();
+      if (!host.shadowRoot) host.attachShadow({ mode: 'open' });
+      if (unread || host.dataset.shape !== shape(info)) this.#writeControls(host, info);
       // A figure with nothing to control, as another look can be, shows only what the page put in.
-      defaults.hidden = !hasControls(info) && defaults.children.length === 0;
+      host.hidden = !hasControls(info) && host.children.length === 0;
     }
     this.#wiring.attach(this.#controlsRoots());
     this.#wiring.enable();
   }
 
-  /** Writes the defaults into a `<pencil-controls>`, as a build would for this figure as it stands. */
+  /** Writes the defaults into a `<pencil-controls>`, as a build would for this figure as it stands,
+   * or with no `info`, only what the page put in it. */
   #writeControls(host, info) {
     const root = host.shadowRoot;
-    // A reader who picked a look with the keyboard is still on that control afterwards.
-    const focused = root.activeElement?.id;
-    let room = [];
-    try {
-      room = JSON.parse(this.#player.readout_room());
-    } catch {}
-    const values = Object.fromEntries(info.params.map((p) => [p.id, this.value(p.id)]));
-    const ranges = Object.fromEntries(info.params.map((p) => [p.id, this.range(p.id)]));
-    const sized = { ...info, readouts: (info.readouts ?? []).map((r, i) => ({ ...r, room: room[i] })) };
-    const html = markup({
-      info: sized,
-      moment: { time: this.#time, values, ranges, readouts: this.readouts },
-      paused: this.paused,
-      extra: host.children.length > 0,
-    });
+    // A reader who was on a control is still on it afterwards, as one who picked a look with the
+    // keyboard: the same control, found by what it's for.
+    const focused = root.activeElement ? identity(root.activeElement) : null;
+    let html = '<div class="controls" part="controls"><div class="rest" part="rest"><slot></slot></div></div>';
+    if (info) {
+      let room = [];
+      try {
+        room = JSON.parse(this.#player.readout_room(this.#time));
+      } catch {}
+      const values = Object.fromEntries(info.params.map((p) => [p.id, this.value(p.id)]));
+      const ranges = Object.fromEntries(info.params.map((p) => [p.id, this.range(p.id)]));
+      const sized = { ...info, readouts: (info.readouts ?? []).map((r, i) => ({ ...r, room: room[i] })) };
+      html = markup({
+        info: sized,
+        moment: { time: this.#time, values, ranges, readouts: this.readouts },
+        paused: this.paused,
+        extra: host.children.length > 0,
+      });
+    }
     const sheet = controlsStyles();
     if (sheet) {
       root.adoptedStyleSheets = [sheet];
@@ -845,9 +862,9 @@ export class PencilFigure extends HTMLElement {
     } else {
       root.innerHTML = `<style>${CONTROLS_CSS}</style>${html}`;
     }
-    host.dataset.shape = shape(info);
+    host.dataset.shape = info ? shape(info) : 'page';
     this.#wiring.forget();
-    if (focused) root.getElementById(focused)?.focus();
+    if (focused) root.querySelector(focused)?.focus();
   }
 
   /** What each readout says this frame, `{ id, text, words, math, width, height, laid }`, in the

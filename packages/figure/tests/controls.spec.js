@@ -66,7 +66,8 @@ test.describe('the default controls', () => {
     const ratio = box.locator('[data-readout="ratio"]');
     await expect(ratio).toContainText('ratio 1.67');
     await expect(box.locator('[data-readout="turn"]')).toContainText('turn = 0');
-    await expect(box.locator('[data-readout="z"]')).toContainText('z^2 = 1');
+    // Its words are mathematics as a screen reader says it.
+    await expect(box.locator('[data-readout="z"]')).toContainText('z squared = 1');
     await onFigure(page, (f) => f.hold('q', 12));
     await expect(ratio).toContainText('ratio 4');
     // Time moves one.
@@ -74,7 +75,7 @@ test.describe('the default controls', () => {
     await expect(box.locator('[data-readout="turn"]')).toContainText('turn = 0.50');
     // And the element says what each says.
     const said = await onFigure(page, (f) => f.readouts.map((r) => r.words));
-    expect(said).toEqual(['ratio 4', 'turn = 0.50', 'z^2 = 1']);
+    expect(said).toEqual(['ratio 4', 'turn = 0.50', 'z squared = 1']);
   });
 
   test('are worked with the keyboard, with a ring where the focus is', async ({ page, browserName }) => {
@@ -100,8 +101,6 @@ test.describe('the default controls', () => {
     await page.keyboard.press('ArrowLeft');
     await page.keyboard.press('ArrowLeft');
     await expect.poll(() => value(page, 'q')).toBe(4);
-    // An arrow in the controls is theirs, and doesn't reach the figure.
-    expect((await events(page)).errors).toEqual([]);
     // Within a group of radios the arrows pick the next.
     await page.keyboard.press(tab);
     await expect(box.getByRole('radio', { name: '1', exact: true })).toBeFocused();
@@ -115,9 +114,51 @@ test.describe('the default controls', () => {
 
   test('come and go with the attribute', async ({ page }) => {
     await onFigure(page, (f) => f.removeAttribute('controls'));
-    await expect(controls(page)).toHaveCount(0);
+    await expect(controls(page)).toBeHidden();
+    await expect(controls(page).getByRole('slider', { name: 'arms' })).toHaveCount(0);
     await onFigure(page, (f) => f.setAttribute('controls', ''));
     await expect(controls(page).getByRole('slider', { name: 'arms' })).toBeVisible();
+  });
+
+  test('keep the focus where it was when they\'re written again', async ({ page }) => {
+    const box = controls(page);
+    // Each kind of control, found again by what it's for: none of these has an id.
+    for (const target of [box.getByRole('button', { name: 'Play' }), box.getByRole('radio', { name: 'i', exact: true }), box.getByRole('slider', { name: 'arms' })]) {
+      await target.focus();
+      // Controls made for another kind of figure are written again when it loads, as after a
+      // reader picks a look.
+      const loads = (await events(page)).load;
+      await controls(page).evaluate((host) => (host.dataset.shape = 'another'));
+      await onFigure(page, (f) => f.reload());
+      await expect.poll(async () => (await events(page)).load).toBeGreaterThan(loads);
+      await expect.poll(() => controls(page).evaluate((host) => host.dataset.shape)).not.toBe('another');
+      await expect(target).toBeFocused();
+    }
+  });
+});
+
+test.describe('the beats\' controls', () => {
+  test.use({ viewport: { width: 1280, height: 900 } });
+
+  test('take their own arrows, so a slider\'s arrow doesn\'t step the figure', async ({ page }) => {
+    await open(page, 'controlled', 'figure=beats');
+    await drawn(page);
+    const box = controls(page);
+    await box.getByRole('button', { name: 'Next beat' }).click();
+    await expect.poll(() => value(page, 'beat')).toBe(1);
+    const arms = box.getByRole('slider', { name: 'arms' });
+    await arms.focus();
+    await page.keyboard.press('ArrowRight');
+    await expect.poll(() => value(page, 'q')).toBe(4);
+    await page.keyboard.press('ArrowLeft');
+    await page.keyboard.press('ArrowLeft');
+    await expect.poll(() => value(page, 'q')).toBe(2);
+    // The figure's own arrows step it, and these didn't.
+    expect(await value(page, 'beat')).toBe(1);
+    await figureOf(page).focus();
+    await page.keyboard.press('ArrowRight');
+    await expect.poll(() => value(page, 'beat')).toBe(2);
+    await expect(box.locator('.captions:visible .caption[data-on]')).toHaveText('And the point they share.');
   });
 });
 
@@ -167,17 +208,162 @@ test.describe('on a phone', () => {
     const more = box.getByRole('button', { name: 'More controls' });
     await expect(more).toBeVisible();
     await expect(box.getByRole('slider', { name: 'arms' })).toBeHidden();
-    // One row: as tall as its tallest control.
+    // One row, of one line's height.
     const height = (await bar.boundingBox()).height;
-    const play = (await box.getByRole('button', { name: 'Play' }).boundingBox()).height;
-    expect(height).toBeLessThanOrEqual(play + 1);
+    expect(height).toBeLessThanOrEqual(40);
+    const middles = await bar.evaluate((el) => [...el.querySelectorAll(':scope > .row > *, :scope > button')].map((c) => c.getBoundingClientRect()).filter((r) => r.width > 0).map((r) => r.top + r.height / 2));
+    expect(Math.max(...middles) - Math.min(...middles)).toBeLessThan(2);
     await more.click();
     const arms = box.getByRole('slider', { name: 'arms' });
     await expect(arms).toBeVisible();
     await arms.fill('10');
     await expect.poll(() => value(page, 'q')).toBe(10);
+    // Escape closes it, and the focus goes back to the button that opened it.
+    await arms.focus();
     await page.keyboard.press('Escape');
     await expect(arms).toBeHidden();
+    await expect(more).toBeFocused();
+  });
+
+  test('a first row too long for the bar goes behind the menu, and nothing in the bar is cut off', async ({ page }) => {
+    for (const figure of ['bar', 'ro']) {
+      await open(page, 'controlled', `figure=${figure}`);
+      await drawn(page);
+      const box = controls(page);
+      const more = box.getByRole('button', { name: 'More controls' });
+      await expect(more).toBeVisible();
+      expect(await fits(page)).toEqual([]);
+      await more.click();
+      const shown = figure === 'bar' ? box.getByRole('radio', { name: 'gnomonic' }) : box.locator('[data-readout="third"]');
+      await expect(shown).toBeVisible();
+      expect(await fits(page)).toEqual([]);
+      // A long caption wraps, and leaves its slider room.
+      if (figure === 'bar') {
+        const slider = await box.getByRole('slider', { name: 'the number of arms on the rolled tube' }).boundingBox();
+        expect(slider.width).toBeGreaterThan(120);
+      }
+    }
+  });
+});
+
+/**
+ * What doesn't fit its box in the controls in view: an output or a readout whose text runs past
+ * it, something in the bar that runs past the bar's row, or a control's label that isn't on the
+ * same line as its control.
+ */
+const fits = (page) =>
+  page.evaluate(() => {
+    const root = document.querySelector('#figure pencil-controls').shadowRoot;
+    const shown = (el) => {
+      const r = el.getBoundingClientRect();
+      return r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== 'hidden';
+    };
+    const wrong = [];
+    for (const out of root.querySelectorAll('output:not(.readout)')) {
+      if (shown(out) && out.scrollWidth > out.clientWidth + 0.5) wrong.push(`output ${out.dataset.param ?? ''} "${out.textContent}" runs past its box`);
+    }
+    for (const box of root.querySelectorAll('.readout')) {
+      if (!shown(box)) continue;
+      const right = box.getBoundingClientRect().right;
+      const ink = Math.max(...[...box.querySelectorAll('[aria-hidden] span')].map((s) => s.getBoundingClientRect().right));
+      if (ink > right + 0.5) wrong.push(`readout ${box.dataset.readout} runs ${(ink - right).toFixed(1)} px past its box`);
+    }
+    const row = root.querySelector('.bar > .row');
+    if (row && shown(row)) {
+      if (row.scrollWidth > row.clientWidth + 0.5) wrong.push('the bar\'s row is cut off');
+      const edge = row.getBoundingClientRect().right;
+      for (const item of row.children) {
+        if (shown(item) && item.getBoundingClientRect().right > edge + 0.5) wrong.push(`${item.localName} in the bar is cut off`);
+      }
+    }
+    for (const label of root.querySelectorAll('label[for]')) {
+      const control = root.getElementById(label.htmlFor);
+      if (!control || !shown(label) || !shown(control)) continue;
+      const [a, b] = [label.getBoundingClientRect(), control.getBoundingClientRect()];
+      if (Math.abs(a.top + a.height / 2 - (b.top + b.height / 2)) > 4) wrong.push(`"${label.textContent}" isn't on its control's line`);
+    }
+    return wrong;
+  });
+
+for (const [width, height] of [[1633, 919], [375, 812]]) {
+  test.describe(`everything fits its box, at ${width}×${height}`, () => {
+    test.use({ viewport: { width, height } });
+
+    test('in every fixture, with values between the ends of their ranges', async ({ page }) => {
+      for (const figure of ['controls', 'grid', 'room', 'bar', 'ro', 'beats']) {
+        await open(page, 'controlled', `figure=${figure}`);
+        await drawn(page);
+        const box = controls(page);
+        const more = box.getByRole('button', { name: 'More controls' });
+        const check = async (moment) => {
+          if (moment) await onFigure(page, (f, m) => (f.params = m), moment);
+          await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+          expect(await fits(page), `${figure} ${JSON.stringify(moment)}`).toEqual([]);
+          if (await more.isVisible()) {
+            await more.click();
+            expect(await fits(page), `${figure}'s menu ${JSON.stringify(moment)}`).toEqual([]);
+            await page.keyboard.press('Escape');
+          }
+        };
+        await check(null);
+        if (figure === 'room') {
+          for (const [t, theta] of [[0.37, 2], [0.73, 3.3], [0.111, 4.5], [0.999, 1.7]]) await check({ t, theta });
+        }
+        if (figure === 'grid' && width > 600) {
+          // Every row keeps to the grid's three columns: each slider starts where the others do.
+          const starts = await box.evaluate((host) =>
+            [...host.shadowRoot.querySelectorAll('input[type=range]')].filter((el) => el.getBoundingClientRect().width > 0).map((el) => Math.round(el.getBoundingClientRect().left)),
+          );
+          expect(new Set(starts).size, String(starts)).toBe(1);
+        }
+      }
+    });
+  });
+}
+
+test.describe('the defaults, and a page\'s own content', () => {
+  test('without `controls`, only what the page put in `<pencil-controls>` shows', async ({ page }) => {
+    await page.route('**/tests/pages/extra.html*', (route) =>
+      route.fulfill({
+        contentType: 'text/html',
+        body: `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>extra</title><style>pencil-figure { display: block; }</style></head><body>
+<pencil-figure id="figure" src="controls.pen" sheets="controls.style" paused aria-label="x">
+  <pencil-controls slot="controls"><label id="look">Look <select><option>one</option></select></label></pencil-controls>
+</pencil-figure>
+<script type="module" src="./boot.js"></script></body></html>`,
+      }),
+    );
+    await page.goto(`/packages/figure/tests/pages/extra.html${process.env.PENCIL_GL ? '?gl' : ''}`);
+    await drawn(page);
+    await expect(page.locator('#look')).toBeVisible();
+    await expect(controls(page).getByRole('slider')).toHaveCount(0);
+    // Asked for, the defaults come, with the page's after them; and taken away, the page's stay.
+    await onFigure(page, (f) => f.setAttribute('controls', ''));
+    await expect(controls(page).getByRole('slider', { name: 'arms' })).toBeVisible();
+    await expect(page.locator('#look')).toBeVisible();
+    await onFigure(page, (f) => f.removeAttribute('controls'));
+    await expect(controls(page).getByRole('slider')).toHaveCount(0);
+    await expect(page.locator('#look')).toBeVisible();
+  });
+
+  test('a declarative shadow root a script put in the page, which isn\'t read, still gets the controls', async ({ page }) => {
+    test.skip(!existsSync(manifest), 'target/release/pencil is missing (or its build failed), so tests/.built/controls was not made');
+    const built = JSON.parse(readFileSync(manifest, 'utf8'));
+    const markup = declarative({ info: built.info, moment: built.poster, paused: true, disabled: true });
+    const fragment = `<pencil-figure id="figure" controls compiled="../.built/controls/controls.pfig" paused aria-label="x"><pencil-controls slot="controls" data-shape="${shape(built.info)}">${markup}</pencil-controls></pencil-figure>`;
+    await page.route('**/tests/pages/inserted.html*', (route) =>
+      route.fulfill({
+        contentType: 'text/html',
+        body: `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>inserted</title></head><body><div id="here"></div>
+<script>document.getElementById('here').innerHTML = ${JSON.stringify(fragment)};</script>
+<script type="module" src="./boot.js"></script></body></html>`,
+      }),
+    );
+    await page.goto(`/packages/figure/tests/pages/inserted.html${process.env.PENCIL_GL ? '?gl' : ''}`);
+    await drawn(page);
+    await expect(controls(page).getByRole('slider', { name: 'arms' })).toBeVisible();
+    // The template left behind isn't kept as the page's own content.
+    expect(await controls(page).evaluate((host) => host.children.length)).toBe(0);
   });
 });
 

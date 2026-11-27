@@ -69,16 +69,22 @@ or fewer, a `<select>` for more, and a checkbox for a choice of off and on (`doc
 - **They're keyboard controls,** native ones: Tab reaches each, the arrows move a slider and pick within a group of radios,
   Space and Enter press the play button, and each has a focus ring.
 - **A screen reader gets each control's caption as its name** and its value as its text (`aria-valuetext` on a slider), the
-  radios as a group named for the caption, and each readout's words.
+  radios as a group named for the caption, and each readout's words, with its mathematics in words ("z squared = 1").
 - **They're `<pencil-controls slot="controls">`,** a child of the figure whose shadow root holds them. The element writes
   one when the figure loads, if the page has none. The Astro component writes it at build, with `controls`, as a
-  declarative shadow root, disabled until the figure loads and with every size reserved, so nothing moves.
+  declarative shadow root, disabled until the figure loads and with every size reserved, so nothing moves. One whose
+  declarative shadow root wasn't read, as in HTML a script put in the page, gets the controls written when the figure
+  loads. Without `controls` the defaults are hidden, and whatever the page put in `<pencil-controls>` stays.
 - **Nothing in them moves** when the figure loads, as a value changes or as time plays. An output is as wide as the widest
   value its param's range shows, every beat's caption lies in one place, the play button is as wide as the wider of its
-  words, and a readout's box is as big as the most it says over the moments a reader can reach, which the core tries
-  (`readout_room`). Each sits in a contained box.
-- **On a phone,** or a screen with little height, the first row stays, on one line, and the rest open from a `⋯` button as
-  a menu over the page, from the bottom. The figure keeps the height.
+  words, and a readout's box is as big as the most it says over the moments a reader can reach, from the one the figure
+  starts at, which the core tries (`readout_room`). Each sits in a contained box. Every slider is in one grid, so each
+  starts and ends where the others do, and a long caption wraps rather than squeezing its slider.
+- **On a phone,** or a screen with little height, one row stays, on one line, in a bar of fixed height, and the rest open
+  from a `⋯` button as a menu over the page, from the bottom. The figure keeps the height. Which row is `BAR` in
+  [`src/controls.js`](src/controls.js): `'first'`, the first row, or `'readouts'`. A row that doesn't fit the bar's line,
+  as radios with long words, goes behind the menu too, and the button says "Controls", so nothing in the bar is cut off.
+  When the bar steps the beats, their caption is in the menu. Escape closes the menu and gives the focus back to `⋯`.
 - **Anything a page puts in `<pencil-controls>`,** as a choice of looks, is shown after the defaults, and on a phone in
   their menu. With the Astro component it goes in the `controls` slot: `<Figure …><label slot="controls">…</label></Figure>`.
 

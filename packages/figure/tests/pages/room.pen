@@ -1,0 +1,9 @@
+// For the controls: readouts whose values fall between the ends of unstepped ranges.
+doc room
+param t = 0 in 0..1
+param theta "angle" = 0 in 0..2·π
+viewport { x: -2..2, y: -2..2 }
+let P = (t, 0)
+dot P
+label sq = "t² = {t·t}"
+label c = "cos θ = {cos(theta)}"
