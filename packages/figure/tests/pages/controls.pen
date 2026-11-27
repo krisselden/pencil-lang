@@ -1,0 +1,24 @@
+// For the controls: time, a slider with a caption, a choice of three, a choice of off and on, a
+// choice of six, a param a handle sets, and readouts.
+doc controls
+duration 4
+
+param q "arms" = 5 in 3..12 step 1
+param along "direction" in {1, i, -1}
+param glow in {"off": 0, "on": 1}
+param many in {1, 2, 3, 4, 5, 6}
+param s = 0.5 in 0..1
+
+viewport { x: -2..2, y: -2..2 }
+
+let P = (2·s - 1, -1)
+dot P
+handle P sets s = (pointer.x + 1) / 2
+let turn = time / duration
+let tip = along·(1 + glow / 2)
+segment arm = 0, tip
+circles ring = circle(0, 0.2·k) for k in 1..q
+
+label ratio = "ratio {q / 3}"
+label turn
+label z = "$z^2$ = {tip·tip}"

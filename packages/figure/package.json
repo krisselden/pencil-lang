@@ -22,6 +22,7 @@
     ".": "./src/element.js",
     "./host": "./src/host.js",
     "./pack": "./src/pack.js",
+    "./controls": "./src/controls.js",
     "./astro": {
       "types": "./astro/index.d.ts",
       "default": "./astro/index.js"

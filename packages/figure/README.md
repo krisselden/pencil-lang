@@ -8,6 +8,7 @@ compiles is only read by the WASM built from the same source.
 | `@pencil-lang/figure` | Defines `<pencil-figure>`, and exports `PencilFigure`. |
 | `@pencil-lang/figure/host` | The WASM as a page calls it: `ready()`, `Player`, `gather`, `uses`, `inspect`, `from_latex` and the rest. |
 | `@pencil-lang/figure/pack` | `pack` and `unpack`: a figure's sources as a string for a link's `#pen=`, which the playground opens. |
+| `@pencil-lang/figure/controls` | What writes the default controls (`markup`, `declarative`, `CONTROLS_CSS`), and `readoutHtml`, which sets a readout in a page's own box. |
 | `@pencil-lang/figure/astro` | The Astro integration (the default export), `build()` and `alternates()`. |
 | `@pencil-lang/figure/Figure.astro` | The Astro component. |
 
@@ -52,6 +53,90 @@ It owns its touch and selection behaviour too, so a page sets no `touch-action` 
 a handle's reach drags the handle and doesn't scroll the page. One anywhere else on the figure scrolls and zooms the
 page, as it would over an image, so a figure never traps a reader's scroll. A drag never selects text, in the figure or
 on the page around it, and a long press shows no callout.
+
+## Controls
+
+```html
+<pencil-figure controls src="tube.pen" sheets="theme.style tube.style"></pencil-figure>
+```
+
+`controls` asks for the default controls, as `<video controls>` does: a play button and time when anything follows time,
+beat stepping with each beat's caption, a control for each param a handle doesn't set, and the readouts, each label the
+document writes without `at`. Each param's control says its caption, `param q "arms" = 8 in …`, or its name, and is the
+kind the figure and its sheets give it: a slider with its value after it for a range, radios for a choice of four options
+or fewer, a `<select>` for more, and a checkbox for a choice of off and on (`docs/language.md`, Controls and readouts).
+
+- **They're keyboard controls,** native ones: Tab reaches each, the arrows move a slider and pick within a group of radios,
+  Space and Enter press the play button, and each has a focus ring.
+- **A screen reader gets each control's caption as its name** and its value as its text (`aria-valuetext` on a slider), the
+  radios as a group named for the caption, and each readout's words.
+- **They're `<pencil-controls slot="controls">`,** a child of the figure whose shadow root holds them. The element writes
+  one when the figure loads, if the page has none. The Astro component writes it at build, with `controls`, as a
+  declarative shadow root, disabled until the figure loads and with every size reserved, so nothing moves.
+- **Nothing in them moves** when the figure loads, as a value changes or as time plays. An output is as wide as the widest
+  value its param's range shows, every beat's caption lies in one place, the play button is as wide as the wider of its
+  words, and a readout's box is as big as the most it says over the moments a reader can reach, which the core tries
+  (`readout_room`). Each sits in a contained box.
+- **On a phone,** or a screen with little height, the first row stays, on one line, and the rest open from a `⋯` button as
+  a menu over the page, from the bottom. The figure keeps the height.
+- **Anything a page puts in `<pencil-controls>`,** as a choice of looks, is shown after the defaults, and on a phone in
+  their menu. With the Astro component it goes in the `controls` slot: `<Figure …><label slot="controls">…</label></Figure>`.
+
+**Styling.** The defaults are styled through `::part`, as `pencil-controls::part(slider)`, and these custom properties,
+set on the figure or anything around it:
+
+| Custom property | What it is |
+|---|---|
+| `--pencil-controls-font` | Their text, as the `font` shorthand. |
+| `--pencil-ink` | Values, a param's name and readouts. |
+| `--pencil-muted` | What a control says it is, and captions. |
+| `--pencil-accent` | Sliders, radios and checkboxes. |
+| `--pencil-rule`, `--pencil-surface` | A button's border and background. |
+| `--pencil-surface-menu` | The menu's background on a phone. |
+| `--pencil-math-font` | A param's name, as the `font` shorthand. |
+| `--pencil-focus` | The focus ring, as on the figure's handles. |
+| `--pencil-readout-size` | A readout's text size. |
+
+| Part | What it is |
+|---|---|
+| `controls`, `bar`, `rest` | All of them, the first row, and the rest, which on a phone is the menu. |
+| `row` | Each row, with `time`, `beats`, `param`, `choice` or `readouts` as well. |
+| `label` | What a control says it is: a `<label>`, or a group's `<legend>`. |
+| `slider`, `select`, `radio`, `checkbox`, `option` | Each control, and a radio's label. |
+| `value` | A slider's value, the time, or the beat (with `time` or `beat` as well). |
+| `button` | Each button, with `play`, `step` or `more` as well. |
+| `captions`, `caption` | The beats' captions, and each. |
+| `readout` | Each readout's box. |
+
+The canvas and the poster are the figure's `stage` part, so a page's background or focus ring for the figure goes there,
+`pencil-figure::part(stage)`, and not on the controls.
+
+**A page's own controls.** A page that wants its own puts them in the `controls` slot, marked with what each is for, and
+the element sets each one's range, step and value from the figure, follows them every frame, and holds a param when a
+reader sets one, with or without the `controls` attribute:
+
+```html
+<pencil-figure src="tube.pen" sheets="theme.style tube.style">
+  <div slot="controls">
+    <label>Arms <input type="range" data-param="p"></label> <output data-param="p"></output>
+    <span data-readout="ratio" style="display: inline-block; width: 8em; height: 1.4em; contain: strict"></span>
+  </div>
+</pencil-figure>
+```
+
+| Marked | What the element does |
+|---|---|
+| `input[type=range][data-param="q"]` | Sets its `min`, `max`, `step` and value from `q`, and its `aria-valuetext`. Moving it pauses and holds `q`. |
+| `select[data-param="along"]` | Fills in the choice's options if it has none, and holds which one is picked. A choice is named by its value, `along`, or its param, `along.index`. |
+| `input[type=radio][data-param="along"][value="1"]` | Checks the one whose value is the option's place, from 0. |
+| `input[type=checkbox][data-param="glow"]` | Checked for the second option, on. |
+| `output[data-param="q"]` | Says `q`'s value, as a control does. |
+| `[data-readout="ratio"]` | Says what the readout `ratio` says, laid out as the figure lays it out, with its words for a screen reader (`readoutHtml`). A page gives it its size. |
+| `button[data-play]`, `input[type=range][data-time]`, `output[data-time]` | Play and pause, and the time. |
+| `button[data-step="1"]`, `button[data-step="-1"]`, `output[data-beat]`, `[data-captions]` | Beats: next, previous, which one, and its caption, the child of `[data-captions]` in its place shown with `data-on`. |
+
+The figure's `readouts` is what its readouts say this frame, each `{ id, text, words, math, width, height, laid }`, in
+ems, for a page that sets them itself.
 
 Labels are set in the package's own fonts, in [`fonts/`](fonts/README.md): Libertinus, under the SIL Open Font License.
 They're the files the `pencil` command draws a poster with, so the figure that takes over from a poster sets the same
@@ -118,13 +203,17 @@ import Figure from '@pencil-lang/figure/Figure.astro';
   is built again, with a `pencil` from the same source as the package. A build names the folders nothing asked for,
   and leaves them: one that skips drafts asks for fewer. A figure is built elsewhere and put in the folder only once
   it has built, so a build that fails, or has no `pencil`, never removes what's kept.
+- **`controls` writes the default controls,** at the poster's moment and disabled, with every size reserved, so nothing
+  moves when the figure loads (see Controls). What a page puts in the component's `controls` slot comes after them.
 - **`alt` is required.** It's the poster's text and the figure's name.
 - Anything else, such as `id`, `class`, `params`, `paused` or `data-*`, goes on `<pencil-figure>`.
 
 `build({ src, sheets, time, params, size, card })` is what the component calls. A page can call it too, for a
-figure's `info` (its size, params with their ranges, beats and captions, and the colors its sheets name) and its
-`moment` (the time, and every param's value and range, where the poster shows it), to write its controls in their
-first state before any script runs, or with `card: true` for a 1200×630 image for sharing.
+figure's `info` (its size, params with their ranges, captions and controls, beats and captions, readouts with the room
+each needs, and the colors its sheets name) and its `moment` (the time, every param's value and range, and what each
+readout says, where the poster shows it), to write controls of its own in their first state before any script runs, or
+with `card: true` for a 1200×630 image for sharing. `declarative({ info, moment, paused, disabled })` from
+`@pencil-lang/figure/controls` is the defaults' shadow root, as the component writes it.
 
 `alternates({ sheets, dark, narrow, narrowMedia })` gives the sets of sheets the component builds a figure under: its
 own as `sheets`, and as `others` each `{ media, sheets }` it writes a `<source>` for. A page that swaps one figure
@@ -157,7 +246,8 @@ pnpm test
 
 Playwright's, in [`tests/`](tests), against the corpus in this repo, headless, on its own Chromium and WebKit: each at
 a desktop size and as a phone (a Pixel 7 and an iPhone 15, emulated). They cover drawing, every key on a handle and on
-beats, a mouse drag and a touch drag, a swipe that scrolls past a figure, a drag that selects no text, a range that follows another param, reduced motion, sheets picked by theme, the
+beats, the default controls and a page's own, readouts, and that no control moves as the figure loads, plays or is
+dragged, a mouse drag and a touch drag, a swipe that scrolls past a figure, a drag that selects no text, a range that follows another param, reduced motion, sheets picked by theme, the
 poster's swap, and a compiled figure. `PENCIL_GL=1 pnpm test` runs them all on WebGL2 in place of WebGPU, and `PENCIL_MIN=1 pnpm test` on the minified bundle. They serve the repo on
 port 8743, and reuse a server already there, so a second checkout runs them on its own with `PENCIL_PORT=8751 pnpm test`.
 [`playwright.config.js`](playwright.config.js) says which GPU path each browser has headless. An emulated phone is a

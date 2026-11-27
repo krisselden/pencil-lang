@@ -27,14 +27,14 @@ ls -la packages/figure/pkg
 
 # The minified bundle: what a site would ship, for the pages in web/ and the tests to load with
 # `?min` (web/imports.js). It exports what src/element.js and src/host.js do, from one module
-# instance of each, so the WASM starts once. It sits in pkg/ because the glue finds its WASM with
+# instance of each, so the WASM starts once, and what src/controls.js does, for a page's own controls. It sits in pkg/ because the glue finds its WASM with
 # `new URL('pencil_web_bg.wasm', import.meta.url)`, which esbuild leaves alone in an ES module.
 FIGURE=packages/figure
 if [ ! -d "$FIGURE/node_modules/esbuild" ]; then
   echo "esbuild isn't installed: run 'pnpm install' at the repo root first." >&2
   exit 1
 fi
-printf "export * from '%s/src/element.js';\nexport * from '%s/src/host.js';\n" "$PWD/$FIGURE" "$PWD/$FIGURE" |
+printf "export * from '%s/src/element.js';\nexport * from '%s/src/host.js';\nexport * from '%s/src/controls.js';\n" "$PWD/$FIGURE" "$PWD/$FIGURE" "$PWD/$FIGURE" |
   pnpm --dir "$FIGURE" exec esbuild --bundle --minify --format=esm --target=es2022 \
     --outfile=pkg/pencil-figure.min.js --log-level=warning
 grep -q "pencil_web_bg.wasm" "$FIGURE/pkg/pencil-figure.min.js" || {
@@ -42,7 +42,7 @@ grep -q "pencil_web_bg.wasm" "$FIGURE/pkg/pencil-figure.min.js" || {
   exit 1
 }
 echo "sizes, raw and gzipped (bytes):"
-sources="$FIGURE/src/element.js $FIGURE/src/host.js $FIGURE/src/labels.js $FIGURE/src/fit.js $FIGURE/pkg/pencil_web.js"
+sources="$FIGURE/src/element.js $FIGURE/src/host.js $FIGURE/src/labels.js $FIGURE/src/fit.js $FIGURE/src/controls.js $FIGURE/src/wiring.js $FIGURE/src/scheme.js $FIGURE/pkg/pencil_web.js"
 for set in "sources:$sources" "bundle:$FIGURE/pkg/pencil-figure.min.js"; do
   files=${set#*:}
   raw=$(cat $files | wc -c)

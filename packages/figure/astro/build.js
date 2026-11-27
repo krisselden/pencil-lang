@@ -193,8 +193,9 @@ export async function replace(dir, built) {
  *
  * Gives `{ compiled, poster: { src, srcset, webp, width, height }, card, info, moment, hash }`,
  * with URLs from the site's root. `moment` is the figure as its poster shows it, which is how a
- * page that holds the same params starts it: `{ time, values, ranges }`, the last two for every
- * param by name, so a page can write its controls as they'll be before the figure runs.
+ * page that holds the same params starts it: `{ time, values, ranges, readouts }`, the middle two for
+ * every param by name, and what each readout says, so a page can write its controls as they'll be
+ * before the figure runs.
  * `playground` is a link that opens the figure's sources in a playground, when the integration
  * was told where one is: the page ships none of them, so the link carries them all. `webp` is a `srcset` of the same poster as WebP, where that's the smaller,
  * and in `astro dev` also `src` and `sheets`, the sources' URLs, which the
@@ -295,7 +296,12 @@ async function make(cfg, key, { src, sheets, time, params, size, card }) {
     },
     card: manifest.card ? { src: url(manifest.card.src), width: manifest.card.width, height: manifest.card.height } : null,
     info: manifest.info,
-    moment: { time: manifest.poster.time, values: manifest.poster.values, ranges: manifest.poster.ranges },
+    moment: {
+      time: manifest.poster.time,
+      values: manifest.poster.values,
+      ranges: manifest.poster.ranges,
+      readouts: manifest.poster.readouts ?? [],
+    },
     playground: await playgroundLink(cfg, stem, src, sheets, manifest.sources),
     hash: manifest.hash,
   };

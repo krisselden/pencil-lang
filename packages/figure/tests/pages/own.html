@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>own controls</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { margin: 0; padding: 8px; font: 16px/1.4 system-ui, sans-serif; }
+  main { max-width: 765px; margin: 0 auto; }
+  #own { display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; align-items: center; margin-top: 0.5rem; }
+  output { display: inline-block; width: 3ch; contain: strict; height: 1.4em; }
+  [data-readout] { display: inline-block; width: 7em; height: 1.4em; contain: strict; }
+</style>
+</head>
+<body>
+<main>
+  <!-- A page's own controls: no `controls` attribute, and inputs and outputs marked with what they're for. -->
+  <pencil-figure id="figure" src="controls.pen" sheets="controls.style" paused aria-label="Rings, an arm and a point.">
+    <div slot="controls" id="own">
+      <label for="q">How many</label><input type="range" id="q" data-param="q"><output id="q-out" data-param="q"></output>
+      <label>Which <select id="many" data-param="many"></select></label>
+      <label><input type="radio" name="along" data-param="along" value="0"> one</label>
+      <label><input type="radio" name="along" data-param="along.index" value="2"> minus one</label>
+      <label><input type="checkbox" id="glow" data-param="glow"> Glow</label>
+      <span id="ratio" data-readout="ratio"></span>
+      <button type="button" id="play" data-play>Play</button>
+    </div>
+  </pencil-figure>
+</main>
+<script type="module" src="./boot.js"></script>
+</body>
+</html>

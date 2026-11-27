@@ -21,9 +21,15 @@
 // WASM, so a line of script in the page starts on them as it's read, behind the poster.
 // A page that pins a theme over the reader's system says so with `color-scheme` in its CSS, and
 // a figure with `dark` sheets follows it (`src/scheme.js`), from the first paint.
+// `controls` writes the default controls into the page, from what the build says of the figure, as
+// it will stand when it starts and disabled, with every size reserved, so they have their place
+// before any script runs and nothing moves when the figure loads. They're `<pencil-controls>`, with
+// a declarative shadow root, and the element turns them on. Anything the page puts in the
+// component's `controls` slot is shown after them, and on a phone in their menu.
 // Anything else (`id`, `class`, `params`, `paused`, `gl`, `data-*`) goes on `<pencil-figure>`.
 import { alternates, build } from './build.js';
 import { settle } from '../src/scheme.js';
+import { declarative, hasControls, shape as controlsShape } from '../src/controls.js';
 import wasm from '../pkg/pencil_web_bg.wasm?url';
 
 interface Props {
@@ -37,10 +43,13 @@ interface Props {
   poster?: { time?: number; params?: Record<string, number> };
   /** The figure is in view when the page opens. */
   priority?: boolean;
+  /** The default controls, written at build: play and time, beats, a control for each param a
+   * handle doesn't set, and the readouts. */
+  controls?: boolean;
   [attribute: string]: unknown;
 }
 
-const { src, sheets, dark, narrow, narrowMedia, alt, poster = {}, priority = false, ...attributes } = Astro.props;
+const { src, sheets, dark, narrow, narrowMedia, alt, poster = {}, priority = false, controls = false, ...attributes } = Astro.props;
 // As in `<picture>`, the first choice that matches wins, so the narrowest case comes first.
 const { sheets: always, others: choices } = alternates({ sheets, dark, narrow, narrowMedia });
 
@@ -79,12 +88,22 @@ const start = (themed || early)
   ? `((f)=>{${themed ? `(${String(settle).replace(/\n\s+/g, '\n')})(f);` : ''}${early ? fetchAhead : ''}})(document.currentScript.parentElement)`
   : undefined;
 const mark = reshaped.length ? main.hash : undefined;
+// The controls as the figure starts: at the poster's moment, paused if the page starts it paused,
+// and disabled until it loads. A figure that doesn't compile, in `astro dev`, gets its controls
+// from the element once it does.
+// What the page put in the `controls` slot, which can be nothing: a slot written with a condition is
+// there whether or not the condition holds.
+const own = Astro.slots.has('controls') ? (await Astro.slots.render('controls')).trim() : '';
+const extra = own !== '';
+const written = controls && main.info && (hasControls(main.info) || extra)
+  ? declarative({ info: main.info, moment: main.moment, paused: Boolean(attributes.paused), disabled: true, extra })
+  : null;
 const rules = reshaped
   .map((each) => `@media ${each.media}{[data-pencil-poster="${mark}"] img{--pencil-shape:${each.shape}}}`)
   .join('');
 ---
 {mark && <style is:inline set:html={rules}></style>}
-<pencil-figure {...attributes} {...from(main)} aria-label={alt} data-pencil-poster={mark}>
+<pencil-figure {...attributes} {...from(main)} aria-label={alt} data-pencil-poster={mark} controls={controls || undefined}>
   {others.map((built, i) => <source media={choices[i].media} {...from(built)} />)}
   {main.poster && (
     <picture style={shape(main) && `--pencil-shape: ${shape(main)}`}>
@@ -109,6 +128,12 @@ const rules = reshaped
     </picture>
   )}
   {start && <script is:inline set:html={start}></script>}
+  {(written || extra) && (
+    <pencil-controls slot="controls" data-shape={written ? controlsShape(main.info) : undefined}>
+      {written && <Fragment set:html={written} />}
+      {extra && <Fragment set:html={own} />}
+    </pencil-controls>
+  )}
 </pencil-figure>
 
 <script>

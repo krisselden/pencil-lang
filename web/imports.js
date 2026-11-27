@@ -14,6 +14,7 @@
     imports: {
       '@pencil-lang/figure': min ? bundle : at('../packages/figure/src/element.js'),
       '@pencil-lang/figure/host': min ? bundle : at('../packages/figure/src/host.js'),
+      '@pencil-lang/figure/controls': min ? bundle : at('../packages/figure/src/controls.js'),
       // Small and on its own, so it's the same file either way.
       '@pencil-lang/figure/pack': at('../packages/figure/src/pack.js'),
     },

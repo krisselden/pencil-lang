@@ -1,0 +1,3 @@
+style z { format: complex; digits: 1 }
+style turn { digits: 2 }
+style arm { width: 2px }

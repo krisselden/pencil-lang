@@ -46,6 +46,15 @@
 // figure then starts its GPU again, keeping its sources, time, held params and whether it's
 // paused, and shows its poster meanwhile. It tries at once, after a second and after five, then
 // says `error` (with `detail.gpu`), and tries once more each time the page is shown.
+// `controls` asks for the default controls, as `<video controls>` does: play and time when anything
+// follows time, beat stepping with its caption, a control for each param a handle doesn't set, and
+// the readouts. They're `<pencil-controls slot="controls">`, a child whose shadow root holds them,
+// styled through `::part` and custom properties (`controls.js`). A build writes it into the page,
+// with every size reserved, and disabled until the figure loads (the Astro component does); a page
+// that wrote none gets one when the figure loads. A page with its own fills the `controls` slot
+// with inputs and outputs marked `data-param="q"` or `data-readout="ratio"`, and the element sets
+// their ranges, steps and values and follows them each frame (`wiring.js`), with or without the
+// attribute. `readouts` is what the readouts say this frame.
 // Events: `load` when a figure is compiled, `draw` after each frame drawn, `resize` when its drawn
 // size or its em changes (its `detail.em`, in CSS pixels), `input` when a reader
 // drags a param (its `detail.name` and `detail.value`, and `detail.values`, every param that one
@@ -56,6 +65,8 @@ import { Player, let_go, figure_size, figure_size_compiled, ready, isReady, gath
 import { LABEL_CSS, LabelLayer, fonts } from './labels.js';
 import { match } from './fit.js';
 import { follow, settle, unfollow } from './scheme.js';
+import { CONTROLS_CSS, hasControls, markup, shape } from './controls.js';
+import { Wiring } from './wiring.js';
 
 // How long time runs before it loops, for a figure that declares no `duration`.
 const LOOP = 10;
@@ -106,7 +117,18 @@ slot { display: none; }
 .handle:focus-visible { outline: 2px solid var(--pencil-focus, currentColor); outline-offset: 1px; box-shadow: 0 0 0 2px var(--pencil-focus-halo, Canvas); }
 .handle[hidden] { display: none; }
 .said { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+slot[name='controls'] { display: block; }
 ${LABEL_CSS}`;
+
+/** The defaults' styles, made once and shared by every figure's controls the element writes. */
+let controlsSheet = null;
+const controlsStyles = () => {
+  if (!controlsSheet && typeof CSSStyleSheet !== 'undefined' && 'replaceSync' in CSSStyleSheet.prototype) {
+    controlsSheet = new CSSStyleSheet();
+    controlsSheet.replaceSync(CONTROLS_CSS);
+  }
+  return controlsSheet;
+};
 
 /** `a: 0.5; beat: 2` as pairs. */
 const parseParams = (text) =>
@@ -117,7 +139,7 @@ const parseParams = (text) =>
     .map(([name, value]) => [name, Number(value)]);
 
 export class PencilFigure extends HTMLElement {
-  static observedAttributes = ['src', 'sheets', 'compiled', 'params'];
+  static observedAttributes = ['src', 'sheets', 'compiled', 'params', 'controls'];
 
   /** Resolves once the WASM core is ready, after which `load` checks sources at once. */
   static get ready() {
@@ -176,6 +198,9 @@ export class PencilFigure extends HTMLElement {
   #restoreTimer = 0;
   #startPending = false;
   #lose = null; // the canvas's `WEBGL_lose_context`, which a lost context doesn't give
+  #controlsSlot; // where the controls go, below the figure
+  #wiring = new Wiring(this);
+  #readouts = null; // what the readouts say, and at which time, worked out once a frame
 
   constructor() {
     super();
@@ -200,6 +225,11 @@ export class PencilFigure extends HTMLElement {
     this.#said.className = 'said';
     this.#said.setAttribute('aria-live', 'polite');
     this.#stage.append(this.#handleLayer, this.#said);
+    // The controls, the defaults or a page's own, below the figure.
+    this.#controlsSlot = document.createElement('slot');
+    this.#controlsSlot.name = 'controls';
+    this.#controlsSlot.addEventListener('slotchange', () => this.#wire());
+    root.append(this.#controlsSlot);
     // A press on the canvas or on a handle's reach comes here, and a grab captures the pointer.
     const stage = this.#stage;
     stage.addEventListener('pointerdown', this.#pointerDown);
@@ -221,9 +251,20 @@ export class PencilFigure extends HTMLElement {
 
   // ---- The poster and the sources ----
 
-  /** Whether the element has a poster: any child that isn't a `<source>`, or a script. */
+  /** Whether the element has a poster: any child that isn't a `<source>`, a script, or in a slot,
+   * as its controls are. */
   #hasPoster() {
-    return [...this.children].some((child) => child.localName !== 'source' && child.localName !== 'script');
+    return [...this.children].some(
+      (child) => child.localName !== 'source' && child.localName !== 'script' && !child.hasAttribute('slot'),
+    );
+  }
+
+  /** Whether a node is in the controls, which change each frame and say nothing of the figure. */
+  #inSlot(node) {
+    for (let at = node; at && at !== this; at = at.parentNode) {
+      if (at.parentNode === this && at.nodeType === 1 && at.hasAttribute('slot')) return true;
+    }
+    return false;
   }
 
   /** Shows the poster until a frame is drawn. */
@@ -286,7 +327,8 @@ export class PencilFigure extends HTMLElement {
     this.#resized.observe(this.#canvas);
     this.#resized.observe(this.#em);
     // Children can arrive after the element does, while the page is still being read.
-    this.#children = new MutationObserver(() => {
+    this.#children = new MutationObserver((records) => {
+      if (records.every((record) => this.#inSlot(record.target))) return;
       // A `<source>` that has just arrived is answered too. What that changes comes back here
       // once, and then changes nothing.
       settle(this);
@@ -332,6 +374,11 @@ export class PencilFigure extends HTMLElement {
   attributeChangedCallback(name) {
     if (name === 'params') {
       this.#hold(parseParams(this.getAttribute('params')));
+    } else if (name === 'controls') {
+      if (this.#info) this.#controlsReady();
+      if (!this.hasAttribute('controls')) {
+        for (const made of this.querySelectorAll(':scope > pencil-controls[slot="controls"]')) made.remove();
+      }
     } else {
       this.#refetch();
     }
@@ -720,12 +767,102 @@ export class PencilFigure extends HTMLElement {
     }
     this.#retime();
     this.#operable();
+    this.#readouts = null;
+    this.#controlsReady();
     this.#fresh = true;
     this.#invalidate();
     this.#sync();
     // A figure started again after losing its GPU is the same figure.
     if (this.#quiet) this.#quiet = false;
     else this.dispatchEvent(new Event('load'));
+  }
+
+  // ---- Controls ----
+
+  /** What's in the controls slot: a `<pencil-controls>` by its shadow root, and a page's own
+   * element as it is. */
+  #controlsRoots() {
+    return this.#controlsSlot
+      .assignedElements()
+      .map((el) => (el.localName === 'pencil-controls' && el.shadowRoot ? el.shadowRoot : el));
+  }
+
+  /** Listens to what's in the controls slot, and shows the figure in it, once there's a figure. */
+  #wire() {
+    this.#wiring.attach(this.#controlsRoots());
+    if (this.#info) this.#wiring.enable();
+  }
+
+  /**
+   * The figure has loaded: writes the default controls if the page asked for them and has none,
+   * or writes them again if they were made for another kind of figure, as after a reader picks
+   * another look, and turns them on. Controls a build wrote for this kind of figure are kept as
+   * they are, so nothing moves.
+   */
+  #controlsReady() {
+    const info = this.#info;
+    if (!info) return;
+    const slotted = this.querySelectorAll(':scope > [slot="controls"]');
+    if (this.hasAttribute('controls') && slotted.length === 0 && hasControls(info)) {
+      const made = document.createElement('pencil-controls');
+      made.setAttribute('slot', 'controls');
+      made.attachShadow({ mode: 'open' });
+      this.#writeControls(made, info);
+      this.append(made);
+    }
+    for (const defaults of this.querySelectorAll(':scope > pencil-controls[slot="controls"]')) {
+      if (!defaults.shadowRoot) defaults.attachShadow({ mode: 'open' });
+      if (defaults.dataset.shape !== shape(info)) this.#writeControls(defaults, info);
+      // A figure with nothing to control, as another look can be, shows only what the page put in.
+      defaults.hidden = !hasControls(info) && defaults.children.length === 0;
+    }
+    this.#wiring.attach(this.#controlsRoots());
+    this.#wiring.enable();
+  }
+
+  /** Writes the defaults into a `<pencil-controls>`, as a build would for this figure as it stands. */
+  #writeControls(host, info) {
+    const root = host.shadowRoot;
+    // A reader who picked a look with the keyboard is still on that control afterwards.
+    const focused = root.activeElement?.id;
+    let room = [];
+    try {
+      room = JSON.parse(this.#player.readout_room());
+    } catch {}
+    const values = Object.fromEntries(info.params.map((p) => [p.id, this.value(p.id)]));
+    const ranges = Object.fromEntries(info.params.map((p) => [p.id, this.range(p.id)]));
+    const sized = { ...info, readouts: (info.readouts ?? []).map((r, i) => ({ ...r, room: room[i] })) };
+    const html = markup({
+      info: sized,
+      moment: { time: this.#time, values, ranges, readouts: this.readouts },
+      paused: this.paused,
+      extra: host.children.length > 0,
+    });
+    const sheet = controlsStyles();
+    if (sheet) {
+      root.adoptedStyleSheets = [sheet];
+      root.innerHTML = html;
+    } else {
+      root.innerHTML = `<style>${CONTROLS_CSS}</style>${html}`;
+    }
+    host.dataset.shape = shape(info);
+    this.#wiring.forget();
+    if (focused) root.getElementById(focused)?.focus();
+  }
+
+  /** What each readout says this frame, `{ id, text, words, math, width, height, laid }`, in the
+   * order they're written: a readout is a label with no place, said beside the figure. Its layout
+   * is in ems, from the left and middle of its line (`readoutHtml` in `controls.js` sets one). */
+  get readouts() {
+    if (!this.#player || !this.#info?.readouts?.length) return [];
+    if (this.#readouts?.time !== this.#time) {
+      let said = [];
+      try {
+        said = JSON.parse(this.#player.readouts(this.#time));
+      } catch {}
+      this.#readouts = { time: this.#time, said };
+    }
+    return this.#readouts.said;
   }
 
   /** Shapes the figure to its design size, so nothing moves as it loads. */
@@ -772,6 +909,7 @@ export class PencilFigure extends HTMLElement {
   /** Plays from where it is. Each param time drives is handed back to time, carrying on from
    * where the reader left the last one they moved. */
   play() {
+    this.#readouts = null;
     const moved = [...this.#held.keys()].filter((name) => this.#driven.has(name)).pop();
     if (moved && this.#player) {
       try {
@@ -783,6 +921,7 @@ export class PencilFigure extends HTMLElement {
     this.#paused = false;
     this.#sync();
     this.#invalidate();
+    this.#wiring.paintPlay();
     if (was !== false) this.dispatchEvent(new Event('play'));
   }
 
@@ -790,6 +929,7 @@ export class PencilFigure extends HTMLElement {
     const was = this.#paused;
     this.#paused = true;
     this.#sync();
+    this.#wiring.paintPlay();
     if (was !== true) this.dispatchEvent(new Event('pause'));
   }
 
@@ -918,6 +1058,7 @@ export class PencilFigure extends HTMLElement {
 
   /** Holds params together: none of them hands another back. */
   #hold(pairs) {
+    this.#readouts = null;
     this.#reclaim(pairs.map(([name]) => name));
     for (const [name, value] of pairs) {
       this.#held.delete(name);
@@ -1197,6 +1338,8 @@ export class PencilFigure extends HTMLElement {
   /** A key on the figure itself: ← and → step its beats, and Home and End go to the first and
    * last. What it came to is said for a screen reader, with the beat's caption. */
   #key = (e) => {
+    // Keys in the controls are theirs: an arrow on a slider moves the slider.
+    if (e.target !== this) return;
     if (e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey || !this.#player || !this.#steps()) return;
     const range = this.#info.params.find((p) => p.id === 'beat');
     if (e.key === 'ArrowRight') this.step(1);
@@ -1269,6 +1412,8 @@ export class PencilFigure extends HTMLElement {
     }
     this.#healthy = true;
     this.#placeHandles();
+    this.#readouts = null;
+    this.#wiring.read();
     if (this.#reported) {
       this.#reported = false;
       this.dispatchEvent(new Event('recover'));
