@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>menus</title>
+<!-- Two figures with controls on a page that scrolls, for where a phone's menu opens, how it
+     follows the page, and that opening one figure's closes the other's. `?figure=` names the
+     fixture both show. -->
+<style>
+  :root { color-scheme: light dark; }
+  body { margin: 0; padding: 8px; }
+  main { max-width: 765px; margin: 0 auto; }
+  .gap { height: 20vh; }
+  .after { height: 150vh; }
+</style>
+</head>
+<body>
+<main>
+  <p>Before the figures.</p>
+  <pencil-figure id="figure" controls paused aria-label="The first figure."></pencil-figure>
+  <div class="gap"></div>
+  <pencil-figure id="other" controls paused aria-label="The second figure."></pencil-figure>
+  <div class="after"></div>
+</main>
+<script>
+  const name = new URLSearchParams(location.search).get('figure') ?? 'period';
+  for (const figure of document.querySelectorAll('pencil-figure')) figure.setAttribute('src', `${name}.pen`);
+</script>
+<script type="module" src="./boot.js"></script>
+</body>
+</html>

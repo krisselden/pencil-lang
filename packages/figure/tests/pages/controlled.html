@@ -23,6 +23,8 @@
   figure.setAttribute('src', `${name}.pen`);
   // Params the page starts it at, as `params` holds them: `?params=a:0.3`.
   if (query.has('params')) figure.setAttribute('params', query.get('params'));
+  // Styles the page gives it, as a custom property: `?style=--pencil-readout-size:1.5rem`.
+  if (query.has('style')) figure.setAttribute('style', query.get('style'));
   if (['controls', 'grid'].includes(name)) figure.setAttribute('sheets', `${name}.style`);
 </script>
 <script type="module" src="./boot.js"></script>

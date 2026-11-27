@@ -7,9 +7,10 @@
 // Nothing moves when a value changes. An `<output>` is as wide as the widest value its param's
 // range can show, a readout's box is as big as the most it says at the moments a build tries, every
 // caption lies in one place, so the row is as tall as the longest of them, and the play button is
-// as wide as the wider of its words. On a phone one row stays, `BAR` says which, and the rest open
-// from a menu over the page, so the figure keeps the height. That row, too, goes behind the menu if
-// it doesn't fit (the element checks), so nothing in the bar is ever cut off.
+// as wide as the wider of its words. On a phone a bar keeps one row, `barRow` says which, and the
+// rest drop down from it in a menu over the page, so the figure keeps the height. The bar never
+// splits a figure's params: it keeps one only when it's the figure's only one. Its row, too, goes
+// behind the menu if it doesn't fit (the element checks), so nothing in the bar is ever cut off.
 //
 // Every control is marked with what it sets (`data-param`, `data-time`, `data-play`, `data-step`),
 // and each output with what it shows (`data-param`, `data-time`, `data-beat`, `data-readout`), as a
@@ -27,11 +28,20 @@ const attrs = (pairs) =>
 const LOOP = 10;
 
 /**
- * Which row a phone's bar keeps, of the controls' one line, with the rest behind its menu: `'first'`,
- * the first of them (time, beats, or the first param's control), or `'readouts'`, the readouts when
- * a figure has any, and the first row when it has none.
+ * Which of the rows a phone's bar keeps, with the rest behind its menu: the playback, which is the
+ * time's row or else the beats', or else the readouts, or else the figure's one param. A figure with
+ * more params than one and nothing else keeps none, and its bar is only the menu's button, so its
+ * params are in the menu together. `rows` is what `rows()` gives, and this gives one of them or
+ * `undefined`.
  */
-export const BAR = 'first';
+function barRow(rows) {
+  for (const kind of ['time', 'beats', 'readouts']) {
+    const row = rows.find((each) => each.kind === kind);
+    if (row) return row;
+  }
+  const params = rows.filter((each) => each.kind === 'param');
+  return params.length === 1 ? params[0] : undefined;
+}
 
 /** When the controls are a phone's: one row, and a menu. The styles below say the same. */
 export const PHONE = '(max-width: 40rem), (max-height: 32rem)';
@@ -184,7 +194,8 @@ export function readoutHtml(readout) {
  * - `--pencil-ink`: values, and a name, which is mathematics. `--pencil-muted`: what controls say
  *   they are, and captions.
  * - `--pencil-accent`: sliders, radios and checkboxes. `--pencil-rule` and `--pencil-surface`: a
- *   button's border and background, and the menu's on a phone.
+ *   button's border and background. On a phone the menu has `--pencil-rule` for its border too, and
+ *   `--pencil-surface-menu` for its background.
  * - `--pencil-math-font`: a param's name, as the `font` shorthand.
  * - `--pencil-focus`: the focus ring, as on the figure's handles.
  * - `--pencil-readout-size`: how big a readout's text is.
@@ -202,8 +213,8 @@ export const CONTROLS_CSS = `
 .more, .more-words, .row.phone { display: none; }
 .row { grid-column: 1 / -1; display: flex; align-items: center; gap: 0.5rem 0.75rem; flex-wrap: wrap; margin: 0; padding: 0; border: 0; min-width: 0; }
 .row.param, .row.time { display: contents; }
-/* The readouts come after the controls, wherever the bar's switch puts them, and what a page put
-   in after them. */
+/* The readouts come after the controls, though a phone's bar can hold them, and what a page put in
+   after them. */
 .row.readouts { order: 1; }
 slot { display: contents; }
 ::slotted(*) { grid-column: 1 / -1; order: 2; }
@@ -235,28 +246,33 @@ input:disabled, select:disabled { cursor: default; }
 input[type='range']:focus-visible { outline-offset: 1px; }
 .said { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 /* On a phone, or a screen with little height, one row stays, on one line, in a bar of fixed height,
-   and the rest open from a menu over the page, as a sheet from the bottom: the figure keeps the
-   height. Each thing in the bar keeps its own width, so the element can tell when the row doesn't
-   fit, and then it goes behind the menu too. The beats' caption is a line of its own under the bar,
-   as tall as the longest caption at that width, wherever the stepper is. */
+   and the rest drop down from it in a menu over the page, as wide as the controls: the figure keeps
+   the height. Each thing in the bar keeps its own width, so the element can tell when the row
+   doesn't fit, and then it goes behind the menu too. A bar that holds no row, for either reason,
+   says what its button opens. The beats' caption is a line of its own under the bar, as tall as the
+   longest caption at that width, wherever the stepper is, and the menu drops from under it, so the
+   caption shows while a reader steps in the menu. The element places the menu where the controls
+   end, in the page's coordinates, which its containing block has in the top layer, so it scrolls
+   with the page and stays under its bar, and moves it with them while it's open. */
 @media (max-width: 40rem), (max-height: 32rem) {
   .controls { display: block; }
   .bar { display: flex; align-items: center; gap: 0.5rem; height: 2.25rem; min-width: 0; }
-  .bar > .row, .bar > .row.param, .bar > .row.time { display: flex; flex: 1 1 auto; min-width: 0; flex-wrap: nowrap; overflow: hidden; gap: 0.5rem 0.75rem; }
+  .bar > .row, .bar > .row.param, .bar > .row.time { display: flex; flex: 1 1 auto; order: 0; min-width: 0; flex-wrap: nowrap; overflow: hidden; gap: 0.5rem 0.75rem; }
   .bar > .row > *, .bar > .row label { flex: none; white-space: nowrap; }
   .bar > .row > input[type='range'] { flex: 1 1 4rem; min-width: 4rem; }
   .beats .captions { display: none; }
   .row.phone { display: flex; margin-top: 0.25rem; }
   .row.phone .caption { white-space: normal; }
-  .controls[data-more] .more { display: inline-flex; align-items: center; gap: 0.375rem; flex: none; margin-left: auto; padding: 0.25rem 0.5rem; line-height: 1; }
-  .bar[data-crowded] .more-words { display: inline; }
+  .controls[data-more] .more { display: inline-flex; align-items: center; gap: 0.375rem; flex: none; margin-inline-start: auto; padding: 0.25rem 0.5rem; line-height: 1; }
+  .bar:not(:has(> .row)) .more-words { display: inline; }
   .rest { display: grid; }
   .rest[popover]:not(:popover-open) { display: none; }
-  .rest:popover-open { position: fixed; inset: auto 0 0 0; margin: 0; width: auto; max-height: 70vh; overflow: auto; padding: 1rem 1rem 1.25rem; row-gap: 0.75rem; background: var(--pencil-surface-menu, Canvas); color: var(--pencil-muted, CanvasText); border-top: 1px solid var(--pencil-rule, color-mix(in srgb, currentColor 25%, transparent)); box-shadow: 0 -0.5rem 1.5rem rgb(0 0 0 / 0.15); font: var(--pencil-controls-font, 0.875rem/1.4 ui-sans-serif, system-ui, sans-serif); }
+  .rest:popover-open { position: absolute; inset: auto; top: var(--menu-top, 0); left: var(--menu-left, 0); width: var(--menu-width, 100%); box-sizing: border-box; margin: 0; max-height: 60vh; overflow: auto; overscroll-behavior: contain; padding: 0.875rem 1rem 1rem; row-gap: 0.75rem; background: var(--pencil-surface-menu, Canvas); color: var(--pencil-muted, CanvasText); border: 1px solid var(--pencil-rule, color-mix(in srgb, currentColor 25%, transparent)); border-radius: 6px; box-shadow: 0 0.5rem 1.5rem rgb(0 0 0 / 0.15); font: var(--pencil-controls-font, 0.875rem/1.4 ui-sans-serif, system-ui, sans-serif); }
 }
 `;
 
-/** The rows, in order: time, beats, each param's control, then the readouts. */
+/** The rows, in order: time, beats, each param's control, then the readouts, each as `{ kind, html }`,
+ * its kind `time`, `beats`, `param` or `readouts`. */
 function rows({ info, moment, paused, disabled }) {
   const { params = [], beats = [], usesTime } = info;
   const { time = 0, values = {}, ranges = {}, readouts = [] } = moment ?? {};
@@ -264,14 +280,16 @@ function rows({ info, moment, paused, disabled }) {
 
   if (usesTime) {
     const duration = info.duration ?? LOOP;
-    out.push(
-      `<div class="row time" part="row time">` +
+    out.push({
+      kind: 'time',
+      html:
+        `<div class="row time" part="row time">` +
         `<button${attrs({ type: 'button', class: 'play', part: 'button play', 'data-play': true, disabled })}>` +
         `<span${attrs({ 'data-on': paused })}>Play</span><span${attrs({ 'data-on': !paused })}>Pause</span></button>` +
         `<input${attrs({ type: 'range', id: 'time', part: 'slider time', 'data-time': true, min: 0, max: duration, step: 0.001, value: time, 'aria-label': 'Time', 'aria-valuetext': timeText(time), disabled })}>` +
         `<output${attrs({ for: 'time', part: 'value time', 'data-time': true, 'aria-live': 'off', style: room(timeText(duration)) })}>${timeText(time)}</output>` +
         `</div>`,
-    );
+    });
   }
 
   if (steps(info)) {
@@ -283,14 +301,16 @@ function rows({ info, moment, paused, disabled }) {
     const captions = beats
       .map((caption, i) => `<span${attrs({ class: 'caption', part: 'caption', 'data-on': i === at.caption })}>${escape(caption ?? '')}</span>`)
       .join('');
-    out.push(
-      `<div class="row beats" part="row beats">` +
+    out.push({
+      kind: 'beats',
+      html:
+        `<div class="row beats" part="row beats">` +
         `<button${attrs({ type: 'button', part: 'button step', 'data-step': -1, title: 'Previous beat', 'aria-label': 'Previous beat', disabled: disabled || beat <= range.min })}>←</button>` +
         `<output${attrs({ part: 'value beat', 'data-beat': true, 'aria-live': 'off', style: room(widest) })}>${at.text}</output>` +
         `<button${attrs({ type: 'button', part: 'button step', 'data-step': 1, title: 'Next beat', 'aria-label': 'Next beat', disabled: disabled || beat >= range.max })}>→</button>` +
         `<span class="captions" part="captions" data-captions>${captions}</span>` +
         `</div>`,
-    );
+    });
   }
 
   for (const param of controlled(info)) {
@@ -308,17 +328,21 @@ function rows({ info, moment, paused, disabled }) {
             `<label class="option" part="option"><input${attrs({ type: 'radio', part: 'radio', name: id, 'data-param': name, value: i, checked: i === index, disabled })}>${escape(text)}</label>`,
         )
         .join('');
-      out.push(
-        `<fieldset class="row choice" part="row choice">` +
+      out.push({
+        kind: 'param',
+        html:
+          `<fieldset class="row choice" part="row choice">` +
           `<legend${attrs({ part: 'label', class: label ? undefined : 'said' })}>${label || escape(called)}</legend>${options}</fieldset>`,
-      );
+      });
       continue;
     }
     if (kind === 'checkbox') {
-      out.push(
-        `<div class="row choice" part="row choice"><label part="label">` +
+      out.push({
+        kind: 'param',
+        html:
+          `<div class="row choice" part="row choice"><label part="label">` +
           `<input${attrs({ type: 'checkbox', id, part: 'checkbox', 'data-param': name, checked: index === 1, 'aria-label': label ? undefined : called, disabled })}>${label}</label></div>`,
-      );
+      });
       continue;
     }
     let input;
@@ -352,19 +376,18 @@ function rows({ info, moment, paused, disabled }) {
         : '';
     // Three cells, always, so every row keeps to the grid's columns.
     const said = label ? `<label${attrs({ for: id, part: 'label', class: 'param' })}>${label}</label>` : '<span></span>';
-    out.push(`<div class="row param" part="row param">${said}${input}${out_ || '<span></span>'}</div>`);
+    out.push({ kind: 'param', html: `<div class="row param" part="row param">${said}${input}${out_ || '<span></span>'}</div>` });
   }
 
   const said = info.readouts ?? [];
   if (said.length) {
-    out.readouts = out.length;
     const boxes = said
       .map((readout, i) => {
         const [width, height] = readout.room ?? [readouts[i]?.width ?? 4, readouts[i]?.height ?? 1.4];
         return `<output${attrs({ class: 'readout', part: 'readout', 'data-readout': readout.id, 'aria-live': 'off', style: `--width: ${width}; --height: ${height}` })}>${readoutHtml(readouts[i])}</output>`;
       })
       .join('');
-    out.push(`<div class="row readouts" part="row readouts">${boxes}</div>`);
+    out.push({ kind: 'readouts', html: `<div class="row readouts" part="row readouts">${boxes}</div>` });
   }
   return out;
 }
@@ -382,12 +405,17 @@ function rows({ info, moment, paused, disabled }) {
  */
 export function markup({ info, moment, paused = false, disabled = false, extra = false }) {
   const all = rows({ info, moment, paused, disabled });
-  const at = BAR === 'readouts' && all.readouts !== undefined ? all.readouts : 0;
-  const first = all[at];
-  const rest = all.filter((_, i) => i !== at);
+  // A figure with rows of its own has a bar on a phone, which can hold only the menu's button. One
+  // with none, and only what the page put in, has no bar, and that shows where it is.
+  const bar = all.length > 0;
+  const kept = barRow(all);
+  const rest = all.filter((row) => row !== kept);
+  // The bar's row comes first in the page, so readouts the bar keeps come before the params, and
+  // a screen reader reads them first, though on a desktop they're shown after. That's accepted:
+  // a readout takes no focus, so the order Tab goes in is the same.
   // On a phone the beats' caption is a line of its own with the bar, wherever the stepper is: it's
   // the figure's own words. Every caption lies in its one place, so it's as tall as the longest.
-  const beats = all.find((row) => row.startsWith('<div class="row beats"'));
+  const beats = all.find((row) => row.kind === 'beats')?.html;
   const captions = beats
     ? `<div class="row captions-row phone" part="row captions">${beats.slice(beats.indexOf('<span class="captions"'), beats.lastIndexOf('</div>'))}</div>`
     : '';
@@ -395,16 +423,20 @@ export function markup({ info, moment, paused = false, disabled = false, extra =
   // stepper is, so Next beat is heard.
   const said = beats ? '<span class="said" data-said role="status" aria-live="polite"></span>' : '';
   // On a phone the button opens the menu, and shows whenever anything is in it: the rows that aren't
-  // the bar's, what the page put in, or the bar's own row when it doesn't fit.
+  // the bar's, what the page put in, or the bar's own row when it doesn't fit. It says "Controls"
+  // whenever the bar holds no row beside it, and is called that, and "More controls" beside one.
+  // Like the rest it's disabled until the figure loads, or a build's menu would open before the
+  // element is there to place it.
+  const name = kept ? 'More controls' : 'Controls';
   const more =
-    `<button${attrs({ type: 'button', class: 'more', part: 'button more', popovertarget: 'rest', 'aria-label': 'More controls', title: 'More controls' })}>` +
+    `<button${attrs({ type: 'button', class: 'more', part: 'button more', popovertarget: 'rest', 'aria-label': name, title: name, disabled })}>` +
     `<span class="more-words">Controls</span> ⋯</button>`;
   const menu = rest.length > 0 || extra;
   return (
-    `<div${attrs({ class: 'controls', part: 'controls', 'data-more': first && menu, 'data-menu': first && menu })}>` +
-    (first ? `<div class="bar" part="bar">${first}${more}</div>` : '') +
+    `<div${attrs({ class: 'controls', part: 'controls', 'data-more': bar && menu, 'data-menu': bar && menu })}>` +
+    (bar ? `<div class="bar" part="bar">${kept?.html ?? ''}${more}</div>` : '') +
     captions +
-    `<div class="rest" id="rest" part="rest"${first ? ' popover' : ''}>${rest.join('')}<slot></slot></div>` +
+    `<div class="rest" id="rest" part="rest"${bar ? ' popover' : ''}>${rest.map((row) => row.html).join('')}<slot></slot></div>` +
     said +
     `</div>`
   );

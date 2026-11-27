@@ -1,0 +1,8 @@
+// For the controls on a phone: two params and a readout with a fraction in it, which a page's
+// larger readout size makes taller than the bar.
+doc tall
+param q = 3 in 1..9 step 1
+param p = 1 in 0..q step 1
+let O = (0, 0)
+dot O
+label ratio = "$p/q = {p / q}$"

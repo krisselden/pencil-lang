@@ -629,6 +629,9 @@ export class PencilFigure extends HTMLElement {
     this.#startPending = false;
     clearTimeout(this.#restoreTimer);
     this.#stage.classList.remove('live');
+    // The controls stop listening, and an open menu stops following its bar. A figure put back
+    // wires them again as it loads.
+    this.#wiring.detach();
     if (this.#player) {
       this.#letGo(this.#player);
       this.#player = null;
@@ -839,7 +842,11 @@ export class PencilFigure extends HTMLElement {
     // A reader who was on a control is still on it afterwards, as one who picked a look with the
     // keyboard: the same control, found by what it's for, and a menu that was open is open still.
     const focused = root.activeElement ? identity(root.activeElement) : null;
-    const open = !!root.querySelector('[popover]:popover-open');
+    // An open menu opens again where it was, before the focus goes back into it, so the focus
+    // doesn't scroll the page to wherever a menu not yet placed would be. The wiring places it
+    // again once it's attached.
+    const open = root.querySelector('[popover]:popover-open');
+    const placed = open?.getAttribute('style');
     let html = '<div class="controls" part="controls"><div class="rest" part="rest"><slot></slot></div></div>';
     if (info) {
       let room = [];
@@ -866,11 +873,14 @@ export class PencilFigure extends HTMLElement {
     host.dataset.shape = info ? shape(info) : 'page';
     this.#wiring.forget();
     if (open) {
+      const menu = root.querySelector('[popover]');
+      if (placed) menu?.setAttribute('style', placed);
       try {
-        root.querySelector('[popover]')?.showPopover();
+        menu?.showPopover();
       } catch {}
     }
-    if (focused) root.querySelector(focused)?.focus();
+    // Without scrolling: the control is where it was, and a menu's may be partly off the screen.
+    if (focused) root.querySelector(focused)?.focus({ preventScroll: true });
   }
 
   /** What each readout says this frame, `{ id, text, words, math, width, height, laid }`, in the

@@ -13,6 +13,10 @@ const manifest = resolve(here, '.built/controls/controls.json');
 /** The defaults, in their shadow root. Playwright's locators go into it. */
 const controls = (page) => page.locator('#figure pencil-controls');
 
+/** The menu's button on a phone, by either of its names: "More controls" beside the bar's row, and
+ * "Controls" in a bar with none. */
+const menuButton = (box) => box.getByRole('button', { name: /^(More controls|Controls)$/ });
+
 test.describe('the default controls', () => {
   // Wide enough that every row is in view: on a phone the rest are in a menu, tested below.
   test.use({ viewport: { width: 1280, height: 900 } });
@@ -255,19 +259,195 @@ test.describe('on a phone', () => {
     }
   });
 
+  test('the bar keeps the playback, or else the readouts, or else a figure\'s one param, and never splits its params', async ({ page }) => {
+    // Each fixture, the row its bar keeps, and the params its menu has, all of them together.
+    const cases = [
+      ['controls', 'time', ['q', 'along', 'glow', 'many']],
+      ['timed', 'time', ['q']],
+      ['beats', 'beats', ['q']],
+      ['period', 'readouts', ['q', 'p']],
+      ['room', 'readouts', ['t', 'theta']],
+      ['lone', 'param', []],
+      ['grid', null, ['many', 'q', 'r', 's']],
+      ['bar', null, ['mode', 'q']],
+    ];
+    for (const [figure, kept, menu] of cases) {
+      await open(page, 'controlled', `figure=${figure}`);
+      await drawn(page);
+      const box = controls(page);
+      const said = await box.evaluate((host) => {
+        const root = host.shadowRoot;
+        return {
+          bar: [...root.querySelectorAll('.bar > .row')].map((row) => row.className),
+          barParams: [...new Set([...root.querySelectorAll('.bar [data-param]')].map((el) => el.dataset.param))],
+          menu: [...new Set([...root.querySelectorAll('.rest [data-param]')].map((el) => el.dataset.param))],
+        };
+      });
+      expect(said.bar, figure).toEqual(kept ? [expect.stringContaining(kept)] : []);
+      expect(said.menu, figure).toEqual(menu);
+      // A param is in the bar only when it's the figure's one.
+      expect(said.barParams, figure).toEqual(kept === 'param' ? ['q'] : []);
+      const more = menuButton(box);
+      const words = more.locator('.more-words');
+      if (kept === 'param') {
+        // Nothing else to show, so no menu.
+        await expect(box.locator('.more')).toBeHidden();
+      } else if (kept) {
+        await expect(box.getByRole('button', { name: 'More controls', exact: true })).toBeVisible();
+        await expect(more).toHaveAttribute('title', 'More controls');
+        await expect(words).toBeHidden();
+      } else {
+        // A bar with no row of its own is the menu's button, which says what it opens, and is
+        // called that.
+        await expect(box.getByRole('button', { name: 'Controls', exact: true })).toBeVisible();
+        await expect(more).toHaveAttribute('title', 'Controls');
+        await expect(words).toBeVisible();
+        await expect(more).toHaveText('Controls ⋯', { useInnerText: true });
+        for (const name of menu) await expect(box.locator(`[data-param="${name}"]`).first()).toBeHidden();
+        await more.click();
+        for (const name of menu) await expect(box.locator(`[data-param="${name}"]`).first()).toBeVisible();
+        await box.locator(`[data-param="${menu[0]}"]`).first().focus();
+        await page.keyboard.press('Escape');
+        await expect(more).toBeFocused();
+      }
+      expect(await fits(page), figure).toEqual([]);
+    }
+  });
+
+  test('the menu drops down under its bar, as wide as the controls, and scrolls with the page', async ({ page }) => {
+    // Under the bar, or under the beats' caption below it, which shows while the menu is open.
+    for (const figure of ['period', 'timed']) {
+      await open(page, 'menus', `figure=${figure}`);
+      await drawn(page);
+      const box = controls(page);
+      await box.getByRole('button', { name: 'More controls' }).click();
+      await expect(box.locator('.rest')).toBeVisible();
+      const before = await placed(page);
+      expect(before.open, figure).toBe(true);
+      expect(Math.abs(before.menu.top - before.above.bottom), `${figure} ${JSON.stringify(before)}`).toBeLessThanOrEqual(2);
+      expect(Math.abs(before.menu.left - before.controls.left), figure).toBeLessThanOrEqual(1);
+      expect(Math.abs(before.menu.width - before.controls.width), figure).toBeLessThanOrEqual(1);
+      if (figure === 'timed') expect(before.above.bottom, figure).toBeGreaterThan(before.bar.bottom + 10);
+      // The page scrolls, and the menu goes with it, under its bar, with nothing to catch up.
+      await page.evaluate(() => window.scrollBy({ top: 200, behavior: 'instant' }));
+      const after = await placed(page);
+      expect(after.scrollY - before.scrollY).toBe(200);
+      expect(after.open).toBe(true);
+      expect(after.bar.top).toBeCloseTo(before.bar.top - 200, 0);
+      expect(Math.abs(after.menu.top - after.above.bottom), `${figure} ${JSON.stringify(after)}`).toBeLessThanOrEqual(2);
+      expect(Math.abs(after.menu.left - after.controls.left)).toBeLessThanOrEqual(1);
+      // Escape still closes it and gives the focus back.
+      await box.locator('.rest input').first().focus();
+      await page.keyboard.press('Escape');
+      await expect(box.locator('.rest')).toBeHidden();
+      await expect(box.getByRole('button', { name: 'More controls' })).toBeFocused();
+    }
+  });
+
+  test('a menu opened low on the screen scrolls the page just enough to show it, and keeps its bar on screen', async ({ page }) => {
+    await open(page, 'menus', 'figure=controls');
+    await drawn(page);
+    // The second figure, far enough down the page to be scrolled to with its bar just above the
+    // bottom of the screen.
+    await page.evaluate(() => document.getElementById('other').scrollIntoView({ block: 'center', behavior: 'instant' }));
+    const box = page.locator('#other pencil-controls');
+    await expect(box.getByRole('button', { name: 'More controls' })).toBeVisible({ timeout: 30_000 });
+    await page.evaluate(() => {
+      const bar = document.querySelector('#other pencil-controls').shadowRoot.querySelector('.bar').getBoundingClientRect();
+      window.scrollBy({ top: bar.bottom + 24 - innerHeight, behavior: 'instant' });
+    });
+    const start = await placed(page, '#other');
+    expect(start.bar.bottom).toBeGreaterThan(start.height - 40);
+    await box.getByRole('button', { name: 'More controls' }).click();
+    // It may glide there: wait until the menu is on the screen, and the page is still.
+    await expect.poll(async () => {
+      const now = await placed(page, '#other');
+      return now.menu.bottom <= now.height;
+    }).toBe(true);
+    let last = -1;
+    await expect.poll(async () => {
+      const now = await page.evaluate(() => scrollY);
+      const still = now === last;
+      last = now;
+      return still;
+    }, { intervals: [250] }).toBe(true);
+    const shown = await placed(page, '#other');
+    expect(shown.open).toBe(true);
+    expect(shown.scrollY).toBeGreaterThan(start.scrollY);
+    expect(shown.menu.bottom, JSON.stringify(shown)).toBeLessThanOrEqual(shown.height);
+    // Just enough: the menu's bottom is near the screen's.
+    expect(shown.menu.bottom, JSON.stringify(shown)).toBeGreaterThan(shown.height - 20);
+    expect(shown.bar.top).toBeGreaterThanOrEqual(0);
+  });
+
+  test('opening one figure\'s menu closes another\'s', async ({ page }) => {
+    await open(page, 'menus', 'figure=period');
+    await drawn(page);
+    const first = controls(page);
+    await first.getByRole('button', { name: 'More controls' }).click();
+    await expect(first.locator('.rest')).toBeVisible();
+    // The second is a little further down: scrolled up the screen, with the first's bar still on it.
+    const second = page.locator('#other pencil-controls');
+    const more = second.getByRole('button', { name: 'More controls' });
+    await expect(more).toBeVisible({ timeout: 30_000 });
+    await page.evaluate(() => {
+      const bar = document.querySelector('#other pencil-controls').shadowRoot.querySelector('.bar').getBoundingClientRect();
+      window.scrollBy({ top: bar.bottom + 16 - innerHeight, behavior: 'instant' });
+    });
+    const before = await placed(page);
+    expect(before.bar.top, JSON.stringify(before)).toBeGreaterThan(0);
+    expect(before.open).toBe(true);
+    await more.click();
+    await expect(second.locator('.rest')).toBeVisible();
+    await expect(first.locator('.rest')).toBeHidden();
+    const where = await placed(page, '#other');
+    expect(Math.abs(where.menu.top - where.above.bottom), JSON.stringify(where)).toBeLessThanOrEqual(2);
+  });
+
+  test('the menu follows its bar wherever the page moves it, and closes when its bar leaves the screen', async ({ page }) => {
+    await open(page, 'menus', 'figure=period');
+    await drawn(page);
+    const box = controls(page);
+    await box.getByRole('button', { name: 'More controls' }).click();
+    await expect(box.locator('.rest')).toBeVisible();
+    const under = async () => {
+      const now = await placed(page);
+      return now.open && Math.abs(now.menu.top - now.above.bottom) <= 1 && Math.abs(now.menu.left - now.controls.left) <= 1;
+    };
+    // Something above the figure grows and moves it down, though nothing it holds changes size.
+    const top = (await placed(page)).bar.top;
+    await page.evaluate(() => (document.querySelector('main > p').style.paddingTop = '120px'));
+    await expect.poll(async () => (await placed(page)).bar.top).toBeGreaterThan(top + 100);
+    await expect.poll(under).toBe(true);
+    // A figure that stays put as the page scrolls, as a sticky one does: the menu stays with it.
+    await page.evaluate(() => Object.assign(document.getElementById('figure').style, { position: 'sticky', top: '0px' }));
+    await page.evaluate(() => window.scrollBy({ top: 300, behavior: 'instant' }));
+    await expect.poll(under).toBe(true);
+    // Its bar scrolled off the screen, it closes.
+    await page.evaluate(() => {
+      document.getElementById('figure').style.position = '';
+      window.scrollBy({ top: 1000, behavior: 'instant' });
+    });
+    await expect.poll(async () => (await placed(page)).open).toBe(false);
+  });
+
   test('a row the bar gave up comes back once it fits, as when the phone turns, and after a look switch', async ({ page }) => {
-    await open(page, 'controlled', 'figure=bar');
+    // Readouts too wide together for a phone held upright, which fit it turned. (Radios won't come
+    // back in WebKit, which sets their legend on a line of its own, so they're too tall for the bar.)
+    await open(page, 'controlled', 'figure=ro');
     await drawn(page);
     const box = controls(page);
     const inBar = () => box.evaluate((host) => host.shadowRoot.querySelectorAll('.bar > .row').length);
-    const crowded = () => box.evaluate((host) => host.shadowRoot.querySelector('.bar').hasAttribute('data-crowded'));
+    // A bar without its row says what its button opens, and the button is called that.
+    const words = box.locator('.more-words');
     await expect.poll(inBar).toBe(0);
-    expect(await crowded()).toBe(true);
+    await expect(words).toBeVisible();
+    await expect(box.getByRole('button', { name: 'Controls', exact: true })).toBeVisible();
     // Turned, a phone is wide enough for it, and it's back, cut off nowhere.
     await page.setViewportSize({ width: 812, height: 375 });
     await expect.poll(inBar).toBe(1);
-    expect(await crowded()).toBe(false);
-    await expect(box.getByRole('radio', { name: 'equal area' })).toBeVisible();
+    await expect(words).toBeHidden();
+    await expect(box.locator('[data-readout="third"]')).toBeVisible();
     expect(await fits(page)).toEqual([]);
     await page.setViewportSize({ width: 375, height: 812 });
     await expect.poll(inBar).toBe(0);
@@ -275,10 +455,10 @@ test.describe('on a phone', () => {
     await onFigure(page, (f) => f.setAttribute('src', 'controls.pen'));
     await expect(box.getByRole('slider', { name: 'Time' })).toBeVisible();
     await expect.poll(inBar).toBe(1);
-    expect(await crowded()).toBe(false);
-    await onFigure(page, (f) => f.setAttribute('src', 'bar.pen'));
-    await expect.poll(crowded).toBe(true);
+    await expect(words).toBeHidden();
+    await onFigure(page, (f) => f.setAttribute('src', 'ro.pen'));
     await expect.poll(inBar).toBe(0);
+    await expect(words).toBeVisible();
   });
 
   test('an open menu stays open, with the focus where it was, when the controls are written again', async ({ page }) => {
@@ -288,6 +468,7 @@ test.describe('on a phone', () => {
     await box.getByRole('button', { name: 'More controls' }).click();
     const arms = box.getByRole('slider', { name: 'arms' });
     await arms.focus();
+    const before = await placed(page);
     const loads = (await events(page)).load;
     await box.evaluate((host) => (host.dataset.shape = 'another'));
     await onFigure(page, (f) => f.reload());
@@ -295,29 +476,146 @@ test.describe('on a phone', () => {
     await expect.poll(() => box.evaluate((host) => host.dataset.shape)).not.toBe('another');
     await expect(arms).toBeVisible();
     await expect(arms).toBeFocused();
-    expect(await box.evaluate((host) => host.shadowRoot.querySelector('.rest').matches(':popover-open'))).toBe(true);
+    // Where it was, under its bar, and the page hasn't scrolled to find it.
+    const after = await placed(page);
+    expect(after.open).toBe(true);
+    expect(after.scrollY).toBe(before.scrollY);
+    expect(after.menu).toEqual(before.menu);
   });
 
-  test('a first row too long for the bar goes behind the menu, and nothing in the bar is cut off', async ({ page }) => {
-    for (const figure of ['bar', 'ro']) {
+  test('an open menu written again where it runs off the screen stays open there, and the page doesn\'t scroll', async ({ page }) => {
+    await open(page, 'menus', 'figure=controls');
+    await drawn(page);
+    const box = page.locator('#other pencil-controls');
+    const more = box.getByRole('button', { name: 'More controls' });
+    await expect(more).toBeVisible({ timeout: 30_000 });
+    // Its bar low on the screen.
+    const low = () =>
+      page.evaluate(() => {
+        const bar = document.querySelector('#other pencil-controls').shadowRoot.querySelector('.bar').getBoundingClientRect();
+        window.scrollBy({ top: bar.bottom + 60 - innerHeight, behavior: 'instant' });
+      });
+    const settled = async () => {
+      let last = -1;
+      await expect.poll(async () => {
+        const now = await page.evaluate(() => scrollY);
+        const still = now === last;
+        last = now;
+        return still;
+      }, { intervals: [250] }).toBe(true);
+    };
+    await low();
+    // A reader opens it, and the page scrolls to show it; then scrolls back, so it runs off the bottom.
+    await more.click();
+    const arms = box.getByRole('slider', { name: 'arms' });
+    await expect(arms).toBeVisible();
+    await expect.poll(async () => {
+      const now = await placed(page, '#other');
+      return now.menu.bottom <= now.height;
+    }).toBe(true);
+    await settled();
+    await low();
+    await arms.focus();
+    const before = await placed(page, '#other');
+    expect(before.menu.bottom, JSON.stringify(before)).toBeGreaterThan(before.height);
+    // Written again, as for another look.
+    const loads = (await events(page)).load;
+    await box.evaluate((host) => (host.dataset.shape = 'another'));
+    await page.locator('#other').evaluate((f) => f.reload());
+    await expect.poll(async () => (await events(page)).load).toBeGreaterThan(loads);
+    await expect.poll(() => box.evaluate((host) => host.dataset.shape)).not.toBe('another');
+    await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(done, 400)))));
+    const after = await placed(page, '#other');
+    expect(after.scrollY).toBe(before.scrollY);
+    expect(after.open).toBe(true);
+    expect(after.menu).toEqual(before.menu);
+    await expect(arms).toBeFocused();
+  });
+
+  test('a row too long or too tall for the bar goes behind the menu, and nothing in the bar is cut off', async ({ page }) => {
+    // Radios with long words, readouts too wide together, and a fraction at a page's larger size.
+    for (const query of ['figure=wide', 'figure=ro', 'figure=tall&style=--pencil-readout-size:1.5rem']) {
+      await open(page, 'controlled', query);
+      await drawn(page);
+      const box = controls(page);
+      expect(await box.evaluate((host) => host.shadowRoot.querySelectorAll('.bar > .row').length), query).toBe(0);
+      const more = box.getByRole('button', { name: 'Controls', exact: true });
+      await expect(more).toBeVisible();
+      await expect(more).toHaveText('Controls ⋯', { useInnerText: true });
+      expect(await fits(page), query).toEqual([]);
+      await more.click();
+      const shown =
+        query === 'figure=wide' ? box.getByRole('radio', { name: 'gnomonic' })
+        : query === 'figure=ro' ? box.locator('[data-readout="third"]')
+        : box.locator('[data-readout="ratio"]');
+      await expect(shown).toBeVisible();
+      expect(await fits(page), query).toEqual([]);
+    }
+    // At its own size the fraction fits, and the bar keeps it.
+    await open(page, 'controlled', 'figure=tall');
+    await drawn(page);
+    expect(await controls(page).evaluate((host) => host.shadowRoot.querySelectorAll('.bar > .row').length)).toBe(1);
+    expect(await fits(page)).toEqual([]);
+  });
+
+  test('a long caption in the menu wraps, and leaves its slider room', async ({ page }) => {
+    await open(page, 'controlled', 'figure=bar');
+    await drawn(page);
+    const box = controls(page);
+    await box.getByRole('button', { name: 'Controls', exact: true }).click();
+    const slider = await box.getByRole('slider', { name: 'the number of arms on the rolled tube' }).boundingBox();
+    expect(slider.width).toBeGreaterThan(120);
+    expect(await fits(page)).toEqual([]);
+  });
+});
+
+test.describe('on a desktop', () => {
+  test.use({ viewport: { width: 1633, height: 919 } });
+
+  test('every row is in place, with no bar and no menu, and the readouts after the controls', async ({ page }) => {
+    for (const figure of ['period', 'grid', 'lone', 'controls']) {
       await open(page, 'controlled', `figure=${figure}`);
       await drawn(page);
       const box = controls(page);
-      const more = box.getByRole('button', { name: 'More controls' });
-      await expect(more).toBeVisible();
-      expect(await fits(page)).toEqual([]);
-      await more.click();
-      const shown = figure === 'bar' ? box.getByRole('radio', { name: 'gnomonic' }) : box.locator('[data-readout="third"]');
-      await expect(shown).toBeVisible();
-      expect(await fits(page)).toEqual([]);
-      // A long caption wraps, and leaves its slider room.
-      if (figure === 'bar') {
-        const slider = await box.getByRole('slider', { name: 'the number of arms on the rolled tube' }).boundingBox();
-        expect(slider.width).toBeGreaterThan(120);
-      }
+      await expect(box.locator('.more')).toBeHidden();
+      const rows = await box.evaluate((host) =>
+        [...host.shadowRoot.querySelectorAll('.row:not(.phone)')].map((row) => {
+          const r = row.getBoundingClientRect();
+          // A row the grid lays out by its cells has no box of its own.
+          const cells = r.height > 0 ? [r] : [...row.children].map((cell) => cell.getBoundingClientRect());
+          return { kind: row.className, shown: cells.some((c) => c.height > 0), top: Math.min(...cells.map((c) => c.top)) };
+        }),
+      );
+      expect(rows.every((row) => row.shown), `${figure} ${JSON.stringify(rows)}`).toBe(true);
+      // Top to bottom: time, beats, the params, then the readouts.
+      const order = [...rows].sort((a, b) => a.top - b.top).map((row) => row.kind.split(' ')[1]);
+      const rank = { time: 0, beats: 1, param: 2, choice: 2, readouts: 3 };
+      expect(order.map((kind) => rank[kind]), `${figure} ${order}`).toEqual(order.map((kind) => rank[kind]).sort());
     }
   });
 });
+
+/** Where a figure's controls, their bar, what the menu drops from (the bar, or the beats' caption
+ * line under it) and the menu are on the screen, how far the page is scrolled, and how tall the
+ * screen is. */
+const placed = (page, figure = '#figure') =>
+  page.evaluate((id) => {
+    const root = document.querySelector(`${id} pencil-controls`).shadowRoot;
+    const box = (el) => {
+      const { top, bottom, left, width } = el.getBoundingClientRect();
+      return { top, bottom, left, width };
+    };
+    const menu = root.querySelector('.rest');
+    return {
+      scrollY,
+      height: innerHeight,
+      open: menu.matches(':popover-open'),
+      controls: box(root.querySelector('.controls')),
+      bar: box(root.querySelector('.bar')),
+      above: box(root.querySelector('.row.phone') ?? root.querySelector('.bar')),
+      menu: box(menu),
+    };
+  }, figure);
 
 /** Where the figure, its controls' bar, the caption's line and the menu are, and how big each is. */
 const boxes = (page) =>
@@ -332,8 +630,8 @@ const boxes = (page) =>
 
 /**
  * What doesn't fit its box in the controls in view: an output or a readout whose text runs past
- * it, something in the bar that runs past the bar's row, or a control's label that isn't on the
- * same line as its control.
+ * it, something in the bar that runs past the bar's row, a row taller than the bar, a menu's button
+ * before the row, or a control's label that isn't on the same line as its control.
  */
 const fits = (page) =>
   page.evaluate(() => {
@@ -355,10 +653,17 @@ const fits = (page) =>
     const row = root.querySelector('.bar > .row');
     if (row && shown(row)) {
       if (row.scrollWidth > row.clientWidth + 0.5) wrong.push('the bar\'s row is cut off');
+      // On a phone, where the bar has a box of its own.
+      const bar = root.querySelector('.bar');
+      const tall = row.getBoundingClientRect().height - bar.getBoundingClientRect().height;
+      if (shown(bar) && tall > 0.5) wrong.push(`the bar's row is ${tall.toFixed(1)} px taller than the bar`);
       const edge = row.getBoundingClientRect().right;
       for (const item of row.children) {
         if (shown(item) && item.getBoundingClientRect().right > edge + 0.5) wrong.push(`${item.localName} in the bar is cut off`);
       }
+      // The menu's button ends the bar, after its row.
+      const more = root.querySelector('.bar > .more');
+      if (more && shown(more) && more.getBoundingClientRect().left < edge - 0.5) wrong.push('the menu\'s button is before the bar\'s row');
     }
     // A caption's line holds every caption, the one showing included.
     for (const line of root.querySelectorAll('.row.phone')) {
@@ -384,11 +689,11 @@ for (const [width, height] of [[1633, 919], [375, 812]]) {
     test.use({ viewport: { width, height } });
 
     test('in every fixture, with values between the ends of their ranges', async ({ page }) => {
-      for (const figure of ['controls', 'grid', 'room', 'bar', 'ro', 'beats']) {
+      for (const figure of ['controls', 'grid', 'room', 'bar', 'ro', 'beats', 'period', 'lone', 'wide', 'tall']) {
         await open(page, 'controlled', `figure=${figure}`);
         await drawn(page);
         const box = controls(page);
-        const more = box.getByRole('button', { name: 'More controls' });
+        const more = menuButton(box);
         const check = async (moment) => {
           if (moment) await onFigure(page, (f, m) => (f.params = m), moment);
           await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
@@ -568,6 +873,8 @@ function written() {
       .filter(([, , , w, h]) => w > 0 || h > 0);
   };
   window.__parsed = window.__measure();
+  // The menu's button, which mustn't open the menu before the element is there to place it.
+  window.__menuOff = document.querySelector('#figure pencil-controls').shadowRoot.querySelector('.more').disabled;
 </script>
 <script type="module" src="./boot.js"></script>
 </body>
@@ -597,10 +904,12 @@ for (const [width, height] of [[1633, 919], [375, 812]]) {
     test('when the figure loads, a value changes during a drag, or time plays', async ({ page }) => {
       const parsed = await page.evaluate(() => window.__parsed);
       expect(parsed.length).toBeGreaterThan(4);
+      expect(await page.evaluate(() => window.__menuOff)).toBe(true);
       await drawn(page);
-      // The build's controls are the figure's, so they're kept and turned on.
+      // The build's controls are the figure's, so they're kept and turned on, the menu's button too.
       const box = controls(page);
       await expect(box.getByRole('slider', { name: 'Time' })).toBeEnabled();
+      expect(await box.evaluate((host) => host.shadowRoot.querySelector('.more').disabled)).toBe(false);
       expect(moved(parsed, await page.evaluate(() => window.__measure()))).toEqual([]);
 
       // A drag across the first slider in view, a value at a time.
@@ -617,6 +926,27 @@ for (const [width, height] of [[1633, 919], [375, 812]]) {
         // The value changed under the drag, and the readouts it changes too.
         await box.getByRole('slider', { name: 'arms' }).fill('12');
         await expect(box.locator('[data-readout="ratio"]')).toContainText('ratio 4');
+        expect(moved(parsed, await page.evaluate(() => window.__measure()))).toEqual([]);
+      } else {
+        // On a phone the params are in the menu: opened, nothing in it or under it moves as one is
+        // dragged, and the readouts it changes don't either.
+        await box.getByRole('button', { name: 'More controls' }).click();
+        const arms = box.getByRole('slider', { name: 'arms' });
+        await expect(arms).toBeVisible();
+        const opened = await page.evaluate(() => window.__measure());
+        const slid = await arms.boundingBox();
+        await page.mouse.move(slid.x + 4, slid.y + slid.height / 2);
+        await page.mouse.down();
+        for (let k = 1; k <= 8; k++) {
+          await page.mouse.move(slid.x + (slid.width * k) / 8, slid.y + slid.height / 2);
+          expect(moved(opened, await page.evaluate(() => window.__measure()))).toEqual([]);
+        }
+        await page.mouse.up();
+        await expect.poll(() => value(page, 'q')).toBe(12);
+        await expect(box.locator('[data-readout="ratio"]')).toContainText('ratio 4');
+        expect(moved(opened, await page.evaluate(() => window.__measure()))).toEqual([]);
+        await page.keyboard.press('Escape');
+        await expect(arms).toBeHidden();
         expect(moved(parsed, await page.evaluate(() => window.__measure()))).toEqual([]);
       }
 

@@ -80,14 +80,22 @@ or fewer, a `<select>` for more, and a checkbox for a choice of off and on (`doc
   words, and a readout's box is as big as the most it says over the moments a reader can reach, from the one the figure
   starts at, which the core tries (`readout_room`). Each sits in a contained box. Every slider is in one grid, so each
   starts and ends where the others do, and a long caption wraps rather than squeezing its slider.
-- **On a phone,** or a screen with little height, one row stays, on one line, in a bar of fixed height, and the rest open
-  from a `⋯` button as a menu over the page, from the bottom. The figure keeps the height. Which row is `BAR` in
-  [`src/controls.js`](src/controls.js): `'first'`, the first row, or `'readouts'`. A row that doesn't fit the bar's line,
-  as radios with long words, goes behind the menu too, and the button says "Controls", so nothing in the bar is cut off.
-  A row that comes to fit again, as when a phone turns, comes back to the bar. The beats' caption is a line of its own
-  under the bar, wherever the stepper is, as tall as the longest caption at that width, so stepping moves nothing.
-  Escape closes the menu and gives the focus back to `⋯`, and controls written again, as for another look, keep an
-  open menu open and the focus where it was.
+- **On a phone,** or a screen with little height, one row stays, on one line, in a bar of fixed height, and the rest drop
+  down from a `⋯` button in a menu over the page below, as wide as the controls. The figure keeps the height. The bar
+  keeps the playback, which is the time or else the beats, or else the readouts, or else a figure's one param. It never
+  splits a figure's params: one with more than one and nothing else has a bar of only the button, `Controls ⋯`, and its
+  params together in the menu. A row that doesn't fit the bar's line, as radios with long words, goes behind the menu
+  too, and the button says "Controls", so nothing in the bar is cut off. A row that comes to fit again, as when a phone
+  turns, comes back to the bar. The beats' caption is a line of its own under the bar, wherever the stepper is, as tall
+  as the longest caption at that width, so stepping moves nothing, and the menu drops from under it.
+- **The menu scrolls with the page,** under its bar, and follows the bar wherever else it goes: when something above it
+  grows, or a sticky or fixed box carries it, and a frame behind when a scrolling box it's in scrolls. It closes when
+  its controls leave the screen, so it never stays over another figure. Opening one low on the screen scrolls the page
+  just enough to show it, never so far that the bar leaves the top, and opening another figure's closes it. It's at most
+  60% of the screen's height, and scrolls within that. Escape closes it and gives the focus back to `⋯`, and controls
+  written again, as for another look, keep an open menu open where it was, and the focus where it was, without
+  scrolling. The button is called "More controls" beside the bar's row and "Controls" alone, and a build writes it
+  disabled, as it does the rest, until the figure loads.
 - **A new beat is said,** in a polite live region: which beat it is and its caption, `2 / 3: Then as many…`, whether
   a reader stepped to it or time brought it.
 - **Anything a page puts in `<pencil-controls>`,** as a choice of looks, is shown after the defaults, and on a phone in
@@ -102,7 +110,7 @@ set on the figure or anything around it:
 | `--pencil-ink` | Values, a param's name and readouts. |
 | `--pencil-muted` | What a control says it is, and captions. |
 | `--pencil-accent` | Sliders, radios and checkboxes. |
-| `--pencil-rule`, `--pencil-surface` | A button's border and background. |
+| `--pencil-rule`, `--pencil-surface` | A button's border and background, and the rule is the menu's border on a phone. |
 | `--pencil-surface-menu` | The menu's background on a phone. |
 | `--pencil-math-font` | A param's name, as the `font` shorthand. |
 | `--pencil-focus` | The focus ring, as on the figure's handles. |
@@ -110,7 +118,7 @@ set on the figure or anything around it:
 
 | Part | What it is |
 |---|---|
-| `controls`, `bar`, `rest` | All of them, the first row, and the rest, which on a phone is the menu. |
+| `controls`, `bar`, `rest` | All of them, the row a phone's bar keeps with the menu's button, and the rest, which on a phone is the menu. |
 | `row` | Each row, with `time`, `beats`, `param`, `choice` or `readouts` as well. |
 | `label` | What a control says it is: a `<label>`, or a group's `<legend>`. |
 | `slider`, `select`, `radio`, `checkbox`, `option` | Each control, and a radio's label. |
@@ -257,7 +265,7 @@ pnpm test
 
 Playwright's, in [`tests/`](tests), against the corpus in this repo, headless, on its own Chromium and WebKit: each at
 a desktop size and as a phone (a Pixel 7 and an iPhone 15, emulated). They cover drawing, every key on a handle and on
-beats, the default controls and a page's own, readouts, and that no control moves as the figure loads, plays or is
+beats, the default controls and a page's own, a phone's bar and where its menu opens as the page scrolls, readouts, and that no control moves as the figure loads, plays or is
 dragged, a mouse drag and a touch drag, a swipe that scrolls past a figure, a drag that selects no text, a range that follows another param, reduced motion, sheets picked by theme, the
 poster's swap, and a compiled figure. `PENCIL_GL=1 pnpm test` runs them all on WebGL2 in place of WebGPU, and `PENCIL_MIN=1 pnpm test` on the minified bundle. They serve the repo on
 port 8743, and reuse a server already there, so a second checkout runs them on its own with `PENCIL_PORT=8751 pnpm test`.

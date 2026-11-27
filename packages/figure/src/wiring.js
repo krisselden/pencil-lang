@@ -32,6 +32,66 @@ export function identity(el) {
   return el.classList.contains('more') ? '.more' : null;
 }
 
+/** How near the edges of the screen an opened menu is shown, in CSS pixels. */
+const EDGE = 8;
+
+/**
+ * The defaults' menu on a phone, which drops down from under their bar over the page. It's an auto
+ * popover, so it's in the top layer, where with `position: absolute` its containing block is the
+ * initial containing block, which is the page's own coordinates. Placed there where the controls
+ * end, it scrolls with the page and stays under its bar with nothing to catch up. While it's open
+ * it looks once a frame for where the controls are, and moves only when that has changed: when
+ * something above them grows, or a fixed or sticky box carries them, or a scrolling box they're in
+ * scrolls, which it follows a frame behind. It closes when its controls leave the screen, or the
+ * page becomes too wide for a menu, and stops looking once it's closed or gone from the page.
+ * Opened by a reader, it scrolls the page just enough to show it, if it runs past the bottom of the
+ * screen, but never so far that the bar leaves the top.
+ */
+function dropDown(menu, signal) {
+  const controls = menu.parentElement;
+  const bar = controls.querySelector(':scope > .bar') ?? controls;
+  const phone = matchMedia(PHONE);
+  const still = matchMedia('(prefers-reduced-motion: reduce)');
+  let frame = 0;
+  let at = '';
+  const place = () => {
+    const box = controls.getBoundingClientRect();
+    const where = [box.bottom + scrollY, box.left + scrollX, box.width];
+    if (where.join() !== at) {
+      at = where.join();
+      menu.style.setProperty('--menu-top', `${where[0]}px`);
+      menu.style.setProperty('--menu-left', `${where[1]}px`);
+      menu.style.setProperty('--menu-width', `${where[2]}px`);
+    }
+    return box;
+  };
+  const stop = () => {
+    cancelAnimationFrame(frame);
+    frame = 0;
+  };
+  const look = () => {
+    frame = 0;
+    if (!menu.isConnected || !menu.matches(':popover-open')) return;
+    const box = place();
+    const gone = box.bottom <= 0 || box.top >= innerHeight || box.right <= 0 || box.left >= innerWidth;
+    if (gone || !phone.matches) menu.hidePopover();
+    else frame = requestAnimationFrame(look);
+  };
+  const follow = () => {
+    place();
+    if (!frame) frame = requestAnimationFrame(look);
+  };
+  const show = () => {
+    const below = menu.getBoundingClientRect().bottom + EDGE - innerHeight;
+    const by = Math.min(below, bar.getBoundingClientRect().top - EDGE);
+    // At the end of a page the open menu adds to its height, which closing it gives back, so the
+    // page can jump up then.
+    if (by > 0) scrollBy({ top: by, behavior: still.matches ? 'instant' : 'smooth' });
+  };
+  signal.addEventListener('abort', stop);
+  return { follow, stop, show };
+}
+
 export class Wiring {
   #figure;
   #roots = [];
@@ -65,36 +125,55 @@ export class Wiring {
   }
 
   /** A menu that closes with the focus in it, on Escape, gives the focus back to its button, as a
-   * menu should, where a browser can leave it nowhere. */
+   * menu should, where a browser can leave it nowhere. The defaults' menu drops down from their
+   * bar, and opening it shows it. */
   #menus(root, signal) {
     const scope = root.getRootNode?.() ?? document;
     for (const menu of root.querySelectorAll('[popover][id]')) {
       const button = root.querySelector(`[popovertarget="${CSS.escape(menu.id)}"]`);
+      const drops = root instanceof ShadowRoot && menu.matches('.controls > .rest') ? dropDown(menu, signal) : null;
       let inside = false;
+      // Whether this heard it begin to open. A menu that controls written again open again opens
+      // before this is listening, and only a reader's opening scrolls the page to show it.
+      let opening = false;
       menu.addEventListener(
         'beforetoggle',
         (e) => {
-          if (e.newState === 'closed') inside = menu.contains(scope.activeElement);
+          opening = e.newState === 'open';
+          if (e.newState === 'open') drops?.follow();
+          if (e.newState === 'closed') {
+            inside = menu.contains(scope.activeElement);
+            drops?.stop();
+          }
         },
         { signal },
       );
       menu.addEventListener(
         'toggle',
         (e) => {
-          if (e.newState !== 'closed' || !inside) return;
+          if (e.newState === 'open') {
+            if (opening) drops?.show();
+            opening = false;
+            return;
+          }
+          if (!inside) return;
           inside = false;
           const now = scope.activeElement;
           if (!now || now === document.body || menu.contains(now)) button?.focus();
         },
         { signal },
       );
+      // Controls written again open their menu again before this hears of it.
+      if (menu.matches(':popover-open')) drops?.follow();
     }
   }
 
   /**
    * On a phone a bar keeps one row on one line, and one that doesn't fit, as radios with long
-   * words or a long caption, goes behind the menu with the rest, so nothing in the bar is cut off.
-   * The bar is as tall either way, so nothing moves.
+   * words or a long caption, or that's taller than the bar, as a fraction at a large size or radios
+   * whose legend WebKit sets on a line of its own, goes behind the menu with the rest, so nothing in
+   * the bar is cut off. The bar is as tall either way, so nothing moves. Its button is
+   * called what it opens: "More controls" beside a row, and "Controls" alone.
    */
   fit() {
     const phone = typeof matchMedia !== 'undefined' && matchMedia(PHONE).matches;
@@ -110,17 +189,21 @@ export class Wiring {
       if (moved) {
         moved.removeAttribute('data-moved');
         bar.insertBefore(moved, bar.querySelector(':scope > .more'));
-        bar.removeAttribute('data-crowded');
         controls.toggleAttribute('data-more', controls.hasAttribute('data-menu'));
         this.#parts = null;
       }
       const row = bar.querySelector(':scope > .row');
-      if (phone && row && row.scrollWidth > row.clientWidth + 0.5) {
+      if (phone && row && (row.scrollWidth > row.clientWidth + 0.5 || row.getBoundingClientRect().height > bar.clientHeight + 0.5)) {
         menu.prepend(row);
         row.setAttribute('data-moved', '');
-        bar.setAttribute('data-crowded', '');
         controls.setAttribute('data-more', '');
         this.#parts = null;
+      }
+      const more = bar.querySelector(':scope > .more');
+      const name = bar.querySelector(':scope > .row') ? 'More controls' : 'Controls';
+      if (more && more.getAttribute('aria-label') !== name) {
+        more.setAttribute('aria-label', name);
+        more.title = name;
       }
       // Moving what has the focus takes it away, so it's given back.
       if (focused && focused !== scope.activeElement && focused.isConnected) focused.focus({ preventScroll: true });
@@ -170,6 +253,8 @@ export class Wiring {
       for (const control of root.querySelectorAll('[data-param], [data-time], [data-play], [data-step]')) {
         if ('disabled' in control) control.disabled = false;
       }
+      // And the defaults' menu button, which a build writes disabled with the rest.
+      if (root instanceof ShadowRoot) for (const more of root.querySelectorAll('.bar > .more')) more.disabled = false;
     }
     this.#parts = null;
     const info = this.#figure.info;

@@ -1,0 +1,11 @@
+// For the controls on a phone: two params and a readout, as the lattice has, so the readout keeps
+// the bar and the params are in the menu together.
+doc period
+param q = 7 in 3..12 step 1
+param p = 2 in 0..q step 1
+let omega = -1 / 2 + sqrt(3) / 2·i
+let A = -p + (q - p)·omega
+let O = (0, 0)
+dot O
+segment side = 0, A / 4
+label steps_to_a = "$A = {-p} + {q - p}ω$"
