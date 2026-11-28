@@ -87,6 +87,7 @@ fn ink_texture(device: &wgpu::Device, rows: u32) -> wgpu::Texture {
         format: wgpu::TextureFormat::Rgba32Float,
         usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
         view_formats: &[],
+        texture_binding_view_dimension: None,
     })
 }
 
@@ -105,6 +106,7 @@ fn nearest_texture(device: &wgpu::Device, rows: u32) -> wgpu::Texture {
         format: wgpu::TextureFormat::Rgba32Float,
         usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
         view_formats: &[],
+        texture_binding_view_dimension: None,
     })
 }
 
@@ -136,7 +138,22 @@ pub struct FigurePipeline {
 }
 
 impl FigurePipeline {
-    pub fn new(device: &wgpu::Device, figure: &Figure, format: wgpu::TextureFormat) -> Self {
+    /// Makes a figure's pipeline on `device`, for a target of `format`. Its three render pipelines
+    /// are made with `create_render_pipeline_async`, all at once: on WebGPU the browser compiles
+    /// their shaders off the thread that composites the page, where `create_render_pipeline`
+    /// stopped every frame on the page until they were done. Elsewhere the future is ready when
+    /// this returns. A pipeline that can't be made is the future's error, and so is a validation
+    /// error in what's made for them, such as the shader module: an error scope catches those. One
+    /// that runs out of memory, or an internal error, making a buffer or texture still goes to the
+    /// device's uncaptured-error handler, as before.
+    pub fn build(
+        device: &wgpu::Device,
+        figure: &Figure,
+        format: wgpu::TextureFormat,
+    ) -> impl Future<Output = Result<Self, wgpu::Error>> + use<> {
+        // The pipelines say their own errors. What's made for them says its validation errors in
+        // this scope.
+        let scope = device.push_error_scope(wgpu::ErrorFilter::Validation);
         let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("pencil figure"),
             source: wgpu::ShaderSource::Wgsl(wgsl::emit(figure).into()),
@@ -230,7 +247,7 @@ impl FigurePipeline {
             bind_group_layouts: &[Some(&layout)],
             immediate_size: 0,
         });
-        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        let pipeline = device.create_render_pipeline_async(&wgpu::RenderPipelineDescriptor {
             label: Some("pencil figure"),
             layout: Some(&pipeline_layout),
             vertex: wgpu::VertexState {
@@ -279,45 +296,46 @@ impl FigurePipeline {
             dst_factor: wgpu::BlendFactor::One,
             operation: wgpu::BlendOperation::Max,
         };
-        let coverage_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("pencil coverage"),
-            layout: Some(&coverage_pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &coverage_module,
-                entry_point: Some("vs"),
-                compilation_options: Default::default(),
-                buffers: &[Some(wgpu::VertexBufferLayout {
-                    array_stride: (stroke::FLOATS_PER_SEGMENT * 4) as u64,
-                    step_mode: wgpu::VertexStepMode::Instance,
-                    attributes: &wgpu::vertex_attr_array![
-                        0 => Float32x4,
-                        1 => Float32x4,
-                        2 => Float32x4,
-                    ],
-                })],
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &coverage_module,
-                entry_point: Some("fs"),
-                compilation_options: Default::default(),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: COVERAGE_FORMAT,
-                    blend: Some(wgpu::BlendState {
-                        color: max,
-                        alpha: max,
-                    }),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleStrip,
-                ..Default::default()
-            },
-            depth_stencil: None,
-            multisample: Default::default(),
-            multiview_mask: None,
-            cache: None,
-        });
+        let coverage_pipeline =
+            device.create_render_pipeline_async(&wgpu::RenderPipelineDescriptor {
+                label: Some("pencil coverage"),
+                layout: Some(&coverage_pipeline_layout),
+                vertex: wgpu::VertexState {
+                    module: &coverage_module,
+                    entry_point: Some("vs"),
+                    compilation_options: Default::default(),
+                    buffers: &[Some(wgpu::VertexBufferLayout {
+                        array_stride: (stroke::FLOATS_PER_SEGMENT * 4) as u64,
+                        step_mode: wgpu::VertexStepMode::Instance,
+                        attributes: &wgpu::vertex_attr_array![
+                            0 => Float32x4,
+                            1 => Float32x4,
+                            2 => Float32x4,
+                        ],
+                    })],
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &coverage_module,
+                    entry_point: Some("fs"),
+                    compilation_options: Default::default(),
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format: COVERAGE_FORMAT,
+                        blend: Some(wgpu::BlendState {
+                            color: max,
+                            alpha: max,
+                        }),
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                }),
+                primitive: wgpu::PrimitiveState {
+                    topology: wgpu::PrimitiveTopology::TriangleStrip,
+                    ..Default::default()
+                },
+                depth_stencil: None,
+                multisample: Default::default(),
+                multiview_mask: None,
+                cache: None,
+            });
 
         // The segments and, in a buffer of their own, each one's row of colors.
         let segment_buffer = wgpu::VertexBufferLayout {
@@ -340,7 +358,7 @@ impl FigurePipeline {
         let inked_layers = inked.iter().filter(|i| **i).count() as u32;
         let layers = inked.len() as u32 - inked_layers;
         let inked_pipeline = (inked_layers > 0).then(|| {
-            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            device.create_render_pipeline_async(&wgpu::RenderPipelineDescriptor {
                 label: Some("pencil inked coverage"),
                 layout: Some(&coverage_pipeline_layout),
                 vertex: wgpu::VertexState {
@@ -395,30 +413,43 @@ impl FigurePipeline {
             format: wgpu::TextureFormat::Rgba32Float,
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
             view_formats: &[],
+            texture_binding_view_dimension: None,
         });
         let sides_view = sides.create_view(&Default::default());
         let nearest = nearest_texture(device, 1);
         let nearest_view = nearest.create_view(&Default::default());
         let inks = ink_texture(device, u32::from(inked_layers > 0));
         let inks_view = inks.create_view(&Default::default());
-        Self {
-            pipeline,
-            layout,
-            uniforms,
-            geometry,
-            sides,
-            sides_view,
-            nearest,
-            nearest_view,
-            inks,
-            inks_view,
-            coverage_pipeline,
-            inked_pipeline,
-            coverage_bind_group,
-            coverage: None,
-            layers: layers.max(2),
-            inked_layers,
-            inked,
+        let made = scope.pop();
+        async move {
+            if let Some(error) = made.await {
+                return Err(error);
+            }
+            let pipeline = pipeline.await?;
+            let coverage_pipeline = coverage_pipeline.await?;
+            let inked_pipeline = match inked_pipeline {
+                Some(inked) => Some(inked.await?),
+                None => None,
+            };
+            Ok(Self {
+                pipeline,
+                layout,
+                uniforms,
+                geometry,
+                sides,
+                sides_view,
+                nearest,
+                nearest_view,
+                inks,
+                inks_view,
+                coverage_pipeline,
+                inked_pipeline,
+                coverage_bind_group,
+                coverage: None,
+                layers: layers.max(2),
+                inked_layers,
+                inked,
+            })
         }
     }
 
@@ -440,6 +471,7 @@ impl FigurePipeline {
             format: COVERAGE_FORMAT,
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
             view_formats: &[],
+            texture_binding_view_dimension: None,
         });
         let view = texture.create_view(&wgpu::TextureViewDescriptor {
             dimension: Some(wgpu::TextureViewDimension::D2Array),
@@ -460,6 +492,7 @@ impl FigurePipeline {
             format: INKED_FORMAT,
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
             view_formats: &[],
+            texture_binding_view_dimension: None,
         });
         let inked_view = inked.create_view(&wgpu::TextureViewDescriptor {
             dimension: Some(wgpu::TextureViewDimension::D2Array),
@@ -480,6 +513,7 @@ impl FigurePipeline {
                     format: DEPTH_FORMAT,
                     usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
                     view_formats: &[],
+                    texture_binding_view_dimension: None,
                 })
                 .create_view(&Default::default())
         });
@@ -790,14 +824,11 @@ mod native {
             })
         }
 
-        /// Compiles a figure's shaders, which every frame of it can then share.
+        /// Compiles a figure's shaders, which every frame of it can then share. Natively the
+        /// pipelines are made before `build` returns, so this waits on nothing.
         pub fn pipeline(&self, figure: &Figure) -> Result<FigurePipeline, RenderError> {
-            let scope = self.device.push_error_scope(wgpu::ErrorFilter::Validation);
-            let pipeline = FigurePipeline::new(&self.device, figure, FORMAT);
-            match pollster::block_on(scope.pop()) {
-                Some(e) => Err(RenderError(format!("invalid figure pipeline: {e}"))),
-                None => Ok(pipeline),
-            }
+            pollster::block_on(FigurePipeline::build(&self.device, figure, FORMAT))
+                .map_err(|e| RenderError(format!("invalid figure pipeline: {e}")))
         }
 
         /// Renders one panel on its own to tightly packed RGBA8.
@@ -841,6 +872,7 @@ mod native {
                 format: FORMAT,
                 usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
                 view_formats: &[],
+                texture_binding_view_dimension: None,
             });
             let row = width * 4;
             let aligned = row.next_multiple_of(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT);

@@ -279,7 +279,7 @@
       if (variant.field && !test.field) continue;
       const style = (test.fills ?? '') + `style c { ${test.stroke}; ${variant.decl} }`;
       // Fills blend with the stroke's setting, because it's one curve's style.
-      player.load(doc, [style], [], {});
+      player.install(await player.prepare(doc, [style], [], {}));
       player.draw(0, DPR);
       const c = newContext();
       c.drawImage(source, 0, 0);
@@ -303,7 +303,7 @@
   // Tracing cost: the budget is well under 10 ms for a drag tick.
   const timing = {};
   for (const [name, doc] of [['ring', 'ring.pen'], ['wave', 'wave.pen']]) {
-    player.load(await read(doc), ['style c { stroke: black; width: 1px }'], [], {});
+    player.install(await player.prepare(await read(doc), ['style c { stroke: black; width: 1px }'], [], {}));
     let segments = 0;
     const start = performance.now();
     const runs = 100;

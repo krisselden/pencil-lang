@@ -30,6 +30,20 @@ It owns the canvas, the labels over it, the GPU and the clock. It starts the GPU
 under `prefers-reduced-motion`, and every handle and beat can be worked from the keyboard. Its attributes, methods and
 events are described at the top of [`src/element.js`](src/element.js).
 
+A figure's shaders are compiled after its sources, while the figure before it, or its poster, stays on screen and draws
+on. Its pipelines are made with wgpu's `create_render_pipeline_async`, which on WebGPU is `createRenderPipelineAsync`,
+so the browser compiles them off the thread that composites the page. Chrome compiles a pipeline made with
+`createRenderPipeline` on that thread, and a page of figures stopped for 150 to 800 ms as each one started. `load` and
+`loadCompiled` throw a compile error at once, and resolve with `true` once the figure is shown, however long the GPU
+takes to start, or with `false`: one asked for while another is compiling takes its place, one the GPU can't make is
+an `error`, and one whose GPU can't start, or whose figure leaves the page, isn't shown, though it's still what the
+figure starts from if it does. The `error` has `detail.kept`: `true` when the figure before stays on screen, and
+`false` when there was none on the player, as for a first figure, or after the GPU started again, which then shows the
+figure that drew before. A figure far off screen has no GPU yet, so its `load` resolves only once it comes near, and a
+page that awaits several figures' loads in turn waits at the first one off screen. A figure's handles and keys wait for
+it too. WebGL2 compiles a pipeline where it's made, as before. A page that drives a `Player` itself does
+`player.install(await player.prepare(doc, sheets, names, files))` ([`src/host.js`](src/host.js)).
+
 A param with a binding goes back to it when a reader sets a param that binding reads, as θ in Bounds does when `q` or
 the case is set after a drag: the core says which params each binding reads (`info.params[].reads`), and the element
 hands them back, so a page needs no `release` of its own for it. Params held together, by the `params` attribute or

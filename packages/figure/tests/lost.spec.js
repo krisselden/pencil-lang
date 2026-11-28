@@ -33,8 +33,10 @@ const loseOne = (figure) =>
 
 /** Marks a figure's player, so a test can tell a new one from it. */
 const mark = (figure) => figure.evaluate((f) => (f.player.__before = true));
-/** Whether a figure has a new player, drawing on a backend. */
-const fresh = (figure) => figure.evaluate((f) => !!f.player && !f.player.__before && !!f.backend);
+/** Whether a figure has a new player, drawing on a backend. Its figure is in once the GPU has
+ * compiled the figure's shaders, which a new player waits for, as the first one did. */
+const fresh = (figure) =>
+  figure.evaluate((f) => !!f.player && !f.player.__before && !!f.backend && f.player.info() !== 'null');
 
 /** Traps a figure's player, as a panic inside wgpu would, and resizes it, so it draws. */
 const trap = (figure) =>
@@ -69,10 +71,10 @@ const failStarts = async (page, failing) => {
 };
 
 /**
- * Notes, as they happen, when a figure lets go of its GPU (`drop`), when it has a player again
- * (`live`), each start of a GPU (`attempt`), and each `error` and `recover`. The stage's `live`
- * class is watched, which the element changes in the same task as it drops or takes a player.
- * Gives a function that reads the notes.
+ * Notes, as they happen, when a figure lets go of its GPU (`drop`), when it has a figure on a
+ * player again (`live`), each start of a GPU (`attempt`), and each `error` and `recover`. The
+ * stage's `live` class is watched, which the element takes off in the same task as it drops a
+ * player, and puts on as it installs a figure on one. Gives a function that reads the notes.
  */
 async function record(page, figure) {
   await wrapStarts(page);

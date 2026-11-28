@@ -491,6 +491,7 @@ const pick = $('figure-pick');
 const stylePick = $('style-pick');
 
 let lastGood = null; // the sources that last drew, to go back to when an edit compiles but can't draw
+let onScreen = null; // the sources the figure last showed, which its next fresh draw is of
 let compiles = 0;
 let compiled = "doesn't compile yet";
 const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -567,8 +568,11 @@ function compile() {
   // An edit can add a `use` or take one away. Once its file is here, or gone, compile again.
   follow().then((changed) => changed && compile());
   const started = performance.now();
+  // What's compiled now, which the editor may have moved on from by the time it's shown.
+  const asked = sources();
+  let shown;
   try {
-    figure.load(...sources());
+    shown = figure.load(...asked);
   } catch (e) {
     // In a used file, by its name. Otherwise in a sheet, by its place, or in the document.
     const root = roots()[e.sheet === null || e.sheet === undefined ? 0 : e.sheet + 1];
@@ -584,6 +588,13 @@ function compile() {
   warning = null;
   compiles += 1;
   compiled = `compiled ${compiles} time${compiles === 1 ? '' : 's'}, the last in ${ms.toFixed(0)} ms`;
+  // Its shaders are compiled after, while the figure before stays: the status says when they were.
+  const said = compiled;
+  shown.then((drawn) => {
+    if (!drawn) return;
+    onScreen = asked;
+    if (compiled === said) compiled += `, ready to draw after ${(performance.now() - started).toFixed(0)} ms`;
+  });
   paintErrors();
   paintTabs();
   paintEditor();
@@ -798,7 +809,7 @@ figure.addEventListener('load', paintControls);
 figure.addEventListener('play', paintPlay);
 figure.addEventListener('pause', paintPlay);
 figure.addEventListener('draw', (e) => {
-  if (e.detail.fresh) lastGood = sources();
+  if (e.detail.fresh && onScreen) lastGood = onScreen;
   readControls();
   $('status').textContent = `${figure.backend} · ${viewing(figure)} · ${compiled}`;
 });
@@ -808,12 +819,21 @@ figure.addEventListener('recover', () => {
   paintErrors();
 });
 figure.addEventListener('error', (e) => {
-  const { error, time, fresh } = e.detail;
+  const { error, time, fresh, kept } = e.detail;
+  if (kept !== undefined) {
+    // It compiled, but the GPU couldn't make it. The figure before stays, or the figure shows it
+    // again, so there's nothing to go back to.
+    warning = `It compiled, but its shaders couldn't be made: ${error.message}`;
+    if (lastGood) warning += '\nShowing the last figure that drew.';
+    paintErrors();
+    return;
+  }
   // It compiled but can't draw. Go back to what last drew, so the figure stays on screen.
   warning = `It compiled, but drawing failed at ${time.toFixed(2)} s: ${error.message}`;
   if (fresh && lastGood) {
+    const good = lastGood;
     try {
-      figure.load(...lastGood);
+      figure.load(...good).then((drawn) => drawn && (onScreen = good));
       warning += '\nShowing the last figure that drew.';
     } catch {}
   }

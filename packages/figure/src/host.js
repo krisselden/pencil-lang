@@ -7,6 +7,11 @@
 //   import { ready, Player, gather } from '@pencil-lang/figure/host';
 //   await ready();
 //   const player = await Player.create(canvas, false);
+//   player.install(await player.prepare(doc, sheets, names, files));
+//
+// `prepare` throws a compile error at once, and resolves once the GPU has compiled the figure's
+// shaders, or rejects with its error. On WebGPU the browser does that off the thread that
+// composites the page. The player draws on meanwhile, and `install` puts the new figure in.
 //
 // `scripts/build-web.sh` writes `../pkg`, which isn't checked in.
 import init from '../pkg/pencil_web.js';

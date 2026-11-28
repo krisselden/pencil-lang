@@ -42,6 +42,10 @@
 // within a handle's reach drags it and doesn't scroll the page; anywhere else on the figure the
 // page scrolls and zooms as it would over an image. Nothing in the figure is text to select, and a
 // drag never selects the page's. The element does all this itself: a page needs no CSS for it.
+// A figure's shaders are compiled while the one before it, or its poster, stays on screen: on
+// WebGPU the browser does that off the thread that composites the page, so the page doesn't stop.
+// A figure asked for after another that's still compiling takes its place. Its handles and keys
+// wait for it too.
 // A browser can lose the GPU under a figure, after sleep or when its GPU process restarts. The
 // figure then starts its GPU again, keeping its sources, time, held params and whether it's
 // paused, and shows its poster meanwhile. It tries at once, after a second and after five, then
@@ -56,12 +60,15 @@
 // with inputs and outputs marked `data-param="q"` or `data-readout="ratio"`, and the element sets
 // their ranges, steps and values and follows them each frame (`wiring.js`), with or without the
 // attribute. `readouts` is what the readouts say this frame.
-// Events: `load` when a figure is compiled, `draw` after each frame drawn, `resize` when its drawn
-// size or its em changes (its `detail.em`, in CSS pixels), `input` when a reader
-// drags a param (its `detail.name` and `detail.value`, and `detail.values`, every param that one
-// move set, by name: two for a point dragged in two dimensions), `play` and `pause`, `error` (its
-// `detail.error`) when one can't load or draw, and `recover` when one that said `error` because it
-// lost its GPU draws again.
+// Events: `load` when a figure is compiled and its shaders are ready, `draw` after each frame
+// drawn, `resize` when its drawn size or its em changes (its `detail.em`, in CSS pixels), `input`
+// when a reader drags a param (its `detail.name` and `detail.value`, and `detail.values`, every
+// param that one move set, by name: two for a point dragged in two dimensions), `play` and `pause`,
+// `error` (its `detail.error`) when one can't load or draw, and `recover` when one that said
+// `error` because it lost its GPU draws again. An `error` for a new figure's shaders, which the GPU
+// couldn't make, has `detail.kept`: `true` when the figure before stays on screen, and `false` when
+// the player had none, as for the first figure, or after a new player started, which then shows
+// the figure that drew before, if there was one.
 import { Player, let_go, figure_size, figure_size_compiled, ready, isReady, gather, ahead } from './host.js';
 import { LABEL_CSS, LabelLayer, fonts } from './labels.js';
 import { match } from './fit.js';
@@ -112,8 +119,9 @@ slot { display: none; }
 .handles { position: absolute; inset: 0; pointer-events: none; }
 .handle { position: absolute; left: -14px; top: -14px; width: 28px; height: 28px; border-radius: 50%; outline: none; will-change: transform; pointer-events: auto; touch-action: none; }
 .handle::before { content: ''; position: absolute; inset: ${14 - REACH}px; border-radius: 50%; clip-path: var(--reach, none); }
-/* With no GPU, as while the poster shows, a handle can't be dragged, so it takes no pointer, and
-   a touch on it scrolls the page. The keys still find it. */
+/* With no figure on the GPU, as while the poster shows or a new player compiles the figure's
+   shaders, a handle can't be dragged, so it takes no pointer, and a touch on it scrolls the page.
+   The keys still find it. */
 .stage:not(.live) .handle { pointer-events: none; touch-action: auto; }
 .handle:focus-visible { outline: 2px solid var(--pencil-focus, currentColor); outline-offset: 1px; box-shadow: 0 0 0 2px var(--pencil-focus-halo, Canvas); }
 .handle[hidden] { display: none; }
@@ -161,7 +169,12 @@ export class PencilFigure extends HTMLElement {
   #player = null;
   #starting = false;
   #generation = 0;
-  #sources = null; // { doc, sheets, names, files } or { compiled }, loaded or waiting for the GPU
+  #sources = null; // { doc, sheets, names, files } or { compiled }: the figure last put on a player
+  #announced = null; // the sources the last `load` was for: a start again shows them without news
+  #wanted = null; // sources a load asked for and that aren't shown yet: a new player starts from them
+  #promised = null; // `{ sources, resolve }`, the promise a load gave that's still waiting
+  #loads = 0; // each load the player is asked for, in turn: only the last one asked for is shown
+  #installed = false; // whether the player has a figure to draw
   #drawn = false; // whether a frame has been drawn since the canvas was made
   #children = null; // watches for a poster or a <source> arriving
   #media = []; // each <source>'s media query, and what's listening to it
@@ -426,20 +439,22 @@ export class PencilFigure extends HTMLElement {
         return;
       }
       this.#player = player;
+      this.#installed = false;
       this.#playerId = player.id;
       this.#backend = player.backend;
       this.#lose = player.backend === 'Gl' ? (this.#canvas.getContext('webgl2')?.getExtension('WEBGL_lose_context') ?? null) : null;
-      this.#stage.classList.add('live');
       // A browser loses a GPU device after sleep or when its GPU process restarts, and says so.
       player.on_lost(() => {
         if (this.#player === player) this.#recover(new Error('GPU device lost'));
       });
       player.set_measure(this.#layer.measure);
       this.#setEm();
-      if (this.#sources) {
+      const sources = this.#wanted ?? this.#sources;
+      if (sources) {
         try {
-          this.#compile(this.#sources);
+          this.#compile(sources);
         } catch (error) {
+          this.#settle(sources, false);
           this.#fail(error);
         }
       }
@@ -453,7 +468,12 @@ export class PencilFigure extends HTMLElement {
       if (this.#tries && generation === this.#generation) {
         this.#starting = false;
         this.#recover(error);
-      } else this.#fail(error);
+      } else {
+        // A load waiting on it hears now, and the next start, as when the figure is seen again,
+        // still begins from what it asked for.
+        this.#letDown();
+        this.#fail(error);
+      }
     } finally {
       if (generation === this.#generation) this.#starting = false;
     }
@@ -497,6 +517,7 @@ export class PencilFigure extends HTMLElement {
     if (wait === undefined) {
       this.#awaiting = true;
       this.#reported = true;
+      this.#letDown();
       this.dispatchEvent(new CustomEvent('error', { detail: { error, time: this.#time, fresh: false, gpu: true } }));
     } else if (wait === 0) {
       this.#restart();
@@ -550,6 +571,7 @@ export class PencilFigure extends HTMLElement {
     this.#stage.classList.remove('live');
     const player = this.#player;
     this.#player = null;
+    this.#installed = false;
     // The clock stops where it is, and runs again once there's a figure to draw.
     this.#sync();
     if (player) {
@@ -628,10 +650,14 @@ export class PencilFigure extends HTMLElement {
     this.#restoring = false;
     this.#startPending = false;
     clearTimeout(this.#restoreTimer);
+    // As a media element's `play()` does: what a load waits for isn't coming while it's out. A
+    // figure put back still shows what was asked for.
+    this.#letDown();
     this.#stage.classList.remove('live');
     // The controls stop listening, and an open menu stops following its bar. A figure put back
     // wires them again as it loads.
     this.#wiring.detach();
+    this.#installed = false;
     if (this.#player) {
       this.#letGo(this.#player);
       this.#player = null;
@@ -724,49 +750,122 @@ export class PencilFigure extends HTMLElement {
   /** Compiles a figure from its `.pen` text and its sheets' texts, in order. A compile error is
    * thrown, with `line`, `col` and `sheet` saying where, and leaves the last figure on screen.
    * Before the GPU starts it's only checked, and shapes the element; it's drawn once the GPU is up.
-   * Params held before keep their values if the new figure has them.
+   * Its shaders are compiled after, while the last figure stays on screen (`#compile`), and it
+   * resolves once it's shown, with `true`, however long the GPU takes to start, or with `false`
+   * when a figure asked for after it takes its place, or when it can't be made, which an `error`
+   * says. Params held before keep their values if the new figure has them.
    *
    * `used` is what `gather` read: the files these texts `use`. Without it, a `use "file"` is an
    * error. An error in a used file says so in `file`, its name. */
   load(doc, sheets = [], used = {}) {
     const sources = { doc, sheets, names: used.names ?? [], files: used.files ?? {} };
-    if (this.#player) {
-      this.#compile(sources);
-    } else if (isReady()) {
-      this.#shape(JSON.parse(figure_size(doc, sheets, sources.names, sources.files)));
-      this.#sources = sources;
-    } else {
-      this.#sources = sources;
-    }
+    if (this.#player) this.#compile(sources);
+    else if (isReady()) this.#shape(JSON.parse(figure_size(doc, sheets, sources.names, sources.files)));
+    return this.#ask(sources);
   }
 
   /** Loads a figure a build compiled (`pencil build`, `pencil compile`), from its bytes. One that
    * another build of Pencil wrote is an error that says to compile it again, and leaves the last
-   * figure, or the poster, on screen. */
+   * figure, or the poster, on screen. It resolves as `load` does. */
   loadCompiled(bytes) {
     const sources = { compiled: bytes };
-    if (this.#player) {
-      this.#compile(sources);
-    } else if (isReady()) {
-      this.#shape(JSON.parse(figure_size_compiled(bytes)));
-      this.#sources = sources;
-    } else {
-      this.#sources = sources;
-    }
+    if (this.#player) this.#compile(sources);
+    else if (isReady()) this.#shape(JSON.parse(figure_size_compiled(bytes)));
+    return this.#ask(sources);
   }
 
-  #compile(sources) {
-    if (sources.compiled) this.#player.load_compiled(sources.compiled);
-    else this.#player.load(sources.doc, sources.sheets, sources.names, sources.files);
+  /** Waits for these sources to be shown, in place of whatever load was waiting before. */
+  #ask(sources) {
+    this.#letDown();
+    this.#wanted = sources;
+    return new Promise((resolve) => (this.#promised = { sources, resolve }));
+  }
+
+  /** These sources were shown, or can't be: what was asked for is done with, and its load hears. */
+  #settle(sources, shown) {
+    if (this.#wanted === sources) this.#wanted = null;
+    if (this.#promised?.sources !== sources) return;
+    const { resolve } = this.#promised;
+    this.#promised = null;
+    resolve(shown);
+  }
+
+  /** The load waiting hears it wasn't shown, now, though what it asked for may be later. */
+  #letDown() {
+    const promised = this.#promised;
+    this.#promised = null;
+    promised?.resolve(false);
+  }
+
+  /**
+   * Compiles sources for the player, which throws a compile error at once, and then waits for the
+   * GPU to compile their shaders, while the figure on screen, or the poster, stays and draws on.
+   * On WebGPU the browser compiles them off the thread that composites the page: made with
+   * `createRenderPipeline`, every frame on the page would wait for them. Only the last figure
+   * asked for is shown, and one that the GPU can't make is an `error`. One the GPU lost meanwhile
+   * is compiled again on the next player. `again` is for the figure that drew, shown again.
+   */
+  #compile(sources, again = false) {
+    const player = this.#player;
+    const pending = sources.compiled
+      ? player.prepare_compiled(sources.compiled)
+      : player.prepare(sources.doc, sources.sheets, sources.names, sources.files);
+    const ticket = ++this.#loads;
+    // Started again after losing its GPU, the figure the page heard of is no news. One that was
+    // still compiling is, as the first one is.
+    const quiet = (this.#quiet || again) && sources === this.#announced;
+    const current = () => player === this.#player && ticket === this.#loads;
+    pending.then(
+      (figure) => {
+        if (!current()) {
+          figure.free();
+          return;
+        }
+        try {
+          this.#show(player, figure, sources, quiet);
+        } catch (error) {
+          // A new player tries these sources again.
+          if (this.#recoverable(error)) return this.#recover(error);
+          this.#settle(sources, false);
+          this.#fail(error);
+        }
+      },
+      (error) => {
+        if (!current()) return;
+        if (this.#recoverable(error)) return this.#recover(error);
+        // What failed is the new figure. The one on screen stays, if the player has one.
+        const kept = this.#installed;
+        this.#settle(sources, false);
+        this.#fail(error, { fresh: true, kept });
+        // A new player has nothing on it yet: the figure that drew before comes back, unless the
+        // page asked for another as it heard.
+        if (kept || !this.#sources || this.#sources === sources || !current()) return;
+        try {
+          this.#compile(this.#sources, true);
+        } catch (error) {
+          this.#fail(error);
+        }
+      },
+    );
+  }
+
+  /** Puts a figure the player prepared on screen, and everything that follows from it. */
+  #show(player, figure, sources, quiet) {
+    player.install(figure);
+    this.#installed = true;
     this.#sources = sources;
-    const info = JSON.parse(this.#player.info());
+    // Its load hears before anything is dispatched, so a listener's own load can't take its place.
+    this.#settle(sources, true);
+    this.#stage.classList.add('live');
+    const info = JSON.parse(player.info());
     this.#info = info;
     this.#driven = new Set(info.timeDriven);
-    this.#shape(info.size);
+    // Before its shape, which can draw a frame at once, with the params a reader holds.
     for (const [name, value] of this.#held) {
-      if (info.params.some((p) => p.id === name)) this.#player.set_param(name, value);
+      if (info.params.some((p) => p.id === name)) player.set_param(name, value);
       else this.#held.delete(name);
     }
+    this.#shape(info.size);
     this.#retime();
     this.#operable();
     this.#readouts = null;
@@ -774,9 +873,9 @@ export class PencilFigure extends HTMLElement {
     this.#fresh = true;
     this.#invalidate();
     this.#sync();
-    // A figure started again after losing its GPU is the same figure.
-    if (this.#quiet) this.#quiet = false;
-    else this.dispatchEvent(new Event('load'));
+    // Said, so a start again after this shows it without news.
+    this.#announced = sources;
+    if (!quiet) this.dispatchEvent(new Event('load'));
   }
 
   // ---- Controls ----
@@ -910,8 +1009,8 @@ export class PencilFigure extends HTMLElement {
     return `pencil ${this.id || (src ? src.split('/').pop() : 'figure')}`;
   }
 
-  #fail(error) {
-    this.dispatchEvent(new CustomEvent('error', { detail: { error, time: this.#time, fresh: this.#fresh } }));
+  #fail(error, detail = {}) {
+    this.dispatchEvent(new CustomEvent('error', { detail: { error, time: this.#time, fresh: this.#fresh, ...detail } }));
   }
 
   // ---- Time ----
@@ -1003,7 +1102,7 @@ export class PencilFigure extends HTMLElement {
   #sync() {
     const clock = this.#clock;
     if (!clock) return;
-    const run = this.#paused === false && this.#visible && !!this.#player && !!this.#info?.usesTime;
+    const run = this.#paused === false && this.#visible && this.#installed && !!this.#info?.usesTime;
     const running = clock.playState === 'running';
     if (run && !running) {
       clock.currentTime = this.#time * 1000;
@@ -1031,6 +1130,8 @@ export class PencilFigure extends HTMLElement {
       this.hold('beat', target);
       return;
     }
+    // A player started again has no figure to find a beat's time in until it's in.
+    if (!this.#installed) return;
     // A beat that follows time is taken to only count up, so the first moment it reaches the
     // target is found by halving. Sampling, as `time_for` does, lands just short of it.
     let [lo, hi] = [0, this.duration];
@@ -1178,7 +1279,7 @@ export class PencilFigure extends HTMLElement {
 
   #pointerDown = (e) => {
     // One pointer drags at a time, and only with the main button.
-    if (!this.#player || !e.isPrimary || e.button !== 0) return;
+    if (!this.#installed || !e.isPrimary || e.button !== 0) return;
     const [x, y] = this.#device(e);
     try {
       if (!this.#player.grab(this.#time, x, y, REACH * (window.devicePixelRatio || 1))) return;
@@ -1192,7 +1293,7 @@ export class PencilFigure extends HTMLElement {
   };
 
   #pointerMove = (e) => {
-    if (!this.#player) return;
+    if (!this.#installed) return;
     const [x, y] = this.#device(e);
     try {
       if (!this.#stage.hasPointerCapture(e.pointerId)) {
@@ -1339,7 +1440,7 @@ export class PencilFigure extends HTMLElement {
    * Up and Page Down up and down, as far as Shift and an arrow.
    */
   #handleKey(e, index) {
-    if (!this.#player || e.altKey || e.ctrlKey || e.metaKey) return;
+    if (!this.#installed || e.altKey || e.ctrlKey || e.metaKey) return;
     const params = this.#info.handles[index].params;
     const [param] = params;
     const long = params.length > 1 && { Home: [-1, 0], End: [1, 0], PageUp: [0, -1], PageDown: [0, 1] }[e.key];
@@ -1373,7 +1474,7 @@ export class PencilFigure extends HTMLElement {
   #key = (e) => {
     // Keys in the controls are theirs: an arrow on a slider moves the slider.
     if (e.target !== this) return;
-    if (e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey || !this.#player || !this.#steps()) return;
+    if (e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey || !this.#installed || !this.#steps()) return;
     const range = this.#info.params.find((p) => p.id === 'beat');
     if (e.key === 'ArrowRight') this.step(1);
     else if (e.key === 'ArrowLeft') this.step(-1);
@@ -1424,7 +1525,8 @@ export class PencilFigure extends HTMLElement {
 
   #paint() {
     this.#dirty = false;
-    if (!this.#player || !this.#info) return;
+    // A player started again keeps the figure's info, and has nothing to draw until it's in.
+    if (!this.#player || !this.#info || !this.#installed) return;
     const fresh = this.#fresh;
     this.#fresh = false;
     // Zooming or moving to another screen changes it, so it's read each frame.

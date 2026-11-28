@@ -1540,6 +1540,11 @@ GPU and Vello frames include reading the image back, and CPU frames don't compos
 | Symbolic math | Compute Engine (a JS library) for LaTeX input and automatic inverses | LaTeX input deferred. Automatic inverses for linear equations written in Rust | Proposed |
 | Extensions | `.ts` reference plus a TSL `Fn` | Rust reference plus WGSL. SPEC/50's principles stay | Proposed |
 
+**wgpu comes from its trunk for now,** with gfx-rs/wgpu#10438, which adds `create_render_pipeline_async`, through a
+`[patch.crates-io]` in the workspace's `Cargo.toml`. On WebGPU it lets the browser compile a figure's shaders off the
+thread that composites the page, which `create_render_pipeline` held up for every figure that started (issue 36). It
+goes back to a release once one has the PR (issue 37).
+
 **The CPU interpreter is the test oracle, not the renderer.** It stays because it makes the
 semantics testable without a GPU and referees GPU output. Production rendering is on the
 GPU, in the browser and for video.

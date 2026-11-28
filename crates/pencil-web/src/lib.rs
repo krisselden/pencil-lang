@@ -14,6 +14,7 @@ use pencil_core::terms::{Estimate, TextWidths};
 use pencil_core::{Composition, Source, Sources, css, eval};
 use pencil_render::{FigurePipeline, FrameInputs};
 use wasm_bindgen::prelude::*;
+use wasm_bindgen_futures::future_to_promise;
 use web_sys::HtmlCanvasElement;
 
 // What each player tells its page when its GPU device is lost, by player. wgpu's device-lost
@@ -24,6 +25,17 @@ use web_sys::HtmlCanvasElement;
 thread_local! {
     static ON_LOST: RefCell<HashMap<u32, js_sys::Function>> = RefCell::new(HashMap::new());
     static DEVICES: RefCell<HashMap<u32, wgpu::Device>> = RefCell::new(HashMap::new());
+}
+
+/// A figure compiled and with its pipelines made, by `Player.prepare`, for that player's `install`.
+/// Free one that's not installed, as when a newer figure took its place, to let go of its GPU
+/// resources at once.
+#[wasm_bindgen]
+pub struct PreparedFigure {
+    /// The player it was made for, whose device its pipelines are on.
+    player: u32,
+    composition: Composition,
+    pipelines: Vec<FigurePipeline>,
 }
 
 /// Lets go of a player's GPU device by its number (`Player.id`), and forgets what it was to say
@@ -252,7 +264,7 @@ impl Player {
             .formats
             .iter()
             .copied()
-            .find(|f| !f.is_srgb())
+            .find(|f| !f.has_srgb_suffix())
             .ok_or_else(|| js_error(format!("no non-sRGB surface format in {:?}", caps.formats)))?;
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
@@ -330,41 +342,69 @@ impl Player {
         self.backend.clone()
     }
 
-    /// Compiles new sources. On an error the previous figure stays on screen, so a
-    /// half-typed edit doesn't blank the canvas.
-    /// The error says where it is (see `compile_error`).
-    pub fn load(
-        &mut self,
+    /// Compiles new sources for this player, and makes their pipelines, which `install` then puts
+    /// on screen: `player.install(await player.prepare(doc, sheets, names, files))`. A compile
+    /// error is thrown at once, and says where it is (see `compile_error`). The promise resolves
+    /// once the GPU has compiled the figure's shaders, which on WebGPU is done off the thread that
+    /// composites the page, and rejects with the GPU's error, starting "GPU error:". Either way
+    /// the previous figure stays on screen until `install`, so a half-typed edit doesn't blank the
+    /// canvas. Nothing waits holding the player, which draws on meanwhile.
+    pub fn prepare(
+        &self,
         doc: &str,
         sheets: Vec<String>,
         names: Vec<String>,
         files: &JsValue,
-    ) -> Result<(), JsValue> {
+    ) -> Result<js_sys::Promise, JsValue> {
         let composition = sources(doc, &sheets, &names, files)
             .and_then(|sources| sources.compose())
             .map_err(compile_error)?;
-        self.show(composition);
-        Ok(())
+        Ok(self.make(composition))
     }
 
-    /// Takes a figure that `pencil compile` wrote, in place of sources: nothing is parsed. A
-    /// file from another build of Pencil is an error that says to compile it again, and as with
-    /// `load`, the previous figure stays on screen.
-    pub fn load_compiled(&mut self, bytes: &[u8]) -> Result<(), JsValue> {
+    /// As `prepare`, from a figure that `pencil compile` wrote, in place of sources: nothing is
+    /// parsed. A file from another build of Pencil is an error that says to compile it again.
+    pub fn prepare_compiled(&self, bytes: &[u8]) -> Result<js_sys::Promise, JsValue> {
         let composition = Composition::from_bytes(bytes).map_err(compile_error)?;
-        self.show(composition);
-        Ok(())
+        Ok(self.make(composition))
     }
 
-    fn show(&mut self, composition: Composition) {
-        let pipelines = composition
+    /// Starts every panel's pipelines at once, and resolves when they're all made.
+    fn make(&self, composition: Composition) -> js_sys::Promise {
+        let building: Vec<_> = composition
             .panels
             .iter()
-            .map(|panel| FigurePipeline::new(&self.device, &panel.figure, self.config.format))
+            .map(|panel| FigurePipeline::build(&self.device, &panel.figure, self.config.format))
             .collect();
-        self.figure = Some((composition, pipelines));
+        let player = self.id;
+        future_to_promise(async move {
+            let mut pipelines = Vec::with_capacity(building.len());
+            for pipeline in building {
+                pipelines.push(
+                    pipeline
+                        .await
+                        .map_err(|e| js_error(format!("GPU error: {e}")))?,
+                );
+            }
+            Ok(PreparedFigure {
+                player,
+                composition,
+                pipelines,
+            }
+            .into())
+        })
+    }
+
+    /// Puts a figure `prepare` made on screen, in place of the one there. One made for another
+    /// player, which can't draw on this one's device, is an error.
+    pub fn install(&mut self, figure: PreparedFigure) -> Result<(), JsError> {
+        if figure.player != self.id {
+            return Err(js_error("a figure prepared for another player"));
+        }
+        self.figure = Some((figure.composition, figure.pipelines));
         self.params.clear();
         self.grabbed = None;
+        Ok(())
     }
 
     /// Takes a param over from its time binding, at this value.

@@ -12,4 +12,23 @@ license = "MIT"
 pencil-core = { path = "crates/pencil-core" }
 pencil-render = { path = "crates/pencil-render" }
 serde_json = "1"
-wgpu = "30"
+wgpu = "30.0.0"
+
+# wgpu from trunk, with gfx-rs/wgpu#10438, which adds `Device::create_render_pipeline_async`: on
+# WebGPU a figure's shaders are then compiled off the thread that composites the page (issue 36).
+# The commit is the PR's head as its author wrote it, kept on the fork's `async-pipelines` branch.
+# Every crate of wgpu's that the build uses comes from the same commit, so there's one of each.
+# This goes when a wgpu release has the PR (issue 37).
+[patch.crates-io]
+naga = { git = "https://github.com/krisselden/wgpu", rev = "af1c7803ba835922cbbb5d02e6c593d4e35e8d65" }
+naga-types = { git = "https://github.com/krisselden/wgpu", rev = "af1c7803ba835922cbbb5d02e6c593d4e35e8d65" }
+wgpu = { git = "https://github.com/krisselden/wgpu", rev = "af1c7803ba835922cbbb5d02e6c593d4e35e8d65" }
+wgpu-core = { git = "https://github.com/krisselden/wgpu", rev = "af1c7803ba835922cbbb5d02e6c593d4e35e8d65" }
+wgpu-core-deps-apple = { git = "https://github.com/krisselden/wgpu", rev = "af1c7803ba835922cbbb5d02e6c593d4e35e8d65" }
+wgpu-core-deps-emscripten = { git = "https://github.com/krisselden/wgpu", rev = "af1c7803ba835922cbbb5d02e6c593d4e35e8d65" }
+wgpu-core-deps-linux-android-bsd = { git = "https://github.com/krisselden/wgpu", rev = "af1c7803ba835922cbbb5d02e6c593d4e35e8d65" }
+wgpu-core-deps-wasm = { git = "https://github.com/krisselden/wgpu", rev = "af1c7803ba835922cbbb5d02e6c593d4e35e8d65" }
+wgpu-core-deps-windows = { git = "https://github.com/krisselden/wgpu", rev = "af1c7803ba835922cbbb5d02e6c593d4e35e8d65" }
+wgpu-hal = { git = "https://github.com/krisselden/wgpu", rev = "af1c7803ba835922cbbb5d02e6c593d4e35e8d65" }
+wgpu-naga-bridge = { git = "https://github.com/krisselden/wgpu", rev = "af1c7803ba835922cbbb5d02e6c593d4e35e8d65" }
+wgpu-types = { git = "https://github.com/krisselden/wgpu", rev = "af1c7803ba835922cbbb5d02e6c593d4e35e8d65" }
