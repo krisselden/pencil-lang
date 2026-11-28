@@ -1,0 +1,17 @@
+// The first explainer: the limaçon from its central circle. See docs/plan-explainer.md for the
+// story and the checked math.
+doc limacon
+
+// 16:9, with the whole limaçon in view from the start, so the camera never moves, and room below
+// it for the caption.
+viewport { x: -6.5..14.5, y: -6.4..5.4 }
+
+// The story, a part to a file, in the order it runs. Each holds its beats and then what they draw,
+// and they share one figure: a later part can drop or move what an earlier one drew.
+use "limacon/tangent.pen"   // 1. Where 0 comes from.
+use "limacon/circles.pen"   // 2. The circles through 1.
+use "limacon/mirror.pen"    // 3. The mirror.
+use "limacon/pedal.pen"     // 4. The pedal.
+use "limacon/conchoid.pen"  // 5. The conchoid.
+use "limacon/roulette.pen"  // 6. The roulette.
+use "limacon/glow.pen"      // 7. The glow.

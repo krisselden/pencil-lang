@@ -1,0 +1,115 @@
+// Coloring a Doyle spiral's circles by arm, the way its shader does: go back to the grid, read which
+// row of a chosen direction a circle is on, wrap that row number around by the number of arms, and
+// look up a color. Left, the spiral, each circle colored by its arm, with each arm's exact curve
+// drawn through it. Right, the same grid flat, where each arm is a straight row.
+//
+// Grid points w = a + bω land on centers exp(S(T(w))), as in the lattice, and w and w + A are the
+// same circle. So row r and row r + n are one arm, where n is how many rows the period A crosses:
+// p along ω, q − p along 1 and q along 1 + ω. When the rows run along A they don't cross it, and
+// each closes into a ring, which is colored by its row, wrapping every q, as the shader does.
+doc arm_colors
+
+param q = 8 in 3..16 step 1
+param p = 3 in 0..q step 1
+param along in {"ω": -1 / 2 + sqrt(3) / 2·i, "1": 1, "1 + ω": 1 / 2 + sqrt(3) / 2·i}
+
+let omega = -1 / 2 + sqrt(3) / 2·i
+fn grid(a, b) = a + b·omega
+let A = grid(-p, q - p)
+
+// The spiral's skew, from the two equations that say all six neighbors touch, as in the lattice.
+fn to_turn(w) = 2·π·i·w / A
+fn skewed(v, m, n) = n·real(v) / (1 - i·m) + i·imag(v)
+fn center(w, m, n) = exp(skewed(to_turn(w), m, n))
+fn tangency(w, m, n) = abs(center(w, m, n) - 1)² / (abs(center(w, m, n)) + 1)²
+solve (mu, nu) from 0, exp(pi² / (6·abs(A)²)):
+  tangency(omega, mu, nu) = tangency(1 + omega, mu, nu),
+  tangency(1, mu, nu) = tangency(1 + omega, mu, nu)
+let k = sqrt(tangency(omega, mu, nu))
+
+// Log space, and the spiral.
+fn to_log(w) = skewed(to_turn(w), mu, nu)
+fn spiral(w) = exp(to_log(w))
+
+// Which row along the chosen direction w is on: how far across it, counted in rows, upward, as the
+// shader counts them. The direction is one step of the grid, so this is a whole number: a along ω,
+// b along 1 and b − a along 1 + ω. The cross product with the direction counts from its left, and
+// up is on its left when it points right, so `sign(real(along))` turns the count upward. A step of
+// the direction turned by ω, turned the same way, is one row up.
+let upward = sign(real(along))
+fn row(w) = round(upward·imag(conj(along)·w) / imag(omega))
+let across = upward·along·omega
+// The arms: how many rows the period crosses, or, where it crosses none, rings wrapped every q.
+let arms = abs(row(A))
+let ringed = max(0, 1 - arms)
+let wrap = arms + q·ringed
+fn arm(w) = mod(row(w), wrap)
+
+// The circles the view can show: from too small to see, in toward 0, to past its corner.
+let inner = ln(0.03 / k)
+let outer = ln(3.4 / (1 - k))
+
+// One circle per period, as in the unwrapping. N = 2aα + 2bβ − aβ − bα is twice w's part along
+// A = α + βω, a whole number that rises by 2|A|² from one copy of a circle to the next, so
+// −|A|² ≤ N < |A|² keeps one of each. Re log, how far out a circle is, is w's part across A. The
+// two are a parallelogram in (a, b): for each a, both say a run of b, and the a's it spans are
+// its corners'. At p = 0, Re log doesn't change along b, so it says only whether a's whole run is
+// in the window. A slope a hair above 0 makes that the same whole-number test.
+let alpha = -p
+let beta = q - p
+let period = alpha² - alpha·beta + beta²
+let rise_a = 2·alpha - beta
+let rise_b = 2·beta - alpha
+let across_a = real(to_log(1))
+let across_b = real(to_log(omega))
+let slope_b = max(across_b, 0.000000001)
+fn corner_a(n, u) = (n·across_b - rise_b·u) / (rise_a·across_b - rise_b·across_a)
+let first_a = floor(min(min(corner_a(-period, inner), corner_a(period, inner)), min(corner_a(-period, outer), corner_a(period, outer))))
+let last_a = ceil(max(max(corner_a(-period, inner), corner_a(period, inner)), max(corner_a(-period, outer), corner_a(period, outer))))
+fn first_b(a) = max(-floor((period + rise_a·a) / rise_b), -floor((across_a·a - inner) / slope_b))
+fn last_b(a) = min(-floor((rise_a·a - period) / rise_b) - 1, floor((outer - across_a·a) / slope_b))
+
+// Each arm's exact curve: one row of the grid, r·across + t·along, carried into the spiral,
+// as far as the circles reach. It passes through every circle of rows r, r + n, r + 2n and so on,
+// since each of those is one of row r's, a whole number of periods away.
+fn arm_curve(r, t) = spiral(r·across + t·along)
+let run = real(to_log(along))
+fn arm_from(r) = (inner - r·real(to_log(across))) / (run + ringed)
+fn arm_to(r) = (outer - r·real(to_log(across))) / (run + ringed)
+// A ring is one row, all the way round: the period is q steps along it. Its rows are the ones in
+// the window, found by how far out each is, and there are none unless the rows close.
+let rise_ring = abs(real(to_log(across))) + 1 - ringed
+let ring_sign = sign(real(to_log(across)))
+
+let one = 1
+let zero = 0
+
+panel spiral_view "The spiral" {
+  viewport { x: -2.4..2.4, y: -2.28..2.28 }
+  circles spiral_circles = circle(z, z + k·abs(z)) for a in first_a..last_a, b in first_b(a)..last_b(a) with z = spiral(grid(a, b)), arm = arm(grid(a, b))
+  curves arm_curves = parametric (t): arm_curve(r, t) for t in arm_from(r)..arm_to(r) for r in 0..arms - 1
+  curves ring_curves = parametric (t): arm_curve(r, t) for t in 0..q·ringed for m in ceil(inner / rise_ring)..floor(outer / rise_ring) with r = m·ring_sign
+  dot one
+  label name_one = "1" at one away -i
+}
+
+// The grid, framed on 0 and the period with room around them.
+let grid_lo = (min(0, real(A)) - 2, min(0, imag(A)) - 2)
+let grid_hi = (max(0, real(A)) + 2, max(0, imag(A)) + 2)
+let grid_middle = (grid_lo + grid_hi) / 2
+let reach = abs(grid_hi - grid_lo)·0.8 + 1
+// A row of the grid, whole across the view, and the rows and points that can be in it.
+fn grid_row(r, s) = r·across + s·along
+let middle_row = row(grid_middle)
+let middle_along = dot(grid_middle, along)
+
+panel grid_view "On the grid" {
+  viewport { fit: grid_lo grid_hi }
+  curves grid_rows = parametric (s): grid_row(r, s) for s in middle_along - reach..middle_along + reach for r in floor(middle_row - 1.2·reach)..ceil(middle_row + 1.2·reach)
+  dots grid_points = grid(a, b) for a in floor(real(grid_middle) - 1.6·reach)..ceil(real(grid_middle) + 1.6·reach), b in floor(imag(grid_middle) / imag(omega) - 1.2·reach)..ceil(imag(grid_middle) / imag(omega) + 1.2·reach) with arm = arm(grid(a, b))
+  dot zero
+  label name_zero = "0" at zero away -i
+  // The period, which crosses one row of each arm.
+  arrow period_arrow = zero, A
+  label name_period = "A" at A away A
+}

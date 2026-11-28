@@ -1,0 +1,127 @@
+{
+  "build": "8d262e2ea528cc05",
+  "figure": "log-nearest.pfig",
+  "hash": "ea7a0aa9c5419cd6",
+  "info": {
+    "beatLengths": [],
+    "beats": [],
+    "colors": {
+      "accent": "rgb(96 66 166)",
+      "accent_soft": "rgb(157 144 200)",
+      "blue": "rgb(0 104 181)",
+      "blue_soft": "rgb(124 166 208)",
+      "green": "rgb(22 123 38)",
+      "green_soft": "rgb(130 176 127)",
+      "ink": "rgb(18 17 15)",
+      "muted": "rgb(110 106 99)",
+      "paper_color": "rgb(242 240 235)",
+      "red": "rgb(171 58 51)",
+      "red_soft": "rgb(209 142 131)"
+    },
+    "duration": null,
+    "handles": [
+      {
+        "mark": "X",
+        "panel": 0,
+        "params": [
+          "x"
+        ]
+      }
+    ],
+    "panels": [
+      {
+        "formula": null,
+        "id": "",
+        "rect": [
+          0.0,
+          0.0,
+          1.0,
+          1.0
+        ],
+        "title": null
+      }
+    ],
+    "params": [
+      {
+        "caption": null,
+        "choice": null,
+        "control": {
+          "kind": "slider",
+          "name": "x",
+          "text": [
+            "caption",
+            "value"
+          ]
+        },
+        "follows": [],
+        "id": "x",
+        "max": 7.9,
+        "min": 0.72,
+        "reads": [],
+        "step": null
+      }
+    ],
+    "poster": {
+      "params": {
+        "x": 1.75
+      },
+      "time": 0.0
+    },
+    "readouts": [],
+    "size": [
+      640.0,
+      230.0
+    ],
+    "timeDriven": [],
+    "usesTime": false,
+    "viewport": {
+      "height": 230.0,
+      "width": 640.0,
+      "x": [
+        -0.4,
+        8.2
+      ],
+      "y": [
+        -0.945,
+        2.145
+      ]
+    }
+  },
+  "poster": {
+    "images": [
+      {
+        "height": 230,
+        "scale": 1,
+        "src": "log-nearest.png",
+        "webp": "log-nearest.webp",
+        "width": 640
+      },
+      {
+        "height": 460,
+        "scale": 2,
+        "src": "log-nearest-2x.png",
+        "webp": "log-nearest-2x.webp",
+        "width": 1280
+      }
+    ],
+    "params": {
+      "x": 1.75
+    },
+    "ranges": {
+      "x": [
+        0.72,
+        7.9
+      ]
+    },
+    "readouts": [],
+    "time": 0.0,
+    "values": {
+      "x": 1.75
+    }
+  },
+  "sources": [
+    "corpus/015-log-nearest/log-nearest.pen",
+    "corpus/theme.style",
+    "corpus/015-log-nearest/plain.style"
+  ]
+}

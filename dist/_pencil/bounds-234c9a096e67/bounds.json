@@ -1,0 +1,201 @@
+{
+  "build": "8d262e2ea528cc05",
+  "figure": "bounds.pfig",
+  "hash": "bf537fd2d02d4765",
+  "info": {
+    "beatLengths": [],
+    "beats": [
+      "Start with the unit circle and a point P on it, at angle θ.",
+      "Halfway from 1 to P is B. The circle at 1 through B has radius sin(θ/2): that is k.",
+      "p = 0: a circle the same size, at P, touches it. Copies keep going around the unit circle, and the ring closes when θ = 360°/q.",
+      "Its other two neighbors sit on the ray halfway to P, one inside the unit circle and one outside.",
+      "Mirror them across the real axis: six circles around one, and every circle the same ratio k to its distance from 0.",
+      "q = 2p: the circle about −½ through cos(θ/2) crosses the unit circle at F. The next neighbors lie in that direction.",
+      "Two neighbors on that ray, touching the circle at 1 where the ray halfway to F crosses it.",
+      "And two on the real axis, the direction that is a pure zoom. Each touches its neighbor where that same ray crosses it again.",
+      "Mirror the pair across the real axis: the q = 2p flower.",
+      "Every center in both flowers lies on one curve, the level curve of the circle at 1. One way to draw it: the pedal of the circle on the two real-axis centers, seen from 1."
+    ],
+    "colors": {},
+    "duration": 30.0,
+    "handles": [
+      {
+        "mark": "P",
+        "panel": 0,
+        "params": [
+          "theta"
+        ]
+      }
+    ],
+    "panels": [
+      {
+        "formula": null,
+        "id": "",
+        "rect": [
+          0.0,
+          0.0,
+          1.0,
+          1.0
+        ],
+        "title": null
+      }
+    ],
+    "params": [
+      {
+        "caption": null,
+        "choice": null,
+        "control": {
+          "kind": "slider",
+          "name": "q",
+          "text": [
+            "caption",
+            "value"
+          ]
+        },
+        "follows": [],
+        "id": "q",
+        "max": 12.0,
+        "min": 4.0,
+        "reads": [],
+        "step": 1.0
+      },
+      {
+        "caption": null,
+        "choice": {
+          "of": "case",
+          "options": [
+            "p = 0",
+            "q = 2p"
+          ]
+        },
+        "control": {
+          "kind": "radios",
+          "name": "case",
+          "text": [
+            "caption",
+            "value"
+          ]
+        },
+        "follows": [],
+        "id": "case.index",
+        "max": 1.0,
+        "min": 0.0,
+        "reads": [],
+        "step": 1.0
+      },
+      {
+        "caption": null,
+        "choice": null,
+        "control": {
+          "kind": "slider",
+          "name": "theta",
+          "text": [
+            "caption",
+            "value"
+          ]
+        },
+        "follows": [],
+        "id": "theta",
+        "max": 1.85,
+        "min": 0.2,
+        "reads": [
+          "case.index",
+          "q"
+        ],
+        "step": null
+      },
+      {
+        "caption": null,
+        "choice": null,
+        "control": {
+          "kind": "slider",
+          "name": "beat",
+          "text": [
+            "caption",
+            "value"
+          ]
+        },
+        "follows": [],
+        "id": "beat",
+        "max": 9.0,
+        "min": 0.0,
+        "reads": [],
+        "step": null
+      }
+    ],
+    "poster": {
+      "params": {},
+      "time": 0.0
+    },
+    "readouts": [],
+    "size": [
+      560.0,
+      400.0
+    ],
+    "timeDriven": [
+      "beat"
+    ],
+    "usesTime": true,
+    "viewport": {
+      "height": 400.0,
+      "width": 560.0,
+      "x": [
+        -2.0,
+        2.0
+      ],
+      "y": [
+        -2.0,
+        2.0
+      ]
+    }
+  },
+  "poster": {
+    "images": [
+      {
+        "height": 400,
+        "scale": 1,
+        "src": "bounds.png",
+        "webp": "bounds.webp",
+        "width": 560
+      },
+      {
+        "height": 800,
+        "scale": 2,
+        "src": "bounds-2x.png",
+        "webp": "bounds-2x.webp",
+        "width": 1120
+      }
+    ],
+    "params": {},
+    "ranges": {
+      "beat": [
+        0.0,
+        9.0
+      ],
+      "case.index": [
+        0.0,
+        1.0
+      ],
+      "q": [
+        4.0,
+        12.0
+      ],
+      "theta": [
+        0.2,
+        1.85
+      ]
+    },
+    "readouts": [],
+    "time": 0.0,
+    "values": {
+      "beat": 0.0,
+      "case.index": 0.0,
+      "q": 6.0,
+      "theta": 1.0471975511965976
+    }
+  },
+  "sources": [
+    "corpus/004-bounds/bounds.pen",
+    "corpus/004-bounds/blog.style"
+  ]
+}

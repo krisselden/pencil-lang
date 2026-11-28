@@ -1,0 +1,162 @@
+{
+  "build": "8d262e2ea528cc05",
+  "figure": "tangents.pfig",
+  "hash": "da427d623a5b22bd",
+  "info": {
+    "beatLengths": [],
+    "beats": [],
+    "colors": {
+      "accent": "rgb(169 139 255)",
+      "accent_soft": "rgb(98 84 140)",
+      "blue": "rgb(118 179 241)",
+      "blue_soft": "rgb(74 103 133)",
+      "green": "rgb(121 195 124)",
+      "green_soft": "rgb(75 111 74)",
+      "ink": "rgb(243 240 234)",
+      "muted": "rgb(148 143 134)",
+      "paper_color": "rgb(23 22 20)",
+      "red": "rgb(243 141 130)",
+      "red_soft": "rgb(135 84 77)"
+    },
+    "duration": 12.0,
+    "handles": [
+      {
+        "mark": "P",
+        "panel": 0,
+        "params": [
+          "d"
+        ]
+      }
+    ],
+    "panels": [
+      {
+        "formula": null,
+        "id": "",
+        "rect": [
+          0.0,
+          0.0,
+          1.0,
+          1.0
+        ],
+        "title": null
+      }
+    ],
+    "params": [
+      {
+        "caption": null,
+        "choice": null,
+        "control": {
+          "kind": "slider",
+          "name": "d",
+          "text": [
+            "caption",
+            "value"
+          ]
+        },
+        "follows": [],
+        "id": "d",
+        "max": 3.2,
+        "min": 0.15,
+        "reads": [],
+        "step": null
+      }
+    ],
+    "poster": {
+      "params": {},
+      "time": 0.0
+    },
+    "readouts": [],
+    "size": [
+      640.0,
+      400.0
+    ],
+    "timeDriven": [
+      "d",
+      "P.x",
+      "P.y",
+      "axis.ax",
+      "axis.ay",
+      "axis.bx",
+      "axis.by",
+      "M.x",
+      "M.y",
+      "thales.x",
+      "thales.y",
+      "thales.r",
+      "T.x",
+      "T.y",
+      "U.x",
+      "U.y",
+      "tangent_t.ax",
+      "tangent_t.ay",
+      "tangent_t.bx",
+      "tangent_t.by",
+      "tangent_u.ax",
+      "tangent_u.ay",
+      "tangent_u.bx",
+      "tangent_u.by",
+      "across.ax",
+      "across.ay",
+      "across.bx",
+      "across.by",
+      "E.x",
+      "E.y",
+      "F.x",
+      "F.y",
+      "outside",
+      "tangent_length",
+      "half_chord"
+    ],
+    "usesTime": true,
+    "viewport": {
+      "height": 400.0,
+      "width": 640.0,
+      "x": [
+        -1.6,
+        3.4
+      ],
+      "y": [
+        -1.5625,
+        1.5625
+      ]
+    }
+  },
+  "poster": {
+    "images": [
+      {
+        "height": 400,
+        "scale": 1,
+        "src": "tangents.png",
+        "webp": "tangents.webp",
+        "width": 640
+      },
+      {
+        "height": 800,
+        "scale": 2,
+        "src": "tangents-2x.png",
+        "webp": "tangents-2x.webp",
+        "width": 1280
+      }
+    ],
+    "params": {
+      "d": 3.0
+    },
+    "ranges": {
+      "d": [
+        0.15,
+        3.2
+      ]
+    },
+    "readouts": [],
+    "time": 0.0,
+    "values": {
+      "d": 3.0
+    }
+  },
+  "sources": [
+    "corpus/005-tangents/tangents.pen",
+    "corpus/theme.style",
+    "corpus/005-tangents/plain.style",
+    "corpus/dark.style"
+  ]
+}

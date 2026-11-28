@@ -1,0 +1,65 @@
+/* The Pencil keys (keyboard.js): the row of words, the symbol strip over the system keyboard, and
+   the keys. The playground and the keyboard lab both load this file. Colours come from the page's
+   own `--ink`, `--paper`, `--muted` and `--rule`, with an accent from `--accent` or `--number`. */
+.keyboard {
+  --key: rgb(255 255 255); --key-side: rgb(222 218 210); --key-down: rgb(200 196 188); --keys: rgb(232 229 222);
+  --key-accent: var(--accent, var(--number, rgb(0 104 181)));
+  --key-h: clamp(38px, 5.4svh, 46px);
+  display: flex; flex-direction: column; flex: none;
+}
+@media (prefers-color-scheme: dark) {
+  .keyboard { --key: rgb(70 68 64); --key-side: rgb(48 46 43); --key-down: rgb(98 95 90); --keys: rgb(34 33 31); }
+}
+.keyboard[hidden], .keyboard [hidden] { display: none !important; }
+
+/* A row of keys that scrolls sideways: the words, and the symbols over the system keyboard or, with
+   a mouse, under the words. Its
+   height is set, not taken from what it holds, so the words row is as tall empty as full. When it
+   changed, the space it gave up went to what's above it, and the editor's text moved
+   (lab/keyboard/README.md). */
+.keyboard .strip { display: flex; align-items: stretch; gap: 4px; height: calc(36px + 8px + 1px); padding: 4px 6px; background: var(--keys); border-top: 1px solid var(--rule); min-width: 0; overflow: hidden; }
+.keyboard .run { display: flex; gap: 4px; flex: 1; min-width: 0; overflow-x: auto; overscroll-behavior: contain; scrollbar-width: none; touch-action: pan-x; }
+.keyboard .run::-webkit-scrollbar { display: none; }
+.keyboard .fixed { display: flex; gap: 4px; flex: none; }
+.keyboard .strip button { flex: none; min-width: 36px; height: 36px; }
+.keyboard .words-row button { font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 0.875rem; }
+.keyboard .none { align-self: center; color: var(--muted); font-size: 0.75rem; padding: 0 4px; white-space: nowrap; }
+.keyboard .strip .to-keys { font-size: 0.75rem; }
+/* Undo and Redo, at the end of the words row, outside what scrolls. */
+/* Their arrows are drawn (keyboard.js), in the key's own colour. */
+.keyboard .words-row .history button { display: flex; align-items: center; justify-content: center; background: var(--key-side); }
+.keyboard .history svg { display: block; pointer-events: none; }
+/* A key with nothing to do stays where it is and keeps its focus, and says so (`aria-disabled`). */
+.keyboard button[aria-disabled=true] { opacity: 0.4; cursor: default; }
+
+/* The keys. */
+.keyboard .keys { display: flex; flex-direction: column; gap: 5px; padding: 6px 4px calc(6px + env(safe-area-inset-bottom)); background: var(--keys); border-top: 1px solid var(--rule); touch-action: none; user-select: none; -webkit-user-select: none; }
+/* Every page is four rows tall by the same sum, so turning a page moves nothing above the keys. */
+.keyboard .page { display: flex; flex-direction: column; gap: 5px; height: calc(4 * var(--key-h) + 15px); }
+.keyboard .row { display: flex; gap: 5px; height: var(--key-h); }
+.keyboard .gap { flex-basis: 0; }
+/* The words page: a list that scrolls, beside the editing keys. */
+.keyboard .words { display: flex; gap: 5px; height: 100%; }
+.keyboard .list { flex: 1; min-width: 0; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; display: flex; flex-wrap: wrap; align-content: flex-start; gap: 5px; }
+.keyboard .list h2 { flex: 0 0 100%; margin: 4px 2px 0; font-size: 0.6875rem; font-weight: 600; color: var(--muted); }
+.keyboard .list button { flex: none; height: var(--key-h); padding: 0 10px; font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 0.875rem; }
+.keyboard .side { display: flex; flex-direction: column; gap: 5px; width: calc((100% - 50px) / 10); min-width: 36px; }
+.keyboard .side button { height: var(--key-h); }
+
+.keyboard .k, .keyboard .strip button {
+  border: 0; border-radius: 6px; background: var(--key); color: var(--ink); box-shadow: 0 1px 0 var(--key-side);
+  font-family: inherit; font-size: 1.125rem; line-height: 1; padding: 0; cursor: pointer; touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none;
+}
+/* After the rule above, which gives a key no padding: a word has room either side of it. */
+.keyboard .strip button { padding: 0 8px; }
+.keyboard .row .k { flex: 1 1 0; min-width: 0; }
+.keyboard .k.action { background: var(--key-side); font-size: 1rem; }
+.keyboard .k.page-key, .keyboard .k.wide { font-size: 0.875rem; }
+.keyboard .k.words-key { font-size: 0.75rem; }
+.keyboard .k.current { box-shadow: inset 0 -2px 0 var(--key-accent); }
+.keyboard .k.on { background: var(--key-accent); color: var(--paper); }
+.keyboard .k.down, .keyboard .strip button.down { background: var(--key-down); }
+.keyboard button:focus-visible { outline: 2px solid var(--key-accent); outline-offset: 1px; }
+/* The caret keys are ‹ and ›, so they can't be taken for the arrow → a label can hold. */
+.keyboard .k[data-id="@left"], .keyboard .k[data-id="@right"] { font-size: 1.5rem; }

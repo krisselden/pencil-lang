@@ -1,0 +1,1514 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="light dark"><title>Language reference · Pencil</title><meta name="description" content="The Pencil language: statements, curve forms, expressions, built-ins and styles."><link rel="canonical" href="https://pencil-lang.dev/docs/language/"><meta property="og:type" content="website"><meta property="og:site_name" content="Pencil"><meta property="og:title" content="Language reference · Pencil"><meta property="og:description" content="The Pencil language: statements, curve forms, expressions, built-ins and styles."><meta property="og:url" content="https://pencil-lang.dev/docs/language/"><meta name="twitter:title" content="Language reference · Pencil"><meta name="twitter:description" content="The Pencil language: statements, curve forms, expressions, built-ins and styles."><meta property="og:image" content="https://pencil-lang.dev/_pencil/hearts-01937236850c/hearts.png"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta property="og:image:alt" content="Two hearts in bipolar coordinates around the foci at plus and minus 1, over the grid of coordinate circles, with the two circles through a moving point on each."><meta name="twitter:card" content="summary_large_image"><meta name="twitter:image" content="https://pencil-lang.dev/_pencil/hearts-01937236850c/hearts.png"><link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="/apple-touch-icon.png"><link rel="stylesheet" href="/_astro/Base.BRv_8Zy5.css"></head><body><a class="skip" href="#main">Skip to content</a><header class="site"><a class="mark" href="/" aria-label="Pencil, home"><span class="hearts" aria-hidden="true"></span>Pencil</a><nav aria-label="Site"><a href="/docs/" aria-current="page">Docs</a><a href="/demos/">Demos</a><a href="/playground/">Playground</a><a href="https://github.com/krisselden/pencil-lang">GitHub</a></nav></header><main id="main"><div class="page docs"><aside aria-label="Documentation"><details open><summary>Contents</summary><h2>Docs</h2><ul><li><a href="/docs/getting-started/">Getting started</a></li><li><a href="/docs/language/" aria-current="page">Language reference</a></li></ul><h2>On this page</h2><ul><li class="depth-2"><a href="#documents">Documents</a></li><li class="depth-3"><a href="#curve-forms">Curve forms</a></li><li class="depth-3"><a href="#viewport">Viewport</a></li><li class="depth-3"><a href="#posters">Posters</a></li><li class="depth-3"><a href="#controls-and-readouts">Controls and readouts</a></li><li class="depth-3"><a href="#beats">Beats</a></li><li class="depth-3"><a href="#equations">Equations</a></li><li class="depth-3"><a href="#collections">Collections</a></li><li class="depth-3"><a href="#panels">Panels</a></li><li class="depth-3"><a href="#expressions-that-move">Expressions that move</a></li><li class="depth-3"><a href="#mathematics-in-labels">Mathematics in labels</a></li><li class="depth-2"><a href="#expressions">Expressions</a></li><li class="depth-3"><a href="#constants">Constants</a></li><li class="depth-3"><a href="#mathjson">MathJSON</a></li><li class="depth-3"><a href="#pasting-latex">Pasting LaTeX</a></li><li class="depth-3"><a href="#numbers">Numbers</a></li><li class="depth-3"><a href="#points-in-space">Points in space</a></li><li class="depth-3"><a href="#points-and-constructions">Points and constructions</a></li><li class="depth-3"><a href="#complex-numbers">Complex numbers</a></li><li class="depth-3"><a href="#when-a-value-doesnt-exist">When a value doesn’t exist</a></li><li class="depth-3"><a href="#colors">Colors</a></li><li class="depth-2"><a href="#styles">Styles</a></li><li class="depth-3"><a href="#whats-drawn-with-nothing-said">What’s drawn with nothing said</a></li><li class="depth-3"><a href="#a-figure-as-svg">A figure as SVG</a></li></ul><h2>Source</h2><ul><li><a href="https://github.com/krisselden/pencil-lang/blob/main/docs/language.md">docs/language.md</a></li></ul></details></aside><article><p class="kicker">Rendered from <a href="https://github.com/krisselden/pencil-lang/blob/main/docs/language.md">docs/language.md</a></p><h1 id="the-pencil-language">The Pencil language</h1>
+<p>What exists today. <code>decisions.md</code> has why each part is the way it is. A test in
+<code>crates/pencil-core/tests/language_doc.rs</code> fails if a built-in function, style property or
+statement goes undocumented here. The syntax can still change freely (<code>goals.md</code>), so treat
+this as a description of the current language, not a promise.</p>
+<p>The corpus in <code>corpus/</code> has working examples of everything below.</p>
+<h2 id="documents">Documents</h2>
+<p>A <code>.pen</code> file is a list of statements. Comments run from <code>//</code> to the end of the line. Style
+rules can sit in the document or in separate style files.</p>
+<p><strong>Values can be written after they’re used.</strong> A <code>let</code>, <code>fn</code>, <code>param</code>, choice or <code>solve</code> used before it’s written is worked out
+just before its first use, so a figure can say what it draws first and how its values are found after. What’s drawn keeps the
+order it’s written in, which is what’s on top, and so does the timeline. A curve, circle or line used as a value, such as in
+<code>intersect(c, l, 0)</code>, is something drawn, so it comes first. A value defined in terms of itself, through others or not, is an
+error.
+A beat’s name can be read before its beat is written too. Beats and pauses can’t pass each other, so they stay in order, and a
+beat with a block holds marks, which stay where they are, so only a beat without one can be read early.</p>
+<p><strong>A figure can be more than one file.</strong> <code>use "limacon/mirror.pen"</code> puts that file’s statements where the line is, as if
+they were written there. Everything is still one figure with one set of names, so a part can show, drop or move what
+another part drew, and a name defined twice is an error wherever the two are.</p>
+<ul>
+<li><strong>The path is from the file that says it,</strong> with <code>/</code> between folders and <code>..</code> to step out of one: <code>use "arms.pen"</code> in
+<code>limacon/mirror.pen</code> is <code>limacon/arms.pen</code>. A path can’t start at a root or be a URL.</li>
+<li><strong>A file joins once.</strong> A second <code>use</code> of it adds nothing, so two parts can each use the helpers they need.</li>
+<li><strong>A file can’t use itself,</strong> directly or through another.</li>
+<li><strong>A used file is whole statements,</strong> so a <code>beat { … }</code> block can’t open in one file and close in another. It can be a
+figure by itself too: its <code>doc</code> name is ignored when it’s used.</li>
+<li><strong>A sheet can use files the same way,</strong> for names and functions several sheets share.</li>
+<li><strong>An error says which file it’s in,</strong> with the line in that file: <code>limacon/mirror.pen:12:3: unknown name …</code>.</li>
+</ul>
+<p>The core never opens a file. The command reads them from disk, and <code>&lt;pencil-figure&gt;</code> fetches them from beside the file
+that names them. <code>lab/explainer/limacon.pen</code> is the example: a file to each part of its story.</p>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Table"><table>
+<thead>
+<tr>
+<th>Statement</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>doc name</code></td>
+<td>Names the document.</td>
+</tr>
+<tr>
+<td><code>duration 13</code></td>
+<td>How long one pass of the time bindings takes, for looping and video. Any constant will do (see Constants): <code>duration 2·π</code> loops once per turn of <code>time</code>. An expression reads it as <code>duration</code>.</td>
+</tr>
+<tr>
+<td><code>poster { time: 3.5, roll: 0.6 }</code></td>
+<td>The moment a still of the figure shows: a time, and params held at values, as a reader could set them. A build draws it for a page to show until the figure runs (see Posters).</td>
+</tr>
+<tr>
+<td><code>viewport { … }</code></td>
+<td>The world window (see below).</td>
+</tr>
+<tr>
+<td><code>let x = expr</code></td>
+<td>A named value: a number, point, circle or line.</td>
+</tr>
+<tr>
+<td><code>fn f(a, b) = expr</code></td>
+<td>A function, inlined where it’s called. No recursion.</td>
+</tr>
+<tr>
+<td><code>param a = 1 in 0..2·π</code></td>
+<td>A root that time or a reader can drive. It stays in its range however it’s driven: its default, a binding, a reader’s control and a drag all stop at the range’s ends.</td>
+</tr>
+<tr>
+<td><code>param p = 2 in 0..q step 1</code></td>
+<td>A range whose end follows other params, here one that says <code>p</code> can’t pass <code>q</code>. An end is numbers, constants (see Constants), and params, declared before or after it: not a <code>let</code> that a param or <code>time</code> moves, a choice’s value or <code>time</code>. The figure keeps <code>p</code> inside the range as it stands each frame, so a reader who lowers <code>q</code> below <code>p</code> brings <code>p</code> down with it. What the reader set isn’t lost: raise <code>q</code> again and <code>p</code> goes back to it. A page reads the widest the range gets and which params move it (<code>info.params</code>: <code>min</code>, <code>max</code>, <code>follows</code>), and the range as it stands (<code>figure.range("p")</code>), so a control built from them stops where the figure does. The widest is found at the ends of the ranges it reads, which is right for an end that only rises or falls with each. A range that ends before it starts leaves its start.</td>
+</tr>
+<tr>
+<td><code>param n = 3 in 1..12 step 1</code></td>
+<td>A param that only takes its range’s start plus whole steps, however it’s driven: its default, a binding, a reader or a drag goes to the nearest one. A step of 1 makes it a whole number, and a page’s control steps the same way. The step is a constant (see Constants).</td>
+</tr>
+<tr>
+<td><code>param axis in {ω, 1, 1 + ω}</code></td>
+<td>A param that’s one of these values, the first unless <code>= 1</code> names another as written. They can be any one kind, and numbers go with points as points on the real axis. The name is the chosen value, so the math can use it directly: <code>imag(conj(axis)·P)</code> is the cross product with whichever direction was chosen. The param a reader sets is <code>axis.index</code>, which option it is, from 0, and a page labels each option with its text, or with its name: in <code>{"p = 0": 2·π / q, "q = 2p": …}</code> a page shows the names and the math gets the values, and <code>= "q = 2p"</code> starts there.</td>
+</tr>
+<tr>
+<td><code>param q "arms" = 8 in 3..16 step 1</code></td>
+<td>A caption, after the name, as a beat’s is: what the param’s control on a page says, in words. A choice takes one the same way, <code>param along "direction" in {1, i, 1 + i}</code>. Without one, a control says the param’s name (see Controls and readouts).</td>
+</tr>
+<tr>
+<td><code>solve (x, y) from 0, 1: f(x, y) = 0, g(x, y) = 2</code></td>
+<td>Unknowns defined by equations (see below).</td>
+</tr>
+<tr>
+<td><code>bind a = expr</code></td>
+<td>What drives a param when no reader has taken it over. A param with a binding has two drivers, the binding and the reader, and the reader’s last action picks. Setting it, with a drag, a key, a control or a page’s <code>hold</code>, takes it over. Setting a param its binding reads, directly, through other bindings, a choice’s options or a range, hands it back: in <code>bind theta = case</code>, where the case’s options read <code>q</code>, setting <code>q</code> or the case brings θ back to its binding. Params set together, as in the element’s <code>params="q: 8; theta: 1"</code>, keep each other. Time is the same: setting it, or playing, hands back what it drives. A page reads which params each binding reads in <code>info.params</code> (<code>reads</code>), and needs no script of its own for this.</td>
+</tr>
+<tr>
+<td><code>beat "caption" tag t { … }</code></td>
+<td>A discrete step of a construction (see below).</td>
+</tr>
+<tr>
+<td><code>beat spin "caption" for 2 show P drop c focus P, .arms</code></td>
+<td>One move of a figure’s story (see below). A named one can leave <code>for 2</code> out, and takes a second.</td>
+</tr>
+<tr>
+<td><code>pause 0.4</code></td>
+<td>A hold between moves, in seconds, a constant (see Constants).</td>
+</tr>
+<tr>
+<td><code>curve c = …</code></td>
+<td>A drawn curve, in one of the forms below.</td>
+</tr>
+<tr>
+<td><code>segment s = A, B</code></td>
+<td>A straight line between points.</td>
+</tr>
+<tr>
+<td><code>path p = A, B, C</code></td>
+<td>An open line through points.</td>
+</tr>
+<tr>
+<td><code>polygon p = A, B, C</code></td>
+<td>A closed line through points.</td>
+</tr>
+<tr>
+<td><code>rightangle m = A, V, B size 0.2</code></td>
+<td>A right-angle mark at <code>V</code>, a world size along each side.</td>
+</tr>
+<tr>
+<td><code>region r = A, f(t) for t in 0..1</code></td>
+<td>A filled area bounded by points and arcs.</td>
+</tr>
+<tr>
+<td><code>dot P, Q</code></td>
+<td>Draws point bindings. A dot takes its point’s name, so a style can target it.</td>
+</tr>
+<tr>
+<td><code>label n = "−{q}" at P away D</code></td>
+<td>Text at a point, on the side <code>D</code> points to, in the figure’s own coordinates. Its style’s <code>distance</code> says how far. <code>{expr}</code> in the text is a value: a number, written to the style’s <code>digits</code> and whole if it’s whole, or a point, written as its style’s <code>format</code> says. <code>$…$</code> in the text is mathematics, laid out (see Mathematics in labels). What a label says about a value is its style’s <code>text</code>. Without text, each panel gives it (see Panels). A figure without panels needs text, unless the label is a value’s.</td>
+</tr>
+<tr>
+<td><code>label root at P</code></td>
+<td>A label named after a value is that value’s label, as a dot is its point’s, so one rule styles both. It’s about that value, and its style’s <code>text</code> says what it shows of it: with no text of its own, the value. A value has one label. A label whose text is one value, <code>"{q - 1}"</code>, is about that value in the same way.</td>
+</tr>
+<tr>
+<td><code>label n = "P" at P offset (12, -12)</code></td>
+<td>The same, at a fixed shift in <code>px</code> with y down. A sheet can’t change it, so prefer <code>away</code>.</td>
+</tr>
+<tr>
+<td><code>label ratio = "ratio {q / p}"</code>, <code>label k</code></td>
+<td>A label with no place is a readout: said as text beside the figure, and not drawn in it, with everything a label has (see Controls and readouts).</td>
+</tr>
+<tr>
+<td><code>arrow v = A, B</code></td>
+<td>A shaft and a head, as one line.</td>
+</tr>
+<tr>
+<td><code>dots d = P(i) for i in 1..n with z = f(i)</code></td>
+<td>One mark drawn many times (see below).</td>
+</tr>
+<tr>
+<td><code>circles c = circle(C(i), T(i)) for i in 1..n</code></td>
+<td>The same, as circles.</td>
+</tr>
+<tr>
+<td><code>curves c = parametric (t): P(t, i) for t in a..b for i in 1..n</code></td>
+<td>The same, as curves.</td>
+</tr>
+<tr>
+<td><code>curves h = parametric (t): (±cosh(t), sinh(t)) for t in -2..2</code></td>
+<td>Both signs: a collection with <code>±</code> draws each instance twice, the + branch first (see Collections).</td>
+</tr>
+<tr>
+<td><code>dots d = (i, s) for i in 0..n, s in {-1, 1}</code></td>
+<td>A variable over a list, in the order written (see Collections).</td>
+</tr>
+<tr>
+<td><code>group g(k) { … }</code></td>
+<td>Things to draw in more than one place, declared once in their own coordinates.</td>
+</tr>
+<tr>
+<td><code>use g(2)</code>, <code>use g(2) through f as up</code></td>
+<td>Draws a group here, optionally through a function and under a prefix (see Panels).</td>
+</tr>
+<tr>
+<td><code>use "parts/mirror.pen"</code></td>
+<td>Another file’s statements, here (see Documents).</td>
+</tr>
+<tr>
+<td><code>text n = "1"</code></td>
+<td>What a label says in this panel (see Panels).</td>
+</tr>
+<tr>
+<td><code>outline o = detail</code></td>
+<td>The rectangle another panel is looking at.</td>
+</tr>
+<tr>
+<td><code>panel p "Title" { … }</code></td>
+<td>One view of the figure, with its own marks (see below).</td>
+</tr>
+<tr>
+<td><code>place p = P offset (8, 18) hang end</code></td>
+<td>Where an expression can sit (see below).</td>
+</tr>
+<tr>
+<td><code>expression e { on grow: … }</code></td>
+<td>A list of states whose matching parts move, each reached on the beat it names (see below).</td>
+</tr>
+<tr>
+<td><code>expression e by step { … }</code></td>
+<td>The same, with a number saying which state it’s in.</td>
+</tr>
+<tr>
+<td><code>handle P sets a = expr</code></td>
+<td>Dragging <code>P</code> sets param <code>a</code> to <code>expr</code>, the inverse from the pointer to the param, written out. <code>expr</code> can use <code>pointer.x</code> and <code>pointer.y</code>, and <code>pointer</code> by itself is the pointer’s point, so <code>abs(pointer)</code> is its distance from the origin and <code>real(ln(pointer))</code> the log of that. <code>a</code> takes the value within its range and step, which is what constrains the drag. Dragging, or the keys on the handle, take <code>a</code> over from its binding, until a param that binding reads is set (see <code>bind</code>). The handle is <code>a</code>’s control: the site’s controls give a param a handle sets no slider.</td>
+</tr>
+<tr>
+<td><code>handle z sets a = expr, b = expr</code></td>
+<td>A point dragged in two dimensions: dragging <code>z</code> sets two params, each to its own expression, which can use the pointer as above. For <code>let z = a + b·i</code> it’s <code>a = pointer.x, b = pointer.y</code>, and for a point on a lattice, <code>z = a + b·ω</code>, the two expressions turn the pointer into its coefficients: <code>a = pointer.x - pointer.y·real(ω)/imag(ω), b = pointer.y/imag(ω)</code>. Both are worked out from the same pointer and the params as they were, then each param takes its value within its own range and step, so at the end of one range that param stops and the other goes on. One drag sets both, so they don’t hand each other back. Arrow keys move the point on the page through the same expressions, and Home, End, Page Up and Page Down are long moves left, right, up and down. A key’s move stays within 45° of its way, going on to a param’s next step if it has to, so on a slanted lattice Up is never mostly Left, and a key with no such move, as along the edge of a range, does nothing. Two at most, each a <code>param</code>, each named once. A mark has one handle: a second on the same mark is an error, since a drag takes one, so a point dragged in two dimensions is one handle setting both. The check goes by name, so two names for one point, <code>let w = z</code> with <code>dot z, w</code>, can each have a handle, and a drag takes the nearer, or the later where they’re the same point.</td>
+</tr>
+<tr>
+<td><code>style selector { … }</code></td>
+<td>A style rule (see below).</td>
+</tr>
+<tr>
+<td><code>tag a, b</code></td>
+<td>After a statement, tags the marks it made.</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="curve-forms">Curve forms</h3>
+<p>Each form keeps its own representation (<code>goals.md</code>).</p>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Table"><table>
+<thead>
+<tr>
+<th>Form</th>
+<th>Example</th>
+<th>Drawn by default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Implicit</td>
+<td><code>curve c = implicit (x, y): x² + y² = r²</code></td>
+<td>Traced to a line</td>
+</tr>
+<tr>
+<td>Exact distance</td>
+<td><code>curve c = sdf (x, y): sqrt(x² + y²) - r</code></td>
+<td>Per pixel</td>
+</tr>
+<tr>
+<td>Parametric</td>
+<td><code>curve c = parametric (t): (cos(t), sin(t)) for t in 0..2·π</code></td>
+<td>Sampled to a line</td>
+</tr>
+<tr>
+<td>Construction</td>
+<td><code>curve c = circle(O, A)</code>, <code>curve g = ray(O, B)</code></td>
+<td>A circle per pixel, a line or ray as a line</td>
+</tr>
+</tbody>
+</table></div>
+<p>An implicit curve is traced on a grid of cells 6 device pixels across, and the line is kept within a quarter of a pixel
+of the curve both ways. Where the curve bends sharper than a cell, as at each tip of <code>sin(30·x) = y</code>, the line is bent
+onto it, and where two parts of the curve pass through one cell, the cell is split in four, down to a sixteenth of a
+cell, so a tip is drawn to its point and two arms that run close stay apart until they’re under about half a pixel
+apart. A curve with more detail than that, as one zoomed far out, is followed as far as a budget for each frame goes, a
+few times the grid’s own work, spent where the line strays furthest first, and past it the line is left as the grid
+finds it, with tips cut short and near parts joined. Nothing says when that happens. Every point the line is drawn
+through is on the curve, also where the expression levels off around it, as <code>tanh(50·(x² + y² - 1)) = 0</code> does, and where it falls to zero
+as a cube root does, as across the vertical tangent of <code>y = sign(x)·abs(x)^(1/3)</code>.</p>
+<p>An implicit curve is where its expression is zero, so where the expression changes sign without going through zero,
+across a pole or a jump, nothing is traced: <code>y = tan(x)</code> is its branches with nothing along x = ±π/2, and <code>y = floor(x)</code>
+is steps without risers. The line stops at the edge of the grid cell the pole or the jump runs through. Where a curve
+runs along its asymptote, within a cell of the pole, that can be a long stretch, and writing the curve without the pole,
+<code>x·y = 1</code> for <code>y = 1/x</code>, draws it whole.</p>
+<p>A parametric range can run down as well as up, and the curve is drawn from its first bound, so
+<code>for u in 0..t</code> sweeps an angle from 0 to <code>t</code> whichever sign <code>t</code> has. <code>trim</code> and a <code>head</code> follow that
+direction. A collection’s <code>for i in a..b</code> counts up, and is empty when <code>b</code> is below <code>a</code>.</p>
+<p><strong>A range can be written <code>med ± dev</code>,</strong> the tolerance reading of <code>±</code>, as in x = 5 ± 2: it’s <code>(med - abs(dev))..(med + abs(dev))</code>,
+anywhere a range is written, the interval between its two values whichever is larger, so a negative <code>dev</code> never reverses it. <code>for k in 2 ± 1</code> counts 1, 2 and 3, <code>for t in 0 ± π</code> runs from −π to π, <code>param a = 1 in 1 ± 0.5 step 0.25</code> steps through 0.5 to 1.5, and <code>viewport { x: 0 ± 2 }</code> is <code>-2..2</code>. It’s only a spelling: each place takes what
+it takes of a range’s ends, and it doesn’t make a collection two branches, so <code>for k in 2 ± 1</code> has no <code>self.sign</code>. It’s
+the whole range or nothing. <code>±x</code> alone would be the two values +x and −x, so it’s an error that offers <code>{x, -x}</code> for those
+and <code>-x..x</code> or <code>0 ± x</code> for the interval. <code>∓</code> isn’t a range, and a <code>±</code> in one end of a range, <code>0..(2 ± 1)</code>, would make two
+ranges: with both signs, count over them first, <code>for s in {1, -1}, k in 0..(2 + s)</code>.</p>
+<h3 id="viewport">Viewport</h3>
+<p><code>viewport { x: -2..2, y: -2..2 }</code></p>
+<ul>
+<li><code>x</code>, <code>y</code>: a fixed world window, as <code>-2..2</code> or <code>0 ± 2</code>. It always has one scale for both axes, so at a different shape it shows more, rather than stretching.
+Its bounds are constants (see Constants), so they can’t read <code>time</code> or a param. To follow something that moves, <code>fit</code> it.</li>
+<li><code>fit: a b c</code>: bounds these points and circles each frame instead of a fixed window, ignoring
+any param a handle has taken over, so a drag doesn’t rescale the figure under the pointer.</li>
+<li><code>pad: 0.04</code>: extra space around a <code>fit</code>, as a fraction of its size. A constant (see Constants).</li>
+<li><code>yaw: 0.45·roll</code>: how far the view is turned about its vertical axis, for points in space (see Points in space). It can
+read params and <code>time</code>, so a view can turn as a figure plays.</li>
+</ul>
+<p>A viewport says what part of the plane the figure shows, and not how big it’s drawn. That depends on where it’s drawn, so it’s
+a sheet’s: <code>style figure { width: 640px; height: 400px }</code> (see Styles). The same figure can be 16:9 in a video’s sheet and fit a
+page’s column in another’s.</p>
+<h3 id="posters">Posters</h3>
+<p>A still of a figure stands in for it where it can’t run, or hasn’t started: on a page before its first frame, in a link’s
+preview, in print. A figure knows which moment tells the most, and it’s a binding of time and params like any other, so
+the document says:</p>
+<p><code>poster { time: 3.5, roll: 0.6 }</code></p>
+<ul>
+<li><strong><code>time</code></strong> is a moment of the clock, and anything else is a param, held there as if a reader had set it. Each is a constant (see Constants), so <code>time: duration / 5</code> is a fifth of the way through.</li>
+<li><strong>A param that follows time is held, or <code>time</code> is said, and not both.</strong> Time and a reader take turns on such a param, and a
+poster is one moment: <code>time</code> gives the param the value it has there, so holding it as well is an error. A param time doesn’t
+drive goes with a <code>time</code>, as <code>roll</code> does above.</li>
+<li><strong>Without one,</strong> the poster is the end of the story for a figure whose beats are moves, where everything has arrived,
+and the start of the clock for any other.</li>
+<li><strong>It changes nothing about the figure as it runs.</strong> A page that wants the figure to start where its poster is holds those
+params itself, from what the build wrote down.</li>
+</ul>
+<p><code>pencil build DOC.pen --style … --out DIR</code> draws it, at the figure’s design size and at twice it, as PNG and, where it’s
+smaller, as WebP, beside the compiled figure
+and a <code>.json</code> of what a page needs to know: the figure’s shape, its duration, its params with their ranges, its beats and
+captions, its poster’s moment with every param’s value and range there, the colors its sheets name, and every file that
+went into it (<code>sources</code>), so a build knows when to make it again. <code>--card</code> adds a 1200×630 card for sharing, the figure on its own paper. The Astro component in
+<code>packages/figure</code> runs this for each figure on a site, and writes the page around what it made.</p>
+<h3 id="controls-and-readouts">Controls and readouts</h3>
+<p>A page can show a figure’s controls beside it: a play button and time, beat stepping, a control for each param a handle
+doesn’t set, and the readouts. Their words are the document’s, written where they belong, and a sheet says how much of them
+to say, as it does for a label.</p>
+<p><strong>A param’s caption is what its control says:</strong> <code>param q "arms" = 8 in 3..16 step 1</code>, after the name, where a beat writes
+its caption. A choice takes one the same way: <code>param along "direction" in {1, i, 1 + i}</code>, and <code>param along "direction" = "i" in {…}</code> with a default. Without one, a control says the param’s name, set as mathematics.</p>
+<ul>
+<li><strong>It’s words.</strong> A value changes, so it’s a readout’s, and a caption with <code>{…}</code> in it is an error. So is one with <code>$…$</code>,
+which a control can’t set yet: write the symbol, as <code>"θ"</code>.</li>
+<li><strong>Each param gets the control that fits it.</strong> A range is a slider, with its value after it. A choice of a few options, four
+at most, is radios, which show every option at once, and a choice of more is a list that opens. A choice of off and on,
+two options written <code>0</code> and <code>1</code> or named <code>off</code> and <code>on</code>, as in <code>param glow in {"off": 0, "on": 1}</code>, is a checkbox. A param
+a handle sets has no control of its own: the handle is its control.</li>
+</ul>
+<p><strong>A label with no place is a readout:</strong> <code>label ratio = "ratio {q / p}"</code>, or <code>label k</code> for a value. It’s said as text beside
+the figure, after the controls, and isn’t drawn in it. It has everything a label has: <code>{expr}</code> values, <code>$…$</code> mathematics, a
+sheet’s <code>digits</code>, a point’s <code>format</code> and <code>text</code>. With no <code>text</code> in its sheets it says which value it is, since beside the
+figure nothing else does: a value’s name and value, <code>k = 0.62</code> for <code>label k</code>, and <code>q − 1 = 2</code> for <code>label n = "{q - 1}"</code>, as
+<code>text: name = value</code> says them, or its own words with its value, <code>ratio = 2.67</code> for <code>label r = "ratio"</code>, and words with values
+in them as they’re written.</p>
+<ul>
+<li><strong>It’s the whole figure’s,</strong> so it’s written among the figure’s own statements, not in a group, which can be drawn more
+than once, or in a panel. A figure with panels says its readouts beside all of them.</li>
+<li><strong>It’s tagged <code>readout</code>,</strong> and its type is <code>label</code>, so <code>style readout { digits: 3 }</code> reaches every one, and <code>style label</code>
+reaches them with the labels.</li>
+<li><strong>One that doesn’t exist this frame says <code>—</code>.</strong></li>
+<li><strong>A screen reader hears its mathematics as mathematics:</strong> <code>$z^2 = 1$</code> is “z squared = 1”, <code>x_1</code> “x sub 1”, <code>(a + b)/2</code>
+“(a + b) over 2” and <code>sqrt(x)</code> “the square root of x”.</li>
+<li><strong>A page keeps room for it,</strong> as wide and as tall as the most it says, worked out from the moments a reader can reach: the
+poster’s, and the one a build or a page starts the figure at, with the params it holds; moments through the clock from
+there; each param through its range, at each of its steps if it has a few and at nine places along it otherwise; and
+every param at its start or its end together. Every number is counted as written to its <code>digits</code>, a whole one too, and
+each digit as a wide one. A value that only gets wider between those can say more than the room, and its box keeps its
+size anyway, so nothing beside it moves.</li>
+<li><strong>It’s only said beside a figure on a page.</strong> <code>pencil render</code>, <code>svg</code> and <code>video</code> draw what’s in the figure, and leave
+readouts out, as a page’s controls are.</li>
+</ul>
+<p><strong>A sheet says what a control says, and which control it is,</strong> as for a thing whose type is <code>control</code> and whose name is its
+param’s: <code>style control { … }</code> is every control, and <code>style q.control { … }</code> is <code>q</code>’s, or for a choice, the name its value
+has, <code>along.control</code>. A param’s name alone, <code>style q</code>, still names a mark. So <code>control</code> is taken: nothing in a figure can
+be called or tagged it, and that’s an error that says so.</p>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Table"><table>
+<thead>
+<tr>
+<th>Property</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>text</code></td>
+<td>What the control says, as a label’s <code>text</code>: <code>caption</code> (its caption, or its name if it has none), <code>name</code>, and <code>value</code>, said after a slider. <code>text: caption = value</code> is the default, <code>text: name = value</code> says <code>q</code>, and <code>text: caption</code> leaves the value out. A choice shows its option in the control itself.</td>
+</tr>
+<tr>
+<td><code>kind</code></td>
+<td>Which control it is: <code>slider</code>, <code>radios</code>, <code>select</code> or <code>checkbox</code>. Any param can be a slider, a choice radios or a select, and a choice of off and on a checkbox. A rule for every control sets a kind only on those it fits, and one that names a control has to fit it.</td>
+</tr>
+</tbody>
+</table></div>
+<p><code>&lt;pencil-figure controls&gt;</code> shows them, and a build writes them into the page before any script runs (the package’s
+README).</p>
+<h3 id="beats">Beats</h3>
+<p>There are two kinds of beat, and a figure’s are all one kind. A <strong>step</strong> is <code>beat "caption" { … }</code>: a block with a
+caption, and no name and no length. A <strong>move</strong> is a beat with a name, a length, or both: <code>beat grow</code>, <code>beat grow for 1</code>,
+<code>beat "A circle." for 1</code>.</p>
+<p><strong>A step</strong> groups marks into a discrete stage of a construction. Any <code>beat</code> declares the param <code>beat</code>,
+ranging over the beats, and a step’s marks get the block’s tags. A <code>self.age</code> in a style is that
+mark’s own <code>beat − index</code>, so one rule can fade every earlier step. In a figure with a <code>duration</code>, steps
+share it evenly and <code>beat</code> follows time, so the timing is said once: ten steps in
+<code>duration 30</code> are 3 s each. With no duration, a reader steps through them. <code>bind beat = …</code> can
+still drive them by something else. A step has no progress: <code>beat</code> is a whole number, and what a step shows is there all
+at once.</p>
+<p><strong>A beat can say what it’s about,</strong> a move or a step: <code>focus P, .arms</code>, and <code>self.focus</code> is 1
+on those during that beat and 0 on the rest, until a beat names others. An entry can follow a choice,
+so the beat is about what a reader picked: <code>focus level, .boundary if case = "p = 0", .middle if case = "q = 2p"</code>. On a step, <code>focus</code> comes after its tags: <code>beat "…" tag t focus … {</code>.</p>
+<p><strong>A move is one move of a figure’s story,</strong> and takes time. Beats and pauses run in
+the order they’re written, and their lengths add up to the <code>duration</code>, so making one longer moves
+everything after it instead of everything having to be retimed. A length is a constant (see Constants):</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="plaintext"><code><span class="line"><span>pause 0.4</span></span>
+<span class="line"><span>beat grow "A circle." for 1 show c</span></span>
+<span class="line"><span>beat spin "A point goes round." for 2 show P focus P</span></span>
+<span class="line"><span>pause 1</span></span>
+<span class="line"><span>beat gone for 0.5 drop c, P</span></span></code></pre>
+<ul>
+<li><strong><code>beat</code> is a number,</strong> whole while the figure holds and between two whole numbers while a beat
+moves: 1.5 is halfway through the second beat. Time drives it, and a reader stepping through
+or a <code>bind beat</code> can drive it instead, and everything below follows.</li>
+<li><strong>A beat’s name is its progress,</strong> 0 until it starts, 1 once it’s done, and moving evenly in
+between. So <code>let r = grow</code> grows with that beat, and <code>snap(grow)</code> eases it. It’s a number like any other, so when
+two things follow one beat, ease it once and have both read that: with <code>let swept = smoothstep(0, 1, sweep)</code>, a point
+at angle <code>2·π·swept</code> and a count <code>floor(24·swept)</code> of the marks it has passed stay together, however the easing changes.</li>
+<li><strong><code>show</code> and <code>drop</code> say when marks are there,</strong> by name or <code>.tag</code>, and a beat’s block shows
+what it declares. A mark that’s ever shown isn’t there before it, a dropped one isn’t there
+after, and while it isn’t there it isn’t drawn at all. A mark no beat names is always there.
+How it arrives and leaves is the sheet’s, with <code>self.life</code>. A mark that moves during the beat that shows it
+shouldn’t fade in for the whole beat, since the fade hides the move: with <code>snap</code> on the move and
+<code>opacity: smoothstep(0, 1, self.life)</code>, the mark is half there when 97% of the move is over. Make it solid in the
+first few frames, <code>opacity: snap(8·self.life)</code>, or show it in a beat of its own before it moves.</li>
+<li><strong><code>focus</code> says what a beat is about,</strong> by name or <code>.tag</code>. It holds until a later beat names
+something else, and before any does, everything is in focus. A sheet reads it as <code>self.focus</code>.</li>
+<li><strong>A caption holds until a beat has another,</strong> and <code>""</code> clears it. Captions are drawn in the
+figure only when a sheet asks, with <code>style caption { … }</code>, since a page can show them as text.</li>
+<li><strong>A named beat can leave its length out:</strong> <code>beat grow show c</code>. With no <code>duration</code> statement it takes a second.
+Under a stated <code>duration</code>, the beats that wrote no length share evenly what the written lengths and pauses leave of
+it, and it’s an error if they leave nothing. Either way it’s a move like any other: its name is its progress, and
+<code>duration</code> counts it. A second is a first guess that nobody wrote, so say <code>for</code> once a move’s timing matters.</li>
+<li><strong>Moves and steps can’t be mixed in one figure.</strong> A name makes a beat a move, so giving each step one is how a
+figure of steps becomes a figure of moves.</li>
+</ul>
+<h3 id="equations">Equations</h3>
+<p><code>solve</code> defines unknowns by equations, and they’re then ordinary names:</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="plaintext"><code><span class="line"><span>solve (mu, nu) from 0, exp(pi² / (6·n2)):</span></span>
+<span class="line"><span>  tangency(w, mu, nu) = tangency(w1, mu, nu),</span></span>
+<span class="line"><span>  tangency(one, mu, nu) = tangency(w1, mu, nu)</span></span>
+<span class="line"><span>let k = sqrt(tangency(w, mu, nu))</span></span></code></pre>
+<p>It runs Newton’s method each frame, using exact symbolic derivatives, on as many unknowns as there are equations.</p>
+<ul>
+<li><strong>It starts from <code>from</code> every time,</strong> with no memory of the last answer, so a frame still depends only on its inputs.
+Which solution it finds is the start’s business, and the start can use params.</li>
+<li><strong>No answer means absent.</strong> A system that doesn’t settle on a solution, within 50 steps and 1e-9, is absent, so whatever
+depends on it isn’t drawn, and <code>exists</code> can ask.</li>
+<li><strong>The unknowns can’t use functions Pencil can’t differentiate.</strong> That’s a compile error, and it names the function.</li>
+</ul>
+<h3 id="collections">Collections</h3>
+<p><code>dots</code>, <code>circles</code> and <code>curves</code> draw one mark many times, once for each combination of their variables. A variable
+counts in whole numbers and includes both ends of its range, and a later range can use an earlier variable:</p>
+<p><code>dots grid_points = grid(a, b) for a in -q..q, b in -2..q + 2</code></p>
+<p>A variable can count over a list instead, its values in the order written: <code>for s in {-1, 1}</code>, beside ranges as any
+variable is, <code>for i in 0..n, s in {-1, 1}</code>, with every combination. Its values are numbers or points, with numbers among
+points as points on the real axis, as a choice param’s options are, and can read an earlier variable: <code>s in {i, -i}</code>. A
+list needs a value. <code>for s in -1..1</code> counts -1, 0 and 1, so a list is the way to say the two signs.</p>
+<p><strong><code>±</code> and <code>∓</code> draw both branches.</strong> Anywhere in a collection’s expressions, its <code>with</code> included, <code>±</code> makes each instance
+two, the + branch first, as a last variable that varies fastest: <code>for i in 0..n</code> with a <code>±</code> is 2(n + 1) instances.
+Every <code>±</code> in a statement takes the same sign and every <code>∓</code> the opposite, so <code>(±a, ±b)</code> is two points and <code>(±a, ∓b)</code> the
+other two. Both forms work, <code>±cosh(t)</code> and <code>a ± b</code>. One with only <code>∓</code> is the same two branches in the other order. A
+collection with a <code>±</code> and no <code>for</code> is a collection of two:</p>
+<p><code>curves hyp = parametric (t): (±cosh(t), sinh(t)) for t in -2..2</code></p>
+<p>That <code>±</code> is in what the collection draws. As a whole range, <code>med ± dev</code> is an interval instead (see Curve forms), and a
+statement can have both: <code>dots d = (k, ±1) for k in 2 ± 1</code> is k from 1 to 3, two dots for each, the sign fastest.</p>
+<p>A style reads which branch an instance is as <code>self.sign</code>, 1 for the first and −1 for the second, wherever it reads the
+collection’s variables: <code>style hyp { width: 2px + self.sign·1px }</code>. Lists in one expression zip, as Desmos’s do, and a
+<code>for</code> is for every combination; <code>±</code> is the only list an expression can hold for now, so there’s no question of lengths.
+Underneath, a list is a whole-number variable, <code>s.index</code>, and <code>s</code> is the value it picks, as a choice param’s is, and the
+sign is a list <code>self.sign in {1, -1}</code>. A statement with a <code>±</code> can’t also name a variable or a <code>with</code> <code>sign</code>, which
+<code>self.sign</code> could be taken for.</p>
+<p><strong><code>±</code> has two uses, and anywhere else it’s an error.</strong> In what a collection draws it’s two branches. As the whole of a
+range, <code>med ± dev</code>, it’s an interval, drawn once. In a <code>let</code>, a <code>curve</code>’s expression, a <code>param</code>’s default, a <code>bind</code>, a
+<code>handle</code>, a function or a style it would draw two marks, so the error names the collection to use. In one end of a range it
+would make two ranges, and as a list’s value, <code>s in {±1}</code>, it would be a variable over the signs, which <code>±</code> already is, so
+those errors say to count over the signs as values, <code>s in {1, -1}</code>. In a label’s text it’s the character.</p>
+<p>A curve has its own parameter too, which runs smoothly, and comes first. So what Desmos writes as <code>s = [-3...3] / 3</code> is:</p>
+<p><code>curves across = parametric (t): x0 + s·r / 3 + t·i for t in -r..r for s in -3..3</code></p>
+<p>Its range can read what counts it, and <code>with</code> names can be used in both. <code>curves</code> can go <code>through</code> a map, and a viewport can <code>fit</code> one, which fits all of them. It’s lines, so it has a <code>stroke</code>
+and no <code>fill</code>, and that <code>stroke</code> can be one color for all of them or one for each (below). Its <code>width</code> can vary per curve, and along each with <code>self.t</code>, and each gets its own dashes and head. Where curves in one collection cross, they don’t darken each other, as they do when they’re separate marks.</p>
+<ul>
+<li><strong>It’s one mark,</strong> so one rule styles it all, and the count can follow a param from frame to frame.</li>
+<li><strong><code>with</code> names a value per instance:</strong> <code>circles c = circle(z, z + (r, 0)) for a in 0..q with z = spiral(a)</code> works <code>z</code> out
+once per circle. It can be a number or a point, and can use the names before it.</li>
+<li><strong>An instance that doesn’t exist is skipped,</strong> and one off the frame or too small to see costs nothing further.</li>
+<li><strong>Sizes can vary per instance:</strong> <code>radius</code> and <code>width</code> can use the variables, <code>self.scale</code>, the style pixels per world
+unit, and for <code>dots</code>, <code>self.x</code> and <code>self.y</code>, where the dot ended up: <code>radius: min(0.3·k·self.x·self.scale·1px, 3px)</code>.</li>
+<li><strong>So can colors:</strong> a collection’s <code>stroke</code>, the line of each curve or each circle’s rim, and the <code>fill</code> of <code>dots</code> can use the
+variables and the <code>with</code> names, so a hue can index a family: <code>style arms { stroke: hue(r / n) }</code>. A color is per
+instance and not along a line, so a curve’s own parameter isn’t one of them. Where lines of one collection in two colors
+cover the same pixel, the one that covers more of it shows there, the first drawn of two that cover it alike, so they
+still don’t darken each other. <code>corpus/017-arm-colors</code> colors a spiral’s arms this way.</li>
+<li><strong><code>circles</code> can be circles through three points,</strong> so <code>circles c = circle(f(p), f(q), f(s)) for …</code> is what a Möbius map makes of a family. Any of them can be a line this frame, and is drawn as one.</li>
+<li><strong>Circles have sides, per instance:</strong> <code>style c::inside { fill: … }</code>. A side’s <code>fill</code> and <code>fill_opacity</code> can use the variables, the <code>with</code> names, <code>self.dist</code>, <code>self.pixel</code> and <code>self.curvature</code>. Every pixel adds up every circle,
+so this costs about 0.09 ms per circle at 1080² on an M1 Pro, and it’s limited to 256 per collection, which is an error past that. A collection with only rims doesn’t pay for it and has no limit.</li>
+<li><strong>A collection is a backdrop:</strong> labels don’t try to avoid it.</li>
+</ul>
+<h3 id="panels">Panels</h3>
+<p>A <code>panel</code> is its own view of the figure, with its own marks, its own <code>viewport</code> saying what it looks at, and its own shader.
+How panels sit is a sheet’s (see Styles). What’s outside any panel is shared, so every panel sees the same params and bindings.</p>
+<p><strong>A thing is declared once, and each panel draws it through a map.</strong> A <code>group</code> holds things in their own coordinates, and
+<code>use … through</code> sends them through a function:</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="plaintext"><code><span class="line"><span>fn to_turn(w) = …</span></span>
+<span class="line"><span>let zero = (0, 0)</span></span>
+<span class="line"><span>group edges() {</span></span>
+<span class="line"><span>  curve side = parametric (t): corner·t for t in 0..1</span></span>
+<span class="line"><span>  dot zero</span></span>
+<span class="line"><span>  label name_zero at zero away (-1, 0)</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span>panel flat "Lattice" {</span></span>
+<span class="line"><span>  viewport { fit: side }</span></span>
+<span class="line"><span>  use edges()</span></span>
+<span class="line"><span>  text name_zero = "0"</span></span>
+<span class="line"><span>}</span></span>
+<span class="line"><span>panel log "Log space" "T(w) = 2πi·w / A" {</span></span>
+<span class="line"><span>  viewport { fit: side }</span></span>
+<span class="line"><span>  use edges() through above as up</span></span>
+<span class="line"><span>  use edges() through to_turn</span></span>
+<span class="line"><span>  text name_zero = "0"</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<ul>
+<li><strong>What goes through:</strong> parametric curves, two-point segments, dots, labels, and <code>dots</code> and <code>curves</code> collections. A segment becomes the map’s
+image of it, so it can bend. A construction or a <code>circles</code> collection can’t, since the image of a circle isn’t a circle: map a
+center in its <code>with</code> instead.</li>
+<li><strong>Only marks move.</strong> A <code>let</code> stays what was written, in the group’s coordinates, so one point has one value, and what a panel
+shows is its image.</li>
+<li><strong>A label’s <code>away</code> goes through too,</strong> exactly, by the map’s derivative at that point. A direction worked out once in the
+group’s coordinates keeps its side of a curve in every panel, as long as the map doesn’t flip orientation.</li>
+<li><strong>Maps compose:</strong> a group can <code>use</code> another <code>through</code> a map, and the outer one applies last.</li>
+<li><strong><code>use … as up</code> draws a group again:</strong> what it declares becomes <code>up_side</code>, and each mark is tagged with its plain name and <code>up</code>,
+so <code>style side</code> reaches every copy and <code>style .up</code> reaches one set.</li>
+<li><strong>A group’s parameters are values,</strong> and they’re its own, so two groups can both have a <code>k</code>.</li>
+</ul>
+<p><strong>What a thing is called is up to each panel.</strong> <code>label n at P</code> declares where a name goes, and <code>text n = "1"</code> says what it is here,
+with <code>{expr}</code> for values. A panel with no text for a label doesn’t show it, since that space has no name for it. <code>text</code> for a
+label that doesn’t exist is a mistake. <code>label n = "P" at P</code> still writes both at once.</p>
+<p>After a panel’s title can come a formula, styled by <code>style formula { fill: muted }</code>.</p>
+<p><code>outline o = detail</code> draws the rectangle another panel is looking at, to mark a close-up. <code>radius</code> keeps it big enough to read
+as a marker, even when what it marks is only a few pixels across.</p>
+<p>A mark carries its panel’s name as a tag, so <code>style steps.whole { … }</code> styles it in that panel alone, and <code>style steps</code>
+styles it in all of them. A rule that names a mark has to find it in at least one panel. <code>style title { fill: ink; size: 14px }</code>
+styles panel titles. <code>fit</code> can name parametric curves and <code>curves</code> collections as well as points and circles.</p>
+<h3 id="expressions-that-move">Expressions that move</h3>
+<p>An expression is a list of states, and what’s written the same in two of them moves from one to the other. There
+are two ways to say when, and a figure picks by what drives it.</p>
+<p><strong>Named beats, for a derivation that’s told.</strong> Each state says <code>on</code> the beat that brings it, and writes what that
+beat changes:</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="plaintext"><code><span class="line"><span>pause 0.5</span></span>
+<span class="line"><span>beat write for 0.8</span></span>
+<span class="line"><span>pause 1</span></span>
+<span class="line"><span>beat measure for 0.5</span></span>
+<span class="line"><span>pause 1</span></span>
+<span class="line"><span>beat expand for 0.8</span></span>
+<span class="line"><span>pause 1</span></span>
+<span class="line"><span>beat factor for 0.6</span></span>
+<span class="line"><span>pause 1</span></span>
+<span class="line"><span>beat answer for 0.8</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>place equation = (0, 1)</span></span>
+<span class="line"><span>place result = (0, 0)</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>expression work {</span></span>
+<span class="line"><span>  on write: "z ( a + b )" at equation</span></span>
+<span class="line"><span>  on expand: "z a + z.1 b" at equation</span></span>
+<span class="line"><span>  on factor: "z ( a + b )" at equation</span></span>
+<span class="line"><span>  on answer: "= c" at result</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<ul>
+<li><strong>A state is where its beat ends.</strong> The expression starts from what it held, moves through the beat, holds what’s
+written as the beat ends, and keeps it until the next beat a state names. Before the first, it’s empty.</li>
+<li><strong>A state writes the places it changes.</strong> A place it names is set to what’s written there, so a term that was at
+that place and isn’t written now goes, as <code>z.1</code> does on <code>factor</code>. A place it doesn’t name keeps what it has: <code>answer</code>
+writes at <code>result</code>, and the equation stays above it without being written again.</li>
+<li><strong>A term is in one place,</strong> so a term written at a new place moves there and leaves the place it was at, which is
+then empty if that was all it held. <code>on join: "a + b" at sum</code> takes <code>a</code> and <code>b</code> from wherever they were.</li>
+<li><strong><code>empty</code> clears every place:</strong> <code>on clear: empty</code>. There’s no way yet to clear one place and keep the rest, since no
+figure has needed it, and writing nothing at a place, <code>"" at p</code>, is an error and not a way to do it.</li>
+<li><strong>A beat no state names changes nothing,</strong> so a hold isn’t written: <code>measure</code> above can show an angle, and take as
+long as it likes, while the algebra stays put. Making a beat longer, or putting a pause or another beat between two
+states, retimes the story and leaves which terms move alone.</li>
+<li><strong>States are written in the order their beats run,</strong> and each beat brings one state. A state out of order, a beat
+named twice, and a name that isn’t a beat’s are errors at that state’s line: <code>`factor` comes before `expand` in the timeline, but follows it in `work`</code>. The beats can be written above the expression or below it, a beat with a block
+too: its terms are drawn where the expression is written.</li>
+<li><strong><code>on</code> takes a beat’s name,</strong> which a move has when it’s written with one, with a length or without. A step,
+<code>beat "caption" { … }</code>, has none, so a figure of steps drives its expression <code>by beat</code>, as below.</li>
+</ul>
+<p><strong>A number, for scrubbing.</strong> <code>by</code> takes any number, and a state is written for each whole value from 1: at 3.4 the
+expression is on its way from state 3 to state 4. State 0 is the empty one before the first that’s written, and
+<code>empty</code> writes another. A param a reader drags is the usual driver, as here, where each state is one more term of a
+series and <code>n</code> can drive the curve it approximates too:</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="plaintext"><code><span class="line"><span>param n = 1 in 1..4</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>place sum = (0, 1)</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>expression series by n {</span></span>
+<span class="line"><span>  "1" at sum</span></span>
+<span class="line"><span>  "1 + x" at sum</span></span>
+<span class="line"><span>  "1 + x +.1 x²/2" at sum</span></span>
+<span class="line"><span>  "1 + x +.1 x²/2 +.2 x³/6" at sum</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<p>With <code>by</code>, each state is written whole: what a state doesn’t write isn’t there. <code>by beat</code> is a state for every beat,
+in order, with a state that holds written again. <code>by</code> a sum of beats’ names is what <code>on</code> works out, how many of those
+beats are done and how far the one that’s moving has come, and <code>on</code> builds the same whole states, each from the one
+before and what its beat writes. <code>pencil ir</code> lists them, which is where to read what an expression holds on a beat.</p>
+<p>Terms are separated by spaces. Nothing is diffed: identity is what’s written. So <code>2ab</code> is one term and <code>2 a b</code> is
+three. If the next state writes <code>b</code> somewhere else, the spaced <code>b</code> moves there and the rest stays, and the joined <code>2ab</code>
+has nothing in the next state, so it fades out while <code>2a</code> and <code>b</code> fade in (<code>web/terms.html</code> shows the two side by side).</p>
+<ul>
+<li>The same term in the next state moves to its new spot, and stays solid.</li>
+<li>A new term fades in, and a term that’s gone fades out, riding along with its neighbors.</li>
+<li>A new term beside one that travels is solid within the first few frames of the move, so it’s seen riding along: the
+<code>a</code> of <code>z.1 a</code> goes out with the copy of <code>z</code>. A fade as long as the move would show it only once it had arrived. A new
+term that stays where it is, as when <code>2ab</code> gives way to <code>2a</code> in the same place, fades in with the step.</li>
+<li>A copy is written <code>z.1</code>, and prints as <code>z</code>. When it’s new, it starts on <code>z</code>.</li>
+<li>A term is in one place, so a state can’t write the same one twice: <code>a + b +.1 c</code> has two plus signs. A number can’t have a copy yet, since <code>2.1</code> is a number.</li>
+<li><strong>A term can have a name:</strong> <code>slow:2ab</code> prints <code>2ab</code>, and is the term <code>slow</code>. The name is what moves between states and what a copy is written from, <code>slow.1:2ab</code>, and it’s a tag, so <code>style .slow { … }</code> and <code>focus .slow</code> reach the term together with an arrow tagged <code>slow</code>. One name ties a symbol to its geometry. A name prints one text, so <code>slow:2ba</code> in another state is an error.</li>
+<li>When a copy goes, it moves into a term of the same name at the same place: factoring.</li>
+</ul>
+<p>Each term is a mark named <code>work.z.1</code>, with the tags <code>term</code>, <code>work</code> and <code>z</code>, so <code>style term.a { fill: blue }</code>
+colors every <code>a</code>. A term is mathematics, so it’s laid out as a label’s <code>$…$</code> is, whatever its <code>font</code>, and <code>x^2</code> as a term
+has a real exponent (see Mathematics in labels). Core says where each term goes.</p>
+<h3 id="mathematics-in-labels">Mathematics in labels</h3>
+<p><code>$…$</code> in a label’s text is mathematics, laid out: <code>"area = $x^2/2$"</code> is the words, then x squared over two. Inside a span the
+notation is Pencil’s own, the one a <code>let</code> is written in, with parentheses to group. It isn’t TeX, and there’s no backslash.</p>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Table"><table>
+<thead>
+<tr>
+<th>Written</th>
+<th>Drawn</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>x^2</code>, <code>x^(n + 1)</code>, <code>e^(iπ)</code>, <code>x^-1</code></td>
+<td>A superscript. Parentheses that only group aren’t drawn. <code>x²</code> is the same as <code>x^2</code>.</td>
+</tr>
+<tr>
+<td><code>x_1</code>, <code>x_(i + 1)</code>, <code>a_n^2</code></td>
+<td>A subscript, and both together. <code>x1</code> and <code>x₁</code> are <code>x_1</code>, as they are in an expression.</td>
+</tr>
+<tr>
+<td><code>x^2/2</code>, <code>(a + b)/2</code>, <code>1/2π</code></td>
+<td>A fraction. The bar takes the product before it and the factors right after it, so <code>1/2π</code> is 1 over 2π and <code>1/2 x</code> is a half, times x, as Pencil computes them. Parentheses the bar makes unnecessary aren’t drawn.</td>
+</tr>
+<tr>
+<td><code>sqrt(x + 1)</code>, <code>√2</code>, <code>√(x + 1)</code></td>
+<td>A root, with its bar over what it holds.</td>
+</tr>
+<tr>
+<td><code>abs(z)</code></td>
+<td><code>|z|</code>.</td>
+</tr>
+<tr>
+<td><code>(1/2)^2</code></td>
+<td>Brackets as tall as what they hold.</td>
+</tr>
+<tr>
+<td><code>sin x</code>, <code>arg z</code>, <code>ln(x)</code>, <code>lim</code>, <code>det</code>, <code>gcd</code></td>
+<td>A function’s name upright, a thin space from what it’s of. These are Pencil’s functions and a few more names mathematics sets upright.</td>
+</tr>
+<tr>
+<td><code>a + b = c</code>, <code>z ↦ z^2</code>, <code>f: ℝ → ℝ</code>, <code>-7</code></td>
+<td>Operators and relations spaced as TeX spaces them, however the source is spaced. A hyphen is a minus, and <code>*</code> is <code>·</code>.</td>
+</tr>
+</tbody>
+</table></div>
+<ul>
+<li><strong>Letters are variables, in italics,</strong> and letters written together stay together, so <code>2ab</code> reads as it does in a product. Digits,
+operators, brackets and capital Greek are upright.</li>
+<li><strong><code>{expr}</code> is a value in a span as it is outside one,</strong> since a span groups with parentheses and never braces: <code>"$z^{n}$"</code> is
+z to whatever <code>n</code> is this frame. What the value prints is laid out too, so a <code>polar</code> point’s <code>e^(2πi/3)</code> has a real exponent.</li>
+<li><strong>A fraction stacks at the label’s own size.</strong> Inside a superscript or a subscript, or inside another fraction, it stays on the
+line with a slash, where a stacked one would be too small to read. <code>∕</code> (U+2215) or <code>÷</code> keeps one on the line anywhere.</li>
+<li><strong>Some text is mathematics without being marked:</strong> an expression’s terms, and what a label writes about a value, its
+<code>name</code>, <code>expr</code> and <code>value</code>. They’re laid out as a span is, whatever the label’s <code>font</code>, which only sets its words. A value
+written into a label’s own words, as <code>"+{q}"</code>, is part of the words.</li>
+<li><strong>A dollar sign is <code>$$</code>,</strong> and a <code>$</code> that nothing closes is an error.</li>
+<li><strong>What it can’t typeset:</strong> matrices, lines aligned on their <code>=</code>, limits above and below a <code>∑</code> or <code>∫</code> (they sit beside it, as a
+subscript and a superscript), accents such as hats, bars and vector arrows, and bold. A tall root or bracket is the font’s
+glyph made taller, not a larger one drawn for the size, so its strokes thicken a little.</li>
+</ul>
+<p>The command and a page draw one layout. The core places every glyph and rule from the metrics of the math font they both
+draw with, so a formula is the same in a video, in a poster and live on a page, and the label’s size, which placement and
+leaders use, is the layout’s.</p>
+<p><strong>Typing the symbols.</strong> Pencil’s text is the symbol itself: <code>→</code>, <code>θ</code>, <code>ℝ</code>. The playground’s editor writes them for a keyboard
+that lacks them. A LaTeX name after a backslash becomes its symbol when it’s finished by a space, by anything else that can’t
+continue it, or by Tab: <code>\to</code> → <code>→</code>, <code>\theta</code> → <code>θ</code>, <code>\R</code> → <code>ℝ</code>, <code>\nabla</code> → <code>∇</code>, <code>\le</code> → <code>≤</code>, <code>\in</code> → <code>∈</code>, <code>\infty</code> → <code>∞</code>,
+<code>\partial</code> → <code>∂</code>, <code>\mapsto</code> → <code>↦</code>, <code>\times</code> → <code>×</code>, <code>\pm</code> → <code>±</code>, and the rest of LaTeX’s Greek, relations, arrows and set
+symbols (<code>formula::symbols</code> in the core has the list). Inside a label’s text, <code>-&gt;</code>, <code>|-&gt;</code>, <code>&lt;=</code>, <code>&gt;=</code>, <code>!=</code>, <code>~=</code> and <code>+-</code>
+become <code>→</code>, <code>↦</code>, <code>≤</code>, <code>≥</code>, <code>≠</code>, <code>≈</code> and <code>±</code>. Undo gives back what was typed. Nothing in a file is ever read that way: a
+<code>.pen</code> holds the symbols, so an agent or a script writes them directly.</p>
+<h2 id="expressions">Expressions</h2>
+<p>Numbers, names, <code>+ - * / ^</code>, <code>±</code> and <code>∓</code> (in a collection’s expressions, two branches, see Collections; as a whole
+range, <code>med ± dev</code>, an interval, see Curve forms), <code>·</code> for multiply, <code>²</code> and <code>³</code>, unary <code>-</code>, and calls. Factors side by side multiply, as <code>2π</code>, <code>2(x + 1)</code>, <code>(a + b)(a - b)</code> and <code>a b</code>. Right against
+each other they bind tighter than <code>/</code>, so <code>1/2π</code> is 1/(2π). A space ends that: <code>1/2 π</code> is π/2, and <code>(k - 1)/N π</code> is the quotient times π, as it
+reads in Desmos, where the fraction’s bar stops. A product doesn’t reach past the end of its line or a word that follows an expression,
+such as <code>for</code>, <code>in</code>, <code>step</code> or <code>tag</code>. A function’s name before <code>(</code> is a call. Any other name there multiplies the parentheses, so <code>π(t - 1)</code> and
+<code>a (b + c)</code> are products, and a power after them is the parentheses’ own: <code>a(b + c)²</code> is a·(b + c)². Letters together are one name, so <code>ab</code> is a name and <code>a b</code> is a product. The
+constants’ own glyphs <code>π</code>, <code>ℯ</code>, <code>ⅈ</code> and <code>ⅇ</code> never join a name, so <code>2πi</code>, <code>2πr</code> and <code>iπ</code> are products, and <code>π_1</code> is still a name. <code>(a, b)</code> is a
+point, which is also a complex number (see below), and <code>P.x</code> and <code>P.y</code> read one. Names can be Unicode. A subscript is part of a name, and
+<code>x1</code>, <code>x_1</code>, <code>x₁</code> and <code>x_{1}</code> are all the name <code>x_1</code>, as in Desmos and LaTeX; digits inside a name, as in <code>p2q</code>, aren’t one. <code>time</code> is always available. <code>duration</code> is the number the figure’s <code>duration</code> statement says, so <code>bind theta = mod(time, duration) / duration·2·π</code> turns once a pass and the length is written once. In a figure with no statement whose beats are moves (see Beats), it’s what the beats and pauses add up to, which is how long the figure runs: <code>pause 0.5</code>, <code>beat grow for 1</code> and <code>beat spin for 2</code> make <code>duration</code> 3.5, read above them or below, and a named beat that wrote no length counts its second. It reads the same in a <code>let</code>, a <code>bind</code>, a mark and a style, and it’s a constant, but not in its own statement, and not in a beat’s length or a pause of a figure whose beats add up to it, directly or through a <code>let</code>: that length would be part of the sum it reads, and the error says so. A figure with no statement and no moves, which has no beats, pauses alone, or steps, has no <code>duration</code>, and reading it is an error. One whose beats have blocks reads it after them, or says its <code>duration</code>. A figure says its <code>duration</code> once, and once it does, nothing else at its top level can take the name: a second statement, or a <code>let</code>, <code>param</code>, choice, <code>fn</code>, <code>solve</code> unknown or beat called <code>duration</code>, is an error. A parameter is local as always, so a <code>fn</code> or group whose parameter is called <code>duration</code> reads its own argument, and a sheet’s own <code>let duration</code> is the sheet’s. A figure with no <code>duration</code> statement can take the name for its own value, as with <code>pi</code>. <code>pi</code> and <code>π</code> are π, and <code>e</code>
+and <code>ℯ</code> are Euler’s number, unless the figure takes the name for something of its own, as bounds does with its curve <code>e</code>; then
+every <code>e</code> in the figure is that, and <code>exp</code> is Euler’s. In the IR they’re MathJSON’s <code>Pi</code> and <code>ExponentialE</code>. <code>2e</code> is 2·e, while
+<code>2e3</code> is 2000. Coordinates only exist inside the curve that names them.</p>
+<p>Points add and subtract, scale by a number, and negate. All of this expands to scalars at
+compile time, so the IR stays symbolic and bindings are evaluated once per frame.</p>
+<h3 id="constants">Constants</h3>
+<p><code>duration</code>, a <code>pause</code>, a beat’s length, a param’s <code>step</code>, a poster’s values, and a viewport’s bounds and <code>pad</code> each hold
+for the whole figure, so each has to be a constant. A constant is a number, a constant such as <code>π</code>, <code>duration</code>, or a <code>let</code>
+or a call to the figure’s own <code>fn</code> made only of those, written anywhere in the figure:</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="plaintext"><code><span class="line"><span>let period = 12</span></span>
+<span class="line"><span>duration period</span></span>
+<span class="line"><span>bind theta = mod(time, period) / period·2·π</span></span></code></pre>
+<p>A param’s range is the one place that can also follow params: an end may read params directly, and apart from them it
+has to be constant, so a <code>let</code> it reads has to be a constant one.</p>
+<p>Anything that can change isn’t a constant, even where it hasn’t yet: <code>time</code>, a param, though it has a default, a choice,
+<code>beat</code> and a beat’s name, a <code>solve</code>’s unknowns, and a <code>let</code> that reads any of them. The error names it, and what a <code>let</code>
+depends on: <code>`duration` must be constant, and `period` depends on the param `a`</code>.</p>
+<p>A constant is a finite number, since nothing that draws a figure can take anything else: <code>duration 0/0</code>, <code>pause 1/0</code> and
+<code>poster { time: (1, 2) }</code> are errors. <code>duration</code> is more: a number above 0, so <code>duration 0</code> is an error too. A pause and a
+beat’s length can’t be below 0, a step has to be above 0, and a viewport’s bounds have to increase.</p>
+<h3 id="mathjson">MathJSON</h3>
+<p>Expressions compile to <a href="https://mathlive.io/compute-engine/">MathJSON</a>, and where Pencil has something MathJSON names, it uses
+MathJSON’s name, as the Compute Engine does: <code>imag(z)</code> is <code>Imaginary</code>, <code>conj(z)</code> is <code>Conjugate</code>, <code>arctanh</code> is <code>Artanh</code>. So are
+the constants, which are defaults (above): a figure that takes the name gets its own value.</p>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Table"><table>
+<thead>
+<tr>
+<th>Written</th>
+<th>MathJSON</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>pi</code>, <code>π</code></td>
+<td><code>Pi</code></td>
+<td>π</td>
+</tr>
+<tr>
+<td><code>e</code>, <code>ℯ</code>, <code>ⅇ</code></td>
+<td><code>ExponentialE</code></td>
+<td>Euler’s number. <code>e^w</code> is <code>exp(w)</code>, for a complex <code>w</code> too, so <code>e^(iπ) + 1</code> is 0.</td>
+</tr>
+<tr>
+<td><code>i</code>, <code>ⅈ</code></td>
+<td><code>ImaginaryUnit</code></td>
+<td>The point (0, 1), which compiles away.</td>
+</tr>
+<tr>
+<td><code>GoldenRatio</code></td>
+<td><code>GoldenRatio</code></td>
+<td>(1 + √5)/2. Not <code>φ</code>, which is an angle as often.</td>
+</tr>
+<tr>
+<td><code>EulerGamma</code>, <code>CatalanConstant</code>, <code>Degrees</code></td>
+<td>the same</td>
+<td>γ, Catalan’s constant, and π/180, so <code>30·Degrees</code> is 30° in radians.</td>
+</tr>
+</tbody>
+</table></div>
+<p>Where Pencil differs on purpose:</p>
+<ul>
+<li><strong>Names are words,</strong> so <code>eps</code> is one name, where the Compute Engine’s LaTeX reads it as e·p·s. A space splits a product: <code>e p s</code>.
+Nothing splits by what happens to be defined, as GeoGebra does, where a half-typed <code>ToCo</code> quietly becomes <code>T</code>, <code>o</code> and <code>C</code>:
+an unknown name is an error. Only the constants’ glyphs split, and they’re fixed.</li>
+<li><strong>A document has one scope.</strong> The Compute Engine substitutes a constant as it parses, so a variable named <code>e</code> has to be declared
+before anything that uses it. A figure’s <code>let e</code> applies to every <code>e</code> in it, wherever it’s written.</li>
+<li><strong><code>exp(x)</code> stays <code>Exp</code>.</strong> The Compute Engine’s canonical form is <code>["Power", "ExponentialE", x]</code>, which means the same, and Pencil
+turns that into <code>Exp</code>, so derivatives and complex values take one path.</li>
+</ul>
+<h3 id="pasting-latex">Pasting LaTeX</h3>
+<p>The playground and the AST page read LaTeX pasted from Desmos or MathLive as Pencil text (<code>latex.rs</code>), and say what it became.
+Undo takes it back. Text with a backslash, a <code>^{</code>, or a leading <code>$</code> is LaTeX, and Pencil text never has them.</p>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Table"><table>
+<thead>
+<tr>
+<th>Pasted</th>
+<th>Becomes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>y=\frac{1}{2}x^{2}</code></td>
+<td><code>y = 1/2·x^2</code></td>
+</tr>
+<tr>
+<td><code>\frac{1}{2\pi}</code>, <code>-\frac{b}{2a}</code></td>
+<td><code>1/(2π)</code>, <code>-b/(2a)</code></td>
+</tr>
+<tr>
+<td><code>\exponentialE^{\imaginaryI\pi}+1</code></td>
+<td><code>e^(iπ) + 1</code></td>
+</tr>
+<tr>
+<td><code>\theta_{1}</code>, <code>x_{1}y</code></td>
+<td><code>θ_1</code>, <code>x_1·y</code></td>
+</tr>
+<tr>
+<td><code>xy</code>, <code>2\pi r</code></td>
+<td><code>x·y</code>, <code>2πr</code></td>
+</tr>
+<tr>
+<td>`\left</td>
+<td>z\right</td>
+</tr>
+<tr>
+<td><code>\sin x\cos x</code>, <code>\sin^{2}x</code></td>
+<td><code>sin(x)·cos(x)</code>, <code>sin(x)^2</code></td>
+</tr>
+<tr>
+<td><code>30^{\circ}</code></td>
+<td><code>30·Degrees</code></td>
+</tr>
+</tbody>
+</table></div>
+<ul>
+<li><strong>Letters run together are a product,</strong> as LaTeX means them, so <code>xy</code> comes out <code>x·y</code>, not the name <code>xy</code>. A longer name has to be
+<code>\operatorname{…}</code> or <code>\mathrm{…}</code> in LaTeX, and is one name here too.</li>
+<li><strong>A letter before parentheses is a call only if it’s a function:</strong> a built-in, a <code>fn</code> in the document, or the one a line defines,
+as <code>f\left(x\right)=x^{2}</code>. Otherwise it multiplies, so <code>a\left(x+1\right)</code> is <code>a·(x + 1)</code>, as Desmos reads it.</li>
+<li><strong>Brackets go only where Pencil needs them,</strong> with one more: a product in a denominator, <code>1/(2π)</code>, which Pencil would read the
+same way without them but a reader might not.</li>
+<li><strong><code>\phi</code> and <code>\varphi</code> are both <code>φ</code>,</strong> and <code>\epsilon</code> and <code>\varepsilon</code> both <code>ε</code>: the letter a keyboard types, whichever way
+LaTeX draws it.</li>
+<li><strong>Lines pasted together are one graph:</strong> a function any line defines, as <code>G\left(u,v\right)=u+v</code>, is a call on every line. Three
+or more things in parentheses are arguments whatever the name is, since a point has two coordinates.</li>
+<li><strong>Desmos’s own spellings read as what they mean:</strong> <code>A.x</code> and <code>A.y</code> stay, <code>P.\operatorname{real}</code> is <code>real(P)</code>, <code>\tan^{-1}</code> is
+<code>arctan</code>, and <code>\log</code> is base 10 while <code>\log_{2}x</code> is <code>ln(x)/ln(2)</code>.</li>
+<li><strong>A function LaTeX has and Pencil doesn’t yet keeps its name,</strong> as <code>\gcd</code>, <code>\lcm</code>, <code>\det</code> and <code>\lg</code> do, so the figure’s error names
+it. <code>pencil latex</code> writes such a line as a comment that says which.</li>
+<li><strong><code>\pm</code> and <code>\mp</code> are <code>±</code> and <code>∓</code>,</strong> as <code>(-b ± sqrt(b^2 - 4a·c))/(2a)</code> and <code>x = 5 ± 2</code>, and a sign before a product brackets it,
+<code>±(2x)</code>. Where the text goes decides whether Pencil takes it: in what a collection draws it’s two branches, as a whole range
+an interval, and anywhere else the figure’s error says why.</li>
+<li><strong>What has no Pencil form is an error,</strong> and the LaTeX pastes as written: Desmos’s piecewise braces, <code>with</code> and <code>for</code>, comparisons, lists, derivatives, an n-th root (<code>x^(1/n)</code> differs from it for negative x), 3D points, and infinity.</li>
+</ul>
+<h3 id="numbers">Numbers</h3>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Table"><table>
+<thead>
+<tr>
+<th>Function</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>sqrt(x)</code>, <code>exp(x)</code>, <code>ln(x)</code>, <code>abs(x)</code>, <code>sign(x)</code></td>
+<td>The usual. <code>sign(0)</code> is 0.</td>
+</tr>
+<tr>
+<td><code>log(x)</code>, <code>log(x, b)</code></td>
+<td>The logarithm to base 10, as LaTeX’s <code>\log</code> and Desmos’s are, or to base <code>b</code>. The natural one is <code>ln(x)</code>.</td>
+</tr>
+<tr>
+<td><code>floor(x)</code>, <code>ceil(x)</code>, <code>round(x)</code></td>
+<td>The whole number below, above and nearest. A half rounds away from 0, so <code>round(-2.5)</code> is −3.</td>
+</tr>
+<tr>
+<td><code>sin(x)</code>, <code>cos(x)</code>, <code>tan(x)</code>, <code>sec(x)</code>, <code>csc(x)</code>, <code>cot(x)</code></td>
+<td>Radians. <code>30·Degrees</code> is an angle in degrees.</td>
+</tr>
+<tr>
+<td><code>arcsin(x)</code>, <code>arccos(x)</code>, <code>arctan(x)</code>, or <code>asin(x)</code>, <code>acos(x)</code>, <code>atan(x)</code></td>
+<td>Their inverses, in radians. <code>arctan</code> is between −π/2 and π/2.</td>
+</tr>
+<tr>
+<td><code>arcsec(x)</code>, <code>arccsc(x)</code>, <code>arccot(x)</code></td>
+<td><code>arccos(1/x)</code>, <code>arcsin(1/x)</code>, and for <code>arccot</code> the angle between 0 and π, as Desmos has it, so it has no jump at 0.</td>
+</tr>
+<tr>
+<td><code>atan2(y, x)</code></td>
+<td>The angle of the point <code>(x, y)</code>, between −π and π.</td>
+</tr>
+<tr>
+<td><code>arcsinh(x)</code>, <code>arccosh(x)</code>, <code>arccoth(x)</code>, or <code>arsinh(x)</code>, <code>arcosh(x)</code>, <code>arcoth(x)</code></td>
+<td>The inverses of the hyperbolic functions, with <code>arctanh(x)</code>, which are under Complex numbers.</td>
+</tr>
+<tr>
+<td><code>min(a, b)</code>, <code>max(a, b)</code>, <code>clamp(x, lo, hi)</code></td>
+<td>Limits.</td>
+</tr>
+<tr>
+<td><code>mod(x, y)</code></td>
+<td>Floored, so the result takes <code>y</code>’s sign.</td>
+</tr>
+<tr>
+<td><code>mix(a, b, t)</code></td>
+<td><code>a</code> at 0 and <code>b</code> at 1. Also mixes two colors, in linear light.</td>
+</tr>
+<tr>
+<td><code>smoothstep(a, b, t)</code></td>
+<td>0 before <code>a</code>, 1 after <code>b</code>, eased between.</td>
+</tr>
+<tr>
+<td><code>reveal(age, now, later)</code></td>
+<td>0 before a beat, <code>now</code> during it, <code>later</code> after it.</td>
+</tr>
+<tr>
+<td><code>snap(x)</code>, <code>snap(x, power)</code></td>
+<td>0 at or before 0, and 1 at or after 1: gets there fast, then eases in. <code>power</code> defaults to 5.</td>
+</tr>
+<tr>
+<td><code>timeline(time, start, end, …)</code></td>
+<td>Which step of a list of moves a time is in: whole while holding, and between two, linearly, while moving.</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="points-in-space">Points in space</h3>
+<p><code>(x, y, z)</code> is a point in space. A mark draws it looking down z, which comes toward the reader, so it’s drawn at its <code>x</code>
+and <code>y</code>, and a figure that never writes a <code>z</code> is the same figure it was. The view is orthographic: nothing gets smaller
+with distance.</p>
+<ul>
+<li><strong>It’s a vector, and not a complex number.</strong> It adds to and subtracts from another, scales by a number, and has <code>.x</code>,
+<code>.y</code> and <code>.z</code>. Multiplying two, or passing one to <code>exp</code>, is an error. A function can build one from a point in the
+plane: <code>fn rolled(w) = (w.x, r·sin(w.y), r·cos(w.y))</code>.</li>
+<li><strong>Any mark can take one where it takes a point:</strong> a dot, a curve’s point, a segment’s ends, a label’s place.</li>
+<li><strong>A viewport’s <code>yaw</code> turns the view</strong> about its vertical axis, so <code>z</code> comes round toward <code>x</code>:
+a point is drawn at <code>x·cos(yaw) + z·sin(yaw)</code>, and its <code>y</code>.</li>
+<li><strong>A sheet can read a point’s <code>z</code>, as <code>self.z</code>,</strong> along a <code>curve</code> or <code>curves</code> of points in space, in <code>width</code> and <code>opacity</code>,
+and for each of a collection of <code>dots</code>, in <code>radius</code>. It’s the <code>z</code> the figure wrote, before the view turns. So a figure
+that puts a tube’s axis at <code>z = 0</code> has its far side at <code>z &lt; 0</code>, and its sheet can say
+<code>opacity: mix(0.25, 1, smoothstep(-0.04, 0.04, self.z))</code>. Where that changes along a curve, the stroke is cut there, to a
+quarter of a pixel, and not at the nearest sample, so the cut moves evenly as the figure does.</li>
+<li><strong>Nothing is hidden behind anything.</strong> Marks are drawn in the order they’re written, as in the plane. Where strokes of one
+curve or one collection overlap, the one with more ink shows, so a faded far side never dims a near side that crosses it.</li>
+</ul>
+<p><code>corpus/013-tube</code> is the example. Not built: a view that pitches or that a reader turns by dragging, <code>self.z</code> on segments,
+polygons and single dots, a color that follows depth, and drawing by depth.</p>
+<h3 id="points-and-constructions">Points and constructions</h3>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Table"><table>
+<thead>
+<tr>
+<th>Function</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>length(P)</code>, <code>dist(A, B)</code>, <code>dot(A, B)</code></td>
+<td>Numbers from points. <code>length(P)</code> is <code>abs(P)</code>, MathJSON’s <code>Abs</code>.</td>
+</tr>
+<tr>
+<td><code>midpoint(A, B)</code></td>
+<td>Halfway between.</td>
+</tr>
+<tr>
+<td><code>circle(C, T)</code></td>
+<td>About <code>C</code> through <code>T</code>. Fields <code>.x</code>, <code>.y</code>, <code>.r</code>. Its disk is its negative side.</td>
+</tr>
+<tr>
+<td><code>circle(A, B, C)</code></td>
+<td>Through three points, in order (below). Fields <code>.a</code>, which is its signed curvature, and <code>.x</code>, <code>.y</code>, <code>.r</code>, which don’t exist on a line.</td>
+</tr>
+<tr>
+<td><code>flip(c)</code></td>
+<td>The same circle running the other way round, so its sides trade signs.</td>
+</tr>
+<tr>
+<td><code>line(A, B)</code>, <code>ray(A, B)</code></td>
+<td>Through two points. A ray starts at <code>A</code>. Two points in one place make no line.</td>
+</tr>
+<tr>
+<td><code>perpendicular(P, l)</code></td>
+<td>The line through <code>P</code> at right angles to <code>l</code>.</td>
+</tr>
+<tr>
+<td><code>intersect(u, v, which)</code></td>
+<td>Where lines, rays and circles meet, if they do (below). <code>which</code> is 0 or 1, and defaults to 0.</td>
+</tr>
+<tr>
+<td><code>mirror(s, across)</code></td>
+<td>A point across a line or point, or a circle across a line.</td>
+</tr>
+<tr>
+<td><code>exists(v)</code></td>
+<td>1 if all of <code>v</code> exists this frame, and 0 if not.</td>
+</tr>
+<tr>
+<td><code>otherwise(v, fallback)</code></td>
+<td><code>v</code>, or all of <code>fallback</code> where <code>v</code> doesn’t exist. They must be the same kind.</td>
+</tr>
+</tbody>
+</table></div>
+<p>A circle through three points has a handedness. Going counterclockwise, its negative side is its disk,
+and its curvature is positive. Going clockwise, its negative side is everything else, and its
+curvature is negative. Three points in a line are a line, which runs through 0 curvature without
+any value going to infinity, and has no center or radius. Two points in one place make no circle.</p>
+<p><code>which</code> names a root, not a place among the points that remain. Along a line, 0 and 1 are in
+order of its direction. For two circles, 0 is left of the line from the first center to the
+second. A ray only has the points ahead of its start, so from inside a circle only its root 1
+exists, and root 0 is absent, rather than root 1 taking its place and jumping.</p>
+<h3 id="complex-numbers">Complex numbers</h3>
+<p><strong>A point is a complex number.</strong> <code>(x, y)</code> and <code>x + y·i</code> are the same value, there’s no second type, and <code>i</code> is the point <code>(0, 1)</code>:</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="plaintext"><code><span class="line"><span>let omega = -1 / 2 + sqrt(3) / 2·i</span></span>
+<span class="line"><span>fn to_turn(w) = 2·π·i·w / A</span></span>
+<span class="line"><span>fn spiral(t) = exp(t)</span></span></code></pre>
+<ul>
+<li><strong>A number is a point on the real axis,</strong> wherever a point is wanted, so <code>curve c = parametric (t): -t for t in 0..q</code>, <code>label n = "1" at 1</code>,
+<code>circle(0, 1)</code> and <code>1 + omega</code> all work, and a number answers <code>.x</code> and <code>.y</code>.</li>
+<li><strong>Arithmetic is complex:</strong> <code>·</code> and <code>/</code> between two points multiply and divide them as complex numbers, and <code>+</code>, <code>-</code> and scaling are what they
+were. <code>dot(a, b)</code> is still the dot product.</li>
+<li><strong>Powers:</strong> <code>z²</code> and <code>z^-3</code> multiply out, up to a power of 8. Anything else, such as <code>z^2.5</code> or <code>z^i</code>, is <code>exp(w·ln(z))</code>, on the principal branch.</li>
+<li><strong>Functions:</strong> <code>real(z)</code>, <code>imag(z)</code>, <code>conj(z)</code>, <code>abs(z)</code> and <code>arg(z)</code> read it. <code>exp</code>, <code>ln</code> and <code>sqrt</code> take one too, with principal values.
+<code>ln(0)</code> and <code>arg(0)</code> don’t exist, and a figure with one draws what it can (see below).</li>
+<li><strong>The trigonometric functions and their inverses take one too,</strong> all of those under Numbers but <code>atan2</code>, <code>floor</code>, <code>ceil</code> and <code>round</code>, on
+the principal branches, as does <code>log</code>. A number stays a number: <code>arcsin(2)</code> has no answer, as <code>sqrt(-1)</code> has none, and
+<code>arcsin(2 + 0·i)</code> is complex. On a branch cut the value is the one a formula gives there: <code>arcsin(z)</code> is <code>-i·ln(i·z + sqrt(1 - z²))</code>.</li>
+<li><strong>Hyperbolic functions:</strong> <code>sinh(x)</code>, <code>cosh(x)</code>, <code>tanh(x)</code>, <code>coth(x)</code>, <code>sech(x)</code>, <code>csch(x)</code> and <code>arctanh(x)</code> (or <code>artanh(x)</code>) take numbers and complex numbers. They compile to <code>exp</code> and <code>ln</code>,
+and the functions added to them compile the same way, to ones every renderer already has, so a derivative sees through each.</li>
+<li><strong><code>i</code> gives way to anything named <code>i</code>,</strong> so <code>for i in 1..q</code> still counts, and inside it <code>i</code> is the count. It’s clearer to use another name there.
+It also means a stray <code>i</code> outside a loop isn’t an unknown name any more.</li>
+<li><strong>Exact derivatives see through all of it,</strong> so <code>solve</code> and a label’s <code>away</code> work on complex values. It all compiles to plain numbers, so a
+shader and an evaluator don’t know it’s there.</li>
+</ul>
+<h3 id="when-a-value-doesnt-exist">When a value doesn’t exist</h3>
+<p>Geometry is partial, so a value can be absent on some frames. Only constructions make one:</p>
+<ul>
+<li>A line or ray that misses a circle, or a circle that’s apart from, inside or the same as another.</li>
+<li>Parallel lines.</li>
+<li>A point behind the start of a ray.</li>
+<li>A line through two points in one place, or a <code>rightangle</code> with a side of no length.</li>
+</ul>
+<p>Touching counts as meeting, within rounding, so a tangent by construction doesn’t flicker.</p>
+<p>Whatever is built from an absent value is absent too, and only <code>exists</code> and <code>otherwise</code> can see
+the difference. What that means for each thing that uses one:</p>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Table"><table>
+<thead>
+<tr>
+<th>Use</th>
+<th>When its value is absent</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>A mark</td>
+<td>Isn’t drawn, along with its label, which pages must then hide.</td>
+</tr>
+<tr>
+<td>A style value</td>
+<td>Hides the mark. To respond instead, <code>let shown = exists(P)</code> and use <code>shown</code>.</td>
+</tr>
+<tr>
+<td>A parametric curve’s point</td>
+<td>Leaves a gap there, and the curve can come in pieces.</td>
+</tr>
+<tr>
+<td>A region’s boundary</td>
+<td>Hides the region: with a gap it doesn’t enclose anything.</td>
+</tr>
+<tr>
+<td><code>fit</code></td>
+<td>Skips it, and if nothing is left, uses the declared <code>x</code> and <code>y</code>.</td>
+</tr>
+<tr>
+<td><code>handle</code></td>
+<td>Can’t be grabbed. An inverse with no answer leaves its param where it is, and a handle’s other param still moves.</td>
+</tr>
+<tr>
+<td><code>paper</code></td>
+<td>A compile error: there has to be something to draw on.</td>
+</tr>
+<tr>
+<td>A curve’s field</td>
+<td>Has to name the value with <code>let</code> first: a field runs per pixel, and existence is decided per frame.</td>
+</tr>
+</tbody>
+</table></div>
+<p>On a page, <code>player.value</code> reads an absent binding as <code>NaN</code>.</p>
+<h3 id="colors">Colors</h3>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Table"><table>
+<thead>
+<tr>
+<th>Function</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>oklch(l, c, h)</code></td>
+<td>Perceptual, with <code>h</code> in degrees.</td>
+</tr>
+<tr>
+<td><code>rgb(r, g, b)</code></td>
+<td>sRGB, 0 to 255.</td>
+</tr>
+<tr>
+<td><code>hue(k)</code></td>
+<td>A perceptual ramp, with <code>k</code> from 0 to 1 once around.</td>
+</tr>
+<tr>
+<td><code>white</code>, <code>black</code></td>
+<td>Names.</td>
+</tr>
+</tbody>
+</table></div>
+<h2 id="styles">Styles</h2>
+<p><code>style selector, selector { property: value; … }</code>. Later rules win, across files, with the
+document’s own rules last. There’s no specificity (SPEC/15). Any property can be <code>none</code>, which
+takes back what an earlier rule set, as in CSS: after <code>style ray { dash: 10px }</code>,
+<code>style base { dash: none }</code> draws that one ray solid. <code>stroke: none</code> and <code>fill: none</code> say more: no paint, as in SVG, so
+<code>stroke: none</code> draws no line and nothing draws one by default (see What’s drawn with nothing said).</p>
+<p><strong>A style sheet can name values</strong> with <code>let ink = rgb(28, 27, 25)</code>. The last sheet to define a name decides what it
+means everywhere, including in rules written before it, as a CSS variable does. So <code>corpus/theme.style</code> holds a theme’s
+colors and label roles, and <code>corpus/dark.style</code> only redefines the colors. A name can use another defined in any order, but
+not itself. A sheet can define functions too, as a document can: <code>fn glow(d, w) = exp(-d / w)</code>, then
+<code>opacity: glow(self.dist, 6px)</code>. A call is inlined, its parameters hide the sheet’s names of the same spelling, the last sheet
+to define a function decides what it means, and a function can’t call itself. A document picks a role by tag: <code>label n = "|z|" at M tag note</code>, and it never picks a number. A rule that names a mark has to find
+it, but a rule by type or tag may match nothing, since a shared sheet can’t know what each figure uses.</p>
+<p><strong>Selectors</strong> combine a name or type with tags: <code>c</code>, <code>circle</code>, <code>.aux</code>, <code>circle.blue</code>, and
+<code>c::inside</code> for a facet. <code>control</code> and <code>q.control</code> are params’ controls (see Controls and readouts). A mark’s type is one of its tags: <code>circle</code>, <code>line</code>, <code>ray</code>, <code>curve</code>,
+<code>segment</code>, <code>decoration</code>, <code>region</code>, <code>dot</code>, <code>label</code>, <code>arrow</code>, <code>term</code>, <code>dots</code>, <code>circles</code>, <code>curves</code>, <code>outline</code>. <code>paper</code> is the background.</p>
+<p><strong>Facets</strong> are the two sides of a mark. <code>::negative</code> and <code>::positive</code> are the field’s sign. On a circle, <code>::inside</code> and
+<code>::outside</code> are its true disk and everything else, whichever way round it runs, and on a line, where there’s no disk, they follow the sign. Where both name the same part of the plane,
+<code>::inside</code> and <code>::outside</code> win. On anything else that has sides, <code>::inside</code> and <code>::outside</code> are aliases for the sign, with the negative side inside.</p>
+<p>So a circle through three points that turns over straightens into a line and comes back with its sides’ signs where they were, and its disk on the other one. Style <code>::negative</code> and the plane doesn’t flash, and style <code>::inside</code> and
+the color stays with the disk. A style can tell which it is from <code>self.curvature</code>.</p>
+<p><strong>Values are expressions</strong>, so they can use <code>time</code>, <code>duration</code> (see Expressions), params and bindings. A few more names exist only here:</p>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Table"><table>
+<thead>
+<tr>
+<th>Name</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>self.dist</code></td>
+<td>Distance to the mark, in <code>fill</code>, <code>stroke</code> and <code>fill_opacity</code>, on marks that have one, and negative inside. It’s a true distance: an implicit curve’s is measured to the curve as traced in view, so <code>cos(24·self.dist)</code> makes even bands. A parametric curve has one for its <code>stroke</code> and <code>opacity</code> when its stroke is drawn per pixel, with <code>draw: field</code>: the distance to the curve as sampled, with no sign, since such a curve has no sides.</td>
+</tr>
+<tr>
+<td><code>self.pixel</code></td>
+<td>How big a device pixel is in world units, wherever <code>self.dist</code> is, so that a glow can be a number of the screen’s pixels across. It’s what the screen can resolve, not the design: <code>1px</code> is a device pixel only at the design size on a 1× screen.</td>
+</tr>
+<tr>
+<td><code>self.curvature</code></td>
+<td>A circle’s signed curvature: above 0 counterclockwise, below 0 clockwise, and 0 on a line.</td>
+</tr>
+<tr>
+<td><code>self.t</code></td>
+<td>Position along a stroke, 0 to 1, in <code>width</code>, and in a curve’s <code>opacity</code>.</td>
+</tr>
+<tr>
+<td><code>self.z</code></td>
+<td>A point’s third coordinate as the figure wrote it: along a curve of points in space, in <code>width</code> and <code>opacity</code>, and for each dot of a collection of them, in <code>radius</code>. See Points in space.</td>
+</tr>
+<tr>
+<td><code>self.sign</code></td>
+<td>Which branch of a collection with <code>±</code> an instance is: 1 for the first, where <code>±</code> is +, and −1 for the second. Wherever the collection’s variables can be read. See Collections.</td>
+</tr>
+<tr>
+<td><code>self.age</code></td>
+<td>See Beats.</td>
+</tr>
+<tr>
+<td><code>self.life</code></td>
+<td>How present the mark is, from 0 before a beat shows it to 1, and back to 0 as one drops it, moving with those beats. 1 for a mark no beat names.</td>
+</tr>
+<tr>
+<td><code>self.focus</code></td>
+<td>How much the beats are about the mark, from 0 to 1, changing as a beat that names something moves. 1 until a beat names anything.</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>A length is in one of three units,</strong> and they’re all lengths, so they mix: <code>width: 1px + 0.01</code>, and <code>self.dist / 1px</code> is
+a distance in design pixels.</p>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Table"><table>
+<thead>
+<tr>
+<th>Unit</th>
+<th>Is</th>
+<th>Scales with</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>a bare number</td>
+<td>The figure’s own units, as in the document. <code>width: 0.02</code> is that wide in the plane, so it grows as a <code>fit</code> zooms in.</td>
+<td>The math</td>
+</tr>
+<tr>
+<td><code>px</code></td>
+<td>A design pixel, as SVG’s <code>px</code> is inside a <code>viewBox</code>. <code>style figure { width }</code> says how many there are across.</td>
+<td>The figure as it’s drawn</td>
+</tr>
+<tr>
+<td><code>em</code></td>
+<td>The reader’s text size. On a page, the page’s font size where the figure is, so text matches the text around it at any size the figure is drawn. A reader who changes their text size changes it, and the labels follow at once, so a page sets its text in <code>rem</code>, not <code>px</code>. In a video, <code>style figure { em }</code>, 17 px by default.</td>
+<td>The reader’s text</td>
+</tr>
+</tbody>
+</table></div>
+<p>Text goes in <code>em</code>, as the theme’s does, and strokes, dots and arrows in <code>px</code>. A figure’s own size and a panel’s are design
+pixels, so they can’t be in <code>em</code>.</p>
+<p><strong>Colors can be scaled and added:</strong> <code>white·4</code>, <code>mix(a, b, t) + c / 3</code>. They aren’t clipped until the end, and <code>rgb</code> can go past 255. <code>sinh</code>, <code>cosh</code> and <code>tanh</code> also work in a style. So a glow reads
+<code>fill_opacity: tanh(2·self.pixel / abs(self.dist))</code>.</p>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Table"><table>
+<thead>
+<tr>
+<th>Property</th>
+<th>Applies to</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>fill</code></td>
+<td>Regions, dots, labels, facets</td>
+<td>A color, or <code>none</code> for no fill. A field’s <code>fill</code> needs a facet, and so does a <code>circles</code> collection’s, <code>fill: none</code> included, since they’re filled only by their sides. A label, a term, a panel’s <code>title</code> or <code>formula</code>, or the <code>caption</code> with <code>fill: none</code> isn’t drawn. The <code>paper</code> can’t be <code>none</code>: leave its fill out for white.</td>
+</tr>
+<tr>
+<td><code>fill_opacity</code></td>
+<td>Anything filled</td>
+<td>Scales only the fill, on top of <code>opacity</code>.</td>
+</tr>
+<tr>
+<td><code>stroke</code></td>
+<td>Curves, lines, regions, dots</td>
+<td>A color, or <code>none</code> for no line. A collection’s can be a color for each of its instances (see Collections).</td>
+</tr>
+<tr>
+<td><code>width</code></td>
+<td>Strokes</td>
+<td>A length. Can vary along the stroke with <code>self.t</code>, and with <code>self.z</code> on a curve of points in space.</td>
+</tr>
+<tr>
+<td><code>head</code>, <code>head_span</code></td>
+<td>Curves</td>
+<td>With <code>head: 13px</code>, a curve ends in an arrowhead. <code>head_span: 1</code> holds it to 60% of the last 1 of the curve’s parameter, so it can’t dwarf a spiral’s tight turns.</td>
+</tr>
+<tr>
+<td><code>dash</code>, <code>gap</code></td>
+<td>Lines</td>
+<td>Lengths. A loop gets a whole number of dashes, stretched to fit. <code>dash: 0</code>, like <code>dash: none</code>, is solid.</td>
+</tr>
+<tr>
+<td><code>cap</code></td>
+<td>Lines</td>
+<td><code>butt</code> (default) or <code>round</code>.</td>
+</tr>
+<tr>
+<td><code>draw</code></td>
+<td>Strokes</td>
+<td>A hint: <code>auto</code> (default), <code>line</code> or <code>field</code>. <code>field</code> draws an implicit or a parametric curve’s stroke per pixel from its distance, so a parametric curve’s <code>stroke</code> and <code>opacity</code> can fall off with <code>self.dist</code>: <code>draw: field; width: 8; stroke: white; opacity: tanh(2·self.pixel / abs(self.dist))</code> is a line of light. A stroke drawn that way has no dashes, taper or <code>trim</code>.</td>
+</tr>
+<tr>
+<td><code>blend</code></td>
+<td>Edges, sides</td>
+<td><code>gamma</code> (default, as SVG does), <code>linear</code>, or <code>add</code>, which adds to what’s there in display values and never covers it.</td>
+</tr>
+<tr>
+<td><code>tone</code></td>
+<td><code>paper</code></td>
+<td><code>clip</code> (default) or <code>tanh</code>, which runs the finished picture through <code>tanh</code> in display values, so that what <code>blend: add</code> piles up stays in range. Or a number from 0 to 1 between them, which can change, so a figure can turn into one that adds light: <code>tone: glow</code> with a beat named <code>glow</code>.</td>
+</tr>
+<tr>
+<td><code>opacity</code></td>
+<td>Any mark</td>
+<td>Scales the whole mark. On a <code>curve</code> or <code>curves</code> it can vary along the stroke, with <code>self.t</code> and <code>self.z</code>: each part of the stroke has that much ink, and where parts overlap the most ink shows.</td>
+</tr>
+<tr>
+<td><code>ticks</code>, <code>tick</code></td>
+<td>Segments</td>
+<td>How many short marks cross its middle, saying it’s as long as another with as many, and how long each is, 10 px by default. Drawn in its stroke without its dashes, once a trimmed segment reaches its middle.</td>
+</tr>
+<tr>
+<td><code>leader</code>, <code>leader_gap</code></td>
+<td>Labels</td>
+<td>A line from its point to its text, this wide, in the text’s color. It starts <code>leader_gap</code> from the point, so it can meet a ring, and stops a little short of the text, wherever the label settles.</td>
+</tr>
+<tr>
+<td><code>radius</code></td>
+<td>Dots, circles, outlines</td>
+<td>A length. A dot’s size, a cap on a collection’s circles, or an outline’s least half-size.</td>
+</tr>
+<tr>
+<td><code>size</code></td>
+<td>Labels</td>
+<td>A length, usually in <code>em</code>. Defaults to 1 em.</td>
+</tr>
+<tr>
+<td><code>halo</code></td>
+<td>Labels</td>
+<td>Its full width, in the paper’s color.</td>
+</tr>
+<tr>
+<td><code>font</code></td>
+<td>Labels</td>
+<td>A role: <code>sans</code> (default) or <code>math</code>, an italic for names and notes. Both are the package’s own fonts, Libertinus Sans and Libertinus Serif Italic, the same files in the command and on a page, with Libertinus Math behind each for the symbols a text face lacks and for a label’s mathematics. It sets a label’s words: its mathematics is laid out the same in either.</td>
+</tr>
+<tr>
+<td><code>place</code></td>
+<td>Labels</td>
+<td><code>settle</code> (default), tied to its <code>offset</code> by a spring and pushed off what’s drawn and other labels, or <code>fixed</code>, exactly at its <code>offset</code>. A label written on its own point, as <code>label z at z</code> is, starts a little up and to the right of it, and settles from there.</td>
+</tr>
+<tr>
+<td><code>format</code></td>
+<td>Labels</td>
+<td>How a point in its text is written: <code>point</code> (default) as <code>(−0.50, −0.87)</code>, <code>complex</code> as <code>−0.50 − 0.87i</code>, or <code>polar</code> as <code>e^(−2πi/3)</code>, with an angle that’s a fraction of π up to twelfths written as one. A point and a complex number are one thing in Pencil, so which it reads as is the sheet’s.</td>
+</tr>
+<tr>
+<td><code>kind</code></td>
+<td>Controls</td>
+<td>Which control a param gets: <code>slider</code>, <code>radios</code>, <code>select</code> or <code>checkbox</code> (see Controls and readouts).</td>
+</tr>
+<tr>
+<td><code>text</code></td>
+<td>Labels, controls</td>
+<td>What a label says about the value it’s about, as parts joined by <code>=</code>: <code>caption</code> (its own words, or the value’s name if it has none), <code>name</code>, <code>expr</code> (the expression as written: a <code>let</code>’s right side, or what’s between the braces) and <code>value</code>. <code>text: expr = value</code> is <code>σ(2) = −0.50 − 0.87i</code>, <code>text: name = value</code> is <code>root = −0.50 − 0.87i</code>, and <code>text: caption</code> is the words alone. Parts that come out the same are said once, so a param’s <code>expr = value</code> is <code>q = 3</code>. Without it, a label says its own words, or its value if it has none. A label that isn’t about one value says its words whatever this is. A readout with none says which value it is (see Controls and readouts). On a control, what it says (see Controls and readouts).</td>
+</tr>
+<tr>
+<td><code>digits</code></td>
+<td>Labels</td>
+<td>How many decimal places its values are written to. Defaults to 2. A whole number is written whole, and a part that rounds to zero is left out of a complex number.</td>
+</tr>
+<tr>
+<td><code>head</code></td>
+<td>Arrows</td>
+<td>The head’s length. Defaults to 14 px.</td>
+</tr>
+<tr>
+<td><code>distance</code></td>
+<td>Labels</td>
+<td>How far a label written with <code>away</code> sits from its point. Defaults to 16/17 em.</td>
+</tr>
+<tr>
+<td><code>show</code></td>
+<td>Any mark</td>
+<td>Draws it only while this is above 0, decided per frame. Can also read <code>view.width</code>, the view’s width in world units, for zoom levels.</td>
+</tr>
+<tr>
+<td><code>trim</code></td>
+<td>Curves, lines, arrows, circles</td>
+<td>How much of the stroke is drawn, from its start: 0 to 1 of a curve’s parameter, or of a straight line’s length. An arrow grows from its tail. A circle starts due east of its center and runs counterclockwise, and is drawn as a line to be trimmed. A collection of curves can trim each one with its variables. A traced curve, a region, dots and circles in a collection have no start, so they can’t.</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="whats-drawn-with-nothing-said">What’s drawn with nothing said</h3>
+<p>A figure with no sheet shows its marks. After the sheets are applied, a mark that would paint nothing gets its type’s
+default paint, in the default ink:</p>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Table"><table>
+<thead>
+<tr>
+<th>Mark</th>
+<th>Default paint</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>curve</code>, <code>circle</code>, <code>line</code>, <code>ray</code>, <code>segment</code>, <code>decoration</code>, <code>arrow</code>, <code>curves</code>, <code>circles</code>, <code>outline</code></td>
+<td>A stroke, 1 px wide, with butt caps. An arrow’s head is 14 px.</td>
+</tr>
+<tr>
+<td><code>region</code></td>
+<td>Its outline, as a stroke.</td>
+</tr>
+<tr>
+<td><code>dot</code>, <code>dots</code></td>
+<td>A fill, 3 px in radius.</td>
+</tr>
+<tr>
+<td><code>label</code>, <code>term</code></td>
+<td>Its text in the ink. A label settles, so <code>label z at z</code> moves off its dot; it’s otherwise as it is with nothing said: sans, 1 em, no halo. A term keeps its place in its expression.</td>
+</tr>
+</tbody>
+</table></div>
+<ul>
+<li><strong>A mark that paints anything is left as written.</strong> A side’s fill counts, so <code>c::inside { fill: blue }</code> alone draws no line
+around <code>c</code>. A <code>fill</code> on a mark that never draws one, such as a segment, doesn’t count, so the segment still gets its stroke.</li>
+<li><strong>What a sheet does write picks the paint and is kept,</strong> on a mark it applies to. Alone, these ask for a stroke: <code>width</code> on
+any mark, a dot too, so <code>style c { width: 3px }</code> is a 3 px line in the ink; <code>dash</code> and <code>gap</code> on anything but a dot or
+<code>dots</code>; <code>head</code> on a curve, <code>curves</code> or an arrow; <code>head_span</code> on a curve or <code>curves</code>; and <code>trim</code>, <code>ticks</code> and <code>tick</code>, which
+are only taken where they apply. <code>radius</code> asks a dot or <code>dots</code> for a fill, and <code>fill_opacity</code> a dot or a region. Anything
+else, such as a <code>radius</code> on a region, asks for nothing, and the mark gets its type’s own paint.</li>
+<li><strong><code>stroke: none</code> and <code>fill: none</code> keep that paint off,</strong> and a mark is hidden by writing <code>none</code> for its default paint:
+<code>stroke: none</code> for a line, <code>fill: none</code> for a dot. <code>stroke: none</code> on a dot that has nothing else still fills it, as SVG’s
+would. <code>show: 0</code> makes a mark absent instead, so labels don’t settle around it.</li>
+<li><strong>Text takes the ink too:</strong> a label, a term, a panel’s title and its formula with no <code>fill</code>, and the caption.</li>
+<li><strong>The ink is the sheets’ <code>ink</code>,</strong> if one names a color that, as <code>corpus/theme.style</code> does, and a sheet’s <code>ink</code> that isn’t a
+color is an error. Otherwise it’s black or white,
+whichever contrasts more with the paper, by WCAG’s contrast ratio: black on the default white paper. A paper that changes is
+judged frame by frame, so the ink turns over when the paper’s luminance passes about 0.18.</li>
+</ul>
+<h3 id="a-figure-as-svg">A figure as SVG</h3>
+<p><code>pencil svg DOC.pen --style … --out FIGURE.svg</code> writes one frame as vector graphics, for a paper, a slide or a drawing
+program. It’s the poster’s moment unless <code>--t</code> or <code>--param</code> say another, at the figure’s design size unless <code>--size</code> does.
+A param that follows time is set by one or the other: <code>--param</code> holds it, <code>--t</code> gives it the value it has at that time, and
+both for the same param is an error.
+It is written from the lines, regions and label places a frame prepares for the renderers, so it matches <code>pencil render</code> of
+the same frame. Each mark is an element, or a group of them, with the mark’s name as its <code>id</code>, and a label is text.</p>
+<p><strong>A style has a vector form when its value is one color or one number for a whole mark, for one of a collection, or along a
+stroke.</strong> What’s worked out per pixel has none. That part is left out, and a line on stderr names each mark and the property,
+so nothing is drawn as something it isn’t.</p>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Table"><table>
+<thead>
+<tr>
+<th>In a sheet</th>
+<th>In the SVG</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>stroke</code> with <code>width</code>, <code>dash</code>, <code>gap</code>, <code>cap</code>, <code>trim</code>, <code>ticks</code></td>
+<td>A path with that stroke. A curve is the short straight pieces it’s traced in, flat to a small fraction of a pixel at the size it’s written for.</td>
+</tr>
+<tr>
+<td><code>head</code>, and an <code>arrow</code></td>
+<td>The stroke, and a triangle for its head.</td>
+</tr>
+<tr>
+<td>A <code>width</code> that varies along the stroke, with <code>self.t</code> or <code>self.z</code></td>
+<td>The stroke’s outline, as a filled shape. With a <code>dash</code> as well it’s left out, for now.</td>
+</tr>
+<tr>
+<td>An <code>opacity</code> that varies along the stroke</td>
+<td>A mask over the stroke’s color, lighter where there’s more ink.</td>
+</tr>
+<tr>
+<td><code>fill</code> and <code>fill_opacity</code> on a region, a dot, the sides of a circle or of a curve that closes inside the frame, and each circle of a collection</td>
+<td>A filled shape. The side of a curve that leaves the frame is left out, for now.</td>
+</tr>
+<tr>
+<td><code>opacity</code>, <code>show</code>, <code>radius</code></td>
+<td>As drawn.</td>
+</tr>
+<tr>
+<td>A label, with <code>size</code>, <code>font</code>, <code>halo</code>, <code>leader</code> and where <code>place</code> put it</td>
+<td><code>&lt;text&gt;</code> centered on its place, in the fonts a page draws labels in, over the same text stroked in the paper’s color for its halo. A viewer with another font moves only the glyphs.</td>
+</tr>
+<tr>
+<td>A <code>fill</code>, <code>fill_opacity</code> or <code>stroke</code> that reads <code>self.dist</code></td>
+<td>That fill or stroke is left out, and the rest of the mark is drawn.</td>
+</tr>
+<tr>
+<td><code>blend: add</code></td>
+<td>The mark is left out: SVG has no paint that adds light.</td>
+</tr>
+<tr>
+<td><code>blend: linear</code></td>
+<td>Drawn, as <code>gamma</code>, which is how SVG blends.</td>
+</tr>
+<tr>
+<td><code>tone</code> on <code>paper</code></td>
+<td>Not applied. Colors are as their styles give them, so what a <code>tanh</code> would have dimmed is brighter.</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>A figure’s size is a sheet’s, and so is how panels are laid out.</strong> These values hold for the whole figure, so they can’t read a
+param, and a rule for a panel that doesn’t exist is a mistake. All panels have to be one size, for now.</p>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Table"><table>
+<thead>
+<tr>
+<th>Rule</th>
+<th>Property</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>style figure</code></td>
+<td><code>width</code>, <code>height</code></td>
+<td>In <code>px</code>, a figure’s design size, for one without panels. With <code>width</code>, <code>px</code> sizes scale with the output, as an SVG’s do with its <code>viewBox</code>, and without it a <code>px</code> is a CSS pixel. With both, they give its shape, and without <code>height</code> the shape is its viewport’s. A page sizes the figure’s canvas to its column, keeping that shape.</td>
+</tr>
+<tr>
+<td></td>
+<td><code>em</code></td>
+<td>In <code>px</code>, how big an <code>em</code> is where there’s no page to say, as in a video. Defaults to 17.</td>
+</tr>
+<tr>
+<td><code>style panels</code></td>
+<td><code>columns</code></td>
+<td>How many columns. Defaults to 1.</td>
+</tr>
+<tr>
+<td></td>
+<td><code>gap</code></td>
+<td>In <code>px</code>, between panels.</td>
+</tr>
+<tr>
+<td></td>
+<td><code>title</code></td>
+<td>In <code>px</code>, the band above each panel for its title.</td>
+</tr>
+<tr>
+<td><code>style panel</code>, <code>style panel.whole</code></td>
+<td><code>width</code>, <code>height</code></td>
+<td>In <code>px</code>, a panel’s design size. Defaults to 400.</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>A beat’s caption is drawn by one more rule,</strong> and only when a sheet has it, centered along the bottom of the canvas. As a beat
+with a new caption starts to move, the old one fades out and then the new one fades in, each over a fifth of a second, or less if
+the move is shorter.</p>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Table"><table>
+<thead>
+<tr>
+<th>Rule</th>
+<th>Property</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>style caption</code></td>
+<td><code>fill</code>, <code>size</code>, <code>halo</code></td>
+<td>As a label’s. <code>size</code> defaults to 18 px.</td>
+</tr>
+<tr>
+<td></td>
+<td><code>font</code></td>
+<td><code>sans</code> (default) or <code>math</code>.</td>
+</tr>
+<tr>
+<td></td>
+<td><code>distance</code></td>
+<td>From the bottom of the canvas to the caption’s center. Defaults to 28 px.</td>
+</tr>
+<tr>
+<td></td>
+<td><code>pad</code></td>
+<td>How much room a <code>fit</code> leaves around what it fits, as a fraction of its size. Defaults to 0.1.</td>
+</tr>
+</tbody>
+</table></div>
+</article></div></main><footer class="site"><p>Pencil is early, and its syntax will change. <a href="https://github.com/krisselden/pencil-lang">Source on GitHub</a>, under the MIT license.</p></footer></body></html><script type="module">var e=matchMedia(`(max-width: 60rem)`),t=()=>document.querySelector(`.docs aside details`)?.toggleAttribute(`open`,!e.matches);t(),e.addEventListener(`change`,t),document.querySelector(`.docs aside`)?.addEventListener(`click`,t=>{e.matches&&t.target.closest(`a[href^="#"]`)&&document.querySelector(`.docs aside details`)?.removeAttribute(`open`)});</script>

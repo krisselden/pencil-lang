@@ -1,0 +1,15 @@
+style figure { width: 640px; height: 400px }
+
+style c { stroke: ink; width: 1.75px }
+style thales { stroke: muted; width: 1px; dash: 3px; gap: 4px; opacity: 0.2 + 0.6·outside }
+
+style .tangent { stroke: blue; width: 1.75px }
+style .radius { stroke: blue; width: 1px; opacity: 0.6 }
+style decoration { stroke: blue; width: 1px; opacity: 0.6 }
+style T, U { fill: blue; radius: 4px }
+
+style chord { stroke: red; width: 1.75px }
+style E, F { fill: red; radius: 4px }
+
+style O { fill: ink; radius: 3px }
+style P { fill: paper_color; stroke: ink; width: 3px; radius: 7px }

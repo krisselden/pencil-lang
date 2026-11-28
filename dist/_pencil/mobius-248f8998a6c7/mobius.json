@@ -1,0 +1,214 @@
+{
+  "build": "8d262e2ea528cc05",
+  "figure": "mobius.pfig",
+  "hash": "3ceab9de67ac0256",
+  "info": {
+    "beatLengths": [],
+    "beats": [],
+    "colors": {
+      "accent": "rgb(169 139 255)",
+      "accent_soft": "rgb(98 84 140)",
+      "blue": "rgb(118 179 241)",
+      "blue_soft": "rgb(74 103 133)",
+      "green": "rgb(121 195 124)",
+      "green_soft": "rgb(75 111 74)",
+      "ink": "rgb(243 240 234)",
+      "muted": "rgb(148 143 134)",
+      "paper_color": "rgb(23 22 20)",
+      "red": "rgb(243 141 130)",
+      "red_soft": "rgb(135 84 77)"
+    },
+    "duration": 13.0,
+    "handles": [],
+    "panels": [
+      {
+        "formula": null,
+        "id": "",
+        "rect": [
+          0.0,
+          0.0,
+          1.0,
+          1.0
+        ],
+        "title": null
+      }
+    ],
+    "params": [
+      {
+        "caption": null,
+        "choice": null,
+        "control": {
+          "kind": "slider",
+          "name": "n",
+          "text": [
+            "caption",
+            "value"
+          ]
+        },
+        "follows": [],
+        "id": "n",
+        "max": 10.0,
+        "min": 1.0,
+        "reads": [],
+        "step": 1.0
+      },
+      {
+        "caption": null,
+        "choice": null,
+        "control": {
+          "kind": "slider",
+          "name": "a",
+          "text": [
+            "caption",
+            "value"
+          ]
+        },
+        "follows": [],
+        "id": "a",
+        "max": 10.0,
+        "min": -10.0,
+        "reads": [],
+        "step": null
+      },
+      {
+        "caption": null,
+        "choice": null,
+        "control": {
+          "kind": "slider",
+          "name": "b",
+          "text": [
+            "caption",
+            "value"
+          ]
+        },
+        "follows": [],
+        "id": "b",
+        "max": 10.0,
+        "min": -10.0,
+        "reads": [],
+        "step": null
+      },
+      {
+        "caption": null,
+        "choice": null,
+        "control": {
+          "kind": "slider",
+          "name": "c",
+          "text": [
+            "caption",
+            "value"
+          ]
+        },
+        "follows": [],
+        "id": "c",
+        "max": 10.0,
+        "min": -10.0,
+        "reads": [],
+        "step": null
+      },
+      {
+        "caption": null,
+        "choice": null,
+        "control": {
+          "kind": "slider",
+          "name": "d",
+          "text": [
+            "caption",
+            "value"
+          ]
+        },
+        "follows": [],
+        "id": "d",
+        "max": 10.0,
+        "min": -10.0,
+        "reads": [],
+        "step": null
+      }
+    ],
+    "poster": {
+      "params": {},
+      "time": 3.5
+    },
+    "readouts": [],
+    "size": [
+      640.0,
+      896.0
+    ],
+    "timeDriven": [
+      "grown",
+      "dipped",
+      "b",
+      "c",
+      "d"
+    ],
+    "usesTime": true,
+    "viewport": {
+      "height": 896.0,
+      "width": 640.0,
+      "x": [
+        -10.0,
+        10.0
+      ],
+      "y": [
+        -14.0,
+        14.0
+      ]
+    }
+  },
+  "poster": {
+    "images": [
+      {
+        "height": 896,
+        "scale": 1,
+        "src": "mobius.png",
+        "webp": "mobius.webp",
+        "width": 640
+      },
+      {
+        "height": 1792,
+        "scale": 2,
+        "src": "mobius-2x.png",
+        "webp": "mobius-2x.webp",
+        "width": 1280
+      }
+    ],
+    "params": {},
+    "ranges": {
+      "a": [
+        -10.0,
+        10.0
+      ],
+      "b": [
+        -10.0,
+        10.0
+      ],
+      "c": [
+        -10.0,
+        10.0
+      ],
+      "d": [
+        -10.0,
+        10.0
+      ],
+      "n": [
+        1.0,
+        10.0
+      ]
+    },
+    "readouts": [],
+    "time": 3.5,
+    "values": {
+      "a": 1.0,
+      "b": 1.0,
+      "c": 0.5,
+      "d": 2.0,
+      "n": 8.0
+    }
+  },
+  "sources": [
+    "corpus/010-mobius/mobius.pen",
+    "corpus/theme.style",
+    "corpus/010-mobius/plain.style",
+    "corpus/dark.style"
+  ]
+}

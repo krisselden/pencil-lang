@@ -1,0 +1,112 @@
+{
+  "build": "8d262e2ea528cc05",
+  "figure": "unroll.pfig",
+  "hash": "4f1184a0c0c58328",
+  "info": {
+    "beatLengths": [],
+    "beats": [],
+    "colors": {},
+    "duration": 13.0,
+    "handles": [],
+    "panels": [
+      {
+        "formula": null,
+        "id": "",
+        "rect": [
+          0.0,
+          0.0,
+          1.0,
+          1.0
+        ],
+        "title": null
+      }
+    ],
+    "params": [
+      {
+        "caption": null,
+        "choice": null,
+        "control": {
+          "kind": "slider",
+          "name": "a",
+          "text": [
+            "caption",
+            "value"
+          ]
+        },
+        "follows": [],
+        "id": "a",
+        "max": 6.283185307179586,
+        "min": 0.0,
+        "reads": [],
+        "step": null
+      }
+    ],
+    "poster": {
+      "params": {},
+      "time": 0.0
+    },
+    "readouts": [],
+    "size": [
+      10.7,
+      7.4
+    ],
+    "timeDriven": [
+      "a",
+      "P.x",
+      "P.y",
+      "Q.x",
+      "Q.y",
+      "side.x",
+      "side.y",
+      "triangle_area",
+      "wedge_area"
+    ],
+    "usesTime": true,
+    "viewport": {
+      "height": null,
+      "width": 640.0,
+      "x": [
+        -3.8,
+        6.9
+      ],
+      "y": [
+        -5.3,
+        2.1
+      ]
+    }
+  },
+  "poster": {
+    "images": [
+      {
+        "height": 444,
+        "scale": 1,
+        "src": "unroll.png",
+        "webp": "unroll.webp",
+        "width": 640
+      },
+      {
+        "height": 886,
+        "scale": 2,
+        "src": "unroll-2x.png",
+        "webp": "unroll-2x.webp",
+        "width": 1280
+      }
+    ],
+    "params": {},
+    "ranges": {
+      "a": [
+        0.0,
+        6.283185307179586
+      ]
+    },
+    "readouts": [],
+    "time": 0.0,
+    "values": {
+      "a": 0.0
+    }
+  },
+  "sources": [
+    "corpus/003-unroll/unroll.pen",
+    "corpus/003-unroll/blog.style"
+  ]
+}

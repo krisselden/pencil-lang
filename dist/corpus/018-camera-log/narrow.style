@@ -1,0 +1,16 @@
+// The same figure for a phone, after `plain.style`: still a pair side by side, as the blog keeps
+// its facets, with panels about as big as a phone draws them, so a pixel here is about a pixel
+// there. Lines and points are thinner to match.
+style panels { columns: 2; gap: 8px; title: 20px }
+style panel { width: 168px; height: 168px }
+style title { size: 0.7em }
+// The formulas are words, too long beside a title at this size.
+style formula { fill: none }
+style start_edge { width: 1px; dash: 4px; gap: 3px }
+style camera_edge { width: 1.5px }
+style .turn { dash: 4px; gap: 3px }
+style centers { radius: 2px }
+style moved { width: 1.75px; head: 9px }
+style origin { radius: 2.5px }
+style start_circles { width: 0.75px }
+style seen_circles { width: 1.25px }

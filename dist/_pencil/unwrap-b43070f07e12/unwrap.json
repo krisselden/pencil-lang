@@ -1,0 +1,120 @@
+{
+  "build": "8d262e2ea528cc05",
+  "figure": "unwrap.pfig",
+  "hash": "1f273fc61d20b830",
+  "info": {
+    "beatLengths": [],
+    "beats": [],
+    "colors": {
+      "accent": "rgb(169 139 255)",
+      "accent_soft": "rgb(98 84 140)",
+      "blue": "rgb(118 179 241)",
+      "blue_soft": "rgb(74 103 133)",
+      "green": "rgb(121 195 124)",
+      "green_soft": "rgb(75 111 74)",
+      "ink": "rgb(243 240 234)",
+      "muted": "rgb(148 143 134)",
+      "paper_color": "rgb(23 22 20)",
+      "red": "rgb(243 141 130)",
+      "red_soft": "rgb(135 84 77)"
+    },
+    "duration": null,
+    "handles": [],
+    "panels": [
+      {
+        "formula": null,
+        "id": "",
+        "rect": [
+          0.0,
+          0.0,
+          1.0,
+          1.0
+        ],
+        "title": null
+      }
+    ],
+    "params": [
+      {
+        "caption": null,
+        "choice": null,
+        "control": {
+          "kind": "slider",
+          "name": "t",
+          "text": [
+            "caption",
+            "value"
+          ]
+        },
+        "follows": [],
+        "id": "t",
+        "max": 1.0,
+        "min": 0.0,
+        "reads": [],
+        "step": null
+      }
+    ],
+    "poster": {
+      "params": {
+        "t": 0.55
+      },
+      "time": 0.0
+    },
+    "readouts": [],
+    "size": [
+      520.0,
+      460.0
+    ],
+    "timeDriven": [],
+    "usesTime": false,
+    "viewport": {
+      "height": 460.0,
+      "width": 520.0,
+      "x": [
+        -2.0,
+        2.0
+      ],
+      "y": [
+        -2.0,
+        2.0
+      ]
+    }
+  },
+  "poster": {
+    "images": [
+      {
+        "height": 460,
+        "scale": 1,
+        "src": "unwrap.png",
+        "webp": "unwrap.webp",
+        "width": 520
+      },
+      {
+        "height": 920,
+        "scale": 2,
+        "src": "unwrap-2x.png",
+        "webp": "unwrap-2x.webp",
+        "width": 1040
+      }
+    ],
+    "params": {
+      "t": 0.55
+    },
+    "ranges": {
+      "t": [
+        0.0,
+        1.0
+      ]
+    },
+    "readouts": [],
+    "time": 0.0,
+    "values": {
+      "t": 0.55
+    }
+  },
+  "sources": [
+    "corpus/016-unwrap/unwrap.pen",
+    "corpus/theme.style",
+    "corpus/016-unwrap/plain.style",
+    "corpus/dark.style"
+  ]
+}

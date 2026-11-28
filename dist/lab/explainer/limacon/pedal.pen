@@ -1,0 +1,32 @@
+// The pedal. The central circle scales by 2 about 1, taking C to P, and the mirror goes with
+// it to the pedal circle's tangent at P. E is the foot from 1 onto that tangent.
+beat clear for 0.35 drop normal, tangent_E, at_E, to_one, to_E
+beat double "Double the central circle from 1." for 1.4 show pedal, scaling focus pedal, scaling, central, C, name_C, one
+pause 0.2
+beat halves for 0.5 show half_in, half_out, P drop scaling focus pedal, half_in, half_out, C, name_C, P, one
+pause 0.8
+beat touching "The curve is where 1's perpendiculars meet its tangents." for 0.8 show pedal_tangent, foot, at_foot focus pedal, P, pedal_tangent, foot, at_foot, E, limacon, one
+pause 0.8
+// C goes round once more, so P runs round the pedal circle, its tangent turns, and the foot from 1
+// rides the limaçon.
+beat pedal_round for 4
+pause 1
+
+// The central circle scaled by k about 1, from 1 to 2: the pedal circle, about cosh 2s with radius
+// sinh 2s. The scaling eases as a move does, so it gets there fast and then settles.
+let k = 1 + snap(double, 3)
+let scaled = one + k·(A - one)
+curve pedal = circle(scaled, scaled + (k·R, 0))
+let P = one + k·(C - one)
+segment scaling = one, P
+// C is halfway from 1 to P.
+segment half_in = one, C
+segment half_out = C, P
+dot P
+
+// The pedal circle's tangent at P is the mirror, twice as far from 1, so the foot from 1 onto it
+// is E. Drawn from P to past E, whichever side E is on.
+let reach = dot(E - P, along)
+segment pedal_tangent = P + (min(reach, 0) - 1.2)·along, P + (max(reach, 0) + 1.2)·along
+segment foot = one, E
+rightangle at_foot = one, E, E + along size 0.28

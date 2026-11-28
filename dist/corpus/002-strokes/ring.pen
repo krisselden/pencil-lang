@@ -1,0 +1,4 @@
+// A fixed circle, for comparing strokes against SVG.
+doc ring
+viewport { x: -2..2, y: -2..2 }
+curve c = implicit (x, y): x² + y² = 1.3225

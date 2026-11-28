@@ -1,0 +1,181 @@
+{
+  "build": "8d262e2ea528cc05",
+  "figure": "arm-colors.pfig",
+  "hash": "b4ec8b9f5ea2d350",
+  "info": {
+    "beatLengths": [],
+    "beats": [],
+    "colors": {
+      "accent": "rgb(96 66 166)",
+      "accent_soft": "rgb(157 144 200)",
+      "blue": "rgb(0 104 181)",
+      "blue_soft": "rgb(124 166 208)",
+      "green": "rgb(22 123 38)",
+      "green_soft": "rgb(130 176 127)",
+      "ink": "rgb(18 17 15)",
+      "muted": "rgb(110 106 99)",
+      "paper_color": "rgb(242 240 235)",
+      "red": "rgb(171 58 51)",
+      "red_soft": "rgb(209 142 131)"
+    },
+    "duration": null,
+    "handles": [],
+    "panels": [
+      {
+        "formula": null,
+        "id": "spiral_view",
+        "rect": [
+          0.0,
+          0.06403940886699508,
+          0.4914004914004914,
+          0.9359605911330049
+        ],
+        "title": "The spiral"
+      },
+      {
+        "formula": null,
+        "id": "grid_view",
+        "rect": [
+          0.5085995085995086,
+          0.06403940886699508,
+          0.4914004914004914,
+          0.9359605911330049
+        ],
+        "title": "On the grid"
+      }
+    ],
+    "params": [
+      {
+        "caption": null,
+        "choice": null,
+        "control": {
+          "kind": "slider",
+          "name": "q",
+          "text": [
+            "caption",
+            "value"
+          ]
+        },
+        "follows": [],
+        "id": "q",
+        "max": 16.0,
+        "min": 3.0,
+        "reads": [],
+        "step": 1.0
+      },
+      {
+        "caption": null,
+        "choice": null,
+        "control": {
+          "kind": "slider",
+          "name": "p",
+          "text": [
+            "caption",
+            "value"
+          ]
+        },
+        "follows": [
+          "q"
+        ],
+        "id": "p",
+        "max": 16.0,
+        "min": 0.0,
+        "reads": [],
+        "step": 1.0
+      },
+      {
+        "caption": null,
+        "choice": {
+          "of": "along",
+          "options": [
+            "ω",
+            "1",
+            "1 + ω"
+          ]
+        },
+        "control": {
+          "kind": "radios",
+          "name": "along",
+          "text": [
+            "caption",
+            "value"
+          ]
+        },
+        "follows": [],
+        "id": "along.index",
+        "max": 2.0,
+        "min": 0.0,
+        "reads": [],
+        "step": 1.0
+      }
+    ],
+    "poster": {
+      "params": {},
+      "time": 0.0
+    },
+    "readouts": [],
+    "size": [
+      814.0,
+      406.0
+    ],
+    "timeDriven": [],
+    "usesTime": false,
+    "viewport": {
+      "height": 380.0,
+      "width": 400.0,
+      "x": [
+        -2.4,
+        2.4
+      ],
+      "y": [
+        -2.28,
+        2.28
+      ]
+    }
+  },
+  "poster": {
+    "images": [
+      {
+        "height": 406,
+        "scale": 1,
+        "src": "arm-colors.png",
+        "webp": "arm-colors.webp",
+        "width": 814
+      },
+      {
+        "height": 812,
+        "scale": 2,
+        "src": "arm-colors-2x.png",
+        "webp": "arm-colors-2x.webp",
+        "width": 1628
+      }
+    ],
+    "params": {},
+    "ranges": {
+      "along.index": [
+        0.0,
+        2.0
+      ],
+      "p": [
+        0.0,
+        8.0
+      ],
+      "q": [
+        3.0,
+        16.0
+      ]
+    },
+    "readouts": [],
+    "time": 0.0,
+    "values": {
+      "along.index": 0.0,
+      "p": 3.0,
+      "q": 8.0
+    }
+  },
+  "sources": [
+    "corpus/017-arm-colors/arm-colors.pen",
+    "corpus/theme.style",
+    "corpus/017-arm-colors/plain.style"
+  ]
+}

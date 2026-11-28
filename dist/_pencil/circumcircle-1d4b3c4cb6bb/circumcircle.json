@@ -1,0 +1,91 @@
+{
+  "build": "8d262e2ea528cc05",
+  "figure": "circumcircle.pfig",
+  "hash": "249a4cc1cb011aca",
+  "info": {
+    "beatLengths": [],
+    "beats": [],
+    "colors": {},
+    "duration": 17.95,
+    "handles": [],
+    "panels": [
+      {
+        "formula": null,
+        "id": "",
+        "rect": [
+          0.0,
+          0.0,
+          1.0,
+          1.0
+        ],
+        "title": null
+      }
+    ],
+    "params": [],
+    "poster": {
+      "params": {},
+      "time": 0.0
+    },
+    "readouts": [],
+    "size": [
+      640.0,
+      400.0
+    ],
+    "timeDriven": [
+      "t",
+      "A.x",
+      "A.y",
+      "B.x",
+      "B.y",
+      "C.x",
+      "C.y",
+      "around.a",
+      "around.bx",
+      "around.by",
+      "around.c",
+      "around.x",
+      "around.y",
+      "around.r"
+    ],
+    "usesTime": true,
+    "viewport": {
+      "height": 400.0,
+      "width": 640.0,
+      "x": [
+        -2.4,
+        2.4
+      ],
+      "y": [
+        -1.5,
+        1.5
+      ]
+    }
+  },
+  "poster": {
+    "images": [
+      {
+        "height": 400,
+        "scale": 1,
+        "src": "circumcircle.png",
+        "webp": "circumcircle.webp",
+        "width": 640
+      },
+      {
+        "height": 800,
+        "scale": 2,
+        "src": "circumcircle-2x.png",
+        "webp": "circumcircle-2x.webp",
+        "width": 1280
+      }
+    ],
+    "params": {},
+    "ranges": {},
+    "readouts": [],
+    "time": 0.0,
+    "values": {}
+  },
+  "sources": [
+    "corpus/011-circumcircle/circumcircle.pen",
+    "corpus/011-circumcircle/plain.style"
+  ]
+}

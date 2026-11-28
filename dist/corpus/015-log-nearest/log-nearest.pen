@@ -1,0 +1,73 @@
+// Nearest isn't nearest after log. Dots at 1, e and e² on the real line are evenly spaced after
+// taking the log, at 0, 1 and 2. Each line marks the dot nearest x by its own distance: |eⁿ − x|
+// on the line, and |n − ln x| after log. Log puts the halfway point between eⁿ and eⁿ⁺¹ at
+// e^{n+½}, their geometric mean, and the line puts it at (eⁿ + eⁿ⁺¹)/2, their arithmetic mean,
+// which is further out. Between the two, the lines disagree: those stretches are shaded on both.
+// So log narrows the choice to two dots, and only the line can pick between them.
+doc log_nearest
+
+param x = 1.75 in 0.72..7.9
+// Where the site starts it: in the first stretch where the lines disagree.
+poster { x: 1.75 }
+
+viewport { x: -0.4..8.2, y: -0.945..2.145 }
+
+// Where each line sits, and the log line's own scale: u from lo to hi across most of the width.
+let top = 1.3
+let bottom = -0.1
+let lo = -0.35
+let hi = 2.3
+fn on_line(v) = (v, top)
+fn on_log(u) = (0.2 + (u - lo) / (hi - lo)·7.6, bottom)
+
+// 1 at and after 0, 0 before it.
+fn step(v) = clamp(floor(v) + 1, 0, 1)
+
+let u = ln(x)
+// The nearest by |n − ln x|: rounding, held to the dots there are.
+let near_log = clamp(floor(u + 0.5), 0, 2)
+// The nearest by |eⁿ − x|: x is between e^cell and e^{cell+1}, or past the ends, and the nearer
+// of those two is past their arithmetic mean or not.
+let cell = clamp(floor(u), 0, 1)
+let line_middle = (exp(cell) + exp(cell + 1)) / 2
+let near_line = cell + step(x - line_middle)
+// 1 where the two lines pick different dots, for a page's readout.
+let disagree = abs(near_line - near_log)
+
+let X = on_line(x)
+let X_log = on_log(u)
+let nearest_on_line = on_line(exp(near_line))
+let nearest_on_log = on_log(near_log)
+
+segment real_line = on_line(-0.2), on_line(8)
+segment log_line = on_log(lo), on_log(hi)
+
+// Where the lines disagree: from the halfway point after log, e^{n+½}, out to the halfway point
+// on the line, on each line in its own scale.
+curves disagree_line = parametric (t): on_line(a + (b - a)·t) for t in 0..1 for n in 0..1 with a = exp(n + 0.5), b = (exp(n) + exp(n + 1)) / 2 tag disagreement
+curves disagree_log = parametric (t): on_log(a + (b - a)·t) for t in 0..1 for n in 0..1 with a = n + 0.5, b = ln((exp(n) + exp(n + 1)) / 2) tag disagreement
+
+// Each dot, and where log sends it.
+curves carried = parametric (t): on_line(exp(n)) + (on_log(n) - on_line(exp(n)))·t for t in 0..1 for n in 0..2
+dots line_dots = on_line(exp(n)) for n in 0..2
+dots log_dots = on_log(n) for n in 0..2
+dot nearest_on_line, nearest_on_log
+
+label name_1 = "1" at on_line(1) away (0, 1)
+label name_e = "e" at on_line(exp(1)) away (0, 1)
+label name_e2 = "e²" at on_line(exp(2)) away (0, 1)
+label name_0 = "0" at on_log(0) away (0, -1)
+label name_log_1 = "1" at on_log(1) away (0, -1)
+label name_2 = "2" at on_log(2) away (0, -1)
+label name_line = "line" at on_line(-0.2) away (1, 1) tag note
+label name_log = "after log" at on_log(lo) away (1, 1) tag note
+
+// x, its log, and how far each is from its line's nearest dot.
+segment to_nearest_on_line = X, nearest_on_line
+segment to_nearest_on_log = X_log, nearest_on_log
+segment carry_x = X, X_log
+dot X_log, X
+label name_x = "x" at X away (0, 1)
+label name_ln_x = "ln x" at X_log away (0, 1)
+
+handle X sets x = pointer.x

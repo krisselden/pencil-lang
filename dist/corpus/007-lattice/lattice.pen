@@ -1,0 +1,153 @@
+// The triangle 0, −q, qω on the Eisenstein lattice, and its period A on the third side, seen
+// through the maps that turn it into a Doyle spiral. Each thing is declared once, in the
+// lattice's own coordinates, and each panel draws it through its own map. After exp, 0 and A
+// are one point, 1, so the triangle closes into a shell.
+//   lattice   w = a + bω
+//   log       T(w) = 2πi·w / A, which sends the period A to 2πi
+//   exp       z = exp(S(T(w))), circle centers with radius k|z|
+//
+// The skew μ, ν comes from `solve`: the two equations that say all six neighbors touch.
+doc lattice
+
+param q = 7 in 3..12 step 1
+// p steps along the side of length q, so it stops there.
+param p = 2 in 0..q step 1
+
+let omega = -1 / 2 + sqrt(3) / 2·i
+fn grid(a, b) = a + b·omega
+let A = grid(-p, q - p)
+// Said beside the figure: the period in the lattice's own steps, which the two routes to it add up to.
+label steps_to_a = "$A = {-p} + {q - p}ω$"
+
+fn to_turn(w) = 2·π·i·w / A
+fn skewed(t, m, n) = n·real(t) / (1 - i·m) + i·imag(t)
+fn center(w, m, n) = exp(skewed(to_turn(w), m, n))
+// How a circle at c(w) stands to the circle at 1. They touch when this is k².
+fn tangency(w, m, n) = abs(center(w, m, n) - 1)² / (abs(center(w, m, n)) + 1)²
+
+// The neighbors along 1, ω and 1 + ω all have to touch alike. The other three follow, since
+// c(−w) = 1/c(w). Starting from no shear and near-correct growth.
+solve (mu, nu) from 0, exp(pi² / (6·abs(A)²)):
+  tangency(omega, mu, nu) = tangency(1 + omega, mu, nu),
+  tangency(1, mu, nu) = tangency(1 + omega, mu, nu)
+let k = sqrt(tangency(omega, mu, nu))
+
+fn spiral(w) = center(w, mu, nu)
+// One turn up and down the cylinder. exp sends all of these to the same place, so what
+// crosses the 0 and 2πi lines in log space is what crosses at 1 in the spiral.
+fn above(w) = to_turn(w) + 2·π·i
+fn below(w) = to_turn(w) - 2·π·i
+
+let zero = 0
+let end_point = A
+let corner_a = -q
+let corner_b = q·omega
+let step_diagonal = 1 + omega
+let centroid = (corner_a + corner_b) / 3
+
+// The triangle's edges, as lattice paths, counted in steps.
+group triangle() {
+  curve minus_one = parametric (t): -t for t in 0..q tag blue
+  dots steps_one = -n for n in 1..q - 1 tag blue, steps
+  curve along_omega = parametric (t): omega·t for t in 0..q tag red
+  dots steps_omega = omega·n for n in 1..q - 1 tag red, steps
+  curve up_to_a = parametric (t): corner_a + step_diagonal·t for t in 0..q - p tag green
+  dots steps_up = corner_a + step_diagonal·n for n in 1..q - p - 1 tag green, steps
+  curve down_to_a = parametric (t): corner_b - step_diagonal·t for t in 0..p tag accent
+  dots steps_down = corner_b - step_diagonal·n for n in 1..p - 1 tag accent, steps
+}
+
+group points() {
+  dot zero, end_point
+}
+
+// The period, from 0 to A. It's straight until exp.
+group period() {
+  segment period_line = zero, end_point
+}
+
+group lattice_points() {
+  dots grid_points = grid(a, b) for a in -2·q..2·q, b in -2·q..2·q
+}
+
+// Where things' names go, on the side out of the triangle. What they're called is up to each
+// space, and a space with no name for one doesn't show it.
+fn turned(d) = i·d
+fn out_of(mid, along) = -sign(dot(turned(along), centroid - mid))·turned(along)
+let mid_one = -q / 2
+let mid_omega = omega·(q / 2)
+let mid_up = corner_a + step_diagonal·((q - p) / 2)
+let mid_down = corner_b - step_diagonal·(p / 2)
+group names() {
+  label count_one at mid_one away out_of(mid_one, -1) tag tick, blue
+  label count_omega at mid_omega away out_of(mid_omega, omega) tag tick, red
+  label count_up at mid_up away out_of(mid_up, step_diagonal) tag tick, green
+  label count_down at mid_down away out_of(mid_down, step_diagonal) tag tick, accent
+  label name_zero at zero away zero - centroid
+  // Straight down in the lattice: between the triangle's third side and the period line, for any
+  // p below q. A fixed direction here can't flip as they change.
+  label name_end at end_point away -i
+}
+
+// Everything the flat views show.
+group flat_view() {
+  use triangle()
+  use period()
+  use points()
+  use names()
+}
+
+// Signed in the flat views. In the spiral, the arrowheads show the way.
+group signed_counts() {
+  text count_one = "−{q}"
+  text count_omega = "+{q}"
+  text count_up = "+{q - p}"
+  text count_down = "−{p}"
+  text name_zero = "0"
+}
+
+// The spiral, and its circles. 0 and A are one point here, and it's called 1.
+group spiral_view() {
+  circles spiral_circles = circle(z, z + k·abs(z)) for a in -q - 2..q + 2, b in -2..q + 2 with z = spiral(grid(a, b))
+  use triangle() through spiral
+  use points() through spiral
+  use names() through spiral
+  text count_one = "{q}"
+  text count_omega = "{q}"
+  text count_up = "{q - p}"
+  text count_down = "{p}"
+  text name_zero = "1"
+}
+
+panel flat "Lattice" "w = a + bω" {
+  viewport { fit: minus_one along_omega up_to_a down_to_a }
+  use lattice_points()
+  use flat_view()
+  use signed_counts()
+  text name_end = "A"
+}
+
+panel log "Log space" "T(w) = 2πi·w / A" {
+  viewport { fit: minus_one along_omega up_to_a down_to_a }
+  use lattice_points() through to_turn
+  // The strip one turn of the spiral comes from: 0 ≤ Im < 2π.
+  curve strip_low = line((0, 0), (1, 0)) tag strip
+  curve strip_high = line(2·π·i, 1 + 2·π·i) tag strip
+  use triangle() through above as up
+  use triangle() through below as down
+  use flat_view() through to_turn
+  use signed_counts()
+  text name_end = "2πi"
+}
+
+panel whole "Exp space" "z = exp(S(T(w)))" {
+  viewport { fit: minus_one along_omega up_to_a down_to_a }
+  use spiral_view()
+  // Where the close-up is looking, kept big enough to read as a marker.
+  outline close_up = detail
+}
+
+panel detail "Exp space, detail" "near 1" {
+  viewport { fit: minus_one up_to_a }
+  use spiral_view()
+}

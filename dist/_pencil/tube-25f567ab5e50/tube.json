@@ -1,0 +1,162 @@
+{
+  "build": "8d262e2ea528cc05",
+  "figure": "tube.pfig",
+  "hash": "0dbd717ff7e2d322",
+  "info": {
+    "beatLengths": [],
+    "beats": [],
+    "colors": {
+      "accent": "rgb(169 139 255)",
+      "accent_soft": "rgb(98 84 140)",
+      "blue": "rgb(118 179 241)",
+      "blue_soft": "rgb(74 103 133)",
+      "green": "rgb(121 195 124)",
+      "green_soft": "rgb(75 111 74)",
+      "ink": "rgb(243 240 234)",
+      "muted": "rgb(148 143 134)",
+      "paper_color": "rgb(23 22 20)",
+      "red": "rgb(243 141 130)",
+      "red_soft": "rgb(135 84 77)"
+    },
+    "duration": null,
+    "handles": [],
+    "panels": [
+      {
+        "formula": null,
+        "id": "",
+        "rect": [
+          0.0,
+          0.0,
+          1.0,
+          1.0
+        ],
+        "title": null
+      }
+    ],
+    "params": [
+      {
+        "caption": "arms",
+        "choice": null,
+        "control": {
+          "kind": "slider",
+          "name": "p",
+          "text": [
+            "caption",
+            "value"
+          ]
+        },
+        "follows": [],
+        "id": "p",
+        "max": 3.0,
+        "min": 1.0,
+        "reads": [],
+        "step": 1.0
+      },
+      {
+        "caption": null,
+        "choice": null,
+        "control": {
+          "kind": "slider",
+          "name": "roll",
+          "text": [
+            "caption",
+            "value"
+          ]
+        },
+        "follows": [],
+        "id": "roll",
+        "max": 1.0,
+        "min": 0.01,
+        "reads": [],
+        "step": null
+      },
+      {
+        "caption": null,
+        "choice": null,
+        "control": {
+          "kind": "slider",
+          "name": "turn",
+          "text": [
+            "caption",
+            "value"
+          ]
+        },
+        "follows": [],
+        "id": "turn",
+        "max": 360.0,
+        "min": 0.0,
+        "reads": [],
+        "step": null
+      }
+    ],
+    "poster": {
+      "params": {},
+      "time": 0.0
+    },
+    "readouts": [],
+    "size": [
+      640.0,
+      524.0
+    ],
+    "timeDriven": [],
+    "usesTime": false,
+    "viewport": {
+      "height": 524.0,
+      "width": 640.0,
+      "x": [
+        -2.0,
+        2.0
+      ],
+      "y": [
+        -2.0,
+        2.0
+      ]
+    }
+  },
+  "poster": {
+    "images": [
+      {
+        "height": 524,
+        "scale": 1,
+        "src": "tube.png",
+        "webp": "tube.webp",
+        "width": 640
+      },
+      {
+        "height": 1048,
+        "scale": 2,
+        "src": "tube-2x.png",
+        "webp": "tube-2x.webp",
+        "width": 1280
+      }
+    ],
+    "params": {},
+    "ranges": {
+      "p": [
+        1.0,
+        3.0
+      ],
+      "roll": [
+        0.01,
+        1.0
+      ],
+      "turn": [
+        0.0,
+        360.0
+      ]
+    },
+    "readouts": [],
+    "time": 0.0,
+    "values": {
+      "p": 1.0,
+      "roll": 1.0,
+      "turn": 150.0
+    }
+  },
+  "sources": [
+    "corpus/013-tube/tube.pen",
+    "corpus/theme.style",
+    "corpus/013-tube/plain.style",
+    "corpus/dark.style"
+  ]
+}

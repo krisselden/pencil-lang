@@ -1,0 +1,141 @@
+{
+  "build": "8d262e2ea528cc05",
+  "figure": "squaring.pfig",
+  "hash": "d256b7223b6f3355",
+  "info": {
+    "beatLengths": [],
+    "beats": [],
+    "colors": {
+      "accent": "rgb(169 139 255)",
+      "accent_soft": "rgb(98 84 140)",
+      "blue": "rgb(118 179 241)",
+      "blue_soft": "rgb(74 103 133)",
+      "green": "rgb(121 195 124)",
+      "green_soft": "rgb(75 111 74)",
+      "ink": "rgb(243 240 234)",
+      "muted": "rgb(148 143 134)",
+      "paper_color": "rgb(23 22 20)",
+      "red": "rgb(243 141 130)",
+      "red_soft": "rgb(135 84 77)"
+    },
+    "duration": 8.0,
+    "handles": [],
+    "panels": [
+      {
+        "formula": null,
+        "id": "",
+        "rect": [
+          0.0,
+          0.0,
+          1.0,
+          1.0
+        ],
+        "title": null
+      }
+    ],
+    "params": [
+      {
+        "caption": null,
+        "choice": null,
+        "control": {
+          "kind": "slider",
+          "name": "n",
+          "text": [
+            "caption",
+            "value"
+          ]
+        },
+        "follows": [],
+        "id": "n",
+        "max": 6.0,
+        "min": 1.1,
+        "reads": [],
+        "step": null
+      },
+      {
+        "caption": null,
+        "choice": null,
+        "control": {
+          "kind": "slider",
+          "name": "p",
+          "text": [
+            "caption",
+            "value"
+          ]
+        },
+        "follows": [],
+        "id": "p",
+        "max": 2.0,
+        "min": 1.0,
+        "reads": [],
+        "step": null
+      }
+    ],
+    "poster": {
+      "params": {},
+      "time": 0.0
+    },
+    "readouts": [],
+    "size": [
+      640.0,
+      520.0
+    ],
+    "timeDriven": [
+      "p"
+    ],
+    "usesTime": true,
+    "viewport": {
+      "height": 520.0,
+      "width": 640.0,
+      "x": [
+        -2.0,
+        2.0
+      ],
+      "y": [
+        -2.0,
+        2.0
+      ]
+    }
+  },
+  "poster": {
+    "images": [
+      {
+        "height": 520,
+        "scale": 1,
+        "src": "squaring.png",
+        "webp": "squaring.webp",
+        "width": 640
+      },
+      {
+        "height": 1040,
+        "scale": 2,
+        "src": "squaring-2x.png",
+        "webp": "squaring-2x.webp",
+        "width": 1280
+      }
+    ],
+    "params": {},
+    "ranges": {
+      "n": [
+        1.1,
+        6.0
+      ],
+      "p": [
+        1.0,
+        2.0
+      ]
+    },
+    "readouts": [],
+    "time": 0.0,
+    "values": {
+      "n": 3.3,
+      "p": 2.0
+    }
+  },
+  "sources": [
+    "corpus/009-squaring/squaring.pen",
+    "corpus/theme.style",
+    "corpus/009-squaring/plain.style",
+    "corpus/dark.style"
+  ]
+}

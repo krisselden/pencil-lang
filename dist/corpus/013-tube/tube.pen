@@ -1,0 +1,65 @@
+// The strip of the grid one turn tall, rolling up into a tube, before exp squeezes it into a
+// spiral. Its rows along ω are colored by arm. Flat they're parallel lines. Rolled, each row
+// runs off the top and comes back in at the bottom as the next row of its arm, so an arm is
+// one line wound around the tube, and p of them are the whole grid.
+//
+// The tube's axis is the x axis, and the strip is wrapped on a cylinder of radius 1/roll about
+// it. So z > 0 is the side that faces the reader and z < 0 is the far side, however far it's
+// rolled, and a sheet can tell them apart. Turning the tube slides the strip around it.
+doc tube
+
+param p "arms" = 1 in 1..3 step 1
+param roll = 1 in 0.01..1
+param turn = 150 in 0..360
+
+// Looking down z, turned a little as it rolls, so the tube's ends show as ellipses.
+viewport { fit: bottom top left right, pad: 0.06, yaw: 0.45·roll }
+
+let q = 7
+let omega = -1 / 2 + sqrt(3) / 2·i
+fn grid(a, b) = a + b·omega
+// The period, which T turns straight up and scales to one turn, 2πi.
+let A = grid(-p, q - p)
+fn to_turn(w) = 2·π·i·w / A
+
+// The strip, in T's coordinates: one turn tall.
+let half = 3
+let height = 2·π
+
+// A point of the strip, on the tube. Its height is an arc of the cylinder, measured from the
+// middle of the strip, less how far the tube is turned.
+let radius = 1 / roll
+fn around(y) = roll·(y - π - turn·π / 180)
+fn rolled(w) = (w.x, radius·sin(around(w.y)), radius·cos(around(w.y)))
+
+curve bottom = parametric (u): rolled(u) for u in -half..half tag edge
+curve top = parametric (u): rolled(u + height·i) for u in -half..half tag edge
+curve left = parametric (v): rolled(-half + v·i) for v in 0..height tag edge
+curve right = parametric (v): rolled(half + v·i) for v in 0..height tag edge
+
+// Row a of the grid is a + u·ω, which T sends to a·one + u·along. It's inside the strip from
+// `first` to `last`, and misses it when `last` comes first.
+let one = to_turn(1)
+let along = to_turn(omega)
+fn row(a, u) = a·one + u·along
+fn first_across(a) = min((-half - a·one.x) / along.x, (half - a·one.x) / along.x)
+fn last_across(a) = max((-half - a·one.x) / along.x, (half - a·one.x) / along.x)
+fn first_up(a, h) = min(-a·one.y / along.y, (h - a·one.y) / along.y)
+fn last_up(a, h) = max(-a·one.y / along.y, (h - a·one.y) / along.y)
+fn first(a, h) = max(first_across(a), first_up(a, h))
+fn last(a, h) = min(last_across(a), last_up(a, h))
+
+// Arm j is every p-th row from row j, so there are p arms, and with one arm every row is its.
+fn arms(j) = 12 - 100·(1 - clamp(p - j, 0, 1))
+curves arm_0 = parametric (u): rolled(row(a, u)) for u in first(a, height)..max(first(a, height), last(a, height)) for m in -12..arms(0) with a = p·m tag row, blue
+curves arm_1 = parametric (u): rolled(row(a, u)) for u in first(a, height)..max(first(a, height), last(a, height)) for m in -12..arms(1) with a = 1 + p·m tag row, green
+curves arm_2 = parametric (u): rolled(row(a, u)) for u in first(a, height)..max(first(a, height), last(a, height)) for m in -12..arms(2) with a = 2 + p·m tag row, red
+
+// The grid's points in the strip. The top edge is the bottom edge again once it's rolled, so
+// its points are left to the bottom.
+let below_top = height - 0.000001
+dots points = rolled(row(a, b)) for a in -12..12, b in first(a, below_top)..last(a, below_top)
+
+// The period: straight up the strip, and once around the tube.
+curve period = parametric (v): rolled(v·i) for v in 0..height tag accent
+label name_period = "A" at rolled(π·i) away (1, 0) tag accent

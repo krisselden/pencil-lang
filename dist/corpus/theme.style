@@ -1,0 +1,28 @@
+// What every figure shares, as in the site's design system. A document picks a role by tag,
+// and never a number. `name` is any label without another role.
+let ink = rgb(18, 17, 15)
+let paper_color = rgb(242, 240, 235)
+let muted = rgb(110, 106, 99)
+let accent = rgb(96, 66, 166)
+let blue = rgb(0, 104, 181)
+let red = rgb(171, 58, 51)
+let green = rgb(22, 123, 38)
+// Softer shades, nearer the paper, for what's secondary.
+let accent_soft = rgb(157, 144, 200)
+let blue_soft = rgb(124, 166, 208)
+let red_soft = rgb(209, 142, 131)
+let green_soft = rgb(130, 176, 127)
+
+style paper { fill: paper_color }
+
+// Text is sized in ems, the reader's text size, so it matches the page around the figure
+// whatever size the figure is drawn at. In a video, an em is 17 design pixels.
+style title { fill: ink; size: 0.82em }
+
+style label { size: 1em; font: math; halo: 0.18em; fill: ink; place: settle; distance: 0.94em }
+style label.note { size: 0.88em; font: math }
+style label.tick { size: 0.7em; font: sans; fill: muted }
+style label.display { size: 3.75em; font: math; place: fixed }
+
+// The parts of an expression: a name's size, and they move by `snap`, not by settling.
+style term { size: 1em; font: math; halo: 0.18em; fill: ink }

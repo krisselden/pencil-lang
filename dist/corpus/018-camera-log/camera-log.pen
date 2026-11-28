@@ -1,0 +1,84 @@
+// The camera in log space, for p = 2 and q = 7. A camera at c sees each point z of the spiral at
+// e^{−c}·z, so moving it by c in log space zooms by e^{Re c} and turns by Im c. Left, the circles'
+// centers in log space, colored by arm along ω, and what the camera shows: the log of its square
+// screen, everything left of a wavy edge, which repeats every turn. Right, what it sees, over a
+// faint copy of where it started.
+//
+// Two paths, the same length in log space for the same t. Steps of 1 + ω carry the grid onto itself
+// at every whole t, so the circles line up again, and the arm colors too after p of them, since
+// each step moves a circle one row along 1 + ω and so one arm along ω. A pure zoom, straight
+// across, never lines up past its start.
+doc camera_log
+
+let p = 2
+let q = 7
+
+let omega = -1 / 2 + sqrt(3) / 2·i
+fn grid(a, b) = a + b·omega
+let A = grid(-p, q - p)
+
+// The spiral's skew, from the two equations that say all six neighbors touch, as in the lattice.
+fn to_turn(w) = 2·π·i·w / A
+fn skewed(v, m, n) = n·real(v) / (1 - i·m) + i·imag(v)
+fn center(w, m, n) = exp(skewed(to_turn(w), m, n))
+fn tangency(w, m, n) = abs(center(w, m, n) - 1)² / (abs(center(w, m, n)) + 1)²
+solve (mu, nu) from 0, exp(pi² / (6·abs(A)²)):
+  tangency(omega, mu, nu) = tangency(1 + omega, mu, nu),
+  tangency(1, mu, nu) = tangency(1 + omega, mu, nu)
+let k = sqrt(tangency(omega, mu, nu))
+fn to_log(w) = skewed(to_turn(w), mu, nu)
+
+// One step of the grid along 1 + ω, in log space. The pure zoom goes as far, straight out.
+let step = to_log(1 + omega)
+param path in {"along 1 + ω": step, "pure zoom": abs(step)}
+// Hundredths, so a reader lands on each whole step, where the circles line up.
+param t = 0 in 0..2.5 step 0.01
+let c = t·path
+// How far the camera has gone, in log space.
+let travel = abs(c)
+
+// The screen is the square of half-size H about 0, in the spiral's units at the start. Its log is
+// everything left of x = Re c + ln(H / max(|cos θ|, |sin θ|)), θ = y − Im c: e^{−c} of a point on
+// that edge is on the square's edge.
+let H = 1.6
+fn edge(at, y) = (real(at) + ln(H / max(abs(cos(y - imag(at))), abs(sin(y - imag(at))))), y)
+
+let origin = 0
+let left = -3.5
+let low = -4.5
+let high = 4.5
+
+panel log_view "In log space" "the camera’s view slides" {
+  viewport { x: -3.5..5.5, y: -4.5..4.5 }
+  region seen_region = (left, low), edge(c, y) for y in low..high, (left, high)
+  curve start_edge = parametric (y): edge(0, y) for y in low..high
+  curve camera_edge = parametric (y): edge(c, y) for y in low..high
+  // One turn, from −π to π: the view repeats above and below it.
+  segment turn_top = (left, π), (5.5, π) tag turn
+  segment turn_bottom = (left, -π), (5.5, -π) tag turn
+  dots centers = to_log(grid(a, b)) for a in -30..30, b in -30..30
+  arrow moved = origin, c
+  dot origin
+}
+
+// One circle per period, as in the unwrapping, of those big enough to see and near enough to the
+// screen: before the camera moves, and after, where each is e^{−c} times as big and far out.
+let alpha = -p
+let beta = q - p
+let period = alpha² - alpha·beta + beta²
+let rise_a = 2·alpha - beta
+let rise_b = 2·beta - alpha
+let across_a = real(to_log(1))
+let across_b = real(to_log(omega))
+let reach = H·sqrt(2)
+let inner = ln(0.004 / k)
+let outer = ln(reach / (1 - k))
+fn first_b(a, lo) = max(-floor((period + rise_a·a) / rise_b), -floor((across_a·a - lo) / across_b))
+fn last_b(a, hi) = min(-floor((rise_a·a - period) / rise_b) - 1, floor((hi - across_a·a) / across_b))
+fn seen(w) = exp(to_log(w) - c)
+
+panel camera_view "What the camera sees" "the start, faint" {
+  viewport { x: -1.6..1.6, y: -1.6..1.6 }
+  circles start_circles = circle(z, z + k·abs(z)) for a in -30..30, b in first_b(a, inner)..last_b(a, outer) with z = exp(to_log(grid(a, b)))
+  circles seen_circles = circle(z, z + k·abs(z)) for a in -30..30, b in first_b(a, inner + real(c))..last_b(a, outer + real(c)) with z = seen(grid(a, b))
+}

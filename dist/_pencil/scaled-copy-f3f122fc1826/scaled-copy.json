@@ -1,0 +1,157 @@
+{
+  "build": "8d262e2ea528cc05",
+  "figure": "scaled-copy.pfig",
+  "hash": "ac6f46755787d36e",
+  "info": {
+    "beatLengths": [
+      0.5,
+      1.8,
+      0.6
+    ],
+    "beats": [
+      "",
+      "",
+      ""
+    ],
+    "colors": {
+      "accent": "rgb(96 66 166)",
+      "accent_soft": "rgb(157 144 200)",
+      "blue": "rgb(0 104 181)",
+      "blue_soft": "rgb(124 166 208)",
+      "green": "rgb(22 123 38)",
+      "green_soft": "rgb(130 176 127)",
+      "ink": "rgb(18 17 15)",
+      "muted": "rgb(110 106 99)",
+      "paper_color": "rgb(242 240 235)",
+      "red": "rgb(171 58 51)",
+      "red_soft": "rgb(209 142 131)"
+    },
+    "duration": 4.2,
+    "handles": [],
+    "panels": [
+      {
+        "formula": null,
+        "id": "",
+        "rect": [
+          0.0,
+          0.0,
+          1.0,
+          1.0
+        ],
+        "title": null
+      }
+    ],
+    "params": [
+      {
+        "caption": null,
+        "choice": null,
+        "control": {
+          "kind": "slider",
+          "name": "beat",
+          "text": [
+            "caption",
+            "value"
+          ]
+        },
+        "follows": [],
+        "id": "beat",
+        "max": 3.0,
+        "min": 0.0,
+        "reads": [],
+        "step": null
+      },
+      {
+        "caption": null,
+        "choice": null,
+        "control": {
+          "kind": "slider",
+          "name": "s",
+          "text": [
+            "caption",
+            "value"
+          ]
+        },
+        "follows": [],
+        "id": "s",
+        "max": 1.0,
+        "min": 0.0,
+        "reads": [
+          "beat"
+        ],
+        "step": null
+      }
+    ],
+    "poster": {
+      "params": {},
+      "time": 1.8
+    },
+    "readouts": [],
+    "size": [
+      320.0,
+      320.0
+    ],
+    "timeDriven": [
+      "beat",
+      "arrive",
+      "glide",
+      "leave",
+      "s",
+      "copy.x",
+      "copy.y",
+      "copy.r"
+    ],
+    "usesTime": true,
+    "viewport": {
+      "height": 320.0,
+      "width": 320.0,
+      "x": [
+        -0.5,
+        1.75
+      ],
+      "y": [
+        -0.62,
+        1.63
+      ]
+    }
+  },
+  "poster": {
+    "images": [
+      {
+        "height": 320,
+        "scale": 1,
+        "src": "scaled-copy.png",
+        "webp": "scaled-copy.webp",
+        "width": 320
+      },
+      {
+        "height": 640,
+        "scale": 2,
+        "src": "scaled-copy-2x.png",
+        "webp": "scaled-copy-2x.webp",
+        "width": 640
+      }
+    ],
+    "params": {},
+    "ranges": {
+      "beat": [
+        0.0,
+        3.0
+      ],
+      "s": [
+        0.0,
+        1.0
+      ]
+    },
+    "readouts": [],
+    "time": 1.8,
+    "values": {
+      "beat": 1.5,
+      "s": 0.5
+    }
+  },
+  "sources": [
+    "corpus/014-scaled-copy/scaled-copy.pen",
+    "corpus/theme.style",
+    "corpus/014-scaled-copy/plain.style"
+  ]
+}

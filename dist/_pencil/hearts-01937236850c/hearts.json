@@ -1,0 +1,137 @@
+{
+  "build": "8d262e2ea528cc05",
+  "figure": "hearts.pfig",
+  "hash": "2d492e1c26a6d84d",
+  "info": {
+    "beatLengths": [],
+    "beats": [],
+    "colors": {
+      "indigo": "rgb(255 255 255)",
+      "rose": "rgb(255 77 136)",
+      "sky": "rgb(77 196 255)",
+      "violet": "rgb(255 255 255)"
+    },
+    "duration": 12.0,
+    "handles": [],
+    "panels": [
+      {
+        "formula": null,
+        "id": "",
+        "rect": [
+          0.0,
+          0.0,
+          1.0,
+          1.0
+        ],
+        "title": null
+      }
+    ],
+    "params": [
+      {
+        "caption": null,
+        "choice": null,
+        "control": {
+          "kind": "slider",
+          "name": "theta",
+          "text": [
+            "caption",
+            "value"
+          ]
+        },
+        "follows": [],
+        "id": "theta",
+        "max": 6.283185307179586,
+        "min": 0.0,
+        "reads": [],
+        "step": null
+      },
+      {
+        "caption": null,
+        "choice": null,
+        "control": {
+          "kind": "slider",
+          "name": "shift",
+          "text": [
+            "caption",
+            "value"
+          ]
+        },
+        "follows": [],
+        "id": "shift",
+        "max": 6.283185307179586,
+        "min": 0.0,
+        "reads": [],
+        "step": null
+      }
+    ],
+    "poster": {
+      "params": {},
+      "time": 2.4
+    },
+    "readouts": [],
+    "size": [
+      1200.0,
+      630.0
+    ],
+    "timeDriven": [
+      "theta",
+      "z_a.x",
+      "z_a.y",
+      "z_b.x",
+      "z_b.y"
+    ],
+    "usesTime": true,
+    "viewport": {
+      "height": 630.0,
+      "width": 1200.0,
+      "x": [
+        -2.0,
+        2.0
+      ],
+      "y": [
+        -2.0,
+        2.0
+      ]
+    }
+  },
+  "poster": {
+    "images": [
+      {
+        "height": 630,
+        "scale": 1,
+        "src": "hearts.png",
+        "webp": "hearts.webp",
+        "width": 1200
+      },
+      {
+        "height": 1260,
+        "scale": 2,
+        "src": "hearts-2x.png",
+        "webp": "hearts-2x.webp",
+        "width": 2400
+      }
+    ],
+    "params": {},
+    "ranges": {
+      "shift": [
+        0.0,
+        6.283185307179586
+      ],
+      "theta": [
+        0.0,
+        6.283185307179586
+      ]
+    },
+    "readouts": [],
+    "time": 2.4,
+    "values": {
+      "shift": 0.0,
+      "theta": 1.2566370614359172
+    }
+  },
+  "sources": [
+    "corpus/008-hearts/hearts.pen",
+    "corpus/008-hearts/glow.style",
+    "corpus/008-hearts/card.style"
+  ]
+}

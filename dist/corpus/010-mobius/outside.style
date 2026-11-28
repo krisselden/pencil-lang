@@ -1,0 +1,3 @@
+// A layer on plain.style: the true image of each disk, which is everything outside its circle when
+// the pole is inside it.
+style rims { fill_opacity: 0.22 }

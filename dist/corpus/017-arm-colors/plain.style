@@ -1,0 +1,22 @@
+// The site's look: each arm a hue, evenly around, its circles filled lightly with a thin rim in the
+// ink, and its curve and its row in the hue at full strength.
+style panels { columns: 2; gap: 14px; title: 26px }
+style panel { width: 400px; height: 380px }
+style panel.grid_view { pad: 0.02 }
+
+fn arm_hue(r) = hue(mod(r, wrap) / wrap)
+
+style spiral_circles { stroke: ink; width: 0.75px }
+style spiral_circles::inside { fill: arm_hue(arm) }
+style spiral_circles { fill_opacity: 0.55 }
+style arm_curves, ring_curves { stroke: arm_hue(r); width: 1.75px }
+
+style grid_rows { stroke: arm_hue(r); width: 2px }
+style grid_points { fill: arm_hue(arm); radius: 4.5px }
+
+style one, zero { fill: ink; radius: 3px }
+style name_one, name_zero { place: fixed }
+
+// The period is the second placement's, which `period.style` shows.
+style period_arrow { stroke: ink; width: 2.5px }
+style period_arrow, name_period { show: 0 }

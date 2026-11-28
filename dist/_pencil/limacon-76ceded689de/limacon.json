@@ -1,0 +1,76 @@
+{
+  "build": "8d262e2ea528cc05",
+  "figure": "limacon.pfig",
+  "hash": "412bd1586ece880f",
+  "info": {
+    "beatLengths": [],
+    "beats": [],
+    "colors": {},
+    "duration": 6.2831853,
+    "handles": [],
+    "panels": [
+      {
+        "formula": null,
+        "id": "",
+        "rect": [
+          0.0,
+          0.0,
+          1.0,
+          1.0
+        ],
+        "title": null
+      }
+    ],
+    "params": [],
+    "poster": {
+      "params": {},
+      "time": 0.0
+    },
+    "readouts": [],
+    "size": [
+      640.0,
+      640.0
+    ],
+    "timeDriven": [],
+    "usesTime": true,
+    "viewport": {
+      "height": 640.0,
+      "width": 640.0,
+      "x": [
+        -1.5,
+        10.5
+      ],
+      "y": [
+        -6.0,
+        6.0
+      ]
+    }
+  },
+  "poster": {
+    "images": [
+      {
+        "height": 640,
+        "scale": 1,
+        "src": "limacon.png",
+        "webp": "limacon.webp",
+        "width": 640
+      },
+      {
+        "height": 1280,
+        "scale": 2,
+        "src": "limacon-2x.png",
+        "webp": "limacon-2x.webp",
+        "width": 1280
+      }
+    ],
+    "params": {},
+    "ranges": {},
+    "readouts": [],
+    "time": 0.0,
+    "values": {}
+  },
+  "sources": [
+    "corpus/012-limacon/limacon.pen",
+    "corpus/012-limacon/plain.style"
+  ]
+}

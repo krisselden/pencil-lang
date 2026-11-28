@@ -1,0 +1,78 @@
+{
+  "build": "8d262e2ea528cc05",
+  "figure": "circle.pfig",
+  "hash": "d351e4fc53739d7c",
+  "info": {
+    "beatLengths": [],
+    "beats": [],
+    "colors": {},
+    "duration": 6.283185307179586,
+    "handles": [],
+    "panels": [
+      {
+        "formula": null,
+        "id": "",
+        "rect": [
+          0.0,
+          0.0,
+          1.0,
+          1.0
+        ],
+        "title": null
+      }
+    ],
+    "params": [],
+    "poster": {
+      "params": {},
+      "time": 0.0
+    },
+    "readouts": [],
+    "size": [
+      4.0,
+      4.0
+    ],
+    "timeDriven": [
+      "r"
+    ],
+    "usesTime": true,
+    "viewport": {
+      "height": null,
+      "width": null,
+      "x": [
+        -2.0,
+        2.0
+      ],
+      "y": [
+        -2.0,
+        2.0
+      ]
+    }
+  },
+  "poster": {
+    "images": [
+      {
+        "height": 512,
+        "scale": 1,
+        "src": "circle.png",
+        "webp": "circle.webp",
+        "width": 512
+      },
+      {
+        "height": 1024,
+        "scale": 2,
+        "src": "circle-2x.png",
+        "webp": "circle-2x.webp",
+        "width": 1024
+      }
+    ],
+    "params": {},
+    "ranges": {},
+    "readouts": [],
+    "time": 0.0,
+    "values": {}
+  },
+  "sources": [
+    "corpus/001-circle/circle.pen",
+    "corpus/001-circle/circle.style"
+  ]
+}
